@@ -3,6 +3,7 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -28,10 +29,18 @@ const (
 // field-number order, and the other fields are --kebab-case flags. The texts given for a field with a text form come
 // back apart, for readTexts once a server answers.
 func parse(md protoreflect.MessageDescriptor, args []string) (*dynamicpb.Message, []pendingText, error) {
-	var texts []pendingText
+	l, err := parseLine(md, args)
+	return l.req, l.texts, err
+}
+
+// parseLine reads a command line as parse does, the command line's own --wish-id of a scoped request, and its own
+// file flags (fileFlags) of a request that takes their text (fileField).
+func parseLine(md protoreflect.MessageDescriptor, args []string) (line, error) {
 	msg := dynamicpb.NewMessage(md)
+	l := line{req: msg}
 	pos := positionals(md)
 	next, onlyPositional := 0, false
+	files := map[string][]string{}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		if !onlyPositional && arg == "--" {
@@ -39,40 +48,125 @@ func parse(md protoreflect.MessageDescriptor, args []string) (*dynamicpb.Message
 			continue
 		}
 		if onlyPositional || !strings.HasPrefix(arg, "--") {
+			for next < len(pos) && msg.Has(pos[next]) {
+				next++ // Given by its flag already (an optional positional).
+			}
 			if next == len(pos) {
-				return nil, nil, fmt.Errorf("unexpected argument %q", arg)
+				return line{}, fmt.Errorf("unexpected argument %q", arg)
 			}
 			if err := set(msg, pos[next], arg); err != nil {
-				return nil, nil, fmt.Errorf("%s: %w", label(pos[next]), err)
+				return line{}, fmt.Errorf("%s: %w", label(pos[next]), err)
 			}
 			next++
 			continue
 		}
 		name, value, hasValue := strings.Cut(arg[2:], "=")
 		fd := flag(md, name)
+		own := (name == "wish-id" || name == "wish") && scoped(md) || ownFile(md, name) != nil
+		if fd == nil && own {
+			// The command line's own flags: the wish a task given by code is looked up in (its UUID or its title,
+			// resolve reads it), the file a prompt, a context or a plan is read from.
+			if !hasValue {
+				if i+1 == len(args) {
+					return line{}, fmt.Errorf("--%s needs a value", name)
+				}
+				i++
+				value = args[i]
+			}
+			if ownFile(md, name) != nil {
+				files[name] = append(files[name], value)
+			} else {
+				l.wish = value
+			}
+			continue
+		}
 		if fd == nil {
-			return nil, nil, fmt.Errorf("unknown flag --%s", name)
+			return line{}, fmt.Errorf("unknown flag --%s", name)
 		}
 		if fd.Kind() == protoreflect.BoolKind && !fd.IsList() && !hasValue {
 			value, hasValue = "true", true
 		}
 		if !hasValue {
-			rest := args[i+1:]
-			if len(rest) == 0 {
-				return nil, nil, fmt.Errorf("%s needs a value", label(fd))
+			if i+1 == len(args) {
+				return line{}, fmt.Errorf("%s needs a value", label(fd))
 			}
-			value = rest[0]
 			i++
+			value = args[i]
 		}
 		if hasForm(fd) {
-			texts = append(texts, pendingText{fd, value})
+			l.texts = append(l.texts, pendingText{fd, value})
 			continue
 		}
 		if err := set(msg, fd, value); err != nil {
-			return nil, nil, fmt.Errorf("%s: %w", label(fd), err)
+			return line{}, fmt.Errorf("%s: %w", label(fd), err)
 		}
 	}
-	return msg, texts, nil
+	for _, f := range fileFlags {
+		if paths, ok := files[f.flag]; ok {
+			if err := readFiles(msg, fileField(md, f), f, paths); err != nil {
+				return line{}, err
+			}
+		}
+	}
+	return l, nil
+}
+
+// fileFlag is a flag of the command line's own, which reads a file into a text field of the request: the server
+// never sees the file, only its text, so what Djinn stores depends on no file and no path leaves this machine
+// (W621, W627).
+type fileFlag struct {
+	field, flag, help string
+}
+
+// fileFlags are the command line's own file flags.
+var fileFlags = []fileFlag{
+	{"prompt", "prompt-file", "File holding what to ask the worker, in Markdown, read in place of --prompt by the " +
+		"command line; a relative path starts from the current directory."},
+	{"context", "context-file", "File holding what is at stake, in Markdown, read in place of --context by the " +
+		"command line; a relative path starts from the current directory."},
+	{"plan", "plan-file", "File holding the task an option launches, read by the command line and sent after the " +
+		"--plan texts, one per option; a relative path starts from the current directory."},
+}
+
+// fileField is the field of md the file flag f fills: a string field of its name, singular or repeated (a plan per
+// option). nil otherwise.
+func fileField(md protoreflect.MessageDescriptor, f fileFlag) protoreflect.FieldDescriptor {
+	fd := md.Fields().ByName(protoreflect.Name(f.field))
+	if fd == nil || fd.Kind() != protoreflect.StringKind {
+		return nil
+	}
+	return fd
+}
+
+// ownFile is the file flag of md named flag, when the command line reads it; nil otherwise.
+func ownFile(md protoreflect.MessageDescriptor, flag string) *fileFlag {
+	for i, f := range fileFlags {
+		if f.flag == flag && fileField(md, f) != nil {
+			return &fileFlags[i]
+		}
+	}
+	return nil
+}
+
+// readFiles sets the field fd of msg from the files at paths. A singular field takes the last file, its last line
+// breaks cut, and is refused beside the field's own flag; a repeated one takes each file whole, after the texts its
+// own flag gave.
+func readFiles(msg *dynamicpb.Message, fd protoreflect.FieldDescriptor, f fileFlag, paths []string) error {
+	if !fd.IsList() && msg.Has(fd) {
+		return fmt.Errorf("give --%s or --%s, not both", kebab(f.field), f.flag)
+	}
+	for _, path := range paths {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("--%s: %w", f.flag, err)
+		}
+		if fd.IsList() {
+			msg.Mutable(fd).List().Append(protoreflect.ValueOfString(string(data)))
+		} else {
+			msg.Set(fd, protoreflect.ValueOfString(strings.TrimRight(string(data), "\r\n")))
+		}
+	}
+	return nil
 }
 
 // format is the inverse of parse: the arguments that build msg.
@@ -164,10 +258,20 @@ func rules(fd protoreflect.FieldDescriptor) *validate.FieldRules {
 	return r
 }
 
+// flag is the field of md the flag --name sets: a field not positional, or one only marked so (an optional
+// positional, which answers to its flag too); a wish's flag answers to its other spelling too (wishAlias), when it
+// names the wish by UUID (isWishField).
 func flag(md protoreflect.MessageDescriptor, name string) protoreflect.FieldDescriptor {
 	for _, fd := range byNumber(md) {
-		if !positional(fd) && kebab(string(fd.Name())) == name {
+		if !required(fd) && kebab(string(fd.Name())) == name {
 			return fd
+		}
+	}
+	if alias := wishAlias(name); alias != "" {
+		for _, fd := range byNumber(md) {
+			if !positional(fd) && kebab(string(fd.Name())) == alias && isWishField(fd) {
+				return fd
+			}
 		}
 	}
 	return nil
@@ -444,6 +548,14 @@ func text(fd protoreflect.FieldDescriptor, v protoreflect.Value) string {
 func expect(fd protoreflect.FieldDescriptor) string {
 	if form, ok := formOf(fd); ok {
 		return form.help
+	}
+	switch {
+	case projectField(fd):
+		return "a project's name or UUID"
+	case taskField(fd):
+		return "a task's code (W12, T07) or UUID"
+	case wishRef(fd):
+		return wishExpect
 	}
 	if od := ref(fd); od != nil {
 		var alts []string

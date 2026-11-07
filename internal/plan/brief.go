@@ -384,13 +384,14 @@ func leadRules(projects []*planv1.Project, home string, driven bool) string {
 		"diagrams as inline SVG laid out by hand (boxes, labelled arrows, a legend), in colours that read in light and " +
 		"dark, never Mermaid. A tilasm reaches no network: everything it needs, fonts and scripts, is in its folder.\n" +
 		"- **The developer's comments on a tilasm come as one send**, a `comments` event (L01) with their choice: read " +
-		"them all, `djinn tilasm comments L01 --send <n>`, each with the passage or element it is on, then act in one " +
-		"pass, as on answers: tasks placed in the graph, one per change rather than one per comment. *Launch*: turn the " +
+		"them all, `djinn tilasm comments L01 --wish <wish> --send <n>` as the event gives it, each with the passage or " +
+		"element it is on, then act in one pass, as on answers: tasks placed in the graph, one per change rather than " +
+		"one per comment. *Launch*: turn the " +
 		"comments into the planned work; the line names the open question that links the tilasm: answer it with its " +
 		"recommended option and a note naming the send, then launch its plan edited by the comments (`djinn question " +
 		"launch`), or spawn the tasks. *Iterate*: a task that puts the tilasm's next version as they say (`--tilasm " +
-		"L01`, its prompt naming `--code L01`). Then reply to every comment, `djinn tilasm reply L01 C3 --text \"…\" " +
-		"--task W60`: what you did, or why not, and the tasks made of it; the developer reads it under the comment, and " +
+		"L01`, its prompt naming `--code L01`). Then reply to every comment, `djinn tilasm reply L01 C3 --wish <wish> --text " +
+		"\"…\" --task W60`: what you did, or why not, and the tasks made of it; the developer reads it under the comment, and " +
 		"the wish's brief names the comments still without one. A comment you do not understand gets a reply that " +
 		"asks, never a guess. Djinn launched a launch without comments itself, by approving the question: no event then.\n" +
 		"- **No secret, no local path** in the plan: name the project.\n" +
@@ -456,7 +457,8 @@ func leadCommandsBrief(driven bool) string {
 		"subject; `djinn wish icons --search <word>` finds them by a word, English or French. A wish without one shows " +
 		"a grey mark until you choose.\n" +
 		"- `djinn question ask \"🔐 <question>\" <wish> --options \"…\" --options \"…\" --recommendation \"…\" --icon 🔐` " +
-		"(the emoji its title starts with); `--before \"before the merge\"` says what the answer is needed before, without it the " +
+		"(the emoji its title starts with); `--context-file <file>` for its context, written with your Write tool; " +
+		"`--before \"before the merge\"` says what the answer is needed before, without it the " +
 		"question can wait (a question a waiting task needs is blocking anyway); `--move` marks a move only the " +
 		"developer can make, with `--before` when it cannot wait. The bar \"N things wait for you\" is for what " +
 		"cannot wait: never mark a question that can wait to get it seen, never leave a real blocker unmarked " +
@@ -466,7 +468,8 @@ func leadCommandsBrief(driven bool) string {
 		"`--wish-id` needed only when its code is in several wishes. `--plan-file a.md` " +
 		"plans an option's task (repeat it per option; `djinn question revise --plan-file` replaces one); " +
 		"`djinn question launch <question> [--title …] [--after …]` launches the chosen option's plan.\n" +
-		"- `djinn task spawn <wish> --title \"…\" --prompt \"…\" --part-of T07 --after W1,W2 --blocks W5` (`--prompt-file <path>`, `--project-id`, " +
+		"- `djinn task spawn <wish> --title \"…\" --prompt \"…\" --part-of T07 --after W1,W2 --blocks W5` (`--prompt-file <path>`, " +
+		"`--project-id <name>`, by default the azima's project for a part of one, " +
 		"`--later`, `--fork W1`, `--from-lead`, `--provider watch`, `--restart`, `--decision Q03`, `--tilasm L01`, " +
 		"`--urgent`, `--feedback`, `--kind ifrit` with `--idle-minutes`, `--kind investigation` with `--minutes`); " +
 		"`djinn task spawn <wish> --kind azima --title \"…\" --after T02` makes an azima (`--draft`, `--description \"…\"`); " +
@@ -499,7 +502,8 @@ func leadCommandsBrief(driven bool) string {
 		"- `djinn tilasm put <folder> --wish <wish> --cites T07 --code L01`; `djinn tilasm list --wish <wish> --search " +
 		"\"…\"`; `djinn tilasm get <code>` (its text, the folder of its files); `djinn tilasm history <code>`, " +
 		"`djinn tilasm restore <code> <version>`; `djinn tilasm comments <code> --send <n>`, `djinn tilasm reply " +
-		"<code> <C> --text \"…\" --task W60`.\n" +
+		"<code> <C> --text \"…\" --task W60`; `--wish <wish>` when the code is in several wishes, and a refusal prints the " +
+		"command again with each.\n" +
 		"- `djinn question enlighten <question>` is the developer's \"tell me more\": the question waits for a " +
 		"`djinn question revise <question> --context-file <file> --recommendation \"…\"`, by its question worker or by " +
 		"you, the context written in the file with your Write tool (inline, its `# …` lines get the call refused); " +
@@ -1009,7 +1013,8 @@ func heldPushesBrief(b *strings.Builder, wish *planv1.Wish, exp *planv1.WishExpo
 					}
 				}
 			}
-			if len(holds) > 1 {
+			// An azima's branch is named even alone (W630): its hold is that branch's, not the project's.
+			if len(holds) > 1 || p.Branch != IntegrationBranchOf(wish, push.GetProjectId()) {
 				proj = " of " + p.Branch + proj
 			}
 			corr := ""
@@ -1165,8 +1170,8 @@ func tilasmsBrief(b *strings.Builder, tilasms []*planv1.TilasmExport, unanswered
 		return
 	}
 	b.WriteString("\n## Tilasms\n\n")
-	b.WriteString("The material that explains the wish. `djinn tilasm get <code>` gives one's text and the folder of its " +
-		"files; cite one by its link.\n\n")
+	fmt.Fprintf(b, "The material that explains the wish. `djinn tilasm get <code> --wish %s` gives one's text and the "+
+		"folder of its files; cite one by its link.\n\n", tilasms[0].GetTilasm().GetWishId())
 	for _, t := range tilasms[:min(len(tilasms), briefTilasms)] {
 		tilasm := t.GetTilasm()
 		fmt.Fprintf(b, "- **%s** %s: %s", tilasm.GetCode(), cmp.Or(clipLine(tilasm.GetTitle()), "(untitled)"),
@@ -1177,13 +1182,13 @@ func tilasmsBrief(b *strings.Builder, tilasms []*planv1.TilasmExport, unanswered
 		b.WriteString("\n")
 	}
 	if n := len(tilasms) - briefTilasms; n > 0 {
-		fmt.Fprintf(b, "- And %d more: `djinn tilasm list --wish <wish>`.\n", n)
+		fmt.Fprintf(b, "- And %d more: `djinn tilasm list --wish %s`.\n", n, tilasms[0].GetTilasm().GetWishId())
 	}
 	for _, t := range tilasms {
 		tilasm := t.GetTilasm()
 		if line := unanswered[tilasm.GetId()]; line != "" {
-			fmt.Fprintf(b, "- %s: %s: reply to each, `djinn tilasm reply %s <C> --text \"…\"`.\n",
-				tilasm.GetCode(), line, tilasm.GetCode())
+			fmt.Fprintf(b, "- %s: %s: reply to each, `djinn tilasm reply %s <C> --wish %s --text \"…\"`.\n",
+				tilasm.GetCode(), line, tilasm.GetCode(), tilasm.GetWishId())
 		}
 	}
 }

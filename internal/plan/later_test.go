@@ -2,7 +2,9 @@ package plan
 
 import (
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 
@@ -120,5 +122,47 @@ func TestQuestionLater(t *testing.T) {
 	}
 	if _, err := later(q3, false); code(err) != connect.CodeFailedPrecondition {
 		t.Errorf("later on a withdrawn question = %v, want FailedPrecondition", err)
+	}
+}
+
+// TestQuestionLaterFrozenClock: a clock that has not moved since the last question was asked, as Windows reads it at
+// a coarse step, still puts a question off past it, to the millisecond the window compares: the brief lists it last.
+func TestQuestionLaterFrozenClock(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	var frozen atomic.Pointer[time.Time]
+	c := serve(t, WithClock(func() time.Time {
+		if at := frozen.Load(); at != nil {
+			return *at
+		}
+		return time.Now()
+	}))
+	wish := c.wish(t)
+	var last *planv1.Question
+	for _, text := range []string{"Which oil?", "Which wick?"} {
+		res, err := c.questions.Ask(ctx, connect.NewRequest(&planv1.QuestionServiceAskRequest{Text: text, WishId: wish}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		last = res.Msg.GetQuestion()
+	}
+	at := last.GetCreateTime().AsTime()
+	frozen.Store(&at)
+	res, err := c.questions.Later(ctx, connect.NewRequest(&planv1.QuestionServiceLaterRequest{
+		Question: &planv1.QuestionRef{Ref: &planv1.QuestionRef_Code{Code: "Q01"}}, WishId: wish,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	put := res.Msg.GetQuestion().GetLaterTime().AsTime()
+	if put.UnixMilli() <= at.UnixMilli() {
+		t.Errorf("later_time = %v with the clock frozen at Q02's %v, want a millisecond after", put, at)
+	}
+	brief, err := BuildBrief(ctx, c.store, "", wish)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if text := brief.Text(); strings.Index(text, "**Q01**") < strings.Index(text, "**Q02**") {
+		t.Errorf("the brief lists Q01, put off, above Q02:\n%s", text)
 	}
 }

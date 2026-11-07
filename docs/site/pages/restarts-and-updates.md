@@ -2,7 +2,8 @@
 
 Djinn can stop at any time: you quit it, your machine restarts, an update replaces it, it crashes. Nothing is lost.
 Stopping Djinn interrupts the workers; the next start resumes each one by itself, in the same task, worktree and
-session, and the Djinn comes back on its own session. An update never restarts Djinn without your click.
+session, and the Djinn comes back on its own session. After a stop that went wrong (a crash, a kill, the memory near
+full) the next start resumes no worker, and says why. An update never restarts Djinn without your click.
 
 ## Why it matters
 
@@ -15,7 +16,7 @@ and in the projects' worktrees instead, and takes each worker back where it was.
 | What | After a restart |
 | --- | --- |
 | Wishes, plans, questions, decisions, blocks, tilasms | Kept whole: they are in Djinn's data folder. |
-| A running worker | Resumed by itself, in its task, worktree and session, told that Djinn restarted and that its worktree is as it left it. |
+| A running worker | Resumed by itself, in its task, worktree and session, told that Djinn restarted and that its worktree is as it left it; left interrupted after a stop that went wrong (see a start that resumes no worker, below). |
 | A worker that had not started yet | Still planned: it starts at its turn. |
 | A watcher | Resumed, counted apart. |
 | A paused wish's workers | Still paused: they resume once the wish is active again. |
@@ -42,8 +43,26 @@ A restart cuts what was running at that moment, and Djinn takes each piece back:
 - **The Djinn's turn** is cut; the next batch starts with the waiting events and the restart in its events (or it
   resumes on its session in its terminal when the lead driven setting is false).
 
-After a restart, the Djinn is told in one line what happened: how many workers were interrupted, which ones Djinn
-resumed and which ones are yours to decide, the watchers resumed, what the stop cut.
+After a restart, the Djinn is told in one line what happened: why Djinn resumed no worker when it held them, how many
+workers were interrupted, which ones Djinn resumed and which ones are yours to decide, the watchers resumed, what the
+stop cut.
+
+### A start that resumes no worker
+
+In October 2026 a worker's container ran a fork bomb and filled the machine's memory until it went down; the next start
+resumed every worker, that one too. So a start resumes none of the workers the last Djinn left interrupted, nor replays
+a task an environment failure stopped, when:
+
+| Why | What Djinn reads |
+| --- | --- |
+| The memory was near full | The Hourglass's last reading before the stop had the machine's memory at 90 % or more. The threshold is the paused memory flag of djinn up, 90 by default, also read from the DJINN_PAUSED_MEMORY variable; 0 turns it off. A reading past it is written at once, not 30 seconds later, so that a crash keeps it. |
+| The stop was not clean | The last Djinn left its address in its data folder: it crashed, was killed, or the machine went down. |
+| You asked it | djinn up was started with its paused flag. Only that start is held: an update restarts without it. |
+
+The tasks stay **Interrupted**, worktree and session kept. The Djinn hears it in its restart line, why first and, for
+the memory or a crash, to find the cause before it continues a worker; it continues each one that may go on (djinn
+task continue). The window says it too, in the banner at its top, with the tasks held, until you dismiss it. The tasks
+waiting already (for a usage limit, a paused wish) and those no worker ever ran start as usual.
 
 ### What does not resume
 
@@ -130,8 +149,8 @@ every task of the wish waited.
   provider's address. Failed, the outage is confirmed; answered, it was not one, and nothing changes. While all goes
   well, Djinn probes nothing.
 - **While it is down,** no worker starts; the running ones are paused once the command they run ends, never failed for
-  their silence; pushes, fetches and the questions to the forge wait. A worker the outage cut is not failed: it shows
-  **Resuming**, network down since 15:12. The status bar says **network down since 15:12**.
+  their silence; pushes, fetches and the questions to the forge wait. A worker the outage cut is not failed, nor
+  paused as it ends on its error: it shows **Resuming**, network down since 15:12. The status bar says **network down since 15:12**.
 - **When it comes back,** Djinn resumes the work one task per pass, repairs first: the paused workers, then the tasks
   the outage cut, each told that the network came back. Push checks that failed on the network run once again instead
   of starting a correction: a network failure is never a code failure. Red again once the network is up, they hold the
@@ -200,6 +219,7 @@ offers to restart on it. See [Question and move](#question-and-move).
 
 - **Killing Djinn to fix a freeze.** Nothing is lost either way, but what Djinn was waiting on is lost with it: have
   Djinn write where each of its parts waits first, a dump its debug command makes, so that the freeze can be fixed.
+  A kill is a stop that was not clean, too: the next start resumes no worker until the Djinn continues them.
 - **Expecting an update to start by itself.** It never does: the banner waits for your click, so a restart never cuts
   your work by surprise.
 - **Restarting to hurry a worker.** A restart interrupts every worker, each one's command in progress included; a

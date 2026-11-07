@@ -1330,6 +1330,63 @@ func TestPushHold_PerAzima(t *testing.T) {
 	}
 }
 
+// TestPushHold_PerAzimaStartGate (W630): under the per-azima strategy, red push checks on one azima's branch hold the
+// start of that azima's tasks only. A task of another azima of the same project starts, its branch is tested and pushed
+// green, while the held branch keeps its hold and its own task waits for it to be green again. Djinn held them all.
+func TestPushHold_PerAzimaStartGate(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	in := integrating(t)
+	in.checking(t, "correction_attempts: 0\n"+lintAtCommit+
+		"checks { name: \"test\" command: \"test\" when: CHECK_WHEN_PUSH }\n", map[string]int{"lint": 0})
+	// The tests fail while b.txt is there: on T2's branch, never on T1's.
+	in.verdict = func(dir string) (string, int) {
+		if _, err := os.Stat(filepath.Join(dir, "src", "b.txt")); err == nil {
+			return "--- FAIL: TestE2E", 1
+		}
+		return "", 0
+	}
+	bare := in.remote(t)
+	in.setAzimaStrategy(t)
+	t1, t2 := in.azima(t, in.wishID, "Bounded Loop"), in.azima(t, in.wishID, "Second Part")
+	b1, b2 := azimaBranchName(t1), azimaBranchName(t2)
+	in.finished(t, "W1", map[string]string{"app/src/b.txt": "b\n"}, func(task *planv1.Task) { task.PartOf = t2.GetId() })
+	in.pass(t, 0)
+	red := in.git(t, in.repo, "rev-parse", "refs/heads/"+b2)
+	if h := in.holdOn(t, b2); !strings.HasSuffix(h.GetHeld(), "; left to the lead") || h.GetFailedSha() != red {
+		t.Fatalf("the hold of %s %v; want held at %s, left to the lead", b2, h, short8(red))
+	}
+
+	// T1's task starts: T2's red branch is not its own. T2's waits for its branch to be green again.
+	ours := in.mustSpawn(t, in.wishID, "Of T1", "wait\ntext of T1", &planv1.TaskServiceSpawnRequest{PartOf: t1.GetId()})
+	theirs := in.mustSpawn(t, in.wishID, "Of T2", "wait\ntext of T2", &planv1.TaskServiceSpawnRequest{PartOf: t2.GetId()})
+	ours = in.until(t, ours.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))
+	want := "waits for " + b2 + " to be green again"
+	if got := in.get(t, theirs.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING || !strings.HasPrefix(got.GetWaitReason(), want) {
+		t.Fatalf("%s of T2 %v, %q; want pending, %q", got.GetCode(), got.GetStatus(), got.GetWaitReason(), want)
+	}
+
+	// Its work merges into T1's branch, whose push checks run and pass: it is pushed, T2's still held.
+	writeFile(t, ours.GetWorktree(), "app/src/a.txt", "a\n")
+	commitAll(t, ours.GetWorktree(), "Of T1 adds a.txt")
+	in.release(t, ours.GetId())
+	in.ended(t, ours.GetId())
+	in.pass(t, time.Second)
+	tip := in.git(t, in.repo, "rev-parse", "refs/heads/"+b1)
+	if got := commitOf(t.Context(), bare, "refs/heads/"+b1); got != tip {
+		t.Fatalf("origin's %s at %q, want %s pushed green while %s is held", b1, got, short8(tip), b2)
+	}
+	if got := commitOf(t.Context(), bare, "refs/heads/"+b2); got != "" {
+		t.Errorf("origin's %s at %s: pushed while its push checks are red", b2, got)
+	}
+	if h := in.holdOn(t, b2); h.GetFailedSha() != red {
+		t.Errorf("the hold of %s %v; want it kept at %s", b2, h, short8(red))
+	}
+	if got := in.get(t, theirs.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING || !strings.HasPrefix(got.GetWaitReason(), want) {
+		t.Errorf("%s of T2 %v, %q; want still pending, %q", got.GetCode(), got.GetStatus(), got.GetWaitReason(), want)
+	}
+}
+
 // TestPushHold_PerAzimaQuestion (W59): the push checks of the second azima's branch hold its push, left to the lead;
 // Djinn asks about a push of the first one's, green: in ask mode, or once the remote refused it. The answer acts on
 // that push only: it read the hold of the branch held last as the question's, so "Push it" or "Push again" started a

@@ -181,8 +181,8 @@ func commentsText(
 		}
 	}
 	if waiting > 0 {
-		fmt.Fprintf(&b, "\n%d without a reply. Reply to each: djinn tilasm reply %s <C> --text \"…\" [--task W60]\n",
-			waiting, tilasm.GetCode())
+		fmt.Fprintf(&b, "\n%d without a reply. Reply to each: djinn tilasm reply %s <C> --wish %s --text \"…\" [--task W60]\n",
+			waiting, tilasm.GetCode(), tilasm.GetWishId())
 	}
 	return b.String()
 }

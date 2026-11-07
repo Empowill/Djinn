@@ -343,3 +343,53 @@ func TestIntegrate_NetworkPushChecks(t *testing.T) {
 		}
 	})
 }
+
+// withNetSigned runs f in a worker's pump once its error was read as a network sign, before its run ends.
+func withNetSigned(f func(taskID string)) Option { return func(h *Harness) { h.netSigned = f } }
+
+// TestNetProbeFailingNotPaused (W646): a worker ending on the connection error that makes the network suspected is not
+// paused by the outage the probe confirms meanwhile: its run closes as "network", not "pause", and its task waits for
+// the network. The scheduler's pause runs at the one moment the race needs, between netSign and the run's end.
+func TestNetProbeFailingNotPaused(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	start := time.Date(2026, 10, 17, 10, 0, 0, 0, time.Local)
+	clock := &fakeClock{at: start}
+	probe := &fakeProbe{down: errors.New("dial tcp: lookup api.anthropic.com: no such host")}
+	var e *env
+	paused := make(chan bool, 1) // whether the pause in the race paused the failing worker
+	e = upWith(t, t.TempDir(), testProviders(), WithClock(clock.now), WithNetworkProbe(probe.probe),
+		withNetSigned(func(id string) {
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				e.h.pauseForNetwork(context.WithoutCancel(t.Context()), whyNetworkDown+"10:00")
+			}()
+			for {
+				e.h.mu.Lock()
+				p := e.h.runs[id].paused
+				e.h.mu.Unlock()
+				if p {
+					paused <- true
+					return // Its pump goes on, and writes the hold the pause waits for.
+				}
+				select {
+				case <-done:
+					paused <- false
+					return
+				case <-time.After(time.Millisecond):
+				}
+			}
+		}))
+	wishID, _ := e.wish(t, gitRepo(t))
+
+	cut := e.spawn(t, wishID, "text working\nfail API Error: Connection error.")
+	got := e.until(t, cut.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RESUMING))
+	if <-paused {
+		t.Error("the network paused the worker ending on its error")
+	}
+	if runs := got.GetRuns(); len(runs) != 1 || runs[0].GetReason() != "network" ||
+		!strings.HasPrefix(got.GetWaitReason(), "network down since 10:00") {
+		t.Fatalf("the task the network cut: %v; want resuming, network down since 10:00, one network run", got)
+	}
+}

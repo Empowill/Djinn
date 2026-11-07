@@ -172,10 +172,18 @@ func run(ctx context.Context, args []string, cfg Config) error {
 		return nil
 	}
 
-	req, texts, err := parse(md.Input(), rest[2:])
+	l, err := parseLine(md.Input(), rest[2:])
+	req, texts := l.req, l.texts
 	if err == nil {
 		fromEnv(req, cfg.getenv())
-		err = check(req, label)
+		if err = resolve(ctx, cfg, req, l.wish); err != nil {
+			// What the server refused, it says; the command line's own refusals are usage errors.
+			if errors.As(err, new(*connect.Error)) {
+				return err
+			}
+		} else {
+			err = check(req, label)
+		}
 	}
 	if err != nil {
 		return usageError{fmt.Errorf("%w\nrun djinn %s %s --help for the arguments", err, command(sd), name)}
