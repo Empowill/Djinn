@@ -404,7 +404,8 @@ func (h *Harness) Close() {
 // scheduler to resume it (queueInterrupted). The lead's restart event names the workers the last djinn up left
 // running, and those it stopped as it ended, interrupted since it started (lastStart). First, the azimas stored as
 // work before tasks had kinds become azimas (migrateAzimas), a task part of an azima that is gone becomes part of
-// none (ungroupOrphans), and the push holds and questions stored before W63 take their shape now (migratePushes).
+// none (ungroupOrphans), the push holds and questions stored before W63 take their shape now (migratePushes), and the
+// tasks from before PromptSize get their prompt's size (plan.KeepPromptSizes).
 // Before all, the processes the last djinn up started and left running are stopped (children.sweep), so that no task
 // resumes beside its old worker: the restart event names them; an ifrit's serves they ran are stopped, their stop
 // commands run (recoverServes).
@@ -432,6 +433,9 @@ func (h *Harness) Recover(ctx context.Context) error {
 	}
 	if err := h.migratePushes(ctx); err != nil {
 		return err
+	}
+	if err := plan.KeepPromptSizes(ctx, h.store, tasks); err != nil {
+		logx.L().Warn("keep the prompt sizes read from the events", "err", err)
 	}
 	integrating := h.recoverIntegrations(ctx, tasks)
 	for _, t := range tasks {
@@ -2697,6 +2701,9 @@ func putEvents(ctx context.Context, tx *store.Tx, events ...*planv1.TaskEvent) e
 		}
 		e.Seq = seq + 1
 		if err := plan.CountGate(ctx, tx, e); err != nil {
+			return err
+		}
+		if err := plan.CountPrompt(ctx, tx, e); err != nil {
 			return err
 		}
 		if err := tx.Put(e); err != nil {

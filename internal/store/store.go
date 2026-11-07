@@ -17,6 +17,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -148,6 +149,21 @@ type Reader interface {
 	table(md protoreflect.MessageDescriptor) (*table, error)
 }
 
+// Counted is r counting in n the statements read through it: a test pins how many reads a path takes.
+func Counted(r Reader, n *atomic.Int64) Reader { return &counted{r: r, n: n} }
+
+type counted struct {
+	r Reader
+	n *atomic.Int64
+}
+
+func (c *counted) query(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	c.n.Add(1)
+	return c.r.query(ctx, query, args...)
+}
+
+func (c *counted) table(md protoreflect.MessageDescriptor) (*table, error) { return c.r.table(md) }
+
 func (s *Store) query(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
 	start := time.Now()
 	rows, err := s.db.QueryContext(ctx, query, args...)
@@ -177,6 +193,56 @@ func Get[T proto.Message](ctx context.Context, r Reader, id string) (T, error) {
 		return zero, err
 	}
 	return m, nil
+}
+
+// getManyChunk is how many ids GetMany asks in one statement, well under SQLite's limit on bound values.
+const getManyChunk = 500
+
+// GetMany returns the entities of type T with these ids, by id, in a statement per 500 ids where Get takes one per
+// id: an id the store lacks is not in the map.
+func GetMany[T proto.Message](ctx context.Context, r Reader, ids []string) (map[string]T, error) {
+	var zero T
+	mt := zero.ProtoReflect().Type()
+	t, err := r.table(mt.Descriptor())
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]T, len(ids))
+	for chunk := range slices.Chunk(ids, getManyChunk) {
+		if err := getChunk(ctx, r, t, mt, chunk, func(id string, m proto.Message) { out[id] = m.(T) }); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
+// getChunk calls add on the entities of t with these ids, in one statement.
+func getChunk(
+	ctx context.Context, r Reader, t *table, mt protoreflect.MessageType, ids []string, add func(string, proto.Message),
+) error {
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+	marks := strings.Repeat("?,", len(ids))
+	rows, err := r.query(ctx, `SELECT id, payload FROM `+quote(t.name)+` WHERE id IN (`+marks[:len(marks)-1]+`)`, args...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		var payload []byte
+		if err := rows.Scan(&id, &payload); err != nil {
+			return err
+		}
+		m := mt.New().Interface()
+		if err := proto.Unmarshal(payload, m); err != nil {
+			return err
+		}
+		add(id, m)
+	}
+	return rows.Err()
 }
 
 // List returns the entities of type T that match where, oldest first: ids are UUIDv7, ordered by time.
@@ -224,6 +290,13 @@ func ListAfter[T proto.Message](ctx context.Context, r Reader, where Where, afte
 	var out []T
 	err := listAfter(ctx, r, mt, where, after, func(m proto.Message) bool { out = append(out, m.(T)); return true })
 	return out, err
+}
+
+// Oldest calls f on the entities of type T that match where, the first written first, until f returns false: an
+// entity put again keeps its place. Through the index on where's field, it reads no further than f asks.
+func Oldest[T proto.Message](ctx context.Context, r Reader, where Where, f func(T) bool) error {
+	var zero T
+	return list(ctx, r, zero.ProtoReflect().Type(), where, "rowid", func(m proto.Message) bool { return f(m.(T)) })
 }
 
 // Latest calls f on the entities of type T that match where, the last written first, until f returns false: an entity

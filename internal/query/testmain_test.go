@@ -31,8 +31,8 @@ var day0 = time.Date(2026, 11, 2, 9, 0, 0, 0, time.UTC)
 
 // frozen is the frozen set: one project, two wishes, four tasks, two questions.
 //
-//	T1 W1 of "Stats", DONE, WORK, CLAUDE, cost 1.5, ran 90 min, merged 10 s after its end; prompt (13 letters) and
-//	   last line hidden
+//	T1 W1 of "Stats", DONE, WORK, CLAUDE, cost 1.5, ran 90 min, merged 10 s after its end; prompt (13 letters, its
+//	   length kept) and last line hidden
 //	T2 W2 of "Stats", RUNNING, cost 0 (a usage with no cost yet), part of T1, waits on Q1, depends on T1
 //	T3 W1 of "Docs", no status, no usage, no project, urgent
 //	T4 W3 of "Stats", FAILED, cost 0.25, its wish_id names no wish
@@ -52,7 +52,7 @@ func frozen() []proto.Message {
 			Status: planv1.TaskStatus_TASK_STATUS_DONE, Kind: planv1.TaskKind_TASK_KIND_WORK,
 			Provider: planv1.Provider_PROVIDER_CLAUDE, Usage: &planv1.Usage{CostUsd: 1.5, InputTokens: 100},
 			CreateTime: timestamppb.New(day0), EndTime: timestamppb.New(day0.Add(2 * time.Hour)),
-			Running: durationpb.New(90 * time.Minute), Prompt: "secret prompt", LastLine: "secret line",
+			Running: durationpb.New(90 * time.Minute), Prompt: "secret prompt", PromptLength: 13, LastLine: "secret line",
 			Integration: &planv1.TaskIntegration{State: planv1.IntegrationState_INTEGRATION_STATE_COMMITTED,
 				UpdateTime: timestamppb.New(day0.Add(2*time.Hour + 10*time.Second))},
 		},

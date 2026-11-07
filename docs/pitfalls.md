@@ -350,6 +350,12 @@ the code does not say by itself; remove one when a change makes it false.
   *Sign:* a task's waiting gate stays short of its gate events, or a test's gate events written with `tx.Put` count
   only until its first fill. *Do:* write a task's events through `putEvents`, or call `plan.CountGate` before the
   `Put`; delete the `GateWait` with its task. *Where:* `internal/plan/times.go`, `internal/harness/harness.go`.
+  The same holds for a prompt event: its task's `PromptSize`, the length of its first prompt that QueryService's
+  `prompt::size` reads, is kept by `plan.CountPrompt` in `putEvents` (W616). *Where:* `internal/plan/prompt_size.go`.
+- **The `(task_id, seq)` index of the events is partial.** It holds `seq <> 0` only, which SQLite cannot prove from a
+  bound `seq > ?`: a `store.ListAfter` on a task's events walks every event of the task and reads each payload. To
+  read a task's first events, `store.Oldest` walks the `task_id` index in rowid order and stops when asked: the prompt
+  sizes of 2,673 tasks read in 0.3 s, against 8.8 s by `ListAfter` (W616). *Where:* `internal/store`.
 - **Read the real database read-only.** No `sqlite3` on the machine: a throwaway Go program with `modernc.org/sqlite`
   and `file:<path>?mode=ro`, decoding payloads with `gen/go/plan/v1`. The `command` table (the journal: seq, actor,
   at, method, request) tells a freeze (calls journaled, follow-ups missing) from a crash (`harness/recover` at the

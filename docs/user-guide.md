@@ -252,7 +252,7 @@ djinn query query tasks --filter type=work --filter status=done --group-by "runn
 ```
 
 - **Refs**: a field by its path (`code`, `usage.cost_usd`), across a field that holds an id (`wish_id->title`,
-  `wait_question_id->answer::delay`), or one Djinn computes (`prompt::size` and `context::size` in tokens,
+  `wait_question_id->answer::delay`), or one Djinn computes (`prompt::size`, of the task's first prompt, and `context::size`, in tokens,
   `answer::delay`, `integration::delay`, a task's `type`). Prompts, contexts and last lines are never columns.
 - **Task times**: `running`, `waiting_gate`, `paused` and `waiting_before_start` are computed from the runs and gate
   waits as the task list does, as of the query; null for a task that never started (but its wait), an azima's the sum
