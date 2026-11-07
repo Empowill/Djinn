@@ -158,9 +158,20 @@ func TestRestartLine(t *testing.T) {
 		{"v1.2.0", nil, nil, nil, []string{"W7's worker", "test check", "W7's gate"},
 			"Djinn: restarted on version v1.2.0: 3 orphans stopped: W7's gate, W7's worker, test check."},
 	} {
-		if got := restartLine(c.version, c.interrupted, c.resumed, c.watchers, nil, c.orphans); got != c.want {
+		if got := restartLine(c.version, "", c.interrupted, c.resumed, c.watchers, nil, nil, c.orphans); got != c.want {
 			t.Errorf("restartLine(%q, %v, %v, %v, %v)\n got %s\nwant %s", c.version, c.interrupted, c.resumed, c.watchers,
 				c.orphans, got, c.want)
 		}
+	}
+	// Held (held.go): why first, then every task cut short left to the lead, the watchers apart.
+	held := restartLine("v1.2.0", "djinn up --paused asked it", []string{"W1", "W2"}, nil, nil, []string{"W9"}, nil, nil)
+	if want := "Djinn: restarted on version v1.2.0: it resumes no worker by itself, as djinn up --paused asked it; " +
+		"2 workers interrupted (W1, W2); not resumed, the move is yours: W1, W2; " +
+		"1 watcher not resumed, the move is yours: W9."; held != want {
+		t.Errorf("held restart line\n got %s\nwant %s", held, want)
+	}
+	if got, want := restartLine("v1.2.0", "djinn up --paused asked it", nil, nil, nil, nil, nil, nil),
+		"Djinn: restarted on version v1.2.0: it resumes no worker by itself, as djinn up --paused asked it."; got != want {
+		t.Errorf("held restart line with no worker\n got %s\nwant %s", got, want)
 	}
 }

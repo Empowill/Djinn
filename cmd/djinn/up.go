@@ -58,6 +58,8 @@ func runUp(args []string) (restart bool, err error) {
 		browser                                   bool
 		enlightenWorkers                          bool
 		profiles                                  bool
+		paused                                    bool
+		pausedMemory                              int
 		port, maxWorkers, workerCPU, workerMemory int
 		diskTrim, diskFull                        int
 		workerMemoryGuard                         float64
@@ -72,6 +74,8 @@ func runUp(args []string) (restart bool, err error) {
 		"ifrit-idle":          &ifritIdle,
 		"disk-trim-gb":        &diskTrim,
 		"disk-full-gb":        &diskFull,
+		"paused":              &paused,
+		"paused-memory":       &pausedMemory,
 	})
 	if err := flags.Parse(args); err != nil {
 		return false, err
@@ -127,6 +131,14 @@ func runUp(args []string) (restart bool, err error) {
 	}
 	if workerMemoryGuard < 0 {
 		return false, fmt.Errorf("--worker-memory-guard %g: expected a positive factor (e.g. 2 to 3), or 0 to turn off", workerMemoryGuard)
+	}
+	if v := os.Getenv("DJINN_PAUSED_MEMORY"); v != "" && !flagSet(flags, "paused-memory") {
+		if _, err := fmt.Sscan(v, &pausedMemory); err != nil {
+			return false, fmt.Errorf("DJINN_PAUSED_MEMORY: %w", err)
+		}
+	}
+	if pausedMemory < 0 || pausedMemory > 100 {
+		return false, fmt.Errorf("--paused-memory %d: expected a percent of the machine's memory, or 0 for never", pausedMemory)
 	}
 	disk := harness.DiskGuard{Free: diskFree}
 	if disk.Trim, err = diskFlag(flags, "disk-trim-gb", diskTrim); err != nil {
@@ -224,6 +236,8 @@ func runUp(args []string) (restart bool, err error) {
 	// The machine's and the workers' series, kept in the store: the resources panel reads them across restarts.
 	history := machine.NewHistory(db)
 	defer history.Flush(context.WithoutCancel(ctx))
+	// After a stop that was not clean or with the memory near full, or with --paused, no worker resumes (held.go).
+	hold := heldStart(ctx, paused, unclean, pausedMemory, monitor.Total(), history.LastMachine)
 	opts := []harness.Option{
 		harness.WithHistory(history),
 		harness.WithCapacity(monitor.Capacity),
@@ -249,6 +263,11 @@ func runUp(args []string) (restart bool, err error) {
 	}
 	if enlightenSet {
 		opts = append(opts, harness.WithEnlightenWorkers(enlightenWorkers))
+	}
+	if hold.why != uiv1.HeldStart_HELD_START_UNSPECIFIED {
+		fmt.Fprintln(os.Stderr, "djinn: resuming no worker, as", hold.lead)
+		logx.L().Warn("djinn up resumes no worker", "held", hold.why.String(), "memory_percent", hold.percent)
+		opts = append(opts, harness.WithResumeHeld(hold.lead))
 	}
 	if idle > 0 {
 		opts = append(opts, harness.WithIfritIdle(idle))
@@ -291,6 +310,7 @@ func runUp(args []string) (restart bool, err error) {
 	})
 	seriesRec := machine.NewSeriesRecorder(monitor, machine.ReadWorker)
 	seriesRec.Keep(history)
+	seriesRec.WriteAbove(float64(pausedMemory))
 	seriesRec.ReadSelf(machine.ReadSelf)
 	// The Djinn line reads the cgroups of its work, every djinn-*.scope of the slice its scopes are made in (W347).
 	seriesRec.ReadWork(func() (machine.Work, error) {
@@ -361,6 +381,9 @@ func runUp(args []string) (restart bool, err error) {
 		return false, err
 	}
 	leadNotes.ui = uiSvc
+	if hold.why != uiv1.HeldStart_HELD_START_UNSPECIFIED {
+		uiSvc.SetHeld(hold.why, hold.percent, workers.Held())
+	}
 	uiSvc.Shown = func(wishID, terminal string) {
 		leadNotes.update()
 	}

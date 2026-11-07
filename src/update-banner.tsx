@@ -1,6 +1,7 @@
 // A banner at the top of the window, raised in brass over the rest and headed by the djinn's mark, when a newer Djinn
 // waits at the path of the running one (installed with `go tool task install`), with the button that restarts on it.
-// Nothing restarts without that click. After a restart, it lists the terminals that did not start again. Shown only
+// Nothing restarts without that click. After a restart, it lists the terminals that did not start again, and says why
+// Djinn resumed no worker when it held them (--paused, a stop that was not clean, the memory near full). Shown only
 // when djinn serves the page (a DjinnProvider). A release links its notes, which the system's browser opens. Once a
 // batch of finished work is pushed to an integration branch, in a project that names an install command, it proposes
 // to install that build and restart on it; while it installs, it says what the install waits for, then that it builds,
@@ -23,6 +24,7 @@ import { type ReactNode, useEffect, useState } from "react";
 import { useDjinn } from "./data/djinn";
 import {
   type BuildProposal,
+  HeldStart,
   InstallStep,
   type Installing,
   type UpdateState,
@@ -191,6 +193,7 @@ export function UpdateBannerView({
   onNotes: (url: string) => void;
 }) {
   const notResumed = dismissed ? [] : state.notResumed;
+  const held = dismissed ? undefined : state.held;
   // Where the install that runs now stands, as Djinn says it: from another window too, or after a reload.
   const installing = state.installing;
   // Once its update is asked, the newer Djinn stays, whatever was dismissed.
@@ -213,6 +216,7 @@ export function UpdateBannerView({
   if (
     !ready &&
     !notResumed.length &&
+    !held &&
     !builds.length &&
     phase.kind !== "installed"
   )
@@ -228,7 +232,9 @@ export function UpdateBannerView({
         ? "others"
         : phase.kind === "installed"
           ? "installed"
-          : "not-resumed";
+          : held
+            ? "held"
+            : "not-resumed";
   const readyBuild = ready ? state.readyBuild : undefined;
 
   const buildPart = (build: BuildProposal) => {
@@ -392,6 +398,26 @@ export function UpdateBannerView({
             title={t("update.build_installed", { sha: phase.sha.slice(0, 8) })}
           />
         )}
+      {held && (
+        <Part
+          mark={first === "held"}
+          title={heldTitle(held.why, held.memoryPercent)}
+          actions={
+            notResumed.length > 0 ? undefined : (
+              <button
+                type="button"
+                className="update-banner-dismiss"
+                onClick={onDismiss}
+              >
+                {t("update.dismiss")}
+              </button>
+            )
+          }
+        >
+          {held.tasks.length > 0 &&
+            t("update.held_tasks", { tasks: held.tasks.join(", ") })}
+        </Part>
+      )}
       {notResumed.length > 0 && (
         <Part
           mark={first === "not-resumed"}
@@ -415,6 +441,18 @@ export function UpdateBannerView({
       )}
     </div>
   );
+}
+
+// heldTitle says why Djinn resumed no worker at its start.
+function heldTitle(why: HeldStart, memoryPercent: number): string {
+  switch (why) {
+    case HeldStart.MEMORY:
+      return t("update.held_memory", { percent: Math.round(memoryPercent) });
+    case HeldStart.UNCLEAN:
+      return t("update.held_unclean");
+    default:
+      return t("update.held_paused");
+  }
 }
 
 // origin says where a build comes from, in words, for the hover: its commit, branch, wish and project, then its gist.

@@ -6,12 +6,13 @@ import { type Transport, createClient } from "@connectrpc/connect";
 
 import {
   type Build,
+  HeldStart,
   InstallStep,
   UiService,
   type UiServiceWatchUpdateResponse,
 } from "../../gen/ts/ui/v1/ui_pb";
 
-export { InstallStep };
+export { HeldStart, InstallStep };
 
 export interface UpdateState {
   // Version of the running Djinn.
@@ -25,6 +26,10 @@ export interface UpdateState {
   readyBuild?: BuildProposal;
   // The terminals the last restart could not run again, one line each.
   notResumed: string[];
+  // Why the running Djinn resumed none of the workers the last djinn up left interrupted (--paused, a stop that was
+  // not clean, the memory near full at the Hourglass's last reading), and the tasks it held; undefined when it
+  // resumed them.
+  held?: HeldWorkers;
   // Where the release notes of the newer Djinn are; empty for none.
   notesUrl: string;
   // The last build pushed of each integration branch and not installed, the running Djinn's branch first.
@@ -32,6 +37,14 @@ export interface UpdateState {
   // The install of a build that runs now, and where it stands, or the last one when it failed; undefined for
   // neither.
   installing?: Installing;
+}
+
+// HeldWorkers is why a start resumed no worker: the machine's memory at the Hourglass's last reading, in percent, for
+// HeldStart.MEMORY, and the codes of the tasks it left interrupted.
+export interface HeldWorkers {
+  why: HeldStart;
+  memoryPercent: number;
+  tasks: string[];
 }
 
 // An install that runs now: the commit, its step, what it waits for while it waits, and the step of its command
@@ -114,6 +127,14 @@ export function updateState(res: UiServiceWatchUpdateResponse): UpdateState {
     installed: res.installed,
     readyBuild: res.readyBuild && buildProposal(res.readyBuild),
     notResumed: [...res.notResumed],
+    held:
+      res.heldStart === HeldStart.UNSPECIFIED
+        ? undefined
+        : {
+            why: res.heldStart,
+            memoryPercent: res.heldMemoryPercent,
+            tasks: [...res.heldTasks],
+          },
     notesUrl: res.notesUrl,
     builds: res.builds.map(buildProposal),
     installing: res.installing && {

@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -30,6 +31,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
@@ -308,6 +310,8 @@ func TestRunUp(t *testing.T) {
 		{name: "DJINN_WORKER_MEMORY_GUARD", env: []string{"DJINN_WORKER_MEMORY_GUARD=invalid"}, errs: "DJINN_WORKER_MEMORY_GUARD: "},
 		{name: "DJINN_ENLIGHTEN_WORKERS", env: []string{"DJINN_ENLIGHTEN_WORKERS=maybe"}, errs: `DJINN_ENLIGHTEN_WORKERS: "maybe": expected on or off`},
 		{name: "DJINN_PPROF", env: []string{"DJINN_PPROF=maybe"}, errs: `DJINN_PPROF: "maybe": expected on or off`},
+		{name: "--paused-memory 101", args: []string{"--paused-memory", "101"}, errs: "--paused-memory 101: expected a percent"},
+		{name: "DJINN_PAUSED_MEMORY", env: []string{"DJINN_PAUSED_MEMORY=most"}, errs: "DJINN_PAUSED_MEMORY: "},
 		{name: "--disk-trim-gb -1", args: []string{"--disk-trim-gb", "-1"}, errs: "--disk-trim-gb -1: expected GB, or 0 for never"},
 		{name: "DJINN_DISK_FULL_GB", env: []string{"DJINN_DISK_FULL_GB=ten"}, errs: "DJINN_DISK_FULL_GB: "},
 		{name: "--ifrit-idle 4m", args: []string{"--ifrit-idle", "4m"}, errs: "expected whole minutes from 5m to 4h"},
@@ -338,7 +342,9 @@ func TestRunUp(t *testing.T) {
 		{"the window's terminal opens in a project", upWindowTerminalOpensInAProject},
 		{"DJINN_PPROF serves the profiles", upProfiles},
 		{"an inbox source plugged runs in djinn up", upInboxPlug},
-		{"a crash resumes the workers", upCrashResumesTheWorkers},
+		{"a crash holds the workers", upCrashHoldsTheWorkers},
+		{"--paused holds the workers once", upPausedHoldsTheWorkers},
+		{"memory near full holds the workers", upMemoryHoldsTheWorkers},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
@@ -828,13 +834,14 @@ func upInboxPlug(t *testing.T) {
 	}
 }
 
-// upCrashResumesTheWorkers: a djinn killed while a worker runs leaves its task running in the store; the next
-// djinn up resumes it by itself, in the same task, and it finishes. The wish keeps one task.
-func upCrashResumesTheWorkers(t *testing.T) {
-	ctx := t.Context()
-	home := t.TempDir()
+// cutShort starts a djinn up in a data folder of its own whose fake worker runs a long task, waits until it runs, and
+// stops that djinn with sig: SIGINT as a person quits, SIGKILL as a crash. It returns the environment, the wish and
+// the task.
+func cutShort(t *testing.T, sig syscall.Signal) (home string, env []string, wish *planv1.Wish, taskID string) {
+	t.Helper()
+	home = t.TempDir()
 	bin, _ := fakeClaude(t)
-	env := environ(home, bin)
+	env = environ(home, bin)
 	folder, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -843,31 +850,111 @@ func upCrashResumesTheWorkers(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(folder, "AGENTS.md"), []byte("# Rules\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	wish := seedWish(t, home, folder, "0b7e2a8c-5f1d-4c1e-9a3e-1f2d3c4b5a69")
-
+	wish = seedWish(t, home, folder, "0b7e2a8c-5f1d-4c1e-9a3e-1f2d3c4b5a69")
 	first, addr := startUp(t, home, env)
-	res, err := taskClient(t, addr).Spawn(ctx, connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+	res, err := taskClient(t, addr).Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
 		WishId: wish.GetId(), Title: "Long", Prompt: "text halfway\nsleep 1h", Provider: planv1.Provider_PROVIDER_FAKE,
 	}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	id := res.Msg.GetTask().GetId()
-	waitTask(t, taskClient(t, addr), id, func(task *planv1.Task) bool {
+	taskID = res.Msg.GetTask().GetId()
+	waitTask(t, taskClient(t, addr), taskID, func(task *planv1.Task) bool {
 		return task.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING && task.GetSessionId() != ""
 	})
-	first.stop(t, syscall.SIGKILL)
+	first.stop(t, sig)
+	return home, env, wish, taskID
+}
 
-	second, addr := startUp(t, home, env)
+// heldUp starts djinn up with flags and checks it resumed no worker, for why: the window hears it with the task held,
+// the task stays interrupted, and djinn up says why (the lead's restart event says it too: TestRestartHeld). It
+// returns the djinn and its address.
+func heldUp(t *testing.T, home string, env []string, taskID string, why uiv1.HeldStart, says string, flags ...string) (*running, string) {
+	t.Helper()
+	r, addr := startUp(t, home, env, flags...)
 	tasks := taskClient(t, addr)
-	got := waitTask(t, tasks, id, func(task *planv1.Task) bool { return task.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE })
-	if got.GetResumes() != 0 {
-		t.Errorf("the task after the crash: %v\n%s", got, second.errs.String())
+	got := waitTask(t, tasks, taskID, func(task *planv1.Task) bool { return task.GetCode() != "" })
+	ui, _ := clients(t, addr)
+	updates, err := ui.WatchUpdate(t.Context(), connect.NewRequest(&uiv1.UiServiceWatchUpdateRequest{}))
+	if err != nil {
+		t.Fatal(err)
 	}
-	list, err := tasks.List(ctx, connect.NewRequest(&planv1.TaskServiceListRequest{WishId: wish.GetId()}))
+	defer updates.Close()
+	if !updates.Receive() || updates.Msg().GetHeldStart() != why ||
+		!slices.Equal(updates.Msg().GetHeldTasks(), []string{got.GetCode()}) {
+		t.Fatalf("the window after the restart: %v, %v; want %v holding %s\n%s", updates.Msg(), updates.Err(), why,
+			got.GetCode(), r.errs.String())
+	}
+	// Given time to, a task Djinn resumed would be running again: this one stays interrupted.
+	time.Sleep(2500 * time.Millisecond)
+	if got = waitTask(t, tasks, taskID, func(*planv1.Task) bool { return true }); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_INTERRUPTED {
+		t.Errorf("the task after a held restart: %v, want interrupted", got.GetStatus())
+	}
+	if errs := r.errs.String(); !strings.Contains(errs, "djinn: resuming no worker, as "+says) {
+		t.Errorf("djinn up after the restart says:\n%s", errs)
+	}
+	return r, addr
+}
+
+// upCrashHoldsTheWorkers: a djinn killed while a worker runs leaves its task running in the store; the next djinn up
+// resumes no worker, as the last one did not stop cleanly: the task stays interrupted, the window and the lead hear
+// why. Continued by hand, it finishes in the same task: the wish keeps one task.
+func upCrashHoldsTheWorkers(t *testing.T) {
+	home, env, wish, id := cutShort(t, syscall.SIGKILL)
+	_, addr := heldUp(t, home, env, id, uiv1.HeldStart_HELD_START_UNCLEAN, "the last djinn up did not stop cleanly")
+	tasks := taskClient(t, addr)
+	if _, err := tasks.Continue(t.Context(), connect.NewRequest(&planv1.TaskServiceContinueRequest{TaskId: id, Prompt: proto.String("text continued")})); err != nil {
+		t.Fatal(err)
+	}
+	waitTask(t, tasks, id, func(task *planv1.Task) bool { return task.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE })
+	list, err := tasks.List(t.Context(), connect.NewRequest(&planv1.TaskServiceListRequest{WishId: wish.GetId()}))
 	if err != nil || len(list.Msg.GetTasks()) != 1 {
-		t.Errorf("the wish's tasks after the crash: %v, %v; want the one resumed", list, err)
+		t.Errorf("the wish's tasks after the crash: %v, %v; want the one continued", list, err)
 	}
+}
+
+// upPausedHoldsTheWorkers: after a clean stop, djinn up --paused resumes no worker, and says so. The start after it,
+// without the flag, resumes the task by itself: --paused holds one start only.
+func upPausedHoldsTheWorkers(t *testing.T) {
+	home, env, _, id := cutShort(t, syscall.SIGINT)
+	paused, _ := heldUp(t, home, env, id, uiv1.HeldStart_HELD_START_PAUSED, "djinn up --paused asked it", "--paused")
+	paused.stop(t, syscall.SIGINT)
+	_, addr := startUp(t, home, env)
+	waitTask(t, taskClient(t, addr), id, func(task *planv1.Task) bool {
+		return task.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE
+	})
+}
+
+// upMemoryHoldsTheWorkers: the regression of the fork bomb in a worker's container (wish Djinn gates, Q01). The
+// Hourglass's last reading of the last djinn up had the machine's memory at 95 %: the next djinn up resumes no
+// worker, though that djinn stopped cleanly, and names the reading. With --paused-memory past it, it resumes them.
+func upMemoryHoldsTheWorkers(t *testing.T) {
+	home, env, _, id := cutShort(t, syscall.SIGINT)
+	machineNow, err := machine.Calm()
+	if err != nil || machineNow.MemoryTotal == 0 {
+		t.Skipf("no memory to read on this machine: %v", err)
+	}
+	db, err := store.Open(t.Context(), filepath.Join(home, store.File), plan.Entities()...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AddSamples(t.Context(), []store.Sample{{
+		Series: "machine", At: time.Now(), Seconds: 5, Memory: machineNow.MemoryTotal / 100 * 95,
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+	held, _ := heldUp(t, home, env, id, uiv1.HeldStart_HELD_START_MEMORY,
+		"the Hourglass's last reading of the last djinn up, at ")
+	if errs := held.errs.String(); !strings.Contains(errs, "had the machine's memory at 95 % (--paused-memory 90)") {
+		t.Errorf("djinn up names the reading:\n%s", errs)
+	}
+	held.stop(t, syscall.SIGINT)
+	// Its own readings came after, but the calm machine of the tests reads no memory taken: the next reading is low.
+	_, addr := startUp(t, home, env, "--paused-memory", "100")
+	waitTask(t, taskClient(t, addr), id, func(task *planv1.Task) bool {
+		return task.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE
+	})
 }
 
 // TestAnswer: a button of a notification answers its question through the server, guarded by
