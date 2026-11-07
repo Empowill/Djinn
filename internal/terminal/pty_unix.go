@@ -17,6 +17,7 @@ import (
 // unixProc is a program leading a session of its own, whose controlling terminal is a Unix pseudo-terminal.
 type unixProc struct {
 	master *os.File
+	tty    string // the path of the program's side
 	cmd    *exec.Cmd
 	once   sync.Once
 }
@@ -35,7 +36,7 @@ func start(command []string, dir string, env []string, cols, rows int) (proc, er
 	if err != nil {
 		return nil, err
 	}
-	p := &unixProc{master: master}
+	p := &unixProc{master: master, tty: tty.Name()}
 	if err := p.resize(cols, rows); err != nil {
 		master.Close()
 		return nil, err
@@ -123,6 +124,21 @@ func (p *unixProc) signal(sig syscall.Signal) {
 	}
 	// The group may be gone already: nothing to do then.
 	_ = syscall.Kill(-p.cmd.Process.Pid, sig)
+}
+
+// unread asks the program's side of the terminal, opened for that only: Djinn keeps no copy of it, or the master
+// would not read EOF once the program ends.
+func (p *unixProc) unread() int {
+	fd, err := unix.Open(p.tty, unix.O_RDWR|unix.O_NOCTTY|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return 0 // The program ended.
+	}
+	defer unix.Close(fd)
+	n, err := unix.IoctlGetInt(fd, inputQueued)
+	if err != nil {
+		return 0
+	}
+	return n
 }
 
 func (p *unixProc) close() { p.once.Do(func() { p.master.Close() }) }

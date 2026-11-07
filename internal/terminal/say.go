@@ -36,7 +36,8 @@ type pace struct {
 	// warmup is how long a program may draw before a line goes to it anyway.
 	warmup time.Duration
 	// enter is the pause between a line and its Enter: an agent's prompt reads a line and an Enter that come
-	// together as a paste, and keeps the Enter in the text.
+	// together as a paste, and keeps the Enter in the text. The Enter waits too until the program read the line, where
+	// the terminal tells (unread).
 	enter time.Duration
 	// afterEnter is the pause after Enter before the next line: it lets the agent's prompt accept the submission
 	// and clear its prompt box before another line arrives.
@@ -171,11 +172,27 @@ func (t *Terminal) speak(lines <-chan string, hushed chan<- struct{}) {
 			} else {
 				line = strings.ReplaceAll(line, "\n", " ")
 			}
-			if t.put([]byte(line)) != nil || !t.sleep(t.pace.enter) || t.put([]byte("\r")) != nil || !t.sleep(t.pace.afterEnter) {
+			if t.put([]byte(line)) != nil || !t.sleep(t.pace.enter) || !t.taken() || t.put([]byte("\r")) != nil ||
+				!t.sleep(t.pace.afterEnter) {
 				return
 			}
 		}
 	}
+}
+
+// takenStep is how often taken looks again whether the program read what Djinn typed.
+const takenStep = 10 * time.Millisecond
+
+// taken waits until the program has read what was typed to it, so that the Enter that follows comes in a read of its
+// own: a program busy, or a machine under load, may read the line later than enter, and would get the line and its
+// Enter in one read, an Enter it keeps in the text. False when the program ended first.
+func (t *Terminal) taken() bool {
+	for t.p.unread() > 0 {
+		if !t.sleep(takenStep) {
+			return false
+		}
+	}
+	return true
 }
 
 // ready waits until a line may go to the program: no choice shows on its screen and nothing is under way at its

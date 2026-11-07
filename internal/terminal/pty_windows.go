@@ -229,6 +229,9 @@ func (p *winProc) kill() {
 	}
 }
 
+// unread: the console takes the input from its pipe and keeps it as events, which only the program's side can count.
+func (p *winProc) unread() int { return 0 }
+
 // close closes the console, its input and the job. Hung up, the terminal ends what is left of the job first: the
 // program ended on CTRL_CLOSE_EVENT, but a child of it may hold on, and its folder. Ended by itself, the program
 // leaves alone a program it started apart, a window: the job loses its kill-on-close limit before it closes. The
