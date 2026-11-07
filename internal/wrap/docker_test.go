@@ -86,16 +86,24 @@ func TestDocker(t *testing.T) {
 	}
 }
 
-// TestDockerUpdate: a docker update that would lift a container's ceiling is refused, naming the setting.
+// TestDockerUpdate: a docker update that would lift a container's ceiling is refused, naming the file the project
+// sets them in, else the one it would.
 func TestDockerUpdate(t *testing.T) {
 	t.Parallel()
-	for _, args := range []string{
-		"update --memory 8g c", "update -m 5g c", "update --memory-swap -1 c", "update --pids-limit -1 c",
-		"update --pids-limit 0 c", "container update --pids-limit=5000 c",
-	} {
-		_, _, err := Docker(strings.Fields(args), testCaps, testTask, testHome)
-		if !errors.Is(err, ErrRefused) || !strings.Contains(err.Error(), Setting) {
-			t.Errorf("Docker(%s) = %v, want it refused", args, err)
+	read := testCaps
+	read.File = ".agents/djinn.yaml"
+	for _, c := range []struct {
+		caps Caps
+		file string
+	}{{testCaps, "djinn.yaml (containers"}, {read, ".agents/djinn.yaml (containers"}} {
+		for _, args := range []string{
+			"update --memory 8g c", "update -m 5g c", "update --memory-swap -1 c", "update --pids-limit -1 c",
+			"update --pids-limit 0 c", "container update --pids-limit=5000 c",
+		} {
+			_, _, err := Docker(strings.Fields(args), c.caps, testTask, testHome)
+			if !errors.Is(err, ErrRefused) || !strings.Contains(err.Error(), c.file) {
+				t.Errorf("Docker(%s) = %v, want it refused, naming %s", args, err, c.file)
+			}
 		}
 	}
 }

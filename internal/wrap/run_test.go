@@ -33,7 +33,7 @@ func mainEnv(t *testing.T, head string, args []string, kv ...string) (*ran, int,
 	}
 	t.Setenv("PATH", Path(root, found, true))
 	t.Setenv("DJINN_TASK_ID", testTask)
-	for _, k := range []string{EnvMemory, EnvPIDs, EnvHome, EnvAdmit, EnvAdmitted} {
+	for _, k := range []string{EnvMemory, EnvPIDs, EnvFile, EnvHome, EnvAdmit, EnvAdmitted} {
 		t.Setenv(k, "")
 	}
 	for i := 0; i+1 < len(kv); i += 2 {
@@ -65,15 +65,15 @@ func TestMain_Docker(t *testing.T) {
 		t.Skip("no wrapper on Windows")
 	}
 	r, _, stderr, admitted, found := mainEnv(t, "docker", []string{"run", "--memory", "8g", "alpine"},
-		EnvMemory, "4294967296", EnvPIDs, "1024", EnvHome, testHome)
+		EnvMemory, "4294967296", EnvPIDs, "1024", EnvFile, ".agents/djinn.yaml", EnvHome, testHome)
 	if r == nil || r.path != filepath.Join(found, "docker") || r.args[0] != "docker" {
 		t.Fatalf("ran %+v, want the real docker", r)
 	}
 	if want := slices.Concat([]string{"docker", "run"}, bounded("4294967296", "1024"), []string{"alpine"}); !slices.Equal(r.args, want) {
 		t.Errorf("args = %q, want %q", r.args, want)
 	}
-	if !strings.Contains(stderr, "4 GiB") || !strings.Contains(stderr, Setting) {
-		t.Errorf("stderr = %q, want the ceiling and its setting named", stderr)
+	if !strings.Contains(stderr, "4 GiB") || !strings.Contains(stderr, ".agents/djinn.yaml (containers") {
+		t.Errorf("stderr = %q, want the ceiling and the file it was read in named", stderr)
 	}
 	if len(admitted) != 0 || slices.Contains(r.env, EnvAdmitted+"=1") {
 		t.Errorf("admitted %q without %s", admitted, EnvAdmit)
@@ -81,8 +81,9 @@ func TestMain_Docker(t *testing.T) {
 
 	r, code, stderr, _, _ := mainEnv(t, "docker", []string{"update", "--memory", "8g", "c"},
 		EnvMemory, "4294967296", EnvPIDs, "1024")
-	if r != nil || code != 1 || !strings.Contains(stderr, "refused") {
-		t.Errorf("update: ran %+v, code %d, stderr %q; want it refused", r, code, stderr)
+	if r != nil || code != 1 || !strings.Contains(stderr, "refused") ||
+		!strings.Contains(stderr, " djinn.yaml (containers") {
+		t.Errorf("update: ran %+v, code %d, stderr %q; want it refused, naming djinn.yaml", r, code, stderr)
 	}
 
 	// Without ceilings in its environment (a worker of an older Djinn), docker runs as it is.

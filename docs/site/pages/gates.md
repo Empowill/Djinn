@@ -18,7 +18,8 @@ slower, run out of memory, or fail on a port another one holds. Gates turn that 
   the command needed last time.
 - **The most urgent first.** Djinn's merges and pushes go first, then the first wish's commands, the work of its first
   azima first.
-- **Measured.** Djinn records what each command cost, and knows next time what it needs.
+- **Measured.** Djinn records what each command cost, and knows it again next time, run by another task in another
+  folder: see [How Djinn knows a command again](#gates-how-djinn-knows-a-command-again).
 - **Nothing slips by.** A worker's command that goes through no gate is admitted all the same: see below.
 
 ## How a gate is granted
@@ -29,7 +30,7 @@ A command asks for a gate by its name, and waits until all of these hold:
 2. **The machine is not under pressure.** See [Machine and load](#machine-and-load).
 3. **The memory is there.** A command Djinn has measured before waits until the free memory covers the most it ever
    used, with a margin; the memory the commands already holding gates may still take is counted as used. A command
-   never measured goes at once.
+   never measured waits for what the commands of the same kind cost (see below); with none measured, it goes at once.
 4. **Its turn has come:**
    - first, Djinn's own merges and pushes, in the order they asked: the checks of a task's merge, of a merge of main,
      of a push, and the code generation and setup they need;
@@ -42,13 +43,37 @@ held is never taken back for it: Djinn waits for the holder to finish.
 While a command waits, it says why: *held by W12 (Export as PDF)*, with the command W12 runs and for how long, and
 *then 1 merge or push goes first* when one does; or *the machine is under pressure*, and why.
 
-The gate goes back when the command ends, fails or is interrupted, or when its holder's process ends. A command run
-through a gate keeps it an hour at most: past that, Djinn takes the gate back, and the command goes on.
+The gate goes back when the command ends, fails or is interrupted, or when its holder's process or connection ends.
+**A gate is never taken back from a command that still runs**, however long it takes; only a time limit set by whoever
+asked for the gate, or a lit ifrit going out, takes it back. When a command holds its gate past 3 times its usual hold
+(the 95th percentile of its measured holds, and never before 10 minutes), or past an hour when it was never measured,
+the lead of its wish is told once, and its task's events say it: the lead sees whether it hangs. Nothing is taken
+back.
 
 A lit [ifrit](#ifrit) keeps its gates as long as it is lit: they go back when it goes out, at its out time at the
 latest, which each of your actions in Djinn pushes back, or when it ends. It goes before no one: the first wish first,
 then the first come. Those who wait read *held by ifrit W12: task run-back; released when you leave, at 15:42 at the
 latest*.
+
+## How Djinn knows a command again
+
+Djinn keeps each command's cost under a key, in its project: the same command, run by another task, in another
+worktree, with other values in its environment, finds the cost measured before. The key is the command as a shell
+would run it, made alike from one run to the next:
+
+- **The folders that change with each task are named alike:** the folder it runs in, a worktree of Djinn, a scratch
+  folder, a file under the temporary folder, any other identifier.
+- **A variable set for the command keeps its name,** not its value.
+- **A command run through a shell** (sh, bash, zsh with -c) is the command it runs.
+- **What only sets up the shell is left out:** changing folder, exporting a variable, printing a line; so are the
+  wrappers that change nothing it costs (time, nohup, env, a timeout), the redirections, and the filters a pipe ends
+  with, such as keeping the last 50 lines.
+
+Arguments stay: the tests of a whole module and the tests of one package are two commands, with two costs.
+
+A command never measured is given what the others of the same head cost in its project, their median: the head is the
+program and its subcommand, such as go test, npm run build or npx playwright test. With no such command measured, it
+has no cost yet, and goes as soon as its gate is free. A cost kept before the keys were made alike is still found.
 
 ## Admitted commands
 
@@ -145,6 +170,11 @@ waits on an ifrit, so that the Djinn offers you to end it.
 Gates live in the running Djinn. A restart gives them all back: a command run through a gate goes on, saying its gate
 is lost, and the queue starts again from the commands that ask anew.
 
+Their history does not go: each gate and each admission held is kept in Djinn's database as it goes back, **for a
+week**, and the Hourglass reads it again after a restart. It keeps when the holder asked, got and gave back the gate,
+whether it was a named gate or an admission, whether its command was heavy or never measured, what it waited for last
+and why, the most memory its holder used, and whether it took a slot outside a worker.
+
 ## Good to know
 
 - **Name a gate for what must run alone.** A Claude worker's command is admitted anyway, but only a gate keeps two
@@ -154,8 +184,8 @@ is lost, and the queue starts again from the commands that ask anew.
 - **A gate from your terminal takes a worker's slot.** Hold it for what you need, not longer.
 - **Keep commit checks fast.** They run on every task's merge, through their gates, before anything else may: a long
   one slows every wish. Put the long suite before the push.
-- **Commands longer than an hour lose their gate.** They go on, but others may start beside them. A lit ifrit's gates
-  are the exception: they last as long as it is lit.
+- **A long command keeps its gate.** Past 3 times its usual hold, or an hour unmeasured, its lead hears of it; the gate
+  goes back only when the command ends. A lit ifrit's gates last as long as it is lit.
 
 ## Read next
 

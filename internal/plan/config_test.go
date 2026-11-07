@@ -103,8 +103,8 @@ func TestProjectConfigInFolder(t *testing.T) {
 
 // TestProjectConfigReadsReference (W150): in Git with a remote, each kind of reader reads the configuration in the
 // reference branch's tree at the last fetch, not in the folder, whatever branch the folder has out or what it changed:
-// the settings, the permissions, the skills and what they declare. A message names the file on the branch; a fix is
-// made in the folder.
+// the settings, the permissions, the skills and what they declare, Djinn's djinn.yaml at the root. A message names the
+// file on the branch; a fix is made in the folder.
 func TestProjectConfigReadsReference(t *testing.T) {
 	t.Parallel()
 	home := t.TempDir()
@@ -112,6 +112,7 @@ func TestProjectConfigReadsReference(t *testing.T) {
 	p := configProject(t, map[string]string{
 		".agents/settings.txtpb":        "setup: \"echo team\"\n",
 		".agents/permissions.txtpb":     "commands: \"make\"\n",
+		"djinn.yaml":                    "containers: {pids: 64}\n",
 		".agents/skills/ship/SKILL.md":  skill,
 		".agents/skills/ship/watch.sh":  "echo watch\n",
 		".claude/skills/other/SKILL.md": "---\nname: other\ndescription: Another.\n---\n",
@@ -126,6 +127,7 @@ func TestProjectConfigReadsReference(t *testing.T) {
 	gitIn(t, dir, "checkout", "-q", "-b", "feature")
 	writeFileAt(t, filepath.Join(dir, SettingsFile), "setup: \"echo copy\"\n")
 	writeFileAt(t, filepath.Join(dir, PermissionsFile), "commands: \"rm\"\n")
+	writeFileAt(t, filepath.Join(dir, "djinn.yaml"), "containers: {pids: 4096}\n")
 	writeFileAt(t, filepath.Join(dir, ".agents/skills/local/SKILL.md"), "---\nname: local\ndescription: Local.\n---\n")
 
 	c := ProjectConfig(home, p)
@@ -139,6 +141,10 @@ func TestProjectConfigReadsReference(t *testing.T) {
 	// Permissions.
 	if perms, _, err := ReadPermissions(ConfigDir(home, p)); err != nil || !slices.Equal(perms.GetCommands(), []string{"make"}) {
 		t.Errorf("permissions: %v, %v; want origin/main's", perms, err)
+	}
+	// Djinn's djinn.yaml: a worker never raises its own ceilings.
+	if read, err := ReadProjectConfig(ConfigDir(home, p)); err != nil || read.Config.GetContainers().GetPids() != 64 {
+		t.Errorf("djinn.yaml: %v, %v; want origin/main's", read.Config, err)
 	}
 	// Skills, both folders, and what they declare.
 	var names []string

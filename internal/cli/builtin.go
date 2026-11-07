@@ -251,7 +251,7 @@ var GateWrap = Command{
 	Help: `Djinn writes, in its data folder, a docker first on every worker's path, and for the agents without a hook
 (Codex, Antigravity) go, npm, npx, pnpm, task, make and golangci-lint: each runs this command. It finds the real
 command on the path without the wrappers. docker run and docker create get the task's label and slice and the
-project's runaway ceilings (.agents/containers.txtpb); a docker update that would lift them is refused. For an agent
+project's runaway ceilings (containers in its djinn.yaml); a docker update that would lift them is refused. For an agent
 without a hook, a command that neither reads nor edits waits for its admission by the gates, as Claude's hook has
 it wait. Then the command runs in its place, the same process.`,
 }

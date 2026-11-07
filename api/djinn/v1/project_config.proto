@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+// What a project tells Djinn about itself, in its own file.
+package djinn.v1;
+
+import "djinn/v1/containers.proto";
+
+// ProjectConfig is what a project tells Djinn, in YAML: djinn.yaml at its root, else .agents/djinn.yaml. Djinn reads
+// it on the reference branch, as the permissions are, so that a worker never changes what bounds it; outside Git,
+// without a remote, or before the reference branch is fetched, in the project's folder. With both files, the root's
+// is read and Djinn warns that the other is not. A field this message does not know refuses the file: Djinn then
+// holds its defaults, and says the file and the field. Without the file, Djinn's defaults.
+//
+//   containers:
+//     memory_mib: 8192
+//     pids: 2048
+message ProjectConfig {
+  // The runaway ceilings of the containers the project's workers start.
+  Containers containers = 1;
+}

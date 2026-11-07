@@ -23,7 +23,8 @@ import (
 const topicChange = planv1.ProjectNoticeTopic_PROJECT_NOTICE_TOPIC_CHANGE
 
 // configLines are what changed from the configuration in old to the one in next, two folders laid out as a project's
-// (ConfigFolders), a sentence each: the team's settings, the permissions, each skill, the other files of .agents.
+// (ConfigFolders), a sentence each: the team's settings, the permissions, each skill, Djinn's djinn.yaml, the other
+// files of .agents.
 // plugged tells whether the inbox source of a skill of the project is plugged in on this machine: a change of its
 // command then asks for your look.
 func configLines(old, next string, plugged func(skill string) bool) []*planv1.ConfigChangeLine {
@@ -31,6 +32,7 @@ func configLines(old, next string, plugged func(skill string) bool) []*planv1.Co
 	out = append(out, settingsLines(old, next)...)
 	out = append(out, permissionLines(old, next)...)
 	out = append(out, skillLines(old, next, plugged)...)
+	out = append(out, projectConfigLines(old, next)...)
 	if files := otherFiles(old, next); len(files) > 0 {
 		out = append(out, &planv1.ConfigChangeLine{
 			Topic: topicSettings, Subject: ".agents",
@@ -492,7 +494,9 @@ func filesIn(dir string) map[string][]byte {
 // otherFiles are the files of .agents, besides the settings, the permissions and the skills, that differ between the
 // configurations in old and next, with slashes.
 func otherFiles(old, next string) []string {
-	skip := []string{filepath.ToSlash(SettingsFile), filepath.ToSlash(PermissionsFile)}
+	skip := []string{
+		filepath.ToSlash(SettingsFile), filepath.ToSlash(PermissionsFile), filepath.ToSlash(ProjectConfigFiles[1]),
+	}
 	var out []string
 	for _, f := range changedFiles(filepath.Join(old, ".agents"), filepath.Join(next, ".agents")) {
 		path := ".agents/" + f
