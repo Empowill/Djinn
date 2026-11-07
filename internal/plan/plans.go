@@ -342,10 +342,11 @@ func ChosenPlan(q *planv1.Question) *planv1.PlannedTask {
 }
 
 // WhyLeadLaunches says why the plan p of q's answer is left to the lead rather than launched with the answer: the answer
-// has a note, or the plan comes after tasks or blocks some. "" when Djinn launches it at once.
+// has a note, or the plan comes after tasks or blocks some. "" when Djinn launches it at once. The note of an answer a
+// send of comments gave only cites the send: its comments go in the plan's prompt (W13).
 func WhyLeadLaunches(q *planv1.Question, p *planv1.PlannedTask) string {
 	switch {
-	case strings.TrimSpace(q.GetAnswer().GetNote()) != "":
+	case strings.TrimSpace(q.GetAnswer().GetNote()) != "" && q.GetAnswer().GetSendId() == "":
 		return "the answer has a note"
 	case len(p.GetAfter()) > 0 && len(p.GetBlocks()) > 0:
 		return "it comes after tasks and blocks others"

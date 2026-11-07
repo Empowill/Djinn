@@ -10977,7 +10977,11 @@ type Answer struct {
 	// Who answered: the developer, the lead, or a worker (task_id).
 	Actor Closer `protobuf:"varint,4,opt,name=actor,proto3,enum=plan.v1.Closer" json:"actor,omitempty"`
 	// The task whose worker answered; empty when the developer or lead did.
-	TaskId        string `protobuf:"bytes,5,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	TaskId string `protobuf:"bytes,5,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	// The send of a tilasm's comments that gave this answer, by identifier (TilasmSend.id): the developer commented the
+	// tilasm the question links, then launched it. Its note cites the send, and its plan launches as an answer without
+	// a note does, the comments in its prompt. Empty for any other answer.
+	SendId        string `protobuf:"bytes,6,opt,name=send_id,json=sendId,proto3" json:"send_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -11043,6 +11047,13 @@ func (x *Answer) GetActor() Closer {
 func (x *Answer) GetTaskId() string {
 	if x != nil {
 		return x.TaskId
+	}
+	return ""
+}
+
+func (x *Answer) GetSendId() string {
+	if x != nil {
+		return x.SendId
 	}
 	return ""
 }
@@ -28727,14 +28738,15 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x04kind\x18\x01 \x01(\x0e2\x11.plan.v1.MarkKindR\x04kind\x12\x14\n" +
 	"\x05actor\x18\x02 \x01(\tR\x05actor\x12;\n" +
 	"\vcreate_time\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"createTime\"\xc2\x01\n" +
+	"createTime\"\xdb\x01\n" +
 	"\x06Answer\x12'\n" +
 	"\x06choice\x18\x01 \x01(\x0e2\x0f.plan.v1.ChoiceR\x06choice\x12\x12\n" +
 	"\x04note\x18\x02 \x01(\tR\x04note\x12;\n" +
 	"\vcreate_time\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"createTime\x12%\n" +
 	"\x05actor\x18\x04 \x01(\x0e2\x0f.plan.v1.CloserR\x05actor\x12\x17\n" +
-	"\atask_id\x18\x05 \x01(\tR\x06taskId\"\xa7\x01\n" +
+	"\atask_id\x18\x05 \x01(\tR\x06taskId\x12\x17\n" +
+	"\asend_id\x18\x06 \x01(\tR\x06sendId\"\xa7\x01\n" +
 	"\n" +
 	"Withdrawal\x12\x1c\n" +
 	"\x04note\x18\x01 \x01(\tB\b\xbaH\x05r\x03\x18\xc0>R\x04note\x12;\n" +

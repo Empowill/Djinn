@@ -103,9 +103,14 @@ question's options start when a question links the tilasm. Write a last word on 
 - **Iterate** (or **Iterate · lead** when the send goes to the Djinn instead of starting a mockup round): the Djinn, or
   the mockup task when the open question that links the tilasm has a [mockup](#mockup) option with rounds left, makes
   the tilasm's next version as your comments say, and the question comes back with it.
-- **Launch**: the Djinn launches the work the tilasm explains, as your comments change it. With no comment at all,
-  Launch is your yes to the question that links the tilasm: it gets its recommended option, as approving it would, and
-  starts its planned task at once when that option has one.
+- **Launch**: the work the tilasm explains starts, as your comments change it. When an open question links the
+  tilasm, Launch answers it with its recommended option: with no comment, as approving it would; with comments, by an
+  answer whose note cites the send. Its planned task starts at once, your comments in its prompt, and the question
+  closes: the Djinn has nothing to tie by hand. When that option iterates on the mockup, Launch starts its round, as
+  Iterate does. With no question to answer, the comments go to the Djinn, which launches the work.
+
+**The question settles the tilasm too.** Answering the question that links a tilasm sends the comments you left in
+draft on it with your answer: the planned task, or the mockup round, reads them.
 
 Every draft and your last word leave together, in one click, with no confirmation step: the Djinn reads them all at
 once, each with what it is on, and your choice, and a line at the foot says what left (the mockup round started, the

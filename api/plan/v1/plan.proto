@@ -2508,6 +2508,10 @@ message Answer {
   Closer actor = 4;
   // The task whose worker answered; empty when the developer or lead did.
   string task_id = 5;
+  // The send of a tilasm's comments that gave this answer, by identifier (TilasmSend.id): the developer commented the
+  // tilasm the question links, then launched it. Its note cites the send, and its plan launches as an answer without
+  // a note does, the comments in its prompt. Empty for any other answer.
+  string send_id = 6;
 }
 
 // The withdrawal of an open question: closed without an answer, not a decision.

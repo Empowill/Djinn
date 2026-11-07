@@ -1236,10 +1236,11 @@ type TilasmSend struct {
 	WishId string `protobuf:"bytes,3,opt,name=wish_id,json=wishId,proto3" json:"wish_id,omitempty"`
 	// 1, 2… within the tilasm: the comments it carried have it as their send.
 	Number int32 `protobuf:"varint,4,opt,name=number,proto3" json:"number,omitempty"`
-	// What the developer chose: launch the work with the comments, or iterate on the tilasm.
+	// What the developer chose: launch the work with the comments, or iterate on the tilasm; a launch that started an
+	// iteration round is an iterate.
 	Choice SendChoice `protobuf:"varint,5,opt,name=choice,proto3,enum=plan.v1.SendChoice" json:"choice,omitempty"`
-	// The open question that linked the tilasm when it was sent, by identifier; empty when none did. A launch without
-	// a comment answered it with its recommended option.
+	// The open question that linked the tilasm when it was sent, by identifier; empty when none did. A launch answered
+	// it with its recommended option; the developer's answer to it sends the drafts with it, a launch (W13).
 	QuestionId string `protobuf:"bytes,6,opt,name=question_id,json=questionId,proto3" json:"question_id,omitempty"`
 	// When it was sent.
 	CreateTime    *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=create_time,json=createTime,proto3" json:"create_time,omitempty"`
@@ -2285,11 +2286,11 @@ type TilasmServiceSendCommentsResponse struct {
 	Send *TilasmSend `protobuf:"bytes,1,opt,name=send,proto3" json:"send,omitempty"`
 	// The comments it carried, by code.
 	Comments []*TilasmComment `protobuf:"bytes,2,rep,name=comments,proto3" json:"comments,omitempty"`
-	// The question a launch without a comment answered, by code (Q29); empty when it answered none.
+	// The question a launch answered, by code (Q29, W13); empty when it answered none.
 	Answered string `protobuf:"bytes,3,opt,name=answered,proto3" json:"answered,omitempty"`
-	// The question an iterate send started an iteration round on, by code (Q61), when an option of that open question
-	// linking the tilasm plans a mockup within its rounds (ROUND_KIND_ITERATE): the mockup task reads the comments, no
-	// comments event goes to the lead. Empty otherwise.
+	// The question an iterate send, or a launch on the option that iterates (W13), started an iteration round on, by code
+	// (Q61), when an option of that open question linking the tilasm plans a mockup within its rounds
+	// (ROUND_KIND_ITERATE): the mockup task reads the comments, no comments event goes to the lead. Empty otherwise.
 	Iterated string `protobuf:"bytes,4,opt,name=iterated,proto3" json:"iterated,omitempty"`
 	// The mockup task the iteration started, by code (W301); empty when none started, the lead told instead.
 	Iterate       string `protobuf:"bytes,5,opt,name=iterate,proto3" json:"iterate,omitempty"`

@@ -112,9 +112,11 @@ type TilasmServiceClient interface {
 	// The draft comments on a wish's tilasms, for the window: no agent reads them. And those sent, with their replies.
 	Drafts(context.Context, *connect.Request[v1.TilasmServiceDraftsRequest]) (*connect.Response[v1.TilasmServiceDraftsResponse], error)
 	// Send every draft of a tilasm to the Djinn at once, from the window, with the developer's choice: launch the work it
-	// explains, or iterate on the tilasm. One lead event per send, whatever the number of comments. A launch without a
-	// comment answers the open question that links the tilasm with its recommended option, as approving it does. A
-	// tilasm held (TilasmHold) takes no send: a launch is never given twice.
+	// explains, or iterate on the tilasm. A launch answers the open question that links the tilasm with its recommended
+	// option: without a comment as approving it does, with comments by an answer whose note cites the send, its plan
+	// launched with the comments in its prompt (W13). An iterate send, or a launch whose option iterates, on a tilasm a
+	// mockup option of that question iterates on starts its iteration round. Any other send is one lead event, whatever
+	// the number of comments. A tilasm held (TilasmHold) takes no send: a launch is never given twice.
 	SendComments(context.Context, *connect.Request[v1.TilasmServiceSendCommentsRequest]) (*connect.Response[v1.TilasmServiceSendCommentsResponse], error)
 	// Reply to a comment the developer sent: what you did with it, or why not, and the tasks you made of it. Every sent
 	// comment gets one; its card shows it. A second reply replaces the first. A draft takes none: no agent reads it.
@@ -423,9 +425,11 @@ type TilasmServiceHandler interface {
 	// The draft comments on a wish's tilasms, for the window: no agent reads them. And those sent, with their replies.
 	Drafts(context.Context, *connect.Request[v1.TilasmServiceDraftsRequest]) (*connect.Response[v1.TilasmServiceDraftsResponse], error)
 	// Send every draft of a tilasm to the Djinn at once, from the window, with the developer's choice: launch the work it
-	// explains, or iterate on the tilasm. One lead event per send, whatever the number of comments. A launch without a
-	// comment answers the open question that links the tilasm with its recommended option, as approving it does. A
-	// tilasm held (TilasmHold) takes no send: a launch is never given twice.
+	// explains, or iterate on the tilasm. A launch answers the open question that links the tilasm with its recommended
+	// option: without a comment as approving it does, with comments by an answer whose note cites the send, its plan
+	// launched with the comments in its prompt (W13). An iterate send, or a launch whose option iterates, on a tilasm a
+	// mockup option of that question iterates on starts its iteration round. Any other send is one lead event, whatever
+	// the number of comments. A tilasm held (TilasmHold) takes no send: a launch is never given twice.
 	SendComments(context.Context, *connect.Request[v1.TilasmServiceSendCommentsRequest]) (*connect.Response[v1.TilasmServiceSendCommentsResponse], error)
 	// Reply to a comment the developer sent: what you did with it, or why not, and the tasks you made of it. Every sent
 	// comment gets one; its card shows it. A second reply replaces the first. A draft takes none: no agent reads it.

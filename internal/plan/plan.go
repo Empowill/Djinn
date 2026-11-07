@@ -1418,6 +1418,11 @@ func (q *Questions) Answer(
 			if iteration, err = iterationRound(ctx, tx, question, p, req.Msg.GetNote(), 0); err != nil {
 				return err
 			}
+			if actor == planv1.Closer_CLOSER_DEVELOPER {
+				if err := sendWithIteration(ctx, tx, question, iteration); err != nil { // Its drafts go with it (W13).
+					return err
+				}
+			}
 			question.Rounds = append(question.Rounds, iteration)
 			return tx.Put(question)
 		}
@@ -1438,6 +1443,9 @@ func (q *Questions) Answer(
 			CreateTime: timestamppb.Now(),
 			Actor:      actor,
 			TaskId:     taskID,
+		}
+		if err := sendWithAnswer(ctx, tx, question); err != nil { // The drafts on its tilasms go with it (W13).
+			return err
 		}
 		if then, err = settled(ctx, q.Settle, tx, question); err != nil {
 			return err

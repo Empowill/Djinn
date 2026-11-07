@@ -1,6 +1,6 @@
 ---
 name: planned-options
-description: Plan each option's task when you ask (--plan-file); a one-click answer launches it, a note or a dependency comes back as a revision you settle with djinn question launch; a mockup option iterates, within its rounds
+description: Plan each option's task when you ask (--plan-file); a one-click answer launches it, a note or a dependency comes back as a revision you settle with djinn question launch; a mockup option iterates, within its rounds; a linked tilasm's comments go with the answer, and its Launch answers the question
 type: feedback
 ---
 
@@ -76,3 +76,24 @@ Build the approved version of L18 (the one the decision cites). Lint, tests, e2e
 - **No mockup started** (a start that failed): the event gives the command, `djinn task spawn <wish> --kind mockup
   --question Q61 --tilasm L18 --title "…" --prompt "…"`.
 - The context stays short (Short questions): the mockup is in the tilasm the question links.
+
+## The question and its tilasm settle each other (W13, Q13)
+
+A question that links a tilasm (`djinn://tilasm/<id>`) and the tilasm's Launch and Iterate buttons are one decision:
+never tie them by hand (as L05 send 1 and Q12 were, answered B by the lead, then `djinn question launch` with an
+edited prompt).
+
+- **Answering the question sends the drafts.** The developer's answer, or approval, sends the comments left in draft on
+  the tilasms the question links (and its chosen plan's) as one send per tilasm, with the answer. A launched plan gets
+  them in its prompt (a part "The developer's comments, sent with the answer"), whoever launches it, you with
+  `djinn question launch` included; an iteration round's mockup task reads them. Your answer line says
+  `send 1 of L05 went with the answer, 2 comments: djinn tilasm comments L05 --wish <wish> --send 1`. An answer of
+  yours or a worker's sends no draft.
+- **Launch with comments answers the question.** It takes the recommended option, the developer as actor, a note that
+  cites the send (`Launched from L05 v3 with send 1 of its comments (2 comments): …`). That note holds nothing back:
+  the plan launches at once (still not when it comes after tasks or blocks some), the comments in its prompt, and no
+  `comments` event comes: your watch reads `Q12 answered B — "…". W40 launched as planned; send 1 of L05 went with
+  the answer…`. Nothing to do but follow it. On a recommended option that iterates, Launch starts its round, as
+  Iterate does.
+- **A `comments` event still comes** for a send no open question settles: no question links the tilasm, its
+  recommendation names no option, or Iterate where no mockup option has rounds left. Act on it as the leads' rule says.

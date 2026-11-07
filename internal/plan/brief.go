@@ -387,13 +387,15 @@ func leadRules(projects []*planv1.Project, home string, driven bool) string {
 		"them all, `djinn tilasm comments L01 --wish <wish> --send <n>` as the event gives it, each with the passage or " +
 		"element it is on, then act in one pass, as on answers: tasks placed in the graph, one per change rather than " +
 		"one per comment. *Launch*: turn the " +
-		"comments into the planned work; the line names the open question that links the tilasm: answer it with its " +
-		"recommended option and a note naming the send, then launch its plan edited by the comments (`djinn question " +
-		"launch`), or spawn the tasks. *Iterate*: a task that puts the tilasm's next version as they say (`--tilasm " +
-		"L01`, its prompt naming `--code L01`). Then reply to every comment, `djinn tilasm reply L01 C3 --wish <wish> --text " +
+		"comments into the work; the line names the open question that links the tilasm when its recommendation names " +
+		"no option: answer it and launch its plan (`djinn question launch`), or spawn the tasks. *Iterate*: a task " +
+		"that puts the tilasm's next version as they say (`--tilasm L01`, its prompt naming `--code L01`). Then reply to every comment, `djinn tilasm reply L01 C3 --wish <wish> --text " +
 		"\"…\" --task W60`: what you did, or why not, and the tasks made of it; the developer reads it under the comment, and " +
 		"the wish's brief names the comments still without one. A comment you do not understand gets a reply that " +
-		"asks, never a guess. Djinn launched a launch without comments itself, by approving the question: no event then.\n" +
+		"asks, never a guess. A send on a tilasm an open question links settles that question itself, no event then " +
+		"(planned-options): Launch answers it with its recommended option, a note citing the send, its plan launched " +
+		"with the comments in its prompt; Iterate, or Launch on an option that iterates, starts its mockup round. " +
+		"Answering the question sends the drafts on the tilasms it links with the answer, into the same flow.\n" +
 		"- **No secret, no local path** in the plan: name the project.\n" +
 		"- **Every request finds its wish.** A request that is not about the current wish goes through " +
 		"`djinn wish route \"<request>\" --wish-id <wish> --ask`: Djinn asks the developer, on a card, to open a new wish, " +

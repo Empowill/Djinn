@@ -24,7 +24,10 @@ included. At the last one, Iterate launches nothing more: your answer and its no
 versions with you and asks again.
 
 **Your comments iterate too.** Comments you send on the tilasm with **Iterate** start the same round when an open
-question's mockup option iterates on that tilasm: one mockup task reads them all, and no second path starts. While it
+question's mockup option iterates on that tilasm: one mockup task reads them all, and no second path starts. The
+other way round, answering the question sends the comments still in draft on the tilasm with it: the mockup task, or
+the build, reads them. **Launch** on the tilasm answers the question with the option it recommends, your comments
+in the build's prompt. While it
 works, the tilasm holds its comments: you comment on its next version.
 
 ## How it runs
