@@ -7,7 +7,10 @@ import { AnimatePresence, LayoutGroup } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Change, type ProjectSync, type Wish } from "../gen/ts/plan/v1/plan_pb";
-import { ShownTheme } from "../gen/ts/ui/v1/ui_pb";
+import {
+  ShownTheme,
+  type UiServiceGetEnvironmentResponse,
+} from "../gen/ts/ui/v1/ui_pb";
 import { useShownTheme } from "./theme";
 import { message } from "./data/client";
 import {
@@ -32,7 +35,7 @@ import {
   waitsForYou,
   waitsOf,
 } from "./data/format";
-import { AgentSetup, needsSetup } from "./agent-setup";
+import { leadReady } from "./agent-setup";
 import { FlightPlan } from "./flight-plan";
 import { Brand, Toast } from "./frame";
 import { HOURGLASS, Hourglass } from "./hourglass";
@@ -42,7 +45,7 @@ import { EmptyState } from "./empty-art";
 import { platformShortcut, TooltipButton } from "./tooltip";
 import { useInboxCount } from "./inbox";
 import { ProjectPanel } from "./project-panel";
-import { SummoningCircle } from "./summoning-circle";
+import { CIRCLE, SummoningCircle } from "./summoning-circle";
 import { AddProject, MakeWish, Settings } from "./wish-dialogs";
 import { Docs, GRIMOIRE } from "./docs";
 import { WishSidebar } from "./wish-sidebar";
@@ -58,11 +61,19 @@ import { DjinnEye } from "./djinn-eye";
 import { OperatingLoad } from "./operating-load";
 import { PageHeader } from "./page-header";
 import { CARPET_DIGIT, HOURGLASS_DIGIT, pageDigit } from "./page-keys";
+import { usePlace, viewHistory } from "./view-history";
+import {
+  historyStep,
+  nextWish,
+  typingIn,
+  wishOrder,
+  wishStep,
+} from "./window-keys";
 import { hideSplash } from "./splash";
 import "./wish.css";
 import "./review.css";
 
-type Modal = "make" | "project" | "settings" | "agents" | "summoning" | null;
+type Modal = "make" | "project" | "settings" | null;
 
 // What the window shows instead of a wish: the flying carpet of the active wishes. A wish's id is a UUID: never this.
 export const PLAN = "plan";
@@ -110,6 +121,11 @@ export function WishApp() {
   // a wish's states coming later appear without it. A count of the folds, so that a second fold keeps the glide.
   const [glide, setGlide] = useState(0);
   const [modal, setModal] = useState<Modal>(null);
+  // The agents as the window last read them (UiService.GetEnvironment), at its opening and from the Circle: with none
+  // that can lead, the Circle's entry wears a yellow dot until one is set up (W578).
+  const [agentEnv, setAgentEnv] = useState<UiServiceGetEnvironmentResponse>();
+  const driven = useData((s) => s.leadDrive !== undefined);
+  const leadless = agentEnv !== undefined && !leadReady(agentEnv, driven);
   const [making, setMaking] = useState(false);
   const [projectId, setProjectId] = useState("");
   const [toast, setToast] = useState("");
@@ -134,8 +150,8 @@ export function WishApp() {
     const timer = window.setTimeout(() => setGlide(0), 400);
     return () => window.clearTimeout(timer);
   }, [glide]);
-  // showPage shows a page of the window instead of a wish: the flying carpet (PLAN), the Hourglass (HOURGLASS) or the
-  // Grimoire (GRIMOIRE), by the side panel or by the keyboard (PAGES).
+  // showPage shows a page of the window instead of a wish: the flying carpet (PLAN), the Hourglass (HOURGLASS), the
+  // Grimoire (GRIMOIRE) or the Summoning Circle (CIRCLE), by the side panel or by the keyboard (PAGES).
   const showPage = useCallback((page: string) => {
     setSelected(page);
     setModal(null);
@@ -176,15 +192,17 @@ export function WishApp() {
     setReaching((r) => (r && r.wishId !== selected ? undefined : r));
     setLanding((l) => (l && l.wishId !== selected ? undefined : l));
   }, [selected]);
-  // The window opens with no agent ready (none installed and signed in, or of unknown sign-in): the setup of the agents
-  // opens by itself. Otherwise it waits in the settings and the lead's menu.
+  // The window opens with no agent that can lead (none installed and signed in, leadReady): it opens on the Summoning
+  // Circle, the first step of the onboarding, whose agents' setup comes first (W578). Otherwise it waits there, and in
+  // the settings.
   useEffect(() => {
     let live = true;
     clients.ui
       .getEnvironment({ agents: true })
       .then((res) => {
-        if (live && res.providers.length > 0 && res.providers.every(needsSetup))
-          setModal((m) => m ?? "agents");
+        if (!live) return;
+        setAgentEnv(res);
+        if (!leadReady(res)) setSelected(CIRCLE);
       })
       .catch(() => undefined);
     return () => {
@@ -269,16 +287,31 @@ export function WishApp() {
   const pendingWish = justMade?.id === selected ? justMade : undefined;
   const hourglass = !chosen && !pendingWish && selected === HOURGLASS;
   const grimoire = !chosen && !pendingWish && selected === GRIMOIRE;
+  const circle = !chosen && !pendingWish && selected === CIRCLE;
   const plan =
     !hourglass &&
     !grimoire &&
+    !circle &&
     !chosen &&
     !pendingWish &&
     (selected === PLAN || active.length > 0);
   const wish =
-    plan || hourglass || grimoire
+    plan || hourglass || grimoire || circle
       ? undefined
       : (chosen ?? pendingWish ?? wishes[0]);
+  // No agent could lead yet: the agents are read again on leaving the Circle (it reads its own while shown) or closing
+  // the settings, where they are set up too, so the dot goes once one is.
+  useEffect(() => {
+    if (!leadless || circle || modal) return;
+    let live = true;
+    clients.ui
+      .getEnvironment({ agents: true })
+      .then((res) => live && setAgentEnv(res))
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [circle, clients, leadless, modal]);
   // Until the wishes are read, no page is chosen: the home page would show, then give way to the flying carpet or a wish
   // with a header of its own, and a gauge focused or measured in between would be gone.
   const wishesState = useReadState("wishes");
@@ -299,6 +332,65 @@ export function WishApp() {
     }
   }, [loaded, projectsState, wishesState]);
   const shownId = wish?.id ?? "";
+  // The page shown is the first layer of the window's history of views (view-history.ts): going back to it shows it
+  // again, as the side panel does, without landing on its questions.
+  usePlace(
+    "page",
+    settling
+      ? undefined
+      : plan
+        ? PLAN
+        : hourglass
+          ? HOURGLASS
+          : grimoire
+            ? GRIMOIRE
+            : wish?.id,
+    (page) => {
+      if (page) setSelected(page);
+    },
+  );
+  // A wish shown by the keyboard as by a click in the side panel: its first tab, its first question with the focus.
+  const openWish = useCallback((id: string) => {
+    setSelected(id);
+    setModal(null);
+    setOpening(undefined);
+    setReaching(undefined);
+    setLanding({ wishId: id });
+  }, []);
+  // Alt+Left and Alt+Right (on macOS Cmd+[ and Cmd+], Cmd+Left and Cmd+Right) go back and forward in the views, as in
+  // Chrome; Ctrl+Up and Ctrl+Down to the wish above or below in the side panel, the granted ones skipped
+  // (window-keys.ts). Never from a text field or the terminal, nor over a dialog.
+  const moves = useRef({ wishes, shownId });
+  moves.current = { wishes, shownId };
+  useEffect(() => {
+    const keys = (event: KeyboardEvent) => {
+      if (
+        event.defaultPrevented ||
+        event.isComposing ||
+        modal !== null ||
+        making ||
+        typingIn(event.target) ||
+        document.querySelector(".modal-backdrop")
+      )
+        return;
+      const back = historyStep(event);
+      if (back) {
+        // Nothing before or after: the key still does nothing else (a browser would leave the page).
+        event.preventDefault();
+        if (back < 0) viewHistory.back();
+        else viewHistory.forward();
+        return;
+      }
+      const step = wishStep(event);
+      if (!step) return;
+      event.preventDefault();
+      const { wishes, shownId } = moves.current;
+      const to = nextWish(wishOrder(wishes), shownId, step);
+      if (to) openWish(to);
+    };
+    window.addEventListener("keydown", keys);
+    return () => window.removeEventListener("keydown", keys);
+  }, [making, modal, openWish]);
   const newWishShortcut = platformShortcut("N");
   const sidebarShortcut = platformShortcut("\\");
   // djinn sends no notification for the wish shown while the window is in front; the theme shown, the system's
@@ -457,17 +549,13 @@ export function WishApp() {
             onSelectHourglass={() => showPage(HOURGLASS)}
             grimoireSelected={grimoire}
             onSelectGrimoire={() => showPage(GRIMOIRE)}
-            onOpenSummoningCircle={() => setModal("summoning")}
+            summoningSelected={circle}
+            summoningAlert={leadless}
+            onOpenSummoningCircle={() => showPage(CIRCLE)}
             selectedWishId={wish?.id ?? ""}
             selectedProjectId={projectId}
             collapsed={collapsed}
-            onSelectWish={(id) => {
-              setSelected(id);
-              setModal(null);
-              setOpening(undefined);
-              setReaching(undefined);
-              setLanding({ wishId: id });
-            }}
+            onSelectWish={openWish}
             onSelectProject={setProjectId}
             onMove={move}
             onReorder={reorder}
@@ -537,13 +625,14 @@ export function WishApp() {
               />
             ) : grimoire ? (
               <Docs />
+            ) : circle ? (
+              <SummoningCircle onAgents={setAgentEnv} />
             ) : plan ? (
               <FlightPlan
                 wishes={active}
                 onOpen={setSelected}
                 onOpenProject={setProjectId}
                 onToast={setToast}
-                onSetupAgents={() => setModal("agents")}
               />
             ) : wish ? (
               <WishView
@@ -553,7 +642,6 @@ export function WishApp() {
                 reaching={reaching?.wishId === wish.id ? reaching : undefined}
                 landing={landing?.wishId === wish.id ? landing : undefined}
                 onToast={setToast}
-                onSetupAgents={() => setModal("agents")}
               />
             ) : (
               <HomePlaceholder
@@ -578,10 +666,6 @@ export function WishApp() {
           />
         )}
         {modal === "settings" && <Settings onClose={() => setModal(null)} />}
-        {modal === "agents" && <AgentSetup onClose={() => setModal(null)} />}
-        {modal === "summoning" && (
-          <SummoningCircle onClose={() => setModal(null)} />
-        )}
         {project && modal !== "make" && (
           <ProjectPanel
             project={project}

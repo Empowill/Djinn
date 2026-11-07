@@ -379,7 +379,7 @@ func TestWatcher(t *testing.T) {
 			t.Skip("Windows cannot pause a worker")
 		}
 		t.Parallel()
-		p, err := startCommand(t.TempDir(), "true", nil, nil, nil, Grace, false, false, nil)
+		p, err := startCommand(t.TempDir(), "true", nil, nil, nil, Grace, false, 0, nil)
 		if err != nil {
 			t.Fatal(err)
 		}

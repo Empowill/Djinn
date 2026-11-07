@@ -251,27 +251,6 @@ func GroupPIDs(procs []proc, pid int) []int {
 	return pids
 }
 
-// WorkerPIDs returns the list of process IDs belonging to a worker (from its cgroup if available, or process tree).
-func WorkerPIDs(pid int, cgroup string) ([]int, error) {
-	if cgroup != "" {
-		if pids, err := CgroupPIDs(cgroup); err == nil && len(pids) > 0 {
-			return pids, nil
-		}
-	}
-	if pid <= 0 {
-		return nil, nil
-	}
-	procs, err := listProcs()
-	if err != nil {
-		return []int{pid}, err
-	}
-	pids := GroupPIDs(procs, pid)
-	if len(pids) == 0 {
-		return []int{pid}, nil
-	}
-	return pids, nil
-}
-
 // listing is the last list of the processes, shared by the workers' readings.
 var listing struct {
 	mu    sync.Mutex

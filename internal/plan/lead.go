@@ -434,7 +434,7 @@ func (s *LeadService) Get(
 	if d := s.Wishes.drive(); d != nil {
 		// No terminal: the lead is the batches Djinn drives, and why the last one failed twice, if it did.
 		res.Driven, res.Batch, res.StartError, res.Limit = true, d.Batch(), d.Failure(), d.LeadLimit()
-		res.Seat, res.Accounts = ReadLeadSeat(home), ReadAccounts(home)
+		res.Seat, res.Accounts, res.Pinned = ReadLeadSeat(home), ReadAccounts(home), LeadPinned(home)
 		res.Journal, _ = LeadJournal(ctx, s.Wishes.Store, nil, 10)
 		// The lead is where its batches run: the window marks that agent in the lead's menu.
 		res.Lead = &planv1.Lead{Id: "lead", Provider: res.GetSeat().GetProvider(),

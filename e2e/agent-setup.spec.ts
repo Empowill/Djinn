@@ -72,8 +72,11 @@ async function simulate(page: Page, states: States) {
 
 const row = (page: Page, id: string) =>
   page.locator(`.provider-setting[data-agent="${id}"]`);
+// own is the line of an agent's own sign-in, in the order of the accounts: where it pauses.
+const own = (page: Page, id: string) =>
+  page.locator(`.provider-setting[data-own="${id}"]`);
 
-test("with no agent ready, the setup opens by itself, installs an agent and checks it again", async ({
+test("with no agent ready, the window opens on the Summoning Circle, its entry dotted yellow, installs an agent and checks it again", async ({
   page,
 }) => {
   const errors: string[] = [];
@@ -86,10 +89,21 @@ test("with no agent ready, the setup opens by itself, installs an agent and chec
   await simulate(page, states);
   await page.goto(process.env.DJINN_URL!);
 
-  const panel = page.getByRole("dialog");
-  await expect(panel.getByText("Set up the agents")).toBeVisible({
+  // The first step of the onboarding is the Circle (W578): a page, no dialog, the agents' setup at its top.
+  const panel = page.locator(".summoning-page");
+  await expect(
+    panel.getByRole("heading", { name: "Summoning Circle" }),
+  ).toBeVisible({
     timeout: 15_000,
   });
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  const entry = page.locator(".summoning-nav");
+  await expect(entry).toHaveClass(/selected/);
+  await expect(entry.locator(".summoning-alert")).toBeVisible();
+  await expect(entry).toHaveAttribute(
+    "title",
+    "No session of the Djinn can start yet: set up an agent here",
+  );
   await expect(panel.getByText(/No agent is ready/)).toBeVisible();
   // One line and one button per agent: what the step does shows on hover.
   const claude = row(page, "claude");
@@ -101,7 +115,7 @@ test("with no agent ready, the setup opens by itself, installs an agent and chec
   await expect(claude.getByRole("button", { name: "Sign in" })).toHaveCount(0);
   await expect(claude.getByRole("button")).toHaveCount(1);
 
-  // The command ends: the page checks again by itself, and finds the agent installed and signed in.
+  // The command ends: the page checks again by itself, and finds the agent installed and signed in; the dot goes.
   states.claude = ProviderState.READY;
   await install.click();
   const step = page.getByRole("group", { name: "Installing" });
@@ -110,17 +124,24 @@ test("with no agent ready, the setup opens by itself, installs an agent and chec
   await expect(claude.getByText("Ready", { exact: true })).toBeVisible();
   await expect(claude.getByRole("button", { name: "Install" })).toHaveCount(0);
   await expect(claude.getByRole("button", { name: "Sign in" })).toHaveCount(0);
-  await expect(claude.getByRole("button", { name: /Pause/ })).toBeVisible();
-  await expect(claude.getByRole("button")).toHaveCount(1);
+  await expect(claude.getByRole("button")).toHaveCount(0);
+  await expect(
+    own(page, "claude").getByRole("button", { name: /Pause/ }),
+  ).toBeVisible();
   await expect(panel.getByText(/No agent is ready/)).toHaveCount(0);
+  await expect(entry.locator(".summoning-alert")).toHaveCount(0);
+  await expect(entry).toHaveAttribute(
+    "title",
+    "Choose for each kind of worker which model answers across all projects",
+  );
 
-  await panel.getByRole("button", { name: "Close" }).last().click();
-  await expect(page.getByText("Set up the agents")).toHaveCount(0);
-  // An agent is ready now: the setup no longer opens by itself.
+  // An agent is ready now: a reload shows no dot, and the window opens where it was left.
+  await page.locator(".sidebar .hourglass-nav").click();
   await page.reload();
   await expect(page.locator(".sidebar")).toBeVisible();
   await page.waitForTimeout(500);
-  await expect(page.getByText("Set up the agents")).toHaveCount(0);
+  await expect(page.locator(".summoning-page")).toHaveCount(0);
+  await expect(page.locator(".summoning-alert")).toHaveCount(0);
   expect(errors).toEqual([]);
 });
 
@@ -142,10 +163,10 @@ test("the settings show the setup of the agents", async ({ page }) => {
   await expect(
     row(page, "claude").getByRole("button", { name: "Sign in" }),
   ).toHaveCount(0);
+  await expect(row(page, "claude").getByRole("button")).toHaveCount(0);
   await expect(
-    row(page, "claude").getByRole("button", { name: /Pause/ }),
+    own(page, "claude").getByRole("button", { name: /Pause/ }),
   ).toBeVisible();
-  await expect(row(page, "claude").getByRole("button")).toHaveCount(1);
   // Sign-in unknown: signing in stays offered, never pushed.
   const login = row(page, "codex").getByRole("button", { name: "Sign in" });
   await expect(login).toHaveClass(/secondary/);

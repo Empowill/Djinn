@@ -63,6 +63,8 @@
       '<g class="wish-icon-line"><path d="M7 4h11a2 2 0 0 1 2 2v1.5h-4M7 4a2 2 0 0 0-2 2v11h11v1a2 2 0 0 0 2 2H7a2 2 0 0 1-2-2V17M16 7.5V18a2 2 0 0 0 2 2"/><g stroke-width="1"><path d="M8 8h5M8 10.5h4"/></g></g><g class="wish-icon-gild"><circle cx="12.5" cy="13.5" r="1.6" fill="currentColor" stroke="none"/></g>',
     "app-window":
       '<g class="wish-icon-line"><path d="M5 4H19L21.5 6.5V17.5L19 20H5L2.5 17.5V6.5Z"/><path d="M2.5 8.5h19"/><g stroke-width="1"><path d="M6 12.5h8M6 15.5h5"/></g></g><g class="wish-icon-gild"><circle cx="5.2" cy="6.25" r="0.8" fill="currentColor" stroke="none"/><circle cx="7.6" cy="6.25" r="0.8" fill="currentColor" stroke="none"/><circle cx="10" cy="6.25" r="0.8" fill="currentColor" stroke="none"/></g>',
+    keyboard:
+      '<g class="wish-icon-line"><path d="M4 6.5H20L22 8.5V16.5L20 18.5H4L2 16.5V8.5Z"/><path d="M8 15.6h8"/></g><g class="wish-icon-gild"><circle cx="6" cy="10.4" r="0.8" fill="currentColor" stroke="none"/><circle cx="9" cy="10.4" r="0.8" fill="currentColor" stroke="none"/><circle cx="12" cy="10.4" r="0.8" fill="currentColor" stroke="none"/><circle cx="15" cy="10.4" r="0.8" fill="currentColor" stroke="none"/><circle cx="18" cy="10.4" r="0.8" fill="currentColor" stroke="none"/><circle cx="7.5" cy="12.9" r="0.8" fill="currentColor" stroke="none"/><circle cx="10.5" cy="12.9" r="0.8" fill="currentColor" stroke="none"/><circle cx="13.5" cy="12.9" r="0.8" fill="currentColor" stroke="none"/><circle cx="16.5" cy="12.9" r="0.8" fill="currentColor" stroke="none"/></g>',
     envelope:
       '<g class="wish-icon-line"><path d="M5 5H19L21.5 7.5V16.5L19 19H5L2.5 16.5V7.5Z"/><path d="M2.5 7.5l9.5 6.5 9.5-6.5"/></g><g class="wish-icon-gild"><circle cx="12" cy="14" r="1.7" fill="currentColor" stroke="none"/></g>',
     scan:
@@ -153,6 +155,7 @@
     "word-skills": ["scroll", "work"],
     "word-summoning-circle": ["compass", "lead"],
     "word-usage": ["coins", "run"],
+    "word-shortcuts": ["keyboard", "run"],
   };
 
   // Status, worker-kind and button labels in tables and prose, mapped to their window tone.

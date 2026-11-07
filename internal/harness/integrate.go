@@ -1697,6 +1697,7 @@ func (h *Harness) command(ctx context.Context, name, taskID, line, dir string) (
 	if len(args) == 0 {
 		return "", -1, errors.New("no command")
 	}
+	_, installing := ctx.Value(installingKey{}).(bool)
 	if h.gates != nil {
 		waits, _ := ctx.Value(gateWaitKey{}).(func(why string))
 		var waiting func(string)
@@ -1704,7 +1705,6 @@ func (h *Harness) command(ctx context.Context, name, taskID, line, dir string) (
 			waiting = func(why string) { waits("gate " + name + ": " + why) }
 		}
 		// Every command Djinn runs under a gate merges, settles a merge or checks a push, but an install's.
-		_, installing := ctx.Value(installingKey{}).(bool)
 		give, err := h.gates(ctx, name, taskID, line, dir, !installing, waiting)
 		if err != nil {
 			return "", -1, fmt.Errorf("gate %s: %w", name, err)
@@ -1724,10 +1724,14 @@ func (h *Harness) command(ctx context.Context, name, taskID, line, dir string) (
 		}
 		return out, code, err
 	}
-	low := false
-	if run.low {
-		prog, rest, started := lowCommand(args[0], args[1:])
-		args, low = append([]string{prog}, rest...), !started // Not started at its level: set once started.
+	// A check, a setup or a generation runs at a check's nice level, below the window and above the workers (Q371,
+	// checkNiceAt), as does an install Djinn starts by itself; one the developer asked for runs at Djinn's own, waited
+	// for.
+	nice, late := 0, false
+	if run.low || !installing {
+		nice = h.checkNice()
+		prog, rest, started := lowCommand(args[0], args[1:], nice)
+		args, late = append([]string{prog}, rest...), !started // Not started at its level: set once started.
 	}
 	track := h.children.tracker("", name+" check")
 	if h.scopes != nil {
@@ -1739,7 +1743,7 @@ func (h *Harness) command(ctx context.Context, name, taskID, line, dir string) (
 			track = func(pid int, _, mark string) func() { return in(pid, sc.Cgroup, mark) }
 		}
 	}
-	return runTracked(ctx, dir, args, track, run.output, low)
+	return runTracked(ctx, dir, args, track, run.output, nice, late)
 }
 
 // gateWaitKey is the context key of a function told why a command waits for its gate ("gate install: held by …"), and
@@ -1766,14 +1770,16 @@ func InstallWith(ctx context.Context, output func(line string), low bool) contex
 
 // runCommand runs args in dir, and returns the end of what it wrote and its exit code.
 func runCommand(ctx context.Context, dir string, args []string) (string, int, error) {
-	return runTracked(ctx, dir, args, nil, nil, false)
+	return runTracked(ctx, dir, args, nil, nil, 0, false)
 }
 
 // runTracked is runCommand; track, when set, is told of the command as it starts, and what it returns is called once
-// it ended; lines, when set, each line the command writes, as it writes it. low sets a low-priority worker's CPU
-// priority on the command once started.
+// it ended; lines, when set, each line the command writes, as it writes it. It runs at the nice level nice (nice.go):
+// in its priority class on Windows, under nice (lowCommand, which args already holds) on Unix, or set once started
+// when late.
 func runTracked(
-	ctx context.Context, dir string, args []string, track func(pid int, cgroup, mark string) func(), lines func(string), low bool,
+	ctx context.Context, dir string, args []string, track func(pid int, cgroup, mark string) func(), lines func(string),
+	nice int, late bool,
 ) (string, int, error) {
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 	cmd.Dir = dir
@@ -1782,7 +1788,7 @@ func runTracked(
 	cmd.Env = append(trimmedGoFlags(os.Environ()), "DJINN_CALLER="+CallerDjinn)
 	// At ctx's end (Djinn stops), what the command started dies with it: a check's test runner, left alone, would
 	// hold the output open, and Djinn's shutdown with it, for as long as the tests run (W504).
-	ownGroup(cmd, false)
+	ownGroup(cmd, nice)
 	cmd.Cancel = func() error {
 		kill(&process{cmd: cmd})
 		return nil
@@ -1799,8 +1805,8 @@ func runTracked(
 	start := time.Now()
 	err := cmd.Start()
 	if err == nil {
-		if low {
-			applyPriority(cmd, true)
+		if late {
+			applyPriority(cmd, nice)
 		}
 		if track != nil {
 			defer track(cmd.Process.Pid, "", "")()
@@ -2347,9 +2353,12 @@ func (h *Harness) computedMovesPass(ctx context.Context) {
 
 // targetBranch determines the branch to merge the batch into:
 // When the push strategy is azima, each azima gets its own integration branch (djinn/<azima code>-<slug of title>),
-// cut from main if it does not exist yet (azimaBranch). A task with no azima goes to the wish's own integration branch.
-// In per-wish mode, it returns the wish's integration branch as today. Work held out of its azima's branch, the azima
-// done or its branch deleted, gets that branch and why it waits (azimaBranchFor).
+// cut from main if it does not exist yet (azimaBranch). Work of no azima, or of the azima made for it, whose branch
+// started from another azima's branch is made part of that azima first (joinStart); other work of no azima is made
+// part of an azima made for it (adoptOrphan): only a correction or a review of no azima goes to the wish's own
+// integration branch. In per-wish mode,
+// it returns the wish's integration branch as today. Work held out of its azima's branch, the azima done or its branch
+// deleted, gets that branch and why it waits (azimaBranchFor).
 func (h *Harness) targetBranch(
 	ctx context.Context, wish *planv1.Wish, project *planv1.Project, settings plan.Settings, batch []*planv1.Task,
 ) (branch, why string, ok bool) {
@@ -2361,6 +2370,16 @@ func (h *Harness) targetBranch(
 	azima, err := h.taskAzima(ctx, batch[0])
 	if err != nil {
 		return "", "find azima: " + err.Error(), false
+	}
+	if started, err := h.joinStart(ctx, wish, project, settings, batch[0], azima); err != nil {
+		return "", "join the azima its branch started from: " + err.Error(), false
+	} else if started != nil {
+		azima = started
+	}
+	if azima == nil {
+		if azima, err = h.adoptOrphan(ctx, wish, project, batch[0]); err != nil {
+			return "", "make an azima for work of no azima: " + err.Error(), false
+		}
 	}
 	if azima == nil {
 		b, why := h.integrationBranch(ctx, wish, project)
@@ -2561,9 +2580,10 @@ func (h *Harness) fetchReference(ctx context.Context, repo string, settings plan
 
 // workerStartBranch is the branch a worker starts from, the one its work lands in (startPoint reads it): per wish, the
 // wish's integration branch; per azima, the branch of the task's azima, cut from the reference branch when its first
-// part starts if it was not when the azima was made, and for work of no azima the wish's integration branch, the
-// reference branch unless the developer named another. "" for a wish that records none: the reference branch then.
-// Never the branch the developer's copy has checked out (W227).
+// part starts if it was not when the azima was made, and for a task of no azima the wish's integration branch, the
+// reference branch unless the developer named another: work spawned since gets an azima of its own (own_azima.go),
+// so only a correction or a review of no azima, or work spawned before, starts there. "" for a wish that records none:
+// the reference branch then. Never the branch the developer's copy has checked out (W227).
 func (h *Harness) workerStartBranch(ctx context.Context, wish *planv1.Wish, project *planv1.Project, settings plan.Settings, t *planv1.Task) string {
 	strat, _ := plan.ResolveWishPushStrategy(wish, settings)
 	if strat != planv1.PushStrategy_PUSH_STRATEGY_AZIMA {
@@ -2860,6 +2880,9 @@ func (h *Harness) azimaPRPass(
 			continue
 		}
 		if !h.isBranchPushed(ctx, wish, project, branch) {
+			continue
+		}
+		if h.openAzimaDraft(ctx, wish, project, settings, azima, branch) {
 			continue
 		}
 		ok, parts := h.azimaPartsDoneAndGreen(ctx, wish.GetId(), azima.GetId())

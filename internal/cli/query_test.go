@@ -20,7 +20,7 @@ import (
 )
 
 // queryServer serves the real QueryService over a store holding two tasks: W1, done, created on 1 November 2026 and
-// costing 2 dollars; W2, running, created two days later, an old review. queries counts the calls to
+// costing 2 dollars; W2, running, created two days later, a review. queries counts the calls to
 // QueryService.Query.
 func queryServer(t *testing.T) (srv *httptest.Server, queries *atomic.Int32) {
 	t.Helper()
@@ -40,7 +40,7 @@ func queryServer(t *testing.T) (srv *httptest.Server, queries *atomic.Int32) {
 				Usage: &planv1.Usage{CostUsd: 2}},
 			{Id: "01a00000-0000-7000-8000-000000000002", Code: "W2", Title: "Docs", WishId: "w",
 				Status: planv1.TaskStatus_TASK_STATUS_RUNNING, CreateTime: timestamppb.New(day.Add(48 * time.Hour)),
-				Review: &planv1.TaskReview{}},
+				Review: &planv1.TaskReview{}, Kind: planv1.TaskKind_TASK_KIND_REVIEW},
 		} {
 			if err := tx.Put(task); err != nil {
 				return err
@@ -89,7 +89,7 @@ func TestQueryTexts(t *testing.T) {
 	}{
 		{"typed filters, a number and a time", []string{"query", "query", "tasks", "--select", "code",
 			"--filter", "usage.cost_usd>1", "--filter", "create_time<2026-11-02T00:00:00Z"}, 0, []string{"W1", "1 row"}, ""},
-		{"a kind read from an old review", []string{"query", "query", "tasks", "--select", "code",
+		{"a kind, review", []string{"query", "query", "tasks", "--select", "code",
 			"--filter", "type=review"}, 0, []string{"W2", "1 row"}, ""},
 		{"none of, sorted", []string{"query", "query", "tasks", "--select", "code", "--filter", "status!=running",
 			"--sort", "-code"}, 0, []string{"W1", "1 row"}, ""},
@@ -150,7 +150,7 @@ func TestMCPQueryTexts(t *testing.T) {
 		{"typed filters, a number and a time",
 			`{"collection":"tasks","select":"code","filter":["usage.cost_usd>1","create_time<2026-11-02T00:00:00Z"]}`,
 			false, []string{"W1", "1 row"}, []string{"W2"}},
-		{"a kind read from an old review", `{"collection":"tasks","select":["code"],"filter":"type=review"}`,
+		{"a kind, review", `{"collection":"tasks","select":["code"],"filter":"type=review"}`,
 			false, []string{"W2", "1 row"}, []string{"W1"}},
 		{"sorted, descending", `{"collection":"tasks","select":"code","sort":"-code","format":"csv"}`,
 			false, []string{"code\nW2\nW1\n"}, nil},

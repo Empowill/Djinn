@@ -37,7 +37,7 @@ import {
   type TilasmSendRead,
   type TilasmSends,
 } from "../gen/ts/plan/v1/tilasm_pb";
-import { type Pick, marksOf } from "./data/bridge";
+import { type Pick, fromFrame, marksOf } from "./data/bridge";
 import { message } from "./data/client";
 import {
   cards,
@@ -79,6 +79,7 @@ import {
   useCanPublish,
 } from "./tilasm-publish";
 import { memory } from "./usage";
+import { usePlace } from "./view-history";
 
 import "./tilasms.css";
 
@@ -143,6 +144,8 @@ export function TilasmsTab({
   useEffect(() => {
     if (opening) setOpenId(opening.tilasmId);
   }, [opening]);
+  // The tilasm open is a layer of the window's history of views (view-history.ts): going back opens or closes it again.
+  usePlace("tilasm", openId, (id) => setOpenId(id ?? ""));
   const [history, setHistory] = useState("");
   const [busy, setBusy] = useState(false);
   const canPublish = useCanPublish();
@@ -705,6 +708,29 @@ export function TilasmFrame({
   );
   const hover = useAim(frame, enabled, aiming, setAiming, picked);
   const placed = usePlaced(frame, enabled, version);
+  // Alt+Left and Alt+Right (on macOS Cmd+[ and Cmd+] too) pressed with the focus in the frame (W527): the bridge tells
+  // them, and the frame's element takes them again, for the window's own moves to read them (window-keys.ts) and keep
+  // their rules, nothing over a dialog.
+  useEffect(() => {
+    const onMessage = (event: MessageEvent) => {
+      const el = frame.current;
+      if (!el?.contentWindow || event.source !== el.contentWindow) return;
+      const m = fromFrame(event.data);
+      if (m?.type !== "key" || (m.name !== "back" && m.name !== "forward"))
+        return;
+      el.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: m.name === "back" ? "ArrowLeft" : "ArrowRight",
+          code: m.name === "back" ? "ArrowLeft" : "ArrowRight",
+          altKey: true,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, []);
   // Placed in a later version than they were written on: where each stands is written once, for the cards and the lead.
   const toWrite = enabled ? placesToWrite(all, placed, version) : [];
   const writeKey = toWrite.length > 0 ? JSON.stringify(toWrite) : "";

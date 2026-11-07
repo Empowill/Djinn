@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -45,10 +46,14 @@ const (
 // window, its events waiting for the next event or for Lead. The events queued while a batch runs wait for the next
 // batch. One batch runs at a time.
 //
-// Each batch runs where the developer seated the lead (plan.ReadLeadSeat, W132): an agent, a model, an account, read
-// as the batch starts, so that a move takes effect at the next batch. A batch that hits a usage limit is not tried
-// again: Djinn moves the lead nowhere by itself, it tells the developer and offers the other seats of this machine in
-// one click; its events wait for a move, for Lead, or for the limit to reset.
+// Each batch runs where the developer seated the lead (plan.ReadLeadSeat, W132): an agent and a model, read as the
+// batch starts, so that a move takes effect at the next batch. Its sign-in follows the order of the accounts (L2,
+// decision of 06/11 that revised Q31): before each batch, the account policy picks the sign-in of its agent as for a
+// new worker (ByMode: dynamic or manual), never another agent nor another model; a limit the lead hits holds that sign-in for
+// every worker too, and the batch goes on at once on the next free one, if any. Pinned on an account
+// (plan.LeadPinned), it stays there, as the developer chose. A batch with no sign-in to go on is not tried again:
+// Djinn tells the developer and offers the other seats of this machine in one click; its events wait for a move, for
+// Lead, or for the first limit to reset.
 
 type LeadDriver struct {
 	// Wishes serve the lead's queue, and the plan its batches read.
@@ -75,11 +80,31 @@ type LeadDriver struct {
 	RetryAfter   time.Duration
 	// Now is the driver's clock; time.Now by default.
 	Now func() time.Time
+
+	// accounts are the sign-ins the lead follows, the harness's (L2); nil: the lead stays on its seat's account, as if
+	// it were pinned there.
+	accounts leadAccounts
+	// overflow: the session that runs now started past the limits of its sign-in (AccountPick.Overflow).
+	overflow atomic.Bool
 }
+
+// leadAccounts are the sign-ins as the harness knows them, for a lead that follows their order (L2): the account
+// policy picks the sign-in of each batch, a limit the lead hits holds its sign-in for every worker, and the quota its
+// stream tells counts as a worker's does (Harness.pickLead, holdLead, freesAt, noteQuota).
+type leadAccounts interface {
+	pickLead(provider planv1.Provider) (pick AccountPick, account *planv1.Account, held bool, why string, ok bool)
+	holdLead(provider planv1.Provider, name string, l Limit)
+	freesAt(provider planv1.Provider) time.Time
+	noteQuota(provider planv1.Provider, name string, q Quota)
+}
+
+// Overflowing tells whether the lead's session that runs now started past the limits of its sign-in, on extra credits
+// if its account allows them: what the window shows beside the lead.
+func (d *LeadDriver) Overflowing() bool { return d.overflow.Load() }
 
 // LeadDriver is the driver of the lead of h's Djinn, on wishes: h's Claude, its processes tracked.
 func (h *Harness) LeadDriver(wishes *plan.Wishes, changed func()) *LeadDriver {
-	d := &LeadDriver{Wishes: wishes, Home: h.home, Changed: changed, Now: h.now, Providers: h.providers}
+	d := &LeadDriver{Wishes: wishes, Home: h.home, Changed: changed, Now: h.now, Providers: h.providers, accounts: h}
 	if h.children != nil {
 		d.Track = h.children.tracker("lead", "lead")
 	}
@@ -169,19 +194,42 @@ func (d *LeadDriver) restore(ctx context.Context, drive *plan.LeadDrive) {
 // its turn. Failed twice, it is reported; stopped by a usage limit, it is reported at once, with the limit.
 func (d *LeadDriver) batch(ctx context.Context, drive *plan.LeadDrive, events []*planv1.LeadEvent) (bool, *planv1.LeadLimit) {
 	var err error
+	var stopped []string // the sign-ins a limit stopped this batch on, the lead following the order
 	for attempt := int32(1); attempt <= 2; attempt++ {
+		seat, follows, why := d.place()
+		if why != "" {
+			drive.Fail(fmt.Sprintf("The Djinn's batch of %d event(s) cannot start: it %s. Resume one (djinn lead "+
+				"resume-account), or move the lead; its events wait for the next event, or Lead.", len(events), why))
+			return false, nil
+		}
 		var limit *Limit
-		var seat *planv1.LeadSeat
-		if seat, limit, err = d.attempt(ctx, drive, events, attempt); err == nil {
+		seat, limit, err = d.attempt(ctx, drive, events, attempt, seat)
+		d.overflow.Store(false)
+		if err == nil {
 			return true, nil
 		}
 		if ctx.Err() != nil {
 			return false, nil // Stopping: the events wait for the next djinn up.
 		}
 		if limit != nil {
+			logx.L().Warn("the lead hit a usage limit", "loop", "lead", "limit", limit.What, "account", seat.GetAccount(),
+				"events", len(events))
+			if d.accounts != nil {
+				d.accounts.holdLead(seat.GetProvider(), seat.GetAccount(), *limit) // For every worker too.
+			}
+			if follows {
+				stopped = append(stopped, seat.GetAccount())
+				next, _, held, _, ok := d.accounts.pickLead(seat.GetProvider())
+				if ok && !held && !slices.Contains(stopped, next.Name) {
+					// A limit is no failure: the batch goes on at once on the next sign-in in the order.
+					logx.L().Info("the lead moves to another sign-in", "loop", "lead", "from", seat.GetAccount(),
+						"to", next.Name, "overflow", next.Overflow)
+					attempt--
+					continue
+				}
+			}
 			// The same seat would hit it again: the developer moves the lead, or the events wait for the reset.
-			logx.L().Warn("the lead hit a usage limit", "loop", "lead", "limit", limit.What, "events", len(events))
-			return false, d.reportLimit(ctx, drive, seat, *limit, len(events))
+			return false, d.reportLimit(ctx, drive, seat, *limit, len(events), follows)
 		}
 		logx.L().Warn("a batch of the lead failed", "loop", "lead", "attempt", attempt, "events", len(events), "err", err)
 		if attempt == 1 && !wait(ctx, cmp.Or(d.RetryAfter, LeadRetryAfter)) {
@@ -193,8 +241,11 @@ func (d *LeadDriver) batch(ctx context.Context, drive *plan.LeadDrive, events []
 	return false, nil
 }
 
-// reportLimit tells the developer that the lead on seat hit l, with the seats it may move to, and returns it.
-func (d *LeadDriver) reportLimit(ctx context.Context, drive *plan.LeadDrive, seat *planv1.LeadSeat, l Limit, n int) *planv1.LeadLimit {
+// reportLimit tells the developer that the lead on seat hit l, with the seats it may move to, and returns it. A lead
+// that follows the order tries again when the first sign-in of its agent that a limit holds frees.
+func (d *LeadDriver) reportLimit(
+	ctx context.Context, drive *plan.LeadDrive, seat *planv1.LeadSeat, l Limit, n int, follows bool,
+) *planv1.LeadLimit {
 	now := d.now()
 	after := now.Add(plan.LimitWait)
 	accounts := plan.ReadAccounts(d.Home)
@@ -204,8 +255,40 @@ func (d *LeadDriver) reportLimit(ctx context.Context, drive *plan.LeadDrive, sea
 	}
 	why := fmt.Sprintf("The Djinn on %s hit %s: its %d event(s) wait. Move the lead to another agent or account, "+
 		"or they go to the same one then.", plan.SeatText(seat, accounts), limit.GetText(), n)
+	if follows {
+		if first := d.accounts.freesAt(seat.GetProvider()); first.After(now) && (limit.Until == nil || first.Before(limit.Until.AsTime())) {
+			limit.Until = timestamppb.New(first)
+		}
+		at := ClockText(after, now)
+		if limit.Until != nil {
+			at = ClockText(limit.Until.AsTime(), now)
+		}
+		why = fmt.Sprintf("The Djinn on %s hit %s, and no other sign-in of its agent is free: its %d event(s) wait "+
+			"for the first to free, at %s. Move the lead to another agent, or pin it on an account.",
+			plan.SeatText(seat, accounts), limit.GetText(), n, at)
+	}
 	drive.SetLimit(limit, why)
 	return limit
+}
+
+// place is the seat of the lead's next session: the developer's (plan.ReadLeadSeat), its sign-in the first free in
+// the order when it follows it (follows, L2); why says why none may take it (each sign-in of its agent paused).
+func (d *LeadDriver) place() (seat *planv1.LeadSeat, follows bool, why string) {
+	seat = plan.ReadLeadSeat(d.Home)
+	d.overflow.Store(false)
+	if d.accounts == nil || plan.LeadPinned(d.Home) {
+		return seat, false, ""
+	}
+	pick, _, _, why, ok := d.accounts.pickLead(seat.GetProvider())
+	if !ok {
+		return seat, true, why
+	}
+	seat.Account = pick.Name
+	d.overflow.Store(pick.Overflow)
+	if pick.Overflow {
+		logx.L().Info("the lead starts in overflow", "loop", "lead", "account", pick.Name)
+	}
+	return seat, true, ""
 }
 
 // leadAgents are the agents that may lead, in the order the moves offer them.
@@ -270,10 +353,9 @@ func (d *LeadDriver) ready(ctx context.Context, seat *planv1.LeadSeat, account *
 // journal: done, its events acknowledged, or failed. It returns the seat, and the usage limit that stopped it, if one
 // did.
 func (d *LeadDriver) attempt(
-	ctx context.Context, drive *plan.LeadDrive, events []*planv1.LeadEvent, attempt int32,
+	ctx context.Context, drive *plan.LeadDrive, events []*planv1.LeadEvent, attempt int32, seat *planv1.LeadSeat,
 ) (*planv1.LeadSeat, *Limit, error) {
 	s := d.Wishes.Store
-	seat := plan.ReadLeadSeat(d.Home)
 	wishes := plan.EventWishes(events)
 	journal, err := plan.LeadJournal(ctx, s, wishes, plan.JournalMax)
 	if err != nil {
@@ -294,7 +376,7 @@ func (d *LeadDriver) attempt(
 	b := &planv1.LeadBatch{
 		Id: store.NewID(), StartTime: timestamppb.New(d.now()), Provider: seat.GetProvider(), Model: seat.GetModel(),
 		Account: seat.GetAccount(), SessionId: store.NewID(), Attempt: attempt, WishIds: wishes,
-		State: planv1.LeadBatchState_LEAD_BATCH_STATE_RUNNING, PromptChars: int32(len(prompt)),
+		State: planv1.LeadBatchState_LEAD_BATCH_STATE_RUNNING, PromptChars: int32(len(prompt)), Overflow: d.Overflowing(),
 	}
 	titles := plan.DigestTitles(ctx, s, events)
 	for _, e := range events {
@@ -341,6 +423,9 @@ func (d *LeadDriver) attempt(
 	for ev := range w.Events() {
 		if ev.Limit != nil {
 			limit = ev.Limit
+		}
+		if ev.Quota != nil && d.accounts != nil {
+			d.accounts.noteQuota(seat.GetProvider(), seat.GetAccount(), *ev.Quota)
 		}
 		changed := false
 		switch ev.Kind {

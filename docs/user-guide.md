@@ -25,9 +25,10 @@ The Djinn and the workers run the agents you already have, as you installed and 
 **Connections & preferences** (bottom of the side panel) shows, one line per agent, whether Djinn finds it, its
 version, and whether it is signed in (`claude auth status`, `codex login status`; Antigravity has no such command, so
 its sign-in shows as unknown), with a button to install it or sign it in. The button runs the agent's own command in a
-terminal of the panel, where you answer if it asks; once it ends, Djinn checks again. The same panel opens from the
-menu of the Djinn's seat, at the top of a wish (**Set up the agents**; the arrow beside **Talk to the Djinn** when the
-Djinn runs in its terminal), and by itself when the window opens with no agent ready. The agents are looked
+terminal of the panel, where you answer if it asks; once it ends, Djinn checks again. The same agents, and their
+accounts in their order of priority, head the **Summoning Circle** page (below the Grimoire in the side panel): the
+window opens there when no agent able to lead is ready, and a yellow dot marks its entry until one is (W578). The
+Circle is the one place where the Djinn's agent, model and account are chosen: the top of the window has no selector. The agents are looked
 for where the Djinn and the workers find them: Djinn's PATH, your login shell's, and the installers' folders. Djinn asks for no API key,
 and stores none: the account each agent signs in with pays for it.
 
@@ -53,7 +54,8 @@ djinn up --browser    # no window: prints the URL to open in your browser
   notch's label or its round stop on the track (or Tab to a stop, then Enter or Space).
   Hovering the slider, or reaching it with the keyboard, shows a dual gauge forecast under it: CPU (how many workers run of the most the notch lets run, exactly what the
   scheduler allows there, every agent counted and watchers not, with the workers started by hand and those finishing
-  their run above the limit; standard versus low CPU priority) and Memory
+  their run above the limit, all at low CPU priority, below the window, at every notch but Overclock, where they run at
+  standard priority) and Memory
   (peak memory Djinn may engage against current usage and total machine RAM). The **Overclock** notch pushes up to
   150 % of standard memory capacity with an amber visual pulse. In Auto mode, Djinn follows the load of the
   programs outside it, never its own: the machine's CPU and memory beyond the Djinn line of the Hourglass (djinn up, its
@@ -63,7 +65,7 @@ djinn up --browser    # no window: prints the URL to open in your browser
   level down; when it stays below 15 % (and 60 %) for 10 minutes, one level up, towards your chosen ceiling; in between
   it holds. Each step starts the wait again, so a short spike changes nothing and the climb back is slow. Hovering the
   slider shows why, in one line: `Outside load 12 % for 5m: up to Max`; `djinn load get` gives it as `auto_reason`.
-  The lead hears nothing of these steps. In Auto, lowering the notch lowers CPU priority and stops starting new workers, never
+  The lead hears nothing of these steps. In Auto, lowering the notch stops starting new workers, never
   pausing running ones (Decision Q124 (C)). From the command line: `djinn load get`, `djinn load set minimal` (or any notch),
   and `djinn load watch`.
   Each notch engages a worker's memory at a percentile of its readings (a running worker at its own, a new one at the
@@ -383,14 +385,18 @@ when you choose.
 branch when the wish was made, whatever your copy has checked out: the chip beside the push strategy names it (with the project, when the wish has several),
 and a click on it changes it to another local branch or to a new one made from it (`djinn wish set-integration <wish>
 --branch feat/x`, `--create-branch` for a new one), refused while a merge into it runs. Per azima, each azima's work
-lands in main through its own branch and pull request, which its card shows once opened, and work of no azima in the wish's
-integration branch; `djinn wish brief` and `djinn brief` say it in a line for each wish.
+lands in main through its own branch and pull request, which its card shows once opened; work spawned with no azima gets an
+azima of its own, made for it with its title, since Djinn never pushes the wish's integration branch per azima (a watcher,
+an investigation or a mockup, which merge nothing, stay of none), and work whose worker started from an azima's branch, or
+from the head of the pull request an azima carries, joins that azima and lands on its branch; `djinn wish brief` and
+`djinn brief` say it in a line for each wish.
 
 An azima's branch works like a wish's integration branch. Djinn cuts it from main when the azima is made (an azima made
 before its wish was switched gets its branch when its first part starts), and records it on the azima: its card, opened,
 shows the branch, the commit of main it was cut from, and that it lands in main. The azima's work merges into it, and Djinn keeps it up with
 main by the same rules as a wish's branch ([keeping up with main](team-settings.md#keeping-up-with-main)). It lands in
-main: its pull request, opened as a draft when you say yes to Djinn's proposal, targets main and follows each push of
+main: its pull request, opened as a draft by Djinn at the branch's first push (or when you say yes to its proposal,
+when that failed), targets main and follows each push of
 the branch; Djinn never re-targets it.
 
 A project whose branches follow a convention (a ticket's key) names an azima's branch with `djinn task update <azima>
@@ -482,10 +488,10 @@ which adjusts the task to it before launching. From a terminal, `djinn question 
 question; a session of the Djinn is marked with `$DJINN_LEAD`, so an answer run by the Djinn is attributed to it
 without echoing back to itself, whereas an answer typed in a plain shell is attributed to the developer and reaches the
 Djinn. By default (`"leadDriven"` unset or `true` in `settings.json`), there is no lead terminal and no watch: the
-answer goes to the next batch's session, whole; beside the chip of the Djinn's seat, the window shows the running batch
+answer goes to the next batch's session, whole; at the top of a wish or of the flying carpet, the window shows the running batch
 (since when, events, cost) and the journal of past batches (with retries when a batch fails), the wish's **History** tab shows
 the batches that touched that wish alongside its commands, and `djinn lead journal` prints them in the terminal. The
-lead runs on the agent, model and account you choose, from the menu of the seat's chip or with `djinn lead
+lead runs on the agent, model and account you choose, in the Summoning Circle or with `djinn lead
 move`, until you move it; when it hits its subscription's limit, the attention bar offers each other agent or account
 in one click, and Djinn moves it nowhere by itself. An account is a folder of the agent's own where it keeps its login
 (`djinn lead add-account`, then its sign-in once): see [the lead's seat and the
@@ -693,7 +699,7 @@ since, each with its title and folded summary, and the commits' titles, folded. 
 Djinn was built from comes first; the other branches' builds are folded under one line that names them, each with its
 own **Install and restart** and ×. Nothing of another branch installs before your click; × hides that build until a
 newer one comes. A build of the running Djinn's own line (its branch, or one that carries it on), pushed past the
-push checks, installs by itself, at low priority, once no gate runs and the machine is not under pressure: the banner
+push checks, installs by itself, at a check's priority, once no gate runs and the machine is not under pressure: the banner
 then says "Djinn local-abc1234 is ready" with what it adds, and **Restart** stays your click (the project setting
 `install_builds: false` turns it off). While an install runs, the banner says what it waits for, then which step of
 the install command runs; an install that fails, or works past its deadline (20 minutes), says why with the last lines

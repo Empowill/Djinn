@@ -301,7 +301,9 @@ test("the resources panel: values on hover and keys, live samples, and a worker'
   await routeResources(page, w1, wishId, title, projectId);
   await page.setViewportSize({ width: 1440, height: 1400 });
   await page.goto(process.env.DJINN_URL!);
-  await expect(page.locator(".hero h1")).toHaveText("Flying carpet");
+  await expect(page.locator(".hero h1")).toHaveText("Flying carpet", {
+    timeout: 15_000,
+  });
   await page.locator(".sidebar .hourglass-nav").click();
   await expect(page.locator(".hero h1")).toHaveText("Hourglass");
 

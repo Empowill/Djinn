@@ -169,14 +169,21 @@ test("the questions column's keys: up and down across the groups stop at both en
       altKey: false,
       ...mods,
     });
+  // W491: Left and Right go to the question before or after; Up and Down take the focus (in a question, they are its
+  // options').
   assert.equal(key("ArrowDown"), "down");
   assert.equal(key("ArrowUp"), "up");
+  assert.equal(key("ArrowLeft"), "prev");
+  assert.equal(key("ArrowRight"), "next");
   assert.equal(key("Home"), "first");
   assert.equal(key("End"), "last");
   assert.equal(key("Escape"), "leave");
   assert.equal(key("ArrowDown", { shiftKey: true }), undefined);
   assert.equal(key("ArrowDown", { ctrlKey: true }), undefined);
-  assert.equal(key("ArrowRight"), undefined);
+  // Alt+Left and Alt+Right are the window's history (window-keys.ts), Ctrl+Up and Ctrl+Down its wishes: not the column's.
+  assert.equal(key("ArrowLeft", { altKey: true }), undefined);
+  assert.equal(key("ArrowRight", { altKey: true }), undefined);
+  assert.equal(key("ArrowUp", { ctrlKey: true }), undefined);
   assert.equal(key(" "), undefined);
   assert.equal(key("PageDown"), undefined);
   // Answered, withdrawn or moved: the one below opens, else the one above; none left, none.
@@ -184,6 +191,19 @@ test("the questions column's keys: up and down across the groups stop at both en
   assert.equal(s.heir(order, ["q1", "q2"], "q3"), "q2");
   assert.equal(s.heir(order, ["q3"], "q1"), "q3");
   assert.equal(s.heir(order, [], "q2"), undefined);
+});
+
+// W491: Up and Down move among the options of the open question, nothing past either end; from none selected (no
+// recommendation), Down picks the first and Up the last.
+test("Up and Down step through the options and stop at both ends", () => {
+  assert.equal(s.optionStep(3, 0, 1), 1);
+  assert.equal(s.optionStep(3, 1, 1), 2);
+  assert.equal(s.optionStep(3, 2, 1), 2);
+  assert.equal(s.optionStep(3, 2, -1), 1);
+  assert.equal(s.optionStep(3, 0, -1), 0);
+  assert.equal(s.optionStep(3, -1, 1), 0);
+  assert.equal(s.optionStep(3, -1, -1), 2);
+  assert.equal(s.optionStep(1, 0, 1), 0);
 });
 
 // W59: with no question focused (the focus on the page, or nowhere), the first arrow gives the focus to the open
@@ -268,19 +288,42 @@ test("an open question of the column: letters and digits pick, Enter goes to the
   assert.equal(press("9"), false);
   assert.equal(press("A", { shiftKey: true }), false);
   assert.equal(selectedLetter(), "B");
-  // The arrows are the column's: the card leaves them.
-  assert.equal(press("ArrowDown"), false);
+  // W491: Up and Down pick the option above or below and stop at either end, never another question; Left and Right
+  // are the column's (the question before or after): the card leaves them.
+  assert.ok(press("ArrowDown"));
+  assert.equal(selectedLetter(), "C");
+  assert.ok(press("ArrowDown"), "at the last option, Down is still taken");
+  assert.equal(selectedLetter(), "C");
+  assert.ok(press("ArrowUp"));
+  assert.ok(press("ArrowUp"));
+  assert.equal(selectedLetter(), "A");
+  assert.ok(press("ArrowUp"), "at the first option, Up is still taken");
+  assert.equal(selectedLetter(), "A");
   assert.equal(press("ArrowRight"), false);
+  assert.equal(press("ArrowLeft"), false);
+  assert.equal(press("ArrowDown", { altKey: true }), false);
+  assert.equal(press("ArrowDown", { ctrlKey: true }), false);
+  assert.equal(selectedLetter(), "A");
+  press("2");
   assert.equal(selectedLetter(), "B");
   await card.settle();
   assert.deepEqual(answered, []);
-  // Enter on the question puts the caret in the note: it answers nothing.
+  // Enter on the question puts the caret in the note: it answers nothing. So does E (W491), in either case, which picks
+  // nothing; with Shift or a modifier, nothing.
   assert.ok(press("Enter"));
+  await card.settle();
+  assert.deepEqual(answered, []);
+  assert.equal(s.NOTE_KEY, "e");
+  assert.ok(press("e"));
+  assert.ok(press("E"));
+  assert.equal(press("e", { shiftKey: true }), false);
+  assert.equal(press("e", { ctrlKey: true }), false);
+  assert.equal(selectedLetter(), "B");
   await card.settle();
   assert.deepEqual(answered, []);
   // Escape in the note gives the focus back to the question.
   let back = false;
-  card.one("textarea").onKeyDown({
+  card.one(s.TextField).onKeyDown({
     key: "Escape",
     preventDefault: () => {
       back = true;
@@ -297,8 +340,8 @@ test("an open question of the column: letters and digits pick, Enter goes to the
   await card.settle();
   assert.deepEqual(answered, [{ choice: s.Choice.A, note: "" }]);
   press("c");
-  card.one("textarea").onChange({ target: { value: "Pressed today" } });
-  card.one("textarea").onKeyDown({ key: "Enter", preventDefault() {} });
+  card.one(s.TextField).onText("Pressed today");
+  card.one(s.TextField).onKeyDown({ key: "Enter", preventDefault() {} });
   await card.settle();
   assert.deepEqual(answered[1], { choice: s.Choice.C, note: "Pressed today" });
 

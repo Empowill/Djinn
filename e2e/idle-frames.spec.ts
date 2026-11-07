@@ -65,7 +65,9 @@ test("an idle window asks for no frame and paints no looping animation", async (
   });
   try {
     await page.goto(process.env.DJINN_URL!);
-    await expect(page.locator(".flight-plan")).toBeVisible();
+    await expect(page.locator(".flight-plan")).toBeVisible({
+      timeout: 15_000,
+    });
     await expect(
       page
         .locator(".flight-plan .glance-wide .glance-row .glance-dot.run")

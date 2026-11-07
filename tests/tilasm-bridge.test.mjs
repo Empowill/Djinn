@@ -22,7 +22,8 @@ const w = await bundle(
   "bridge",
   `export * from "@/src/data/bridge.ts";
 export { create } from "@bufbuild/protobuf";
-export { CommentState, TilasmCommentSchema } from "@/gen/ts/plan/v1/tilasm_pb.ts";`,
+export { CommentState, TilasmCommentSchema } from "@/gen/ts/plan/v1/tilasm_pb.ts";
+export { historyStep } from "@/src/window-keys.ts";`,
 );
 
 test("the bridge sets no global name in a page", () => {
@@ -387,6 +388,11 @@ test("the window takes from the frame only what the bridge sends", () => {
     w.fromFrame({ djinn: "tilasm", type: "key", name: "escape" }),
     { type: "key", name: "escape" },
   );
+  for (const name of ["back", "forward"])
+    assert.deepEqual(w.fromFrame({ djinn: "tilasm", type: "key", name }), {
+      type: "key",
+      name,
+    });
   assert.deepEqual(
     w.fromFrame({ djinn: "tilasm", type: "element", hover: at }),
     { type: "element", hover: at },
@@ -555,4 +561,30 @@ test("Ctrl+Alt+M comments the selection, whatever the keyboard's layout", () => 
   assert.ok(!w.isCommentKey(key("m", "KeyM", { ctrlKey: false })));
   assert.ok(!w.isCommentKey(key("M", "KeyM", { shiftKey: true })));
   assert.ok(!w.isCommentKey(key("n", "KeyN")));
+});
+
+test("a key in the frame goes back or forward in the window's views as the window reads it (W527)", () => {
+  const keys = ["ArrowLeft", "ArrowRight", "ArrowUp", "[", "]", "a"];
+  const codes = ["", "BracketLeft", "BracketRight"];
+  for (const mac of [false, true])
+    for (const key of keys)
+      for (const code of codes)
+        for (let mods = 0; mods < 16; mods++) {
+          const event = {
+            key,
+            code,
+            altKey: !!(mods & 1),
+            metaKey: !!(mods & 2),
+            ctrlKey: !!(mods & 4),
+            shiftKey: !!(mods & 8),
+          };
+          assert.equal(
+            b.historyStep(event, mac),
+            w.historyStep(event, mac),
+            JSON.stringify({ event, mac }),
+          );
+        }
+  assert.equal(b.historyStep({ key: "ArrowLeft", altKey: true }, false), -1);
+  assert.equal(b.historyStep({ key: "]", metaKey: true }, true), 1);
+  assert.equal(b.historyStep({ key: "]", metaKey: true }, false), 0);
 });

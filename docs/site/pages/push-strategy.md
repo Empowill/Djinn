@@ -32,8 +32,8 @@ Choose before any work is merged: switching later is possible, but Djinn protect
 
 | | Per wish | Per azima |
 | --- | --- | --- |
-| Branches | One per wish and project, the reference branch, or one you name | One per azima, cut from main, plus the wish's branch for work of no azima |
-| Workers start from | The wish's integration branch | An azima's work: its branch; work of no azima: the wish's integration branch |
+| Branches | One per wish and project, the reference branch, or one you name | One per azima, cut from main; work spawned with no azima gets an azima of its own |
+| Workers start from | The wish's integration branch | Its azima's branch |
 | Pull requests | One for the whole wish | One per azima |
 | Azimas may wait for each other | Yes | No |
 | The top of the wish says | **Lands in** and the branch | **Each azima lands in main** |
@@ -58,8 +58,17 @@ djinn/T07-the-orchestrator.
 - **Cut from main** when the azima is made, in a project that names checks; otherwise when its first part starts, or
   its first work is merged. Its card says *cut from main at* the commit, or *cut from main when its first part starts*,
   and *lands in main*. A title changed later keeps the branch's name.
-- **Its work merges into it**, checked, as into a wish's integration branch. The work of a task part of no azima goes to
-  the wish's integration branch.
+- **Its work merges into it**, checked, as into a wish's integration branch.
+- **Work spawned with no azima gets an azima of its own**, made for it with its title, its branch cut from main before
+  its worker starts, pushed and proposed as a pull request like any other: Djinn never pushes the wish's integration
+  branch per azima, so work merged there would stay in your copy. Work spawned before, or moved out of its azima, gets
+  one when Djinn merges it. A watcher, an investigation or a mockup merges nothing and stays of no azima. Work of no
+  azima that waits for work of an azima, or that work waits for, is refused: spawn it part of that azima.
+- **Work that started from an azima's branch lands there.** When the worker of a task of no azima, or of the azima made
+  for it, checks out an azima's branch, or the head of the pull request an azima carries, and commits on it, Djinn
+  finds it when it merges the work: the task becomes part of that azima and its work lands on that azima's branch, never
+  in main, nor in an azima of its own that would carry the whole request a second time. The azima made for it, left
+  with no other work, is closed.
 - **It keeps up with main**, by the same rules as a wish's branch.
 - **It is pushed** by the project's cadence: under Standard, at the latest when the azima ends, and each time main is
   merged into it once it was pushed. Its card shows the branch's line when it
@@ -74,12 +83,15 @@ djinn/T07-the-orchestrator.
 
 ### An azima's pull request
 
-Once every part of the azima is done and committed and its branch pushed, Djinn proposes its pull request: *Open a pull
-request for T07 to main?*, answered **Open pull request** or **Not yet**. Its card follows it:
+Djinn opens it as a draft at the branch's first push, once the branch holds commits main lacks, with no question, as
+an answered proposal would: by the project's skill for opening requests when it has one, else by the forge's command
+line. The Djinn hears what it did. When it could not, once every part of the azima is done and committed, Djinn
+proposes it: *Open a pull request for T07 to main?*, answered **Open pull request** or **Not yet**. A wish pushed per
+wish gets no draft per azima: its one pull request is proposed when the wish settles. Its card follows it:
 
 | The card shows | What it means |
 | --- | --- |
-| **PR proposed** | Djinn asked you whether to open it. |
+| **PR proposed** | A task opens it by the project's skill, or Djinn could not open it, or asked you whether to. |
 | **PR open** | The request is open, as a draft at first; a click opens it on the forge. Each push of the branch updates it. |
 | **PR merged** | Merged into main: the azima is done. |
 
@@ -118,7 +130,7 @@ The refusal names the work and the branch it lives on. The way through is to hav
 work lives on, then switch: the azima's work keeps landing there, its pull request already open stays its own, and
 nothing is cut again. Ask the Djinn to do it.
 
-Work of no azima stays in the wish's integration branch either way.
+Work of no azima merged before stays in the wish's integration branch either way.
 
 > **Example.** A wish fixes ticket ET-1234 per wish, on the branch ET-1234-the-fix, its merge request open. A second
 > ticket joins the wish. You want two merge requests: the Djinn has azima T1, which carries the first ticket, adopt

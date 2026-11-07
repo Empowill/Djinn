@@ -1,7 +1,9 @@
-// The wish's head against the real djinn up --browser (see global-setup.ts): the arrow beside Lead lists the agents
-// found on djinn's PATH, and picking Antigravity starts a lead of it in the lead's terminal, from the same first
-// message as every lead, and it becomes the one lead. The description under the title edits in place.
+// The wish's head against the real djinn up --browser (see global-setup.ts): the Summoning Circle, whose Djinn's row
+// names Antigravity while the recorded lead is Claude's, starts a lead of it in the lead's terminal, from the same first
+// message as every lead, and it becomes the one lead (W578: the window's top has no agent selector). The description
+// under the title edits in place.
 // The agents are fake: claude and agy scripts on djinn's PATH.
+import { create, toBinary } from "@bufbuild/protobuf";
 import { expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -15,6 +17,11 @@ import {
   setLead,
 } from "./lead";
 import { portable } from "./portable";
+import {
+  LeadServiceGetCircleResponseSchema,
+  Provider,
+  WorkerKind,
+} from "../gen/ts/plan/v1/plan_pb";
 
 const binary = path.resolve(
   __dirname,
@@ -82,7 +89,7 @@ test.describe("Lead of another agent", () => {
   test.beforeEach(dropTerminalLead);
   test.afterEach(dropLead);
 
-  test("the arrow beside Lead starts an Antigravity lead, which becomes the lead", async ({
+  test("the Circle starts an Antigravity lead when the Djinn's row names it, which becomes the lead", async ({
     page,
   }) => {
     const folder = leadFolder();
@@ -100,18 +107,67 @@ test.describe("Lead of another agent", () => {
     const wishId = await open(page, title, project);
     setLead(session, folder);
 
+    // No selector at the top: Talk to the Djinn alone.
     const actions = page.locator(".topbar-actions");
-    await actions.getByRole("button", { name: "Choose the agent" }).click();
-    const menu = page.getByRole("menu", { name: "Choose the agent" });
-    const claude = menu.getByRole("menuitem", { name: /Claude/ });
-    await expect(claude).toHaveAttribute("aria-current", "true");
-    await expect(claude).toContainText(
-      "The Djinn's agent: resumes it, focused on this wish",
+    await expect(
+      actions.getByRole("button", { name: "Talk to the Djinn" }),
+    ).toBeVisible();
+    await expect(actions.locator("[aria-haspopup=menu]")).toHaveCount(0);
+
+    // The Circle's Djinn row names Antigravity (answered here, so the shared djinn's settings stay as they are).
+    await page.route("**/plan.v1.LeadService/GetCircle", (route) =>
+      route.fulfill({
+        contentType: "application/proto",
+        body: Buffer.from(
+          toBinary(
+            LeadServiceGetCircleResponseSchema,
+            create(LeadServiceGetCircleResponseSchema, {
+              rows: [
+                {
+                  kind: WorkerKind.LEAD,
+                  provider: Provider.ANTIGRAVITY,
+                  model: "gemini-4-argon-high",
+                },
+              ],
+              models: [
+                {
+                  id: "claude-opus-5-5",
+                  label: "Claude Opus 5.5",
+                  provider: Provider.CLAUDE,
+                },
+                {
+                  id: "gemini-4-argon-high",
+                  label: "Gemini 4 Argon (High)",
+                  provider: Provider.ANTIGRAVITY,
+                },
+              ],
+              providers: [
+                {
+                  provider: Provider.CLAUDE,
+                  signedIn: true,
+                  loginCommand: "claude auth login",
+                  leadSupported: true,
+                },
+                {
+                  provider: Provider.ANTIGRAVITY,
+                  signedIn: true,
+                  loginCommand: "agy",
+                  leadSupported: true,
+                },
+              ],
+            }),
+          ),
+        ),
+      }),
     );
-    const agy = menu.getByRole("menuitem", { name: /Antigravity/ });
-    await expect(agy).toBeEnabled();
-    await agy.click();
-    await expect(menu).toHaveCount(0);
+    await page.locator(".summoning-nav").click();
+    const start = page.locator(".summoning-lead-start");
+    await expect(start).toContainText(
+      "Talk to the Djinn resumes its session on Claude.",
+    );
+    await start
+      .getByRole("button", { name: "Start the Djinn on Antigravity" })
+      .click();
 
     const terminal = page.getByRole("region", { name: "Terminal" });
     await expect(
@@ -120,9 +176,11 @@ test.describe("Lead of another agent", () => {
     await expect(
       leadRows(page, "fake-agy -i You lead the active wishes of this Djinn."),
     ).toHaveCount(1);
-    await expect(page.locator(".toast")).toContainText(
+    await expect(page.locator(".summoning-lead-note")).toContainText(
       "The folder's most recent conversation is the lead now",
     );
+    // The recorded lead is Antigravity's now: nothing more to start.
+    await expect(start).toHaveCount(0);
     expect(JSON.parse(djinn("lead", "get", "--json")).lead).toMatchObject({
       provider: "PROVIDER_ANTIGRAVITY",
       directory: first,

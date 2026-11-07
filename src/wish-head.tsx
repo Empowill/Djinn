@@ -1,7 +1,7 @@
 // The wish's head, around its title: its description, a few lines the person edits in place (a click, saved when the
-// field is left), the Lead button, split: Lead resumes the one lead, focused on the wish, the arrow beside it lists the
-// agents found on this machine, to start a lead of another one from the brief, and opens their setup (driven by Djinn,
-// a chip of the lead's seat instead, its menu moving it); where its work lands; and where Djinn last pushed its integration branches.
+// field is left), the Lead button: Talk to the Djinn resumes the one lead, focused on the wish (driven by Djinn, its
+// batch and journal instead; the agent, model and account it runs on are chosen in the Summoning Circle alone, W578);
+// where its work lands; and where Djinn last pushed its integration branches.
 import {
   Check,
   ChevronDown,
@@ -23,7 +23,6 @@ import {
   type LeadBatch,
   LeadBatchState,
   type LeadExit,
-  type LeadSeat,
   ProjectPush,
   Provider,
   PushStrategy,
@@ -31,12 +30,10 @@ import {
   type WishMain,
   type WishPush,
 } from "../gen/ts/plan/v1/plan_pb";
-import type { Provider as Agent } from "../gen/ts/ui/v1/ui_pb";
 import {
   defaultModel,
   effectivePushStrategy,
   gitReason,
-  shortModel,
   usd,
   when,
 } from "./data/format";
@@ -44,25 +41,11 @@ import { estimateCost } from "./data/prices";
 import { t } from "./i18n";
 import { UpdateModelsSection } from "./summoning-circle";
 
-// The agents a lead runs, in the order the menu lists them, by their identifier in UiService.GetEnvironment.
-const agents: [string, Provider][] = [
-  ["claude", Provider.CLAUDE],
-  ["codex", Provider.CODEX],
-  ["antigravity", Provider.ANTIGRAVITY],
-];
-
-// The lead Djinn drives, for the lead's menu: where it runs, the accounts of this machine it may move to, its
-// running or failed batch, and its journal of past batches.
+// The lead Djinn drives, for Lead: its running or failed batch, and its journal of past batches.
 export interface LeadDrive {
-  seat?: LeadSeat;
-  accounts: Account[];
   batch?: LeadBatch;
   journal?: LeadBatch[];
 }
-
-// A seat the lead may move to: its agent, model and account; an empty model is the agent's default, an empty account
-// its own sign-in.
-export type SeatChoice = { provider: Provider; model: string; account: string };
 
 // agentNamed is the name of an agent the window shows, by its kind.
 const agentNamed: Partial<Record<Provider, string>> = {
@@ -87,22 +70,6 @@ export function seatName(
   return seat.account
     ? `${agent} · ${accountLabel(seat.account, accounts)}`
     : agent;
-}
-
-// seatLabel names where the lead Djinn drives runs, for its chip: the agent, its account, then the model it was set
-// to, else the one its last batch ran on that agent; no model when it runs the agent's default.
-export function seatLabel(drive: LeadDrive): string {
-  const provider = drive.seat?.provider || Provider.CLAUDE;
-  const last = drive.batch;
-  const model =
-    drive.seat?.model ||
-    ((last?.provider || Provider.CLAUDE) === provider ? last?.model : "") ||
-    "";
-  const seat = seatName(
-    { provider, account: drive.seat?.account ?? "" },
-    drive.accounts,
-  );
-  return model ? `${seat} · ${shortModel(model)}` : seat;
 }
 
 // recordedAgent is the agent of the wish's recorded lead; none without a session, except Antigravity. A lead stored without one ran Claude.
@@ -355,70 +322,28 @@ export function LeadJournal({ batches }: { batches: readonly LeadBatch[] }) {
   );
 }
 
-// LeadButton is Lead at the top of a wish or of the flying carpet. Lead in its terminal: Talk to the Djinn resumes it,
-// the arrow beside lists the agents. Driven by Djinn, there is no terminal to open (Decision Q115 B): a chip names the
-// seat and its menu moves the lead; a failed batch is retried from the lead's journal on the side (LeadSideLog).
+// LeadButton is Lead at the top of a wish or of the flying carpet. Lead in its terminal: Talk to the Djinn resumes it.
+// Driven by Djinn, there is no terminal to open (Decision Q115 B): its running or failed batch, and its journal. Which
+// agent, model and account the Djinn runs on is chosen in the Summoning Circle alone (W578): no selector here.
 export function LeadButton({
-  recorded,
-  agents: given,
-  open: startOpen = false,
   journalOpen: startJournalOpen = false,
   focused = true,
   trouble,
-  loadAgents,
   onLead,
-  onPick,
-  onSetup,
   drive,
-  onMove,
 }: {
-  recorded?: Provider;
-  agents?: Agent[];
-  open?: boolean;
   journalOpen?: boolean;
   // On a wish, the lead resumes focused on it; on the flying carpet, on no wish: the tooltips say which.
   focused?: boolean;
   // The lead could not start, or ended: a dot on Lead, its tooltip saying why (leadTrouble). Not shown driven: a
   // failed batch says why on the side.
   trouble?: { text: string; failed: boolean };
-  loadAgents: () => Promise<Agent[]>;
   onLead: () => void;
-  onPick: (provider: Provider) => void;
-  // Opens the setup of the agents: install one, sign it in.
-  onSetup?: () => void;
-  // While Djinn drives the lead, the seat's chip replaces Lead, and its menu moves it to another agent, model or
-  // account (onMove).
+  // While Djinn drives the lead: its batch and its journal take the place of Talk to the Djinn.
   drive?: LeadDrive;
-  onMove?: (seat: SeatChoice) => void;
 }) {
-  const [open, setOpen] = useState(startOpen);
   const [journalShown, setJournalShown] = useState(startJournalOpen);
-  const [found, setFound] = useState<Agent[] | undefined>(given);
-  const root = useRef<HTMLDivElement>(null);
   const journalRoot = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    let live = true;
-    loadAgents()
-      .then((list) => live && setFound(list))
-      .catch(() => undefined);
-    // A click elsewhere, or Escape, closes the menu.
-    const away = (event: MouseEvent) => {
-      if (!root.current?.contains(event.target as Node)) setOpen(false);
-    };
-    const escape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("mousedown", away);
-    document.addEventListener("keydown", escape);
-    return () => {
-      live = false;
-      document.removeEventListener("mousedown", away);
-      document.removeEventListener("keydown", escape);
-    };
-    // Opening the menu loads the agents once; a new loadAgents, at each render of the head, does not.
-    // eslint-disable-next-line react-hooks/exhaustive-deps, @eslint-react/exhaustive-deps -- loadAgents left out, see above
-  }, [open]);
   useEffect(() => {
     if (!journalShown) return;
     const away = (event: MouseEvent) => {
@@ -444,81 +369,26 @@ export function LeadButton({
   const pastBatches = (drive?.journal ?? []).filter(
     (b) => b.state !== LeadBatchState.RUNNING,
   );
-  const menu = open && (
-    <LeadMenu
-      agents={found}
-      recorded={recorded}
-      focused={focused}
-      onPick={(provider) => {
-        setOpen(false);
-        onPick(provider);
-      }}
-      onSetup={
-        onSetup &&
-        (() => {
-          setOpen(false);
-          onSetup();
-        })
-      }
-      drive={drive}
-      onMove={
-        onMove &&
-        ((seat) => {
-          setOpen(false);
-          onMove(seat);
-        })
-      }
-    />
-  );
   return (
     <>
-      {drive ? (
-        // Driven, no terminal to open (Decision Q115 B): the seat alone, its menu moves the lead.
-        <div className="lead-seat-wrap" ref={root}>
-          <button
-            className="button secondary small lead-seat"
-            aria-label={t("wish.lead_seat", { seat: seatLabel(drive) })}
-            title={t("wish.lead_seats_detail")}
-            aria-haspopup="menu"
-            aria-expanded={open}
-            onClick={() => setOpen(!open)}
-          >
-            <span>{seatLabel(drive)}</span>
-            <ChevronDown size={14} />
-          </button>
-          {menu}
-        </div>
-      ) : (
-        <div className="split-button" ref={root}>
-          <button
-            className="button secondary small"
-            title={
-              trouble?.text ??
-              (focused ? t("wish.resume_detail") : t("plan.talk_detail"))
-            }
-            onClick={onLead}
-          >
-            <Terminal size={14} />
-            <span>{t("wish.resume")}</span>
-            {trouble && (
-              <span
-                className={trouble.failed ? "lead-dot failed" : "lead-dot"}
-                aria-hidden="true"
-              />
-            )}
-          </button>
-          <button
-            className="button secondary small split-arrow"
-            aria-label={t("wish.lead_agents")}
-            title={t("wish.lead_agents_detail")}
-            aria-haspopup="menu"
-            aria-expanded={open}
-            onClick={() => setOpen(!open)}
-          >
-            <ChevronDown size={14} />
-          </button>
-          {menu}
-        </div>
+      {!drive && (
+        <button
+          className="button secondary small"
+          title={
+            trouble?.text ??
+            (focused ? t("wish.resume_detail") : t("plan.talk_detail"))
+          }
+          onClick={onLead}
+        >
+          <Terminal size={14} />
+          <span>{t("wish.resume")}</span>
+          {trouble && (
+            <span
+              className={trouble.failed ? "lead-dot failed" : "lead-dot"}
+              aria-hidden="true"
+            />
+          )}
+        </button>
       )}
       {activeBatch && <LeadBatchStatus batch={activeBatch} />}
       {pastBatches.length > 0 && (
@@ -544,175 +414,6 @@ export function LeadButton({
           )}
         </div>
       )}
-    </>
-  );
-}
-
-// LeadMenu lists the agents a lead may run, those missing from this machine disabled, saying why; the recorded
-// lead's is marked, and picking it resumes that lead, focused on the wish. While Djinn drives the lead, it lists the
-// seats instead (SeatItems): one click moves the lead there. Last, the way to set the agents up.
-export function LeadMenu({
-  agents: found,
-  recorded,
-  focused = true,
-  onPick,
-  onSetup,
-  drive,
-  onMove,
-}: {
-  agents?: Agent[];
-  recorded?: Provider;
-  focused?: boolean;
-  onPick: (provider: Provider) => void;
-  onSetup?: () => void;
-  drive?: LeadDrive;
-  onMove?: (seat: SeatChoice) => void;
-}) {
-  if (!found)
-    return (
-      <div className="lead-menu" role="menu" aria-label={t("wish.lead_agents")}>
-        <p className="muted-text">{t("common.loading")}</p>
-      </div>
-    );
-  if (drive && onMove)
-    return (
-      <div className="lead-menu" role="menu" aria-label={t("wish.lead_agents")}>
-        <SeatItems found={found} drive={drive} onMove={onMove} />
-        {onSetup && (
-          <button role="menuitem" className="lead-agent" onClick={onSetup}>
-            <span className="lead-agent-name">
-              <Settings2 size={13} aria-hidden="true" />
-              {t("agents.title")}
-            </span>
-          </button>
-        )}
-      </div>
-    );
-  return (
-    <div className="lead-menu" role="menu" aria-label={t("wish.lead_agents")}>
-      {agents.map(([id, provider]) => {
-        const agent = found.find((a) => a.id === id);
-        if (!agent) return null;
-        const current = provider === recorded;
-        return (
-          <button
-            key={id}
-            role="menuitem"
-            className={current ? "lead-agent current" : "lead-agent"}
-            disabled={!agent.available}
-            aria-current={current || undefined}
-            onClick={() => onPick(provider)}
-          >
-            <span className="lead-agent-name">
-              {agent.name}
-              {current && <Check size={13} aria-hidden="true" />}
-            </span>
-            <span className="lead-agent-detail">
-              {!agent.available
-                ? t("wish.lead_missing", { command: agent.command })
-                : current
-                  ? focused
-                    ? t("wish.lead_recorded")
-                    : t("plan.lead_recorded")
-                  : t("wish.lead_new")}
-            </span>
-          </button>
-        );
-      })}
-      {onSetup && (
-        <button role="menuitem" className="lead-agent" onClick={onSetup}>
-          <span className="lead-agent-name">
-            <Settings2 size={13} aria-hidden="true" />
-            {t("agents.title")}
-          </span>
-        </button>
-      )}
-    </div>
-  );
-}
-
-// SeatItems are the seats of the lead Djinn drives: each agent on its own sign-in, then on each of its accounts; the
-// one it runs on is marked, Antigravity and a missing agent disabled, saying why. A click moves the lead there, its
-// model kept on the same agent. Last, the model, for the agent it runs on: Enter moves it to that model.
-function SeatItems({
-  found,
-  drive,
-  onMove,
-}: {
-  found: Agent[];
-  drive: LeadDrive;
-  onMove: (seat: SeatChoice) => void;
-}) {
-  const current = drive.seat?.provider || Provider.CLAUDE;
-  const [model, setModel] = useState(drive.seat?.model ?? "");
-  return (
-    <>
-      {agents.map(([id, provider]) => {
-        const agent = found.find((a) => a.id === id);
-        if (!agent) return null;
-        const accounts = drive.accounts.filter((a) => a.provider === provider);
-        return ["", ...accounts.map((a) => a.name)].map((account) => {
-          const here =
-            provider === current && account === (drive.seat?.account ?? "");
-          const leads = provider !== Provider.ANTIGRAVITY;
-          return (
-            <button
-              key={`${id}/${account}`}
-              role="menuitem"
-              className={here ? "lead-agent current" : "lead-agent"}
-              disabled={!agent.available || !leads}
-              aria-current={here || undefined}
-              onClick={() =>
-                onMove({
-                  provider,
-                  account,
-                  model: provider === current ? (drive.seat?.model ?? "") : "",
-                })
-              }
-            >
-              <span className="lead-agent-name">
-                {account
-                  ? `${agent.name} · ${accountLabel(account, drive.accounts)}`
-                  : agent.name}
-                {here && <Check size={13} aria-hidden="true" />}
-              </span>
-              <span className="lead-agent-detail">
-                {!agent.available
-                  ? t("wish.lead_missing", { command: agent.command })
-                  : !leads
-                    ? t("wish.lead_cannot_lead")
-                    : here
-                      ? drive.seat?.model
-                        ? t("wish.lead_seat_model", { model: drive.seat.model })
-                        : t("wish.lead_seat_current")
-                      : t("wish.lead_seat_move")}
-              </span>
-            </button>
-          );
-        });
-      })}
-      <form
-        className="lead-agent"
-        onSubmit={(event) => {
-          event.preventDefault();
-          onMove({
-            provider: current,
-            account: drive.seat?.account ?? "",
-            model: model.trim(),
-          });
-        }}
-      >
-        <label className="lead-agent-name">
-          {t("wish.lead_model")}
-          <input
-            value={model}
-            placeholder={t("wish.lead_model_default")}
-            aria-label={t("wish.lead_model")}
-            onChange={(event) => setModel(event.target.value)}
-          />
-        </label>
-        <span className="lead-agent-detail">{t("wish.lead_model_detail")}</span>
-      </form>
     </>
   );
 }

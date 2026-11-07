@@ -453,7 +453,7 @@ test("the side panel's Grimoire sits under the Hourglass, shows the documentatio
 });
 
 test("the Summoning Circle sits below the Grimoire at the bottom of the side panel", () => {
-  const render = (collapsed, onOpenSummoningCircle) =>
+  const render = (collapsed, onOpenSummoningCircle, summoningAlert) =>
     s.renderToStaticMarkup(
       h(s.WishSidebar, {
         wishes: [wish("w1", "Ship the lamp", s.WishState.ACTIVE, 1)],
@@ -462,6 +462,7 @@ test("the Summoning Circle sits below the Grimoire at the bottom of the side pan
         onSelectHourglass() {},
         onSelectGrimoire() {},
         onOpenSummoningCircle,
+        summoningAlert,
         selectedWishId: "",
         selectedProjectId: "",
         collapsed,
@@ -484,4 +485,11 @@ test("the Summoning Circle sits below the Grimoire at the bottom of the side pan
     render(true, () => {}),
     /<button class="nav-item summoning-nav" title="Choose for each kind of worker which model answers across all projects" aria-label="Summoning Circle"><svg[^>]*lucide-compass[^>]*>[^]*?<\/svg><\/button>$/,
   );
+  assert.doesNotMatch(open, /summoning-alert/);
+  // No agent can lead yet (W578): a yellow dot on the entry, open or folded, its tooltip saying where to go.
+  for (const collapsed of [false, true])
+    assert.match(
+      render(collapsed, () => {}, true),
+      /<button class="nav-item summoning-nav" title="No session of the Djinn can start yet: set up an agent here" aria-label="Summoning Circle: No session of the Djinn can start yet: set up an agent here"><svg[^>]*lucide-compass[^>]*>[^]*?<\/svg>(<span>Summoning Circle<\/span>)?<span class="summoning-alert" aria-hidden="true"><\/span><\/button>$/,
+    );
 });

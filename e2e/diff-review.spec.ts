@@ -72,12 +72,16 @@ async function shoot(page: Page, name: string) {
 test("a task's diffs open full size beside the side panel, its files as a tree of folders, uncommitted tab, narrow layout, and closing", async ({
   page,
 }) => {
+  test.setTimeout(90_000);
   const errors: string[] = [];
   page.on("pageerror", (err) => errors.push(err.message));
   const { title, worktree, clean } = await setupTask();
   try {
     await page.setViewportSize({ width: 1600, height: 1000 });
     await page.goto(process.env.DJINN_URL!);
+    await expect(
+      page.locator(".wish-nav").filter({ hasText: title }),
+    ).toBeVisible({ timeout: 15_000 });
     await page.locator(".wish-nav").filter({ hasText: title }).click();
     await page.getByRole("tab", { name: /^Tasks/ }).click();
     await page.getByRole("button", { name: /Rub the lamp/ }).click();

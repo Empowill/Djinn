@@ -17,10 +17,20 @@ import (
 const mrURL = "https://gitlab.com/acme/dolmen/-/merge_requests/41"
 
 // proposedMR replays wish Dew (13/10/2026) up to its question: a wish of a GitLab project pushes per azima, its azima
-// T1's part is committed and its branch pushed; Djinn asks to open its merge request. It gives the question, the azima
-// and its branch. forge answers glab.
+// T1's part is committed and its branch pushed; the draft Djinn opens at the push fails (Q375), and Djinn asks to open
+// its merge request. It gives the question, the azima and its branch, forge's calls so far forgotten. forge answers
+// glab.
 func proposedMR(t *testing.T, forge *fakeForge, settings string) (*integration, *planv1.Question, *planv1.Task, string) {
 	t.Helper()
+	forge.mu.Lock()
+	created := forge.created
+	forge.created = ""
+	forge.mu.Unlock()
+	defer func() {
+		forge.mu.Lock()
+		forge.created, forge.calls = created, nil
+		forge.mu.Unlock()
+	}()
 	in := integrating(t)
 	in.mu.Lock()
 	in.forge = forge
@@ -42,6 +52,7 @@ func proposedMR(t *testing.T, forge *fakeForge, settings string) (*integration, 
 	in.pass(t, 0)
 	branch := "djinn/T1-single-local-process"
 	in.git(t, in.repo, "push", "--quiet", "origin", branch)
+	in.pass(t, 0)
 	in.pass(t, 0)
 
 	questions, err := store.List[*planv1.Question](t.Context(), in.db, store.Where{"wish_id": in.wishID})

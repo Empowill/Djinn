@@ -269,7 +269,7 @@ func runStops(serves []child) {
 		wg.Go(func() {
 			ctx, cancel := context.WithTimeout(context.Background(), serveStopLimit)
 			defer cancel()
-			_, code, err := runTracked(ctx, c.Dir, shellArgs(c.Stop), nil, nil, false)
+			_, code, err := runTracked(ctx, c.Dir, shellArgs(c.Stop), nil, nil, 0, false)
 			logx.L().Info("serve stop command of the last djinn up run", "task", c.Task, "exit", code, "err", err)
 		})
 	}

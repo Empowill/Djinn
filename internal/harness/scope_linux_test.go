@@ -28,7 +28,7 @@ func TestScopeTakesTheTree(t *testing.T) {
 	// started before the first tick: the short sleeps between ticks come and go.
 	script := `setsid sh -c 'sleep 600 & while :; do echo x >> "$1"; sleep 0.02; done' child "$0" & echo "$!"; wait`
 	h := &Harness{scopes: scopes}
-	p, err := startProcess(t.TempDir(), "sh", []string{"-c", script, ticks}, nil, h.scope("W1"), 2*time.Second, false, nil)
+	p, err := startProcess(t.TempDir(), "sh", []string{"-c", script, ticks}, nil, h.scope("W1"), 2*time.Second, 0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

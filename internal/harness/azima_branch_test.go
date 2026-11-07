@@ -598,18 +598,38 @@ func TestAzimaBranchFor(t *testing.T) {
 		}
 	})
 
-	t.Run("task with no azima uses wish branch", func(t *testing.T) {
+	// Q268 B: work of no azima, spawned before Djinn gave it an azima at the spawn, merged into the wish's integration
+	// branch, main itself, which Djinn never pushes per azima: its commits lived only in the clone. It is made part of
+	// an azima made for it, titled as it, its branch cut from main, and that branch is pushed; main stays as it was.
+	t.Run("task with no azima gets an azima of its own", func(t *testing.T) {
 		t.Parallel()
 		in := integrating(t)
+		bare := in.remote(t)
 		in.setAzimaStrategy(t)
+		mainSha := in.tip(t)
 
 		w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}) // PartOf is empty.
 		in.pass(t, 0)
 
 		w1Task := in.get(t, w1.GetId())
-		if w1Task.GetIntegration().GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED ||
-			w1Task.GetIntegration().GetBranch() != in.branch || w1Task.GetIntegration().GetSha() != in.tip(t) {
-			t.Fatalf("w1 integration = %v, want COMMITTED on %s at %s", w1Task.GetIntegration(), in.branch, in.tip(t))
+		azima := in.stored(t, w1Task.GetPartOf())
+		if !plan.IsAzima(azima) || azima.GetTitle() != w1.GetTitle() || azima.GetCode() != "T1" {
+			t.Fatalf("W1 part of %v, want an azima T1 titled %q", azima, w1.GetTitle())
+		}
+		b1 := "djinn/T1-work-of-w1"
+		tip := in.git(t, in.repo, "rev-parse", "refs/heads/"+b1)
+		if in := w1Task.GetIntegration(); in.GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED ||
+			in.GetBranch() != b1 || in.GetSha() != tip {
+			t.Fatalf("w1 integration = %v, want COMMITTED on %s at %s", in, b1, tip)
+		}
+		if !isAncestor(t.Context(), in.repo, mainSha, tip) {
+			t.Errorf("%s at %s does not hold main's %s", b1, tip, mainSha)
+		}
+		if got := in.tip(t); got != mainSha {
+			t.Errorf("%s moved to %s, want %s: no work of the wish lands in it", in.branch, got, mainSha)
+		}
+		if got := commitOf(t.Context(), bare, "refs/heads/"+b1); got != tip {
+			t.Errorf("origin's %s at %q, want %s pushed", b1, got, tip)
 		}
 	})
 
@@ -1118,14 +1138,70 @@ func TestAzimaPRPass(t *testing.T) {
 		t.Fatalf("runCmd default: code=%d, err=%v", code, err)
 	}
 
-	// When an azima branch is pushed and its parts are done and green, Djinn proposes opening its PR with exact title,
-	// description, and base, then waits.
-	t.Run("proposal flow", func(t *testing.T) {
+	// Q375: an azima's branch pushed, ahead of main, with no request: Djinn opens it as a draft, from the azima's branch
+	// into its base, with the drafted title and body, asks no question, records it open and tells the lead; once.
+	t.Run("draft at the first push", func(t *testing.T) {
 		t.Parallel()
 		in := integrating(t)
 		in.setAzimaStrategy(t)
 		in.remote(t)
 		forge := &fakeForge{created: "https://github.com/acme/app/pull/41"}
+		in.mu.Lock()
+		in.forge = forge
+		in.mu.Unlock()
+		queue := &leadQueue{}
+		in.h.NotifyLead(queue.notify)
+
+		t1 := in.azima(t, in.wishID, "One Alpha")
+		t1.Description = "## Goal\nImplement feature alpha.\n"
+		putTaskInDB(t, in.db, t1)
+		in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}, func(task *planv1.Task) { task.PartOf = t1.GetId() })
+		putTask(t, in.db, &planv1.Task{ // A part left: the draft opens all the same.
+			Id: store.NewID(), WishId: in.wishID, ProjectId: in.projectID, Code: "W2", Title: "Second part", PartOf: t1.GetId(),
+			Status: planv1.TaskStatus_TASK_STATUS_PENDING, CreateTime: timestamppb.Now(),
+		}, "second part")
+		in.pass(t, 0)
+		if got := creates(forge); len(got) > 0 {
+			t.Fatalf("not pushed yet: Djinn created %q", got)
+		}
+
+		b1 := "djinn/T1-one-alpha"
+		in.git(t, in.repo, "push", "--quiet", "origin", b1)
+		in.git(t, in.repo, "update-ref", "refs/remotes/origin/"+b1, in.git(t, in.repo, "rev-parse", "refs/heads/"+b1))
+		in.pass(t, 0)
+		in.pass(t, 0)
+
+		want := "gh pr create --draft --head " + b1 + " --base " + in.branch + " --title Implement feature alpha."
+		if got := creates(forge); len(got) != 1 || !strings.HasPrefix(got[0], want) {
+			t.Errorf("forge created %q, want one beginning with %q", got, want)
+		}
+		if got := in.stored(t, t1.GetId()).GetAzima().GetPr(); got.GetState() != planv1.AzimaPrState_AZIMA_PR_STATE_OPEN ||
+			got.GetUrl() != "https://github.com/acme/app/pull/41" {
+			t.Errorf("PR recorded %v, want open at its address", got)
+		}
+		questions, err := store.List[*planv1.Question](t.Context(), in.db, store.Where{"wish_id": in.wishID})
+		if err != nil || len(questions) > 0 {
+			t.Errorf("questions %v (%v); want none", questions, err)
+		}
+		var told []string
+		for _, e := range queue.all() {
+			if e.GetCode() == "T1" && e.GetKind() == planv1.LeadEventKind_LEAD_EVENT_KIND_MOVE {
+				told = append(told, e.GetText())
+			}
+		}
+		if want := []string{"T1 pushed: Djinn opened draft PR #41: https://github.com/acme/app/pull/41"}; !slices.Equal(told, want) {
+			t.Errorf("lead told %q, want %q", told, want)
+		}
+	})
+
+	// The draft could not open at the push (the forge refused it): recorded proposed, the lead told, Djinn tries no more;
+	// once the parts are done and green, Djinn asks to open it, with exact title, description and base, the way back.
+	t.Run("proposal flow", func(t *testing.T) {
+		t.Parallel()
+		in := integrating(t)
+		in.setAzimaStrategy(t)
+		in.remote(t)
+		forge := &fakeForge{}
 		in.mu.Lock()
 		in.forge = forge
 		in.mu.Unlock()
@@ -1146,8 +1222,18 @@ func TestAzimaPRPass(t *testing.T) {
 		in.git(t, in.repo, "push", "origin", b1)
 		in.git(t, in.repo, "update-ref", "refs/remotes/origin/"+b1, in.git(t, in.repo, "rev-parse", "refs/heads/"+b1))
 
-		// Integration pass detects pushed azima with finished parts and proposes PR.
+		// The first pass tries the draft and fails; the next asks.
 		in.pass(t, 0)
+		if got := in.stored(t, t1.GetId()).GetAzima().GetPr().GetState(); got != planv1.AzimaPrState_AZIMA_PR_STATE_PROPOSED {
+			t.Errorf("draft refused: PR state %v, want proposed", got)
+		}
+		in.pass(t, 0)
+		if got := creates(forge); len(got) != 1 {
+			t.Errorf("forge created %q; want one try", got)
+		}
+		forge.mu.Lock()
+		forge.created = "https://github.com/acme/app/pull/41"
+		forge.mu.Unlock()
 
 		questions, err := store.List[*planv1.Question](t.Context(), in.db, store.Where{"wish_id": in.wishID})
 		if err != nil {
@@ -1206,6 +1292,51 @@ func TestAzimaPRPass(t *testing.T) {
 		if got := in.get(t, t1.GetId()).GetAzima().GetPr(); got.GetState() != planv1.AzimaPrState_AZIMA_PR_STATE_OPEN ||
 			got.GetUrl() != "https://github.com/acme/app/pull/41" {
 			t.Errorf("PR recorded %v, want open at its address", got)
+		}
+	})
+
+	// Q375, PR #26: the draft per azima is the per-azima strategy's only. A wish pushed as one branch (its default
+	// strategy) has its azimas' work on that branch and one request to main, which Djinn asks to open: no azima branch,
+	// no draft opened, the azima recording no request.
+	t.Run("wish strategy: one request", func(t *testing.T) {
+		t.Parallel()
+		in := integrating(t)
+		in.remote(t)
+		in.git(t, in.repo, "branch", "main", in.tip(t))
+		in.git(t, in.repo, "push", "--quiet", "origin", "main")
+		writeFile(t, in.home, filepath.Join("projects", in.projectID, "settings.txtpb"),
+			"generate: \"gen\"\ntest: \"test\"\nmain_branch: \"main\"\n")
+		forge := &fakeForge{created: "https://github.com/acme/app/pull/41"}
+		in.mu.Lock()
+		in.forge = forge
+		in.mu.Unlock()
+
+		azima := in.azima(t, in.wishID, "Feature")
+		in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}, func(task *planv1.Task) { task.PartOf = azima.GetId() })
+		in.pass(t, 0)
+		in.pass(t, 0)
+
+		if got := creates(forge); len(got) > 0 {
+			t.Errorf("Djinn created %q; want no draft under the wish strategy", got)
+		}
+		if sha := in.git(t, in.repo, "branch", "--list", "djinn/T1-*"); sha != "" {
+			t.Errorf("azima branch %q; want the wish's branch only", sha)
+		}
+		if got := in.stored(t, azima.GetId()).GetAzima().GetPr(); got != nil {
+			t.Errorf("azima PR %v; want none recorded", got)
+		}
+		questions, err := store.List[*planv1.Question](t.Context(), in.db, store.Where{"wish_id": in.wishID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var asked []string
+		for _, q := range questions {
+			if strings.Contains(strings.ToLower(q.GetText()), "pull request") {
+				asked = append(asked, q.GetText())
+			}
+		}
+		if want := []string{"Open a pull request to main?"}; !slices.Equal(asked, want) {
+			t.Errorf("asked %q, want %q", asked, want)
 		}
 	})
 

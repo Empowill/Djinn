@@ -228,34 +228,6 @@ func TestNotchTitle(t *testing.T) {
 	}
 }
 
-// TestLowPriority: Minimal and Medium run workers at a low CPU priority, the higher notches at the standard one.
-func TestLowPriority(t *testing.T) {
-	t.Parallel()
-	cases := []struct {
-		notch djinnv1.LoadNotch
-		want  bool
-	}{
-		{djinnv1.LoadNotch_LOAD_NOTCH_UNSPECIFIED, false},
-		{djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL, true},
-		{djinnv1.LoadNotch_LOAD_NOTCH_LIGHT, true},
-		{djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM, true},
-		{djinnv1.LoadNotch_LOAD_NOTCH_HIGH, false},
-		{djinnv1.LoadNotch_LOAD_NOTCH_MAX, false},
-		{djinnv1.LoadNotch_LOAD_NOTCH_OVERCLOCK, false},
-	}
-	for _, c := range cases {
-		t.Run(c.notch.String(), func(t *testing.T) {
-			t.Parallel()
-			if got := LowPriority(c.notch); got != c.want {
-				t.Errorf("LowPriority(%v) = %v, want %v", c.notch, got, c.want)
-			}
-			if got := (Policy{Notch: c.notch}).LowPriority(); got != c.want {
-				t.Errorf("Policy.LowPriority() for notch %v = %v, want %v", c.notch, got, c.want)
-			}
-		})
-	}
-}
-
 // TestPolicy_Slots: the most workers a notch runs at once, its share of what the CPU and the memory allow, and the rule
 // that gave it; djinn up --workers sets it by hand. The workers' own memory does not take slots from the others: the
 // slots stay what the machine allows with no worker running.

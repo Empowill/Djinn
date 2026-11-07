@@ -149,12 +149,3 @@ func TestKillCgroup(t *testing.T) {
 		t.Errorf("kill: %v, %q", err, readCgroupFile(t, dir, "cgroup.kill"))
 	}
 }
-
-// TestSetCgroupWeight: the CPU weight is written to cpu.weight.
-func TestSetCgroupWeight(t *testing.T) {
-	t.Parallel()
-	dir := cgroupDir(t)
-	if err := SetCgroupWeight(dir, 10); err != nil || readCgroupFile(t, dir, "cpu.weight") != "10" {
-		t.Errorf("weight: %v, %q", err, readCgroupFile(t, dir, "cpu.weight"))
-	}
-}

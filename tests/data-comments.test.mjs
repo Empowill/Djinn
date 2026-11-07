@@ -126,22 +126,16 @@ test("a comment is on the whole tilasm, a passage or an element", () => {
   );
 });
 
-test("a new card is written, saved once it says something, or given up", () => {
-  let s = c.column(c.emptyColumn, { type: "write" });
-  assert.equal(s.editing, c.NEW);
-  assert.equal(c.canSave(s), false);
-  s = c.column(s, { type: "type", text: "  \n" });
-  assert.equal(c.canSave(s), false, "a blank comment is not saved");
-  s = c.column(s, { type: "type", text: "A paused wish?" });
-  assert.equal(c.canSave(s), true);
-  // A second click on "On the whole tilasm" keeps what is typed.
+test("a new card is written, saved, or given up", () => {
+  const s = c.column(c.emptyColumn, { type: "write" });
+  assert.deepEqual(s, { editing: c.NEW, text: "" });
+  // A second click on "On the whole tilasm" keeps the card, and its editor what is typed.
   assert.equal(c.column(s, { type: "write" }), s);
   assert.deepEqual(c.column(s, { type: "saved" }), { editing: "", text: "" });
   assert.deepEqual(c.column(s, { type: "cancel" }), { editing: "", text: "" });
-  assert.equal(c.canSave(c.emptyColumn), false);
 });
 
-test("a new card on a passage or an element keeps it until saved, and takes another with what is typed", () => {
+test("a new card on a passage or an element keeps it until saved, and takes another", () => {
   const passage = {
     page: "index.html",
     exact: "two seconds",
@@ -153,15 +147,14 @@ test("a new card on a passage or an element keeps it until saved, and takes anot
   };
   let s = c.column(c.emptyColumn, { type: "write", anchor: passage });
   assert.deepEqual(s, { editing: c.NEW, text: "", anchor: passage });
-  s = c.column(s, { type: "type", text: "Say where it comes from." });
   assert.equal(c.column(s, { type: "write", anchor: passage }), s);
   const other = { ...passage, exact: "one line", start: 80, end: 88 };
   assert.deepEqual(c.column(s, { type: "write", anchor: other }), {
     editing: c.NEW,
-    text: "Say where it comes from.",
+    text: "",
     anchor: other,
   });
-  // An element aimed at takes the card, with what is typed.
+  // An element aimed at takes the card; its editor keeps what is typed.
   const figure = {
     page: "index.html",
     elementId: "",
@@ -171,13 +164,13 @@ test("a new card on a passage or an element keeps it until saved, and takes anot
   };
   assert.deepEqual(c.column(s, { type: "write", anchor: figure }), {
     editing: c.NEW,
-    text: "Say where it comes from.",
+    text: "",
     anchor: figure,
   });
   // "On the whole tilasm" puts the card on the whole of it.
   assert.deepEqual(c.column(s, { type: "write" }), {
     editing: c.NEW,
-    text: "Say where it comes from.",
+    text: "",
   });
   assert.deepEqual(c.column(s, { type: "saved" }), { editing: "", text: "" });
   assert.deepEqual(c.column(s, { type: "cancel" }), { editing: "", text: "" });
@@ -191,7 +184,6 @@ test("a new card on a passage or an element keeps it until saved, and takes anot
 test("a draft is edited in place from its text", () => {
   let s = c.column(c.emptyColumn, { type: "edit", comment: c1 });
   assert.deepEqual(s, { editing: c1.id, text: "First." });
-  s = c.column(s, { type: "type", text: "First, edited." });
   // Opening the same card again keeps the edit.
   assert.equal(c.column(s, { type: "edit", comment: c1 }), s);
   // A previous save finishing for another editor does not close the one now open.

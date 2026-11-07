@@ -27,7 +27,8 @@ From top to bottom:
   with a small flame while the project has something for you to fix, and its tooltip counts them; folded to the rail,
   the flame sits on the project's folder.
 - **Import a wish**, **Hourglass** (Ctrl+2), **Grimoire**, this documentation, **Summoning Circle**, and your profile,
-  **Connections & preferences**. The Grimoire is a page of the window, like the Hourglass, never a dialog over it: its
+  **Connections & preferences**. A yellow dot on the Summoning Circle says that no session of the Djinn can start yet:
+  no agent that leads is installed and signed in. It goes once one is. The Grimoire is a page of the window, like the Hourglass, never a dialog over it: its
   navigation shows beside its splash page from the first view, each page is read when you open it, and back and forward
   move between the pages you read.
 
@@ -83,13 +84,25 @@ corners, and back. On the rail, never on a background:
 
 ### The Summoning Circle
 
-The **Summoning Circle**, below the Grimoire in the side panel, chooses for each kind of worker which model answers the
-call across all projects: **Djinn (lead)** first, then **Investigation**, **Mockup**, **Ifrit**, **Work**, **Merge
+The **Summoning Circle**, below the Grimoire in the side panel, is a page of the window, like the Grimoire: who works,
+on which account, with which model. It is the one place where the Djinn's agent, model and account are chosen: the top
+of a wish or of the flying carpet has no selector of its own. It is also the first step of the onboarding: a window that
+opens with no agent able to lead opens on it, its entry marked with a yellow dot until one is set up. At the top, the agents: each one's version, where it stands, and the button that
+installs it or signs it in, its terminal opening below its line; **Check again** runs their status commands again.
+Then **Accounts · order of priority**: every sign-in of every agent in one list, with the switch between **Dynamic**
+(the week that ends soonest first, unlimited sign-ins last) and **Manual order** at the right of its title,
+each with its rank and grip (drag it, or Alt+Up and Alt+Down), its pause, its Unlimited switch, its gauges for the week and the 5 hours with
+when each ends, the workers and the waiting tasks on it, where the next task of its agent starts and where the Djinn
+runs; [several Claude accounts](#several-claude-accounts) tells it line by line. Then the models: it chooses for each
+kind of worker which model answers the call across all projects: **Djinn (lead)** first, then **Investigation**, **Mockup**, **Ifrit**, **Work**, **Merge
 correction**, **Merge review**, and **Question investigator**. Each dropdown lists only models from providers installed
 and signed in on this machine (unsigned providers appear greyed out with their sign-in command), taking Antigravity's
 models from the agent itself and Claude and Codex models from Djinn's shared price table, shown once by human-readable
 label (such as **Gemini 4 Argon (High)**) while storing and sending the canonical model identifier. The lead row offers
 Antigravity when the lead runs in a terminal, and shows it greyed out with a tooltip when a driven lead cannot run it.
+Changing the lead row moves the driven Djinn there for its next batch. A Djinn in its terminal keeps its recorded
+session: when the lead row names another agent, the row says which session **Talk to the Djinn** resumes, and
+**Start the Djinn on** that agent starts a new session there from the brief, which becomes the Djinn.
 Every row except the lead offers **Same as lead** by default, following the lead's choice when it changes. Below the rows,
 the bulk model switcher (also in each wish's header, and on the command line with the task command update-models)
 previews and switches every open work, investigation, correction, review, and question worker task—plus defaults for
@@ -104,9 +117,9 @@ once; Large grows it. The documentation opens in the window's theme and text siz
 
 ## The flying carpet
 
-The flying carpet shows every active wish at a glance. Its head holds the load gauge and the Djinn's own control: the
-chip of its seat ("Claude Code · opus 5.5", its menu moving it) while Djinn drives it, **Talk to the Djinn** when it runs
-in its terminal. Below:
+The flying carpet shows every active wish at a glance. Its head holds the load gauge and the Djinn's own control: its
+running batch and its journal while Djinn drives it, **Talk to the Djinn** when it runs in its terminal. Where the Djinn
+runs is chosen in the Summoning Circle. Below:
 
 - **What waits for you**, the bar at the top, while something does: what keeps a wish from moving forward, the most
   blocking first. A click takes you to it. See [Question and move](#question-and-move).
@@ -127,8 +140,8 @@ The **Questions** column holds every open question that waits for you, those tha
 a new question comes below, a revised one keeps its place, one put off goes to the bottom. On the flying carpet they
 are grouped by wish, the first wish first, each under its title and count; a click on the title opens the wish.
 
-One question is open in full, the others fold to two lines. The arrows move from one to the next, across wishes, and
-the keys answer it. When the open one is answered, the one below opens. Below the column come **Your move**, the
+One question is open in full, the others fold to two lines. Left and Right move from one to the next, across wishes,
+Up and Down from one option to the next, and the keys answer it. When the open one is answered, the one below opens. Below the column come **Your move**, the
 workers that wait for you and the wishes ready to grant, then the questions **Being investigated**. The keys and the
 levels are in [Question and move](#question-and-move).
 
@@ -327,6 +340,14 @@ Djinn restarts; the next start draws on the graphics card again. A window whose 
 only told: quit Djinn and start it again. At every start, djinn.log also follows the page's loading, and the page's
 console goes where Djinn's output goes. On macOS and Windows, the window is not watched.
 
+## Text fields
+
+Every field you write free text in behaves the same: **Write to the Djinn**, a new wish's request, a question's note,
+a comment on a tilasm and the last word of its comments, a comment on a diff, a note to withdraw a question or to mark a
+task done, an instruction to a running worker. A key you type stays in the field: the page around it draws nothing again, so typing stays fluent on a long wish
+and under load. The page changes only when what it shows depends on your text, as the send button that your first
+letter enables. A note keeps up to 8000 characters; its count shows from 6400, and turns warm from 7600.
+
 ## Keys
 
 | Keys | What they do |
@@ -334,12 +355,23 @@ console goes where Djinn's output goes. On macOS and Windows, the window is not 
 | Ctrl+N (Cmd+N) | New wish |
 | Ctrl+1 (Cmd+1) | The flying carpet |
 | Ctrl+2 (Cmd+2) | The Hourglass |
+| Ctrl+Up, Ctrl+Down | The wish above or below in the wish bar, the active ones then the paused ones; the granted ones are skipped |
+| Alt+Left, Alt+Right | Back to the view before, forward to the next, as in a browser, the focus in a tilasm's page too |
+| Cmd+[, Cmd+], Cmd+Left, Cmd+Right | The same on macOS |
 | Ctrl+\ (Cmd+\) | Fold or unfold the side panel |
 | Ctrl+I (Cmd+I) | Write to the Djinn |
 | Ctrl+Shift+T | A new terminal |
 | Ctrl+Q (Cmd+Q) | Quit Djinn |
 | Alt+Up, Alt+Down | Move the wish in focus in the wish bar |
 | Escape | Close a dialog or a menu |
+
+A view is where the window stands: a page, a wish, the tab it shows, the tilasm open in its Tilasms tab or over the
+page. Back from a tilasm opened by a question's link closes it, on the page you came from; forward opens it again. A
+view you go to after going back drops the ones ahead, as in a browser. Moving from one question to the next is not a
+view: the arrows do that. Ctrl+Up and Ctrl+Down open a wish as a click on it does, its first question focused. None of
+these keys acts in a text field, where Alt and the arrows move the caret, nor in the terminal; a key pressed inside a
+tilasm's page stays in that page, but back and forward: with the focus in the page, out of its text fields, they move
+the window as anywhere else.
 
 Ctrl+1 and Ctrl+2 are keys' places, not characters: on a French keyboard, the keys of the ampersand and of the e with an
 acute accent; the numpad's 1 and 2 work too. They work in a text field, never in the terminal. Each entry's tooltip
