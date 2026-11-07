@@ -1463,8 +1463,7 @@ func (h *Harness) launch(
 	ctx context.Context, r *run, provider Provider, project *planv1.Project, prep prepared, prompt string,
 ) (*planv1.Task, error) {
 	task := r.task
-	readOnly, perms := accessSpec(task.GetAccess(), prep.declared)
-	perms = withCommit(task, perms)
+	readOnly, perms := taskPermissions(task, prep.declared)
 	var skills []Skill
 	var skillsDir string
 	if !r.watcher && !r.light { // A command reads no skill, nor does a question worker.

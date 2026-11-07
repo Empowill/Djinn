@@ -11,6 +11,7 @@ import (
 
 	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/dispatch"
 	"github.com/empowill/djinn/internal/plan"
 )
 
@@ -108,6 +109,26 @@ func withCommit(t *planv1.Task, perms *djinnv1.Permissions) *djinnv1.Permissions
 		}
 	}
 	return perms
+}
+
+// withWeb is perms with the network for an investigation (W708): it searches and reads the web with its agent's web
+// tools, as a question worker does (djinnOnly), whatever the project's network says; a work task keeps the project's.
+// Its commands stay the project's: a command reaching the network (curl) is not allowed for it. Nil perms stay nil:
+// the agent's own configuration decides.
+func withWeb(t *planv1.Task, perms *djinnv1.Permissions) *djinnv1.Permissions {
+	if perms == nil || perms.GetNetwork() || !dispatch.Investigation(t) {
+		return perms
+	}
+	perms = proto.CloneOf(perms)
+	perms.Network = true
+	return perms
+}
+
+// taskPermissions are the access a task's worker starts or resumes with: its access's (accessSpec), with what it commits
+// with (withCommit) and, for an investigation, the web (withWeb).
+func taskPermissions(t *planv1.Task, declared *djinnv1.Permissions) (readOnly bool, perms *djinnv1.Permissions) {
+	readOnly, perms = accessSpec(t.GetAccess(), declared)
+	return readOnly, withWeb(t, withCommit(t, perms))
 }
 
 // matchesPrefix tells whether command starts with one of the prefixes, on a word boundary.
