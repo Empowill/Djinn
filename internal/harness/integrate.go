@@ -2743,11 +2743,11 @@ func (h *Harness) runCmd(ctx context.Context, dir string, args []string) (string
 	return out, code, err
 }
 
-// queryGhPR queries GitHub via gh for branch's pull request; answered tells, when there is none, that gh said so.
-func (h *Harness) queryGhPR(ctx context.Context, repo, branch string) (_ *forgePR, answered bool) {
+// queryGhPR queries GitHub via gh for branch's pull request.
+func (h *Harness) queryGhPR(ctx context.Context, repo, branch string) *forgePR {
 	out, code, err := h.runCmd(ctx, repo, []string{"gh", "pr", "view", branch, "--json", "number,state,baseRefName,mergeable,url"})
 	if err != nil || code != 0 {
-		return nil, err == nil && noRequest(out)
+		return nil
 	}
 	var view struct {
 		Number      int    `json:"number"`
@@ -2757,7 +2757,7 @@ func (h *Harness) queryGhPR(ctx context.Context, repo, branch string) (_ *forgeP
 		URL         string `json:"url"`
 	}
 	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &view); err != nil || view.Number == 0 {
-		return nil, false
+		return nil
 	}
 	pr := &forgePR{
 		Number:    view.Number,
@@ -2767,7 +2767,7 @@ func (h *Harness) queryGhPR(ctx context.Context, repo, branch string) (_ *forgeP
 		Mergeable: view.Mergeable == "MERGEABLE",
 	}
 	if pr.State == "MERGED" || pr.State == "CLOSED" {
-		return pr, true
+		return pr
 	}
 	checksOut, code, err := h.runCmd(ctx, repo, []string{"gh", "pr", "checks", strconv.Itoa(view.Number), "--json", "name,bucket"})
 	if err == nil && (code == 0 || checksOut != "") {
@@ -2786,15 +2786,14 @@ func (h *Harness) queryGhPR(ctx context.Context, repo, branch string) (_ *forgeP
 			pr.Green = allGreen
 		}
 	}
-	return pr, true
+	return pr
 }
 
-// queryGlabMR queries GitLab via glab for branch's merge request; answered tells, when there is none, that glab said
-// so.
-func (h *Harness) queryGlabMR(ctx context.Context, repo, branch string) (_ *forgePR, answered bool) {
+// queryGlabMR queries GitLab via glab for branch's merge request.
+func (h *Harness) queryGlabMR(ctx context.Context, repo, branch string) *forgePR {
 	out, code, err := h.runCmd(ctx, repo, []string{"glab", "mr", "view", branch, "--output", "json"})
 	if err != nil || code != 0 {
-		return nil, err == nil && noRequest(out)
+		return nil
 	}
 	var view struct {
 		IID                 int    `json:"iid"`
@@ -2809,14 +2808,14 @@ func (h *Harness) queryGlabMR(ctx context.Context, repo, branch string) (_ *forg
 		} `json:"head_pipeline"`
 	}
 	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &view); err != nil {
-		return nil, false
+		return nil
 	}
 	num := view.IID
 	if num == 0 {
 		num = view.ID
 	}
 	if num == 0 {
-		return nil, false
+		return nil
 	}
 	state := strings.ToUpper(view.State)
 	if state == "OPENED" {
@@ -2831,17 +2830,15 @@ func (h *Harness) queryGlabMR(ctx context.Context, repo, branch string) (_ *forg
 		URL:       view.WebURL,
 		Mergeable: mergeable,
 		Green:     green,
-	}, true
+	}
 }
 
 // forgeTimeout is the longest the questions to a forge about one branch may take: a forge that does not answer holds
 // the integration back no longer (W504).
 const forgeTimeout = time.Minute
 
-// queryForgePR queries the forge (gh or glab) for branch's pull or merge request. When there is none, answered tells
-// that the forge said so: false when its command did not run, or failed otherwise (no forge known for the remote, no
-// login).
-func (h *Harness) queryForgePR(ctx context.Context, repo string, project *planv1.Project, branch string) (_ *forgePR, answered bool) {
+// queryForgePR queries the forge (gh or glab) for branch's pull or merge request.
+func (h *Harness) queryForgePR(ctx context.Context, repo string, project *planv1.Project, branch string) *forgePR {
 	ctx, cancel := context.WithTimeout(ctx, forgeTimeout)
 	defer cancel()
 	forge := detectForge(ctx, repo, project)
@@ -2879,18 +2876,17 @@ func (h *Harness) azimaPRPass(
 		if !h.isBranchPushed(ctx, wish, project, branch) {
 			continue
 		}
+		if h.openAzimaDraft(ctx, wish, project, settings, azima, branch) {
+			continue
+		}
 		ok, parts := h.azimaPartsDoneAndGreen(ctx, wish.GetId(), azima.GetId())
 		if !ok {
-			h.pushedAzimaPR(ctx, wish, project, settings, azima, branch)
 			continue
 		}
 		base := azimaPRBase(ctx, repo, settings, azima)
 
-		pr, answered := h.queryForgePR(ctx, repo, project, branch)
+		pr := h.queryForgePR(ctx, repo, project, branch)
 		if pr == nil {
-			if answered && azima.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
-				h.unopenedAzimaPR(ctx, wish, project, settings, azima, branch)
-			}
 			if azima.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE {
 				continue
 			}

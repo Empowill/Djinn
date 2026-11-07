@@ -38,6 +38,11 @@ func (h *Harness) openRequest(ctx context.Context, q *planv1.Question) string {
 	if err != nil {
 		return "Djinn could not open the pull request (" + clipRunes(err.Error(), 50) + "): the developer must open it"
 	}
+	return h.openDraft(ctx, o)
+}
+
+// openDraft opens o as a draft, by the project's skill or the forge's command, and says what it did, as openRequest.
+func (h *Harness) openDraft(ctx context.Context, o *opening) string {
 	repo, forge := o.project.GetDirectory(), forgeOf(ctx, o.project)
 	kind := requestKind(forge)
 	if req := h.requestFor(ctx, repo, forge, o.branch); req != nil {
@@ -50,7 +55,7 @@ func (h *Harness) openRequest(ctx context.Context, q *planv1.Question) string {
 			Prompt: openPrompt(o, kind, skill),
 		}, &planv1.Task{}) // Djinn spawns it: never a repair it claims.
 		if err != nil {
-			logx.L().Warn("spawn the opening of a request", "question", q.GetCode(), "branch", o.branch, "err", err)
+			logx.L().Warn("spawn the opening of a request", "branch", o.branch, "err", err)
 			return fmt.Sprintf("Djinn could not spawn a task: spawn one to open the %s of %s with the skill %s", kind, o.branch, skill)
 		}
 		return fmt.Sprintf("Djinn spawned %s: it opens the draft %s of %s with the skill %s", task.GetCode(), kind, o.branch, skill)
@@ -64,7 +69,7 @@ func (h *Harness) openRequest(ctx context.Context, q *planv1.Question) string {
 		if err != nil {
 			why = err.Error()
 		}
-		logx.L().Warn("open a request", "question", q.GetCode(), "branch", o.branch, "exit", code, "out", why)
+		logx.L().Warn("open a request", "branch", o.branch, "exit", code, "out", why)
 		return fmt.Sprintf("Djinn could not open the %s of %s (%s): the developer must open it", kind, o.branch, clipRunes(why, 32))
 	}
 	h.openedRequest(ctx, o, url)
@@ -180,9 +185,40 @@ func openSkill(home string, project *planv1.Project) string {
 
 // openPrompt is the prompt of the worker that opens o with the project's skill.
 func openPrompt(o *opening, kind, skill string) string {
-	return fmt.Sprintf("The developer said yes to opening the %[1]s of branch %[2]s into %[3]s. Open it as a draft, "+
+	return fmt.Sprintf("Djinn opens the %[1]s of branch %[2]s into %[3]s. Open it as a draft, "+
 		"following the project's skill %[4]s. The branch is on the remote already: push nothing, commit nothing, change "+
 		"no file. If a %[1]s is open for %[2]s already, open none. Djinn drafted its title and description from the "+
 		"work: keep what they say, in the skill's format.\n\nTitle: %[5]s\n\n%[6]s\n\nEnd with the %[1]s's address.",
 		kind, o.branch, o.base, skill, o.title, o.body)
+}
+
+// openAzimaDraft opens the request of azima, under the per-azima strategy, as a draft from its branch's first push,
+// with no question (decision Q375; wish Dew, 07/11/2026: four azimas pushed, none had its draft): once, while the azima
+// records no request and its branch holds work main lacks. Opened, or found open, it is recorded open; handed to the
+// project's skill, or failed, recorded proposed, and the lead hears what Djinn did. The question "Open a pull request
+// for T07?" once the parts are done stays the way back when it could not. It tells whether it tried, the azima as read
+// stale then.
+func (h *Harness) openAzimaDraft(
+	ctx context.Context, wish *planv1.Wish, project *planv1.Project, settings plan.Settings, azima *planv1.Task, branch string,
+) bool {
+	if azima.GetAzima().GetPr() != nil || azima.GetAzima().GetMerged() != nil || azima.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE {
+		return false
+	}
+	repo := project.GetDirectory()
+	_, main, err := resolveMainSha(ctx, repo, settings)
+	if err != nil {
+		return false
+	}
+	if n, err := git(ctx, repo, "rev-list", "--count", main+"..refs/heads/"+branch); err != nil || strings.TrimSpace(n) == "0" {
+		return false
+	}
+	o := &opening{wish: wish, project: project, azima: azima, branch: branch, base: azimaPRBase(ctx, repo, settings, azima)}
+	parts, _ := h.azimaTasks(ctx, wish.GetId(), azima.GetId())
+	o.title, o.body = h.draftAzimaPR(ctx, azima, parts)
+	did := h.openDraft(ctx, o)
+	if now, err := store.Get[*planv1.Task](ctx, h.store, azima.GetId()); err == nil && now.GetAzima().GetPr() == nil {
+		h.recordAzimaPR(ctx, azima, &planv1.AzimaPr{State: planv1.AzimaPrState_AZIMA_PR_STATE_PROPOSED})
+	}
+	h.tellLead(ctx, planv1.LeadEventKind_LEAD_EVENT_KIND_MOVE, wish.GetId(), azima.GetCode(), azima.GetCode()+" pushed: "+did)
+	return true
 }
