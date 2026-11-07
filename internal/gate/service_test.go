@@ -27,10 +27,10 @@ func TestService_Hold(t *testing.T) {
 	t.Parallel()
 
 	// A gate held directly, by a process Djinn knows, is measured while it is held, and taken back once that process
-	// ends: the stream says so and ends, and the slot frees.
+	// ends: the stream says so and ends, and the slot its heavy command held alone frees.
 	t.Run("process holder measured and taken back when process ends", func(t *testing.T) {
 		t.Parallel()
-		g := New(nil, nil, nil)
+		g := New(nil, peaks{"by hand": 3 * machine.GiB}, nil)
 		g.tick = 10 * time.Millisecond
 		read := Read(func(pid int) (machine.Group, error) { return machine.ReadWorker(pid, "") })
 		if machine.NotMeasured != "" {

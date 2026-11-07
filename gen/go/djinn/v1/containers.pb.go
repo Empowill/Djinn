@@ -25,10 +25,10 @@ const (
 )
 
 // Containers are the ceilings of each container a worker starts in a project with docker run or docker create: a
-// project writes them in .agents/containers.txtpb, read on its reference branch, as its permissions are. They stop a
-// runaway (a fork bomb, a leak), never a container's ordinary work: a container that needs more is given more here.
-// Djinn's docker, first on each worker's path, adds them to the command, keeping a lower value the worker gave, and
-// labels the container with its task, whose series in the Hourglass counts it. Without the file, Djinn's defaults.
+// project writes them under containers in its djinn.yaml (ProjectConfig). They stop a runaway (a fork bomb, a leak),
+// never a container's ordinary work: a container that needs more is given more here. Djinn's docker, first on each
+// worker's path, adds them to the command, keeping a lower value the worker gave, and labels the container with its
+// task, whose series in the Hourglass counts it. Without them, Djinn's defaults.
 type Containers struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Memory of a container, swap included, in MiB. 0: 4096, or a quarter of the machine's memory when that is less.

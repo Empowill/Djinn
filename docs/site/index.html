@@ -340,7 +340,9 @@
                   Djinn runs take the CPU after the window, the workers after them, so typing stays fluid.
                   <code>djinn machine show</code> lists them, the busiest first. Its Go builds share one cache across
                   worktrees (<code>-trimpath</code>); when the disk runs low, Djinn trims that cache, and almost full,
-                  it tells you and holds the push checks until space comes back. On Auto, the load follows the programs
+                  it tells you and holds the push checks until space comes back. Under strong memory pressure, its memory
+                  brake freezes the worker that grows outside the gates, interrupts it 30 s later if the memory stays
+                  short, and never cuts a command the gates admitted. On Auto, the load follows the programs
                   outside Djinn, read from its systemd scopes and averaged over 3 minutes: 3 minutes above 30 % of the CPU
                   for a level down, 5 below 15 % for a level up, each level kept at least 3 minutes.
                 </p>

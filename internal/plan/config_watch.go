@@ -20,7 +20,8 @@ import (
 
 // The watch of the configuration on the reference branch: every ConfigLookEvery, and after each push of Djinn, the
 // harness fetches each project's reference branch alone, then LookAtConfig compares the digest of the .agents and
-// .claude/skills trees (the name of their folder in the cache) with the one of its last look, kept in a ConfigWatch.
+// .claude/skills trees and of the root's djinn.yaml (ConfigFolders; the name of their folder in the cache) with the one
+// of its last look, kept in a ConfigWatch.
 // No git runs to read anything when it has not moved. When it has, each commit of the branch that changed those trees
 // becomes an entry of the project's journal of changes (ConfigChange), told in sentences by comparing the
 // configuration before and after it. The change is applied already, since Djinn reads the configuration on that
