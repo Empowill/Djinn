@@ -17790,7 +17790,8 @@ export const TaskService: GenService<{
   },
   /**
    * Pause a running worker without killing it: it holds still, keeps what it did, and frees its slot of the machine
-   * until it is resumed. A worker that holds or waits for a gate is not paused: wait, or stop it. Not possible on
+   * until it is resumed. A worker that holds a gate alone, or waits for one, is not paused: wait, or stop it. One that
+   * only shares its gates (a light command under a gate's name) is, since no one waits for them. Not possible on
    * Windows yet.
    *
    * @generated from rpc plan.v1.TaskService.Pause

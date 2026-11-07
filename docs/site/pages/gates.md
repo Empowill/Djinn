@@ -149,8 +149,9 @@ a push, takes one of the machine's slots while it is held; a gate shared by ligh
 On a machine with more than one slot, Djinn keeps one free for merges and pushes: a new worker waits rather than take
 it, saying a slot is kept for merges and pushes. On a machine of one slot, only the order above applies.
 
-A worker that holds a gate, or waits for one, cannot be paused: Djinn says it holds the gate, to wait or stop it
-instead.
+A worker that holds a gate alone, or waits for one, cannot be paused: Djinn says it holds the gate, to wait or stop it
+instead. One whose light command only shares a gate's name, a lint beside others, can: no one waits for a gate held
+shared.
 
 ## Where you see them
 
