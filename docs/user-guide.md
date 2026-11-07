@@ -833,9 +833,11 @@ cuts a command the gates admitted.
 - **How.** It freezes the worker where it is (its scope's `cgroup.freeze`, as a pause) and its containers (`docker
   pause`); the task shows paused, `memory brake: 6% of memory available (1.9 GiB); it grew 1 GiB in 1 min outside the
   gates`, and its slot stays its own. One freeze every 10 s at most.
-- **Then.** Still frozen after 30 s with the memory short, it is interrupted: its task resumes later in its session,
-  once the machine allows (`resuming: memory brake: frozen 30 s, the memory stayed short…`), its containers removed.
-  An agent that cannot resume its session (Antigravity) stays frozen until calm instead.
+- **Then.** Still frozen after 30 s with the memory short, it is interrupted (`resuming: memory brake: frozen 30 s, the
+  memory stayed short…`), its containers removed. Its task resumes in its session once calm, after the workers the
+  brake froze thawed (`waiting: memory brake: interrupted, it resumes after 1 min of calm…`): resumed at once, it would
+  grow again into the memory still short. **Start** (`djinn task start`) resumes it before; the brake turned off, it
+  resumes at once. An agent that cannot resume its session (Antigravity) stays frozen until calm instead.
 - **Admitted commands.** A worker whose command a gate admitted is never interrupted, nor frozen while anything else
   grows, nor while a worker frozen for a growth outside the gates waits for its interruption. Only when admitted
   workers alone grow does the brake freeze the last one admitted, and that one only thaws: its command lives on, its
