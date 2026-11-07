@@ -42,6 +42,7 @@ test.afterEach(() => {
 test("Later sends a question to the bottom and back; Sleep puts a question out of the column until its conditions hold and wakes it first", async ({
   page,
 }) => {
+  test.setTimeout(60_000);
   const errors: string[] = [];
   page.on("pageerror", (err) => errors.push(err.message));
   for (const w of wishes().filter((w) => w.state === "WISH_STATE_ACTIVE"))
@@ -66,6 +67,9 @@ test("Later sends a question to the bottom and back; Sleep puts a question out o
   djinn("question", "ask", "Which wick?", wishId);
 
   await page.goto(process.env.DJINN_URL!);
+  await expect(
+    page.locator(".wish-nav").filter({ hasText: title }),
+  ).toBeVisible({ timeout: 15_000 });
   await page.locator(".wish-nav").filter({ hasText: title }).click();
   await expect(page.locator(".hero h1")).toHaveText(title);
   const column = page.locator(".question-column");

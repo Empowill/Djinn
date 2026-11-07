@@ -25,9 +25,10 @@ The Djinn and the workers run the agents you already have, as you installed and 
 **Connections & preferences** (bottom of the side panel) shows, one line per agent, whether Djinn finds it, its
 version, and whether it is signed in (`claude auth status`, `codex login status`; Antigravity has no such command, so
 its sign-in shows as unknown), with a button to install it or sign it in. The button runs the agent's own command in a
-terminal of the panel, where you answer if it asks; once it ends, Djinn checks again. The same panel opens from the
-menu of the Djinn's seat, at the top of a wish (**Set up the agents**; the arrow beside **Talk to the Djinn** when the
-Djinn runs in its terminal), and by itself when the window opens with no agent ready. The agents are looked
+terminal of the panel, where you answer if it asks; once it ends, Djinn checks again. The same agents, and their
+accounts in their order of priority, head the **Summoning Circle** page (below the Grimoire in the side panel): the
+window opens there when no agent able to lead is ready, and a yellow dot marks its entry until one is (W578). The
+Circle is the one place where the Djinn's agent, model and account are chosen: the top of the window has no selector. The agents are looked
 for where the Djinn and the workers find them: Djinn's PATH, your login shell's, and the installers' folders. Djinn asks for no API key,
 and stores none: the account each agent signs in with pays for it.
 
@@ -426,10 +427,10 @@ which adjusts the task to it before launching. From a terminal, `djinn question 
 question; a session of the Djinn is marked with `$DJINN_LEAD`, so an answer run by the Djinn is attributed to it
 without echoing back to itself, whereas an answer typed in a plain shell is attributed to the developer and reaches the
 Djinn. By default (`"leadDriven"` unset or `true` in `settings.json`), there is no lead terminal and no watch: the
-answer goes to the next batch's session, whole; beside the chip of the Djinn's seat, the window shows the running batch
+answer goes to the next batch's session, whole; at the top of a wish or of the flying carpet, the window shows the running batch
 (since when, events, cost) and the journal of past batches (with retries when a batch fails), the wish's **History** tab shows
 the batches that touched that wish alongside its commands, and `djinn lead journal` prints them in the terminal. The
-lead runs on the agent, model and account you choose, from the menu of the seat's chip or with `djinn lead
+lead runs on the agent, model and account you choose, in the Summoning Circle or with `djinn lead
 move`, until you move it; when it hits its subscription's limit, the attention bar offers each other agent or account
 in one click, and Djinn moves it nowhere by itself. An account is a folder of the agent's own where it keeps its login
 (`djinn lead add-account`, then its sign-in once): see [the lead's seat and the

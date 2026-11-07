@@ -193,6 +193,59 @@ test("the status colours keep their contrast in the dark and the light theme", (
   }
 });
 
+// A sign-in in overflow says so in the tone of what waits, on its own ground (8% of the tone over the surface): its text
+// reads at 4.5:1 in the dark and the light theme, and its rule outweighs the light theme's grey badge (W489).
+test("the overflow badge of a sign-in reads in the dark and the light theme", () => {
+  const styles = fs.readFileSync(path.join(root, "styles.css"), "utf8");
+  const review = fs.readFileSync(path.join(root, "review.css"), "utf8");
+  const selector = ".sign-in-line .badge.sign-in-overflow";
+  const start = styles.indexOf(selector + " {");
+  assert.ok(start >= 0, "the overflow badge has its rule");
+  const rule = styles.slice(start, styles.indexOf("}", start));
+  assert.match(rule, /color: var\(--st-waiting\);/);
+  assert.match(
+    rule,
+    /background: color-mix\(in srgb, var\(--st-waiting\) 8%, var\(--surface\)\);/,
+  );
+  // Three classes outweigh html[data-theme="light"] .badge (two and an element), which would grey it.
+  assert.ok(review.includes('html[data-theme="light"] .badge,'));
+  const block = (css, from) => {
+    const at = css.indexOf(from + " {");
+    return Object.fromEntries(
+      [
+        ...css
+          .slice(at, css.indexOf("\n}", at))
+          .matchAll(/--([\w-]+):\s*(#[0-9a-f]{6});/g),
+      ].map((m) => [m[1], m[2]]),
+    );
+  };
+  const rgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+  const lum = (c) => {
+    const [r, g, b] = c.map((v) => {
+      v /= 255;
+      return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const light = block(review, 'html[data-theme="light"]');
+  for (const [name, tone, surface] of [
+    [
+      "dark",
+      block(review, ":root")["st-waiting"],
+      block(styles, ":root").surface,
+    ],
+    ["light", light["st-waiting"], light.surface],
+  ]) {
+    const ground = rgb(tone).map((v, i) => v * 0.08 + rgb(surface)[i] * 0.92);
+    const [x, y] = [lum(rgb(tone)), lum(ground)].sort((p, q) => q - p);
+    const r = (x + 0.05) / (y + 0.05);
+    assert.ok(
+      r >= 4.5,
+      `${name}: the overflow badge reads at ${r.toFixed(2)}:1`,
+    );
+  }
+});
+
 // The wish icons' colours (L09 v6) read on the menu in both themes, at rest and on a selected row: 3:1 at least, the
 // WCAG level for a graphic. Each is its own token, none of the signs' colours: the lamp's gold, the ifrit's vermilion,
 // the blue and violet of what runs and investigates.

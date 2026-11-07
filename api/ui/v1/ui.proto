@@ -154,6 +154,29 @@ message Settings {
   // The agents whose own sign-in (their default folder, no account) is paused: Djinn starts no worker there (djinn
   // lead pause-account --provider), and their workers run on the agent's accounts, or wait while each is paused.
   repeated plan.v1.Provider paused_sign_ins = 9;
+  // The sign-ins of every agent from the highest priority to the lowest (decision Q295 B): each new worker, and each
+  // batch of the lead that follows the order, starts on the first free one of its agent. A sign-in missing from it
+  // (added since, or none written) comes after, in the order by default: each agent's own, then its accounts as added.
+  repeated SignInRef account_order = 10;
+  // The lead stays on the account of its seat (lead.account, "" for its agent's own sign-in) whatever the order: the
+  // developer pinned it there (djinn lead move with an account). Unset or false: each batch of the lead starts on the
+  // first free sign-in of its agent in account_order, as a worker does (L2).
+  optional bool lead_pinned = 11;
+  // How a sign-in is picked among the free ones of its agent (djinn lead account-mode, decision Q339 C). Unset:
+  // dynamic.
+  plan.v1.AccountMode account_mode = 12;
+  // The sign-ins the developer forced pseudo-unlimited (djinn lead unlimited ... forced), whatever Djinn detects.
+  repeated SignInRef unlimited_forced = 13;
+  // The sign-ins the developer forced to count with a quota (djinn lead unlimited ... limited), whatever Djinn detects.
+  repeated SignInRef unlimited_unforced = 14;
+}
+
+// SignInRef names a sign-in of an agent: its own (no account) or one of its accounts.
+message SignInRef {
+  // The agent.
+  plan.v1.Provider provider = 1;
+  // The account's name; empty for the agent's own sign-in.
+  string account = 2;
 }
 
 // ShownTheme is the theme a page shows: the system's resolved by the page, never "system".

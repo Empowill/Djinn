@@ -214,8 +214,9 @@ the code does not say by itself; remove one when a change makes it false.
   *Sign:* a task's integration stays PENDING with "git has no identity". *Do:* a spec whose task Djinn merges sets
   `user.name`/`user.email` in its project repository. *Where:* `e2e/global-setup.ts`, `noIdentity` in
   `internal/harness/worktree.go`.
-- **With no agent ready, a setup dialog covers the window.** A CI runner has no claude, codex or agy; the developer's
-  machine has one, so it never shows there (W487). *Sign:* "modal-backdrop intercepts pointer events", on CI only.
+- **With no agent ready, the window opens on the Summoning Circle.** A CI runner has no claude, codex or agy; the
+  developer's machine has one, so it never shows there (W487; a setup dialog until W578). *Sign:* the page a spec
+  expects is not shown, the Circle is, on CI only.
   *Do:* a spec that starts its own `djinn up` passes `withAgents(process.env)`; reproduce with
   `env -i HOME=$(mktemp -d) PATH=<node, go, /usr/bin, /bin> PLAYWRIGHT_BROWSERS_PATH=~/.cache/ms-playwright npx playwright test …`.
   *Where:* `e2e/agents.ts`.
