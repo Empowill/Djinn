@@ -105,9 +105,9 @@ say no to, a skill to unsummon). Then its reference branch (the ref and commit D
 from): in Git with a remote, Djinn reads the project's settings, permissions and skills on it, at the last fetch, not
 in your copy; **Change** chooses another among the remote's branches, written in your own file, never in the repository
 (`djinn project set-branch <project> dev`, `--unset` takes it back). Djinn watches that branch: every 5 minutes, and
-after each of its pushes, it fetches it alone and compares the digest of `.agents` and `.claude/skills` with its last
-look; when they moved, the panel's **What changed on origin/main** tells each commit that changed them, who and when,
-in sentences ("New check e2e before a push", "Permissions: 1 more command the workers may run: curl", "New skill
+after each of its pushes, it fetches it alone and compares the digest of `.agents`, `.claude/skills` and `djinn.yaml`
+with its last look; when they moved, the panel's **What changed on origin/main** tells each commit that changed them,
+who and when, in sentences ("New check e2e before a push", "Permissions: 1 more command the workers may run: curl", "New skill
 open-pr, with a wish template"). A change is applied as soon as it is fetched. One that gives the workers more (a
 command allowed, editing, the network, the auto mode), or changes what a skill makes or runs for Djinn (a wish
 template, a babysit, the command of a source you plugged in), is a thing to fix until you mark it **Seen**
@@ -671,6 +671,20 @@ A repository may share defaults for its workers in `.agents/settings.txtpb`: whi
 much one may spend. Your own file, in Djinn's data folder, wins over the team's; a task's own flags win over both.
 `djinn project show <project>` says where each setting comes from. Details: [team settings](team-settings.md).
 
+A repository also tells Djinn about itself in `djinn.yaml`, at its root or in `.agents/djinn.yaml`, read on the
+reference branch like the permissions, so that a worker never changes what bounds it. With both files, the root's is
+read and Djinn's log warns that the other is not; a field Djinn does not know refuses the file, Djinn's defaults then
+hold, and the log names the file and the field. Today it holds the runaway ceilings of the containers the workers start
+(`docker run`, `docker create`): without it, 4 GiB of memory (a quarter of the machine's when that is less) and 1024
+processes per container. Djinn's `docker`, first on each worker's path, brings a higher limit down to them and names
+the file to raise them in.
+
+```yaml
+containers:
+  memory_mib: 8192 # memory of a container, swap included, in MiB (64 at least)
+  pids: 2048       # processes and threads of a container (16 at least)
+```
+
 When a project's settings name its checks, Djinn brings finished work into the wish's branch by itself: the tasks
 ended and waiting go as one batch, their branches merged one on top of the other in a worktree of its own (made ready
 by the `setup` command), the checks named for `commit` run once through their gates, and the branch moves when they
@@ -727,8 +741,11 @@ Workers share one machine. Heavy commands (tests, builds, code generation) run t
 djinn gate run test -- go tool task test
 ```
 
-A gate has one holder at a time, and is granted only while the machine is not under pressure; a command measured
-before waits until the machine has the memory it peaked at. The status bar shows how many gates are held. `djinn
+A gate is granted only while the machine is not under pressure; a command measured before waits until the machine
+has the memory it peaked at. What the command cost, not the gate's name, says how it holds it: a command measured heavy
+(below) holds its gate alone, one holder at a time; a light one, or one never measured, shares it, as many at once as
+the machine holds, and waits only for one that holds the name alone. A lit ifrit holds its gates alone whatever its
+server costs. The status bar shows how many gates are held. `djinn
 command list` shows what each command cost (CPU time, peak memory, duration).
 
 Who gets a gate first: Djinn's own requests to merge a task's work into its branch (its wish's or its azima's), to
@@ -753,7 +770,9 @@ A command measured heavy, past 2 GiB of peak memory or 60 s of CPU time, goes on
 task's heavy command holds its gate or its admission (`heavy commands go one at a time: W12: go test ./... runs one,
 for 40s`), a merge or a push keeping its place before the workers. `heavyCommandMemoryMib` and
 `heavyCommandCpuSeconds` in `settings.json` of Djinn's data folder change both limits; `djinn up` reads them as it
-starts. A gate's name keeps its own turn as before.
+starts. A heavy command under a gate's name holds that name alone: a light command of the same name waits for it, but it
+does not wait for the light ones already sharing it. Two light `stack` or `paid` runs may overlap: a gate's name no
+longer keeps two stacks off the same ports, nor two paid runs apart, unless their commands are measured heavy.
 
 A worker holding or waiting for an admission is neither paused for a slot nor judged silent; you may still pause it.
 
@@ -774,16 +793,55 @@ go tool task e2e has held gate e2e for 1h0m0s, its command never measured; nothi
 hangs.`), and the task's events say it.
 
 Every gate and admission held is kept in Djinn's database a week as it is released, and survives a restart: when it
-was asked, granted and released, its mode (exclusive for a named gate, shared for an admission), whether its command
+was asked, granted and released, its mode (exclusive for a gate held alone, shared for an admission or a light command under a gate's name), whether its command
 was heavy or had no measured cost of its own, what it waited for last (another holder, the pressure, the memory, a
 merge first, a heavy command) and why, the highest memory its holder used, and whether it took a slot outside a
-worker. The Hourglass reads them (`MachineService.Series`): the gates, and the admissions that waited a second or more
+worker. The Hourglass reads them (`MachineService.Series`): the gates, shared or alone, and the admissions that waited a second or more
 or ran a heavy command; every admission with `all_admissions`.
 
-A gate held outside a running worker (a merge's, a push's, your terminal's) takes one of the machine's slots; a
-worker's own gate is in its slot. An admission takes none, unless its command is heavy. On a machine of more than one slot, one stays free for the merges and pushes: a new
+A gate held alone outside a running worker (a merge's, a push's, your terminal's) takes one of the machine's slots; a
+worker's own gate is in its slot. A gate held shared takes none: an admission, or a light command under a gate's name.
+The list of gates (`GateService.List`) shows a shared gate under its first holder, or the one holding it alone.
+
+On a machine of more than one slot, one stays free for the merges and pushes: a new
 worker waits (`5 workers run, 1 slot is kept for merges and pushes, the most this machine holds`), and a merge's gate
 takes that slot. On a machine of one slot, none is kept: only the order above applies.
+
+### The memory brake
+
+The gates share the machine; what escapes them can still fill its memory: a process a command left running, a command
+run through an absolute path, an agent without a hook, or simply the sum of the workers. The kernel's ceilings stop a
+runaway (a worker's scope and containers); the memory brake catches a slower growth, which no ceiling sees. It never
+cuts a command the gates admitted.
+
+- **When.** Under 10 % of the machine's memory available, or a PSI full of 20 (every task waited for memory a fifth of
+  the last 10 s), two readings in a row, a second apart. `djinn up --brake-memory 10` (or `DJINN_BRAKE_MEMORY`) sets the
+  percent; 0 turns the brake off. The PSI threshold is fixed.
+- **Whom.** Among the running workers, the one whose memory grew most over the last minute (256 MiB at least) while
+  holding no gate nor admission: its scope's anonymous memory and its task's containers', not the page cache. Never
+  Djinn, its merges, pushes and checks, the lead, a watcher, a question worker or an ifrit; a worker a `git` runs in
+  waits for the next reading, so that no repository lock stays frozen.
+- **How.** It freezes the worker where it is (its scope's `cgroup.freeze`, as a pause) and its containers (`docker
+  pause`); the task shows paused, `memory brake: 6% of memory available (1.9 GiB); it grew 1 GiB in 1 min outside the
+  gates`, and its slot stays its own. One freeze every 10 s at most.
+- **Then.** Still frozen after 30 s with the memory short, it is interrupted: its task resumes later in its session,
+  once the machine allows (`resuming: memory brake: frozen 30 s, the memory stayed short…`), its containers removed.
+  An agent that cannot resume its session (Antigravity) stays frozen until calm instead.
+- **Admitted commands.** A worker whose command a gate admitted is never interrupted, nor frozen while anything else
+  grows, nor while a worker frozen for a growth outside the gates waits for its interruption. Only when admitted
+  workers alone grow does the brake freeze the last one admitted, and that one only thaws: its command lives on, its
+  admission is not taken back, and the gates keep the peak it reached as its command's cost, which its next run waits
+  for. It may hold a named gate meanwhile: under such pressure the gates grant nothing to anyone.
+- **Calm.** Above the percent plus 5 and a PSI full under 5 for a minute, the last frozen worker thaws, its containers
+  first, then the one before after another minute.
+- **Told.** The lead of each worker's wish hears every freeze, interruption and thaw (`W12 thawed: the memory is calm
+  again (40% available). Frozen 3 min at 6 GiB, its command's peak kept by the gates, left out of its budget.`).
+  Resumed by hand (**Resume**, `djinn task resume`), a frozen worker thaws with its containers, and the brake forgets
+  it.
+- **Budget.** A frozen worker's time is left out of its 2 hours, as a pause's is, and a worker just thawed is judged
+  neither silent nor stalled for its frozen time.
+
+On Windows, where a worker cannot pause, there is no brake.
 
 ## When Djinn stops and starts again
 

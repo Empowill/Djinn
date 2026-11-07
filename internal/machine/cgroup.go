@@ -147,3 +147,33 @@ func writeCgroup(dir, name, v string) error {
 	_, err = f.WriteString(v)
 	return errors.Join(err, f.Close())
 }
+
+// ReadAnon reads, from the cgroup v2 folder dir of the file system fsys, the anonymous memory its processes hold
+// (memory.stat's anon, every cgroup under it counted): what they allocated, without the page cache they filled, which
+// the kernel takes back by itself. It fails without the memory controller, or when dir does not exist.
+func ReadAnon(fsys fs.FS, dir string) (uint64, error) {
+	b, err := fs.ReadFile(fsys, path.Join(strings.TrimPrefix(dir, "/"), "memory.stat"))
+	if err != nil {
+		return 0, err
+	}
+	anon, err := statField(b, "anon")
+	if err != nil {
+		return 0, fmt.Errorf("%s/memory.stat: %w", dir, err)
+	}
+	return anon, nil
+}
+
+// CgroupRuns says whether a process of the cgroup v2 folder dir, in the file system fsys, runs the program comm (its
+// /proc/<pid>/comm, the name the kernel keeps, cut at 15 bytes).
+func CgroupRuns(fsys fs.FS, dir, comm string) bool {
+	pids, err := fs.ReadFile(fsys, path.Join(strings.TrimPrefix(dir, "/"), "cgroup.procs"))
+	if err != nil {
+		return false
+	}
+	for _, pid := range strings.Fields(string(pids)) {
+		if b, err := fs.ReadFile(fsys, "proc/"+pid+"/comm"); err == nil && strings.TrimSpace(string(b)) == comm {
+			return true
+		}
+	}
+	return false
+}
