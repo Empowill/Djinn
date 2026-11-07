@@ -250,8 +250,10 @@ type LoadServiceGetResponse struct {
 	BrakeMemoryPercent int32 `protobuf:"varint,20,opt,name=brake_memory_percent,json=brakeMemoryPercent,proto3" json:"brake_memory_percent,omitempty"`
 	// Whether djinn up --brake-memory (or DJINN_BRAKE_MEMORY) set the threshold for this run: SetBrake is refused.
 	BrakeMemoryFixed bool `protobuf:"varint,21,opt,name=brake_memory_fixed,json=brakeMemoryFixed,proto3" json:"brake_memory_fixed,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// Whether the memory brake is off (brake_memory_percent 0): it freezes no worker.
+	BrakeOff      bool `protobuf:"varint,22,opt,name=brake_off,json=brakeOff,proto3" json:"brake_off,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *LoadServiceGetResponse) Reset() {
@@ -431,6 +433,13 @@ func (x *LoadServiceGetResponse) GetBrakeMemoryFixed() bool {
 	return false
 }
 
+func (x *LoadServiceGetResponse) GetBrakeOff() bool {
+	if x != nil {
+		return x.BrakeOff
+	}
+	return false
+}
+
 type LoadServiceSetRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The notch to set.
@@ -588,8 +597,10 @@ type LoadServiceSetBrakeResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The memory brake's threshold in effect now; 0: no brake.
 	BrakeMemoryPercent int32 `protobuf:"varint,1,opt,name=brake_memory_percent,json=brakeMemoryPercent,proto3" json:"brake_memory_percent,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	// Whether the memory brake is off now (brake_memory_percent 0): it freezes no worker.
+	BrakeOff      bool `protobuf:"varint,2,opt,name=brake_off,json=brakeOff,proto3" json:"brake_off,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *LoadServiceSetBrakeResponse) Reset() {
@@ -627,6 +638,13 @@ func (x *LoadServiceSetBrakeResponse) GetBrakeMemoryPercent() int32 {
 		return x.BrakeMemoryPercent
 	}
 	return 0
+}
+
+func (x *LoadServiceSetBrakeResponse) GetBrakeOff() bool {
+	if x != nil {
+		return x.BrakeOff
+	}
+	return false
 }
 
 type LoadServiceWatchRequest struct {
@@ -1046,7 +1064,7 @@ var File_djinn_v1_load_proto protoreflect.FileDescriptor
 const file_djinn_v1_load_proto_rawDesc = "" +
 	"\n" +
 	"\x13djinn/v1/load.proto\x12\bdjinn.v1\x1a\x1bbuf/validate/validate.proto\x1a\x16djinn/v1/options.proto\"\x17\n" +
-	"\x15LoadServiceGetRequest\"\x90\a\n" +
+	"\x15LoadServiceGetRequest\"\xad\a\n" +
 	"\x16LoadServiceGetResponse\x12)\n" +
 	"\x05notch\x18\x01 \x01(\x0e2\x13.djinn.v1.LoadNotchR\x05notch\x12\x12\n" +
 	"\x04auto\x18\x02 \x01(\bR\x04auto\x12\x1d\n" +
@@ -1072,7 +1090,8 @@ const file_djinn_v1_load_proto_rawDesc = "" +
 	"\vauto_reason\x18\x13 \x01(\v2\x18.djinn.v1.LoadAutoReasonR\n" +
 	"autoReason\x120\n" +
 	"\x14brake_memory_percent\x18\x14 \x01(\x05R\x12brakeMemoryPercent\x12,\n" +
-	"\x12brake_memory_fixed\x18\x15 \x01(\bR\x10brakeMemoryFixed\"Q\n" +
+	"\x12brake_memory_fixed\x18\x15 \x01(\bR\x10brakeMemoryFixed\x12\x1b\n" +
+	"\tbrake_off\x18\x16 \x01(\bR\bbrakeOff\"Q\n" +
 	"\x15LoadServiceSetRequest\x128\n" +
 	"\x05notch\x18\x01 \x01(\x0e2\x13.djinn.v1.LoadNotchB\r\xbaH\n" +
 	"\xc8\x01\x01\x82\x01\x04\x10\x01 \x00R\x05notch\"\x8f\x01\n" +
@@ -1084,9 +1103,10 @@ const file_djinn_v1_load_proto_rawDesc = "" +
 	"\apercent\x18\x01 \x01(\rB\n" +
 	"\xbaH\a\xc8\x01\x01*\x02\x18_H\x00R\apercent\x88\x01\x01B\n" +
 	"\n" +
-	"\b_percent\"O\n" +
+	"\b_percent\"l\n" +
 	"\x1bLoadServiceSetBrakeResponse\x120\n" +
-	"\x14brake_memory_percent\x18\x01 \x01(\x05R\x12brakeMemoryPercent\"\x19\n" +
+	"\x14brake_memory_percent\x18\x01 \x01(\x05R\x12brakeMemoryPercent\x12\x1b\n" +
+	"\tbrake_off\x18\x02 \x01(\bR\bbrakeOff\"\x19\n" +
 	"\x17LoadServiceWatchRequest\"\x94\a\n" +
 	"\x18LoadServiceWatchResponse\x12)\n" +
 	"\x05notch\x18\x01 \x01(\x0e2\x13.djinn.v1.LoadNotchR\x05notch\x120\n" +

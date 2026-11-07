@@ -520,7 +520,7 @@ func (s *loadService) Get(
 		AutoReason:  r.reason,
 	}
 	brake, fixed := s.brakeNow()
-	resp.BrakeMemoryPercent, resp.BrakeMemoryFixed = int32(brake), fixed
+	resp.BrakeMemoryPercent, resp.BrakeMemoryFixed, resp.BrakeOff = int32(brake), fixed, brake == 0
 	if s.monitor != nil {
 		// The slots take the measured peak, which they add the margin to: the forecast, its margin in, would count it
 		// twice.

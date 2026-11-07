@@ -105,6 +105,8 @@ message LoadServiceGetResponse {
   int32 brake_memory_percent = 20;
   // Whether djinn up --brake-memory (or DJINN_BRAKE_MEMORY) set the threshold for this run: SetBrake is refused.
   bool brake_memory_fixed = 21;
+  // Whether the memory brake is off (brake_memory_percent 0): it freezes no worker.
+  bool brake_off = 22;
 }
 
 message LoadServiceSetRequest {
@@ -135,6 +137,8 @@ message LoadServiceSetBrakeRequest {
 message LoadServiceSetBrakeResponse {
   // The memory brake's threshold in effect now; 0: no brake.
   int32 brake_memory_percent = 1;
+  // Whether the memory brake is off now (brake_memory_percent 0): it freezes no worker.
+  bool brake_off = 2;
 }
 
 message LoadServiceWatchRequest {}
