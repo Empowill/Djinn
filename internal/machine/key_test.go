@@ -63,7 +63,7 @@ func TestKey(t *testing.T) {
 	if len(long) > KeyLength || strings.HasSuffix(long, " ") || !strings.HasSuffix(long, "word") {
 		t.Errorf("a long key: %q", long)
 	}
-	if got := Key(strings.Repeat("é", 150)); len(got) > KeyLength || strings.ContainsRune(got, '�') {
+	if got := Key(strings.Repeat("—", 150)); len(got) > KeyLength || strings.ContainsRune(got, '�') {
 		t.Errorf("a long word cut in a rune: %q", got)
 	}
 }
