@@ -22,6 +22,11 @@ export const BUDGET_TASK_OPEN_MS = 200;
 export const BUDGET_CHANGE_ARRIVAL_MS = 500;
 export const BUDGET_TAB_TREE_MS = 250;
 export const BUDGET_TREE_LOAD_MS = 3000;
+// The Statistics tab of the Hourglass (L53 A): from the click on the tab to every figure and card read and drawn, the
+// first time with ECharts and apache-arrow loaded and parsed, then again with both in memory: first ~410 ms (budget
+// 2 s), again ~190 ms (budget 1 s). Its 13 queries each read every task of the store on the server.
+export const BUDGET_STATISTICS_FIRST_MS = 2000;
+export const BUDGET_STATISTICS_MS = 1000;
 
 const binary = path.resolve(
   __dirname,
@@ -588,6 +593,102 @@ test.describe("wish render performance @render", () => {
     expect(errors).toEqual([]);
     expect(medianTree).toBeLessThanOrEqual(BUDGET_TAB_TREE_MS);
     expect(load).toBeLessThanOrEqual(BUDGET_TREE_LOAD_MS);
+  });
+
+  test("the Statistics tab of the Hourglass reads and draws every card within budget", async ({
+    page,
+  }) => {
+    portable();
+    const errors: string[] = [];
+    page.on("pageerror", (err) => errors.push(err.message));
+    await page.goto(process.env.DJINN_URL!);
+    await expect(
+      page.locator(".app-statusbar").getByText("Live"),
+    ).toBeVisible();
+    await page.locator(".sidebar .hourglass-nav").click();
+    await expect(page.locator("#hourglass-tab-machine")).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+
+    // From the click on the tab to every figure and card read, each card a chart or a line that it holds nothing.
+    const open = (tab: string) =>
+      page.evaluate(async (tab) => {
+        const t0 = performance.now();
+        document.getElementById(tab)!.click();
+        await new Promise<void>((resolve) => {
+          const isReady = () => {
+            const tab = document.querySelector(".statistics");
+            if (!tab || tab.querySelector("[aria-busy=true]")) return false;
+            return [...tab.querySelectorAll(".statistics-card")].every(
+              (card) =>
+                card.querySelector(
+                  "svg, table, .statistics-empty:not(:empty)",
+                ) !== null,
+            );
+          };
+          const done = () =>
+            requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+          if (isReady()) return done();
+          const observer = new MutationObserver(() => {
+            if (!isReady()) return;
+            observer.disconnect();
+            done();
+          });
+          observer.observe(document.body, {
+            childList: true,
+            subtree: true,
+            attributes: true,
+          });
+        });
+        return performance.now() - t0;
+      }, tab);
+
+    const first = await open("hourglass-tab-statistics");
+    const again: number[] = [];
+    for (let i = 0; i < 3; i++) {
+      await page.locator("#hourglass-tab-machine").click();
+      await expect(page.locator(".consumption-panel")).toBeVisible();
+      again.push(await open("hourglass-tab-statistics"));
+    }
+    const medianAgain = median(again);
+    console.log(
+      `Statistics tab: first ${first.toFixed(1)} ms (ECharts and apache-arrow parsed), again raw=[${again.map((n) => n.toFixed(1)).join(", ")}] ms, median=${medianAgain.toFixed(1)} ms`,
+    );
+
+    // Six figures, seven cards; over all time, the wish's tasks show: done, by type, by project.
+    await page
+      .locator(".statistics")
+      .getByRole("button", { name: "All", exact: true })
+      .click();
+    await expect(page.locator(".statistics [aria-busy=true]")).toHaveCount(0);
+    await expect(page.locator(".statistics-figure")).toHaveCount(6);
+    await expect(page.locator(".statistics-card")).toHaveCount(7);
+    await expect(
+      page.locator('[data-card="done"] .statistics-figure-value'),
+    ).toHaveText(/^[1-9][\d,.\s]*$/);
+    await expect(
+      page.locator('[data-card="created"] svg').first(),
+    ).toBeVisible();
+    await expect(
+      page.locator('[data-card="times"] tbody tr').first(),
+    ).toContainText("Work");
+    await expect(
+      page.locator('[data-card="projects"] tbody tr'),
+    ).not.toHaveCount(0);
+    // The tab stays when the Hourglass is left and shown again.
+    await page.locator(".plan-nav").click();
+    await page.locator(".sidebar .hourglass-nav").click();
+    await expect(page.locator("#hourglass-tab-statistics")).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    // Back to the machine, for the other specs.
+    await page.locator("#hourglass-tab-machine").click();
+
+    expect(errors).toEqual([]);
+    expect(first).toBeLessThanOrEqual(BUDGET_STATISTICS_FIRST_MS);
+    expect(medianAgain).toBeLessThanOrEqual(BUDGET_STATISTICS_MS);
   });
 
   test("window stays responsive within render budgets with several running fake workers", async ({

@@ -22,3 +22,12 @@
 .hourglass-line {
   margin: var(--space-4, 1rem) 0;
 }
+
+/* Its tabs, Machine and Statistics, under the title. */
+.hourglass-body {
+  padding-top: var(--space-4, 1rem);
+}
+
+.hourglass-tabs {
+  margin: 0 0 var(--space-3, 0.75rem);
+}
