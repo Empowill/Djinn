@@ -93,6 +93,8 @@ type proc interface {
 	kill()
 	// close releases the terminal; it may run more than once.
 	close()
+	// unread is how many bytes written to the program it has not read yet; 0 where the terminal does not tell.
+	unread() int
 }
 
 // Terminal is a program running on a pseudo-terminal, and the last part of its output.

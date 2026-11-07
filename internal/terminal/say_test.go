@@ -8,13 +8,16 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/empowill/djinn/internal/logx"
 	rawterm "golang.org/x/term"
 )
 
@@ -114,6 +117,9 @@ func TestSay(t *testing.T) {
 		// At an idle prompt that asked for bracketed paste, the line arrives as one paste, then Enter on its own: the
 		// agent submits it, it does not take Enter for a line break.
 		{name: "pastes a line then enter", want: `pasted, enter apart`},
+		// A program that reads late (an agent busy, a machine under load) still gets Enter in a read of its own: Say
+		// waits for it to read the paste, as fixed a pause would not (W659).
+		{name: "enter apart for a late reader", keys: []string{"busy\r"}, shown: `"busy"`, want: `pasted, enter apart`},
 		// A choice that keys answer (a permission prompt) holds the line: it would pick an option. The keys that answer
 		// it are not a line under way.
 		{name: "waits for a choice", keys: []string{"dialog\r"}, shown: "Esc to cancel", held: "a choice is on screen",
@@ -527,10 +533,69 @@ var screens = map[string]struct {
 	"scrolled": {"Esc to cancel\r\n" + strings.Repeat("working…\r\n", 30), false},
 }
 
+// TestSayDeafReader: a program that no longer reads its input holds an Enter for pace.taken at most, then gets it
+// anyway, and the next line after it; the log says so. Not parallel: the case reads the global log.
+func TestSayDeafReader(t *testing.T) {
+	var log lockedBuffer
+	defer logx.Use(logx.New(&log, slog.LevelDebug))()
+	const limit = 300 * time.Millisecond
+	_, term := fakeLead(t, Config{pace: leadPace(func(p *pace) { p.taken = limit })})
+	from := term.End()
+	write(t, term, "deaf\r")
+	output(t, term, from, contains(`"deaf"`))
+	// What waits unread on the program's side: each line as a paste, then its Enter, once Say typed it.
+	typed := func(lines ...string) (n int) {
+		for _, l := range lines {
+			n += len("\x1b[200~" + l + "\x1b[201~\r")
+		}
+		return n
+	}
+	queued := func(want int) time.Duration {
+		t.Helper()
+		start := time.Now()
+		for term.p.unread() < want {
+			if time.Since(start) > 5*time.Second {
+				t.Fatalf("%d bytes wait for the program, want %d: Say holds its Enter", term.p.unread(), want)
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+		return time.Since(start)
+	}
+	const first, second = "Q01 answered: A.", "Q02 answered: B."
+	say(t, term, first)
+	if took := queued(typed(first)); took < limit {
+		t.Fatalf("Enter went after %v, before the program read the line or the limit %v passed", took, limit)
+	}
+	say(t, term, second)
+	queued(typed(first, second))
+	if !strings.Contains(log.String(), "terminal enter before the line was read") {
+		t.Fatalf("no word of the Enter sent unread in the log:\n%s", log.String())
+	}
+}
+
+// lockedBuffer is a log the terminal's goroutines write while the test reads it.
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
 // TestLeadProcess is the fake lead the Say tests run in a terminal, not a test. In raw mode with bracketed paste, as
 // Claude Code and Codex are, it reports each line it gets: whether it came as a paste, and whether Enter came in a
 // read of its own. A line of screens shows its screen; a choice stays until a key answers it (an approval, until
-// Enter), then is erased in place, as Claude Code redraws. The line trust shows Claude Code's folder trust as
+// Enter), then is erased in place, as Claude Code redraws. After the line busy, it reads nothing for a while; after
+// the line deaf, nothing ever again. The line trust shows Claude Code's folder trust as
 // recorded (claude 2.1.295), the line "replay <file>" a screen of testdata as recorded; after "replay
 // <agent>-idle.out", the keys "Est" and Ctrl+U draw what that agent drew for them, as recorded (<agent>-est.out,
 // <agent>-cleared.out). It erases as an agent's prompt does: Ctrl+W and Alt+Backspace a word, Ctrl+U and Esc twice
@@ -651,6 +716,16 @@ func TestLeadProcess(t *testing.T) {
 					if screen.choice {
 						approval = strings.HasSuffix(string(line), "-approval")
 						erase = strings.Repeat("\x1b[1A\x1b[2K", strings.Count(screen.out, "\n"))
+					}
+				}
+				if string(line) == "busy" { // Reads nothing for a while, well past the pause before Enter.
+					time.Sleep(400 * time.Millisecond)
+				}
+				if string(line) == "deaf" { // Reads nothing ever again, until its terminal hangs up.
+					// A sleep, not select {}: without cgo (macOS), the runtime finds every goroutine asleep and
+					// ends the program on a deadlock, which reads its input no more either, but leaves none unread.
+					for {
+						time.Sleep(time.Hour)
 					}
 				}
 				line, pasted = line[:0], false
