@@ -180,11 +180,11 @@ reference branch is not fetched yet, is read in its folder.
 ### The watch on the reference branch
 
 Every five minutes, and after each of its pushes, Djinn fetches the reference branch of each project, that branch alone,
-and compares the digest of its agents folder and its Claude skills folder with the one of its last look: nothing is read
-again while it has not moved. When it has, each commit that changed them becomes an entry of the project's journal of
-changes, told in sentences: a new check before a push, a setting changed, two more commands the workers may run, a new
-skill with a wish template. Past twenty commits in one look, the older ones are told together; a change of the
-reference branch itself is one entry, the whole difference. The first look tells the last five as history.
+and compares the digest of its agents folder, its Claude skills folder and its djinn.yaml with the one of its last look:
+nothing is read again while it has not moved. When it has, each commit that changed them becomes an entry of the
+project's journal of changes, told in sentences: a new check before a push, a setting changed, two more commands the
+workers may run, a new skill with a wish template. Past twenty commits in one look, the older ones are told together; a
+change of the reference branch itself is one entry, the whole difference. The first look tells the last five as history.
 
 A change is applied as soon as Djinn fetches it. The gear lights only when a decision comes back to you: the
 permissions give the workers more (a command allowed or no longer denied, editing, the network, the agent's own auto
@@ -208,6 +208,20 @@ The repository's file is shared and versioned: it holds no key. Djinn refuses a 
 setting's name speaks of a key, a token, a secret or a password, where a word starts like a well-known key, or where a
 long run of letters and digits looks like one. The problem gives the line, never the value. A worker's keys stay where
 its agent keeps them.
+
+## Djinn's own file
+
+A repository also tells Djinn about itself in a YAML file of its own, djinn.yaml, at its root or in its agents folder.
+Djinn reads it on the reference branch, as it reads the permissions: a worker never changes what bounds it. When both
+are there, the one at the root is read, and Djinn's log warns that the other is not. A field Djinn does not know, or a
+file that does not parse, refuses the whole file: Djinn's defaults hold, and the log names the file and the field.
+
+Today it holds the **ceilings of the containers** the workers start with Docker: the memory of each container, swap
+included, in MiB (containers, then memory_mib), and its processes (containers, then pids). They stop a runaway, a fork
+bomb or a leak, never a container's ordinary work: a project whose containers need more gives them more here. Without
+the file, each container gets 4 GiB, or a quarter of the machine's memory when that is less, and 1024 processes.
+Djinn's Docker, first on each worker's path, brings a higher limit down to these ceilings, refuses an update that
+would lift them, and names the file where the project raises them.
 
 ## Permissions
 

@@ -105,9 +105,9 @@ say no to, a skill to unsummon). Then its reference branch (the ref and commit D
 from): in Git with a remote, Djinn reads the project's settings, permissions and skills on it, at the last fetch, not
 in your copy; **Change** chooses another among the remote's branches, written in your own file, never in the repository
 (`djinn project set-branch <project> dev`, `--unset` takes it back). Djinn watches that branch: every 5 minutes, and
-after each of its pushes, it fetches it alone and compares the digest of `.agents` and `.claude/skills` with its last
-look; when they moved, the panel's **What changed on origin/main** tells each commit that changed them, who and when,
-in sentences ("New check e2e before a push", "Permissions: 1 more command the workers may run: curl", "New skill
+after each of its pushes, it fetches it alone and compares the digest of `.agents`, `.claude/skills` and `djinn.yaml`
+with its last look; when they moved, the panel's **What changed on origin/main** tells each commit that changed them,
+who and when, in sentences ("New check e2e before a push", "Permissions: 1 more command the workers may run: curl", "New skill
 open-pr, with a wish template"). A change is applied as soon as it is fetched. One that gives the workers more (a
 command allowed, editing, the network, the auto mode), or changes what a skill makes or runs for Djinn (a wish
 template, a babysit, the command of a source you plugged in), is a thing to fix until you mark it **Seen**
@@ -670,6 +670,20 @@ check, a skill's new instructions or a setting changed are applied and only told
 A repository may share defaults for its workers in `.agents/settings.txtpb`: which agent runs them, which model, how
 much one may spend. Your own file, in Djinn's data folder, wins over the team's; a task's own flags win over both.
 `djinn project show <project>` says where each setting comes from. Details: [team settings](team-settings.md).
+
+A repository also tells Djinn about itself in `djinn.yaml`, at its root or in `.agents/djinn.yaml`, read on the
+reference branch like the permissions, so that a worker never changes what bounds it. With both files, the root's is
+read and Djinn's log warns that the other is not; a field Djinn does not know refuses the file, Djinn's defaults then
+hold, and the log names the file and the field. Today it holds the runaway ceilings of the containers the workers start
+(`docker run`, `docker create`): without it, 4 GiB of memory (a quarter of the machine's when that is less) and 1024
+processes per container. Djinn's `docker`, first on each worker's path, brings a higher limit down to them and names
+the file to raise them in.
+
+```yaml
+containers:
+  memory_mib: 8192 # memory of a container, swap included, in MiB (64 at least)
+  pids: 2048       # processes and threads of a container (16 at least)
+```
 
 When a project's settings name its checks, Djinn brings finished work into the wish's branch by itself: the tasks
 ended and waiting go as one batch, their branches merged one on top of the other in a worktree of its own (made ready
