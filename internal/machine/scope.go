@@ -28,6 +28,9 @@ type Scopes struct {
 	CPU int
 	// Memory caps each worker's memory at this many bytes (MemoryMax, Policy.WorkerMemory); 0: no ceiling.
 	Memory uint64
+	// Tasks caps each worker's processes and threads (TasksMax, WorkerTasks), whatever they run: it stops a fork bomb
+	// and nothing else. 0: uncapped, where systemd does not give the user the pids controller.
+	Tasks uint64
 	// MemoryController is true when systemd gives the memory controller to the user's scopes.
 	MemoryController bool
 	// slice is the cgroup, under /sys/fs/cgroup, that holds the scopes: the probe's parent.
@@ -45,6 +48,10 @@ type Scope struct {
 	// process ends. Empty when unknown.
 	Cgroup string
 }
+
+// WorkerTasks is the TasksMax of a worker's scope: six times the most tasks a push check's scope held (647), so that
+// it only stops a runaway.
+const WorkerTasks = 4096
 
 // cgroupRoot is where Linux mounts the cgroup tree (v2).
 const cgroupRoot = "/sys/fs/cgroup"
@@ -104,13 +111,24 @@ func (s *Scopes) prefix(unit string, memory uint64) []string {
 	if memory > 0 {
 		p = append(p, "-p", "MemoryMax="+strconv.FormatUint(memory, 10))
 	}
+	if s.Tasks > 0 {
+		p = append(p, "-p", "TasksMax="+strconv.FormatUint(s.Tasks, 10))
+	}
 	return append(p, "--")
 }
 
 // readProbe reads what the probe printed into s: the slice that holds the scopes, and the caps that hold, the others
-// set to 0. Each note says why a cap does not hold.
+// set to 0. Each note says why a cap does not hold; the tasks cap is dropped silently: it only stops a runaway.
 func readProbe(out string, s *Scopes) (notes []string, err error) {
 	lines := strings.Split(strings.TrimSpace(out), "\n")
+	if len(lines) == 4 {
+		if got, err := strconv.ParseUint(strings.TrimSpace(lines[3]), 10, 64); err != nil || got != s.Tasks {
+			s.Tasks = 0
+		}
+		lines = lines[:3]
+	} else {
+		s.Tasks = 0
+	}
 	if len(lines) != 3 || !strings.HasPrefix(lines[0], "/") || !strings.HasSuffix(lines[0], ".scope") {
 		return nil, fmt.Errorf("%w: the probe scope printed %q", ErrNoScope, strings.TrimSpace(out))
 	}

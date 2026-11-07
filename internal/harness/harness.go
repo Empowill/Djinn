@@ -94,6 +94,7 @@ type Harness struct {
 
 	measureEvery time.Duration    // how often a worker is read (WithMeasure); 0: never
 	measureRead  MeasureFunc      // nil: workers are not measured
+	containers   Containers       // what reads and removes the workers' containers (WithContainers); zero: neither
 	history      *machine.History // nil: the readings are kept in memory only (WithHistory)
 
 	tell       TellFunc      // wakes the lead of a watcher's wish (TellLeads); guarded by mu
@@ -175,7 +176,7 @@ type Harness struct {
 	held         func(taskID string) []string // the gates a task holds (HeldGates); nil: none known
 	waiting      func(taskID string) []string // the gates a task waits for (HeldGates); nil: none known
 	outside      func() (int, int)            // the gates held outside the running workers, and of them the merges' and pushes' (GatesOutside); nil: none
-	admit        string                       // djinn's path, whose gate hook admits the workers' commands (WithAdmit); "": none
+	admit        string                       // djinn's path: its gate hook and its wrappers (WithAdmit); "": none
 	silenceLimit time.Duration                // silence limit before the Lamplighter checks a worker (lamplighter.go)
 	maxWallTime  time.Duration                // ceiling on wall time budget per task (lamplighter.go)
 	ifritIdle    time.Duration                // how long the developer may leave Djinn alone before an ifrit goes out (ifrit.go)
@@ -1535,6 +1536,7 @@ func (h *Harness) launch(
 		MaxBudgetUSD: providerBudget(task), Resume: task.GetForkSession(), Fork: task.GetForkSession() != "",
 		Skills: skills, SkillsDir: skillsDir, Restart: task.GetRestart(), ReadDirs: plan.TilasmDirs(h.home, prompt),
 	}
+	spec.containers = h.containerCaps(project)
 	var err error
 	if spec.WriteDirs, err = h.questionWriteDirs(task); err != nil {
 		h.finish(r, Result{ExitCode: -1, Err: err})
@@ -1735,6 +1737,12 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 		"DJINN_WORKER_TOKEN=" + r.token,
 	}, guard...)
 	spec.Env = append(spec.Env, plan.AccountEnv(account)...)
+	// Djinn's docker first on its path bounds its containers; without a hook, its heavy commands wait their turn.
+	wrappers, err := h.wrapperEnv(spec, !r.watcher && agentOf(t) != planv1.Provider_PROVIDER_CLAUDE)
+	if err != nil {
+		return fmt.Errorf("wrappers: %w", err)
+	}
+	spec.Env = append(spec.Env, wrappers...)
 	if t.GetScratch() != "" {
 		spec.Env = append(spec.Env, "DJINN_SCRATCH="+t.GetScratch())
 		if !spec.ReadOnly && (spec.Permissions == nil || spec.Permissions.GetEdit()) && !slices.Contains(spec.WriteDirs, t.GetScratch()) {
@@ -1757,7 +1765,7 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 	} else {
 		spec.Admit = h.admit
 	}
-	spec.Track = h.children.tracker(t.GetCode(), kind)
+	spec.Track = h.trackContainers(t.GetId(), h.children.tracker(t.GetCode(), kind))
 	// Below the window at every notch but Overclock: typing stays fluid under load (Q298, L50, Q371).
 	spec.Nice = h.workerNice()
 	spec.StartHead = r.startHead

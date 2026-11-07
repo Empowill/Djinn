@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+// The runaway ceilings of the containers a project's workers start.
+package djinn.v1;
+
+import "buf/validate/validate.proto";
+
+// Containers are the ceilings of each container a worker starts in a project with docker run or docker create: a
+// project writes them in .agents/containers.txtpb, read on its reference branch, as its permissions are. They stop a
+// runaway (a fork bomb, a leak), never a container's ordinary work: a container that needs more is given more here.
+// Djinn's docker, first on each worker's path, adds them to the command, keeping a lower value the worker gave, and
+// labels the container with its task, whose series in the Hourglass counts it. Without the file, Djinn's defaults.
+message Containers {
+  // Memory of a container, swap included, in MiB. 0: 4096, or a quarter of the machine's memory when that is less.
+  uint32 memory_mib = 1 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).uint32.gte = 64
+  ];
+  // Processes and threads of a container. 0: 1024.
+  uint32 pids = 2 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).uint32.gte = 16
+  ];
+}

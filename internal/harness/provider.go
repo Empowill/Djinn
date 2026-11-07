@@ -10,6 +10,7 @@ import (
 	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/machine"
+	"github.com/empowill/djinn/internal/wrap"
 )
 
 // Provider starts the workers of one kind of agent.
@@ -102,6 +103,9 @@ type Spec struct {
 	// (markVar), as it starts; what it returns is called once the process, and what it left running, ended. Djinn
 	// records them so that none outlives it (W514).
 	Track func(pid int, cgroup, mark string) (ended func())
+	// containers are the runaway ceilings of the containers the worker starts, its project's (containerCaps): the
+	// harness tells them to Djinn's docker, first on the worker's path (wrapperEnv). Providers ignore them.
+	containers wrap.Caps
 }
 
 // AdmissionGate is the name the admissions of the workers' commands go by among the gates a task holds or waits for

@@ -235,11 +235,24 @@ changes nothing in the call, and tells the worker why its command waited when it
 workers in the settings it gives them.`,
 }
 
+// GateWrap is djinn gate wrap, which no one types.
+var GateWrap = Command{
+	Name:    "gate wrap",
+	Usage:   "djinn gate wrap <wrappers folder> <command> [arguments...]",
+	Summary: "Run docker or a heavy command of a worker in its place: its containers bounded, its admission awaited.",
+	Help: `Djinn writes, in its data folder, a docker first on every worker's path, and for the agents without a hook
+(Codex, Antigravity) go, npm, npx, pnpm, task, make and golangci-lint: each runs this command. It finds the real
+command on the path without the wrappers. docker run and docker create get the task's label and slice and the
+project's runaway ceilings (.agents/containers.txtpb); a docker update that would lift them is refused. For an agent
+without a hook, a command that neither reads nor edits waits for its admission by the gates, as Claude's hook has
+it wait. Then the command runs in its place, the same process.`,
+}
+
 // Builtins are the commands written by hand, in the order the help lists them.
 var Builtins = []Command{Up, Open, Update, Backup, Restore, Version, MCP, GateRun, MachineCommands, DebugDump}
 
 // Hidden are the commands written by hand that Djinn runs, never a person nor an agent: no help lists them.
-var Hidden = []Command{GateHook}
+var Hidden = []Command{GateHook, GateWrap}
 
 // Builtin returns the command written by hand whose words args start with, the longest, and the arguments after them.
 func Builtin(args []string) (Command, []string, bool) {
