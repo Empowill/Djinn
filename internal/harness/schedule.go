@@ -309,6 +309,11 @@ func (h *Harness) schedule(ctx context.Context) {
 		if d.Commit {
 			h.kickIntegrate() // A task another waits for is committed at once.
 		}
+		if why := h.brakeHeld(d.Task); why != "" && d.Failed == "" {
+			// Interrupted by the memory brake: it resumes once calm (brake.go); djinn task start may start it.
+			h.setWaiting(ctx, d.Task, now, why, true, true, planv1.TaskHold_TASK_HOLD_PLACE)
+			continue
+		}
 		switch t := d.Task; {
 		case d.Failed != "":
 			h.failPlanned(ctx, t, d.Failed)

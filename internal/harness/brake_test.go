@@ -224,9 +224,9 @@ func (bt *brakeTest) hasEvent(t *testing.T, id, text string) bool {
 
 // TestBrakeFreezesWhatEscapesTheGates: under strong pressure, the worker that grows outside the gates freezes first,
 // its containers too, while the admitted one that grows more runs on; frozen 30 s, the memory still short, it is
-// interrupted. Then the admitted one, alone to grow, freezes, is never interrupted however long the pressure lasts,
-// and thaws after a minute of calm, its frozen time out of its budget, judged neither silent nor stalled. The lead hears
-// each step.
+// interrupted, and waits for calm to resume. Then the admitted one, alone to grow, freezes, is never interrupted however
+// long the pressure lasts, and thaws after a minute of calm, its frozen time out of its budget, judged neither silent
+// nor stalled; the interrupted one resumes a minute of calm later. The lead hears each step.
 func TestBrakeFreezesWhatEscapesTheGates(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
@@ -275,7 +275,9 @@ func TestBrakeFreezesWhatEscapesTheGates(t *testing.T) {
 		t.Errorf("W2's interruption event: %v", eventTexts(bt.storedEvents(t, w2.GetId())))
 	}
 	bt.hold(w2.GetId(), 200) // What grew went with its worker.
-	waitFor(t, "W2 resumed in its session", func() bool { return bt.hasEvent(t, w2.GetId(), "resumed after the memory brake") })
+	// It waits for calm, the memory still short: resumed now, it would grow into it again (W25).
+	held := "waiting: memory brake: interrupted, it resumes after 1 min of calm (15% of memory available or more)"
+	waitFor(t, "W2 held by the brake", func() bool { return bt.hasEvent(t, w2.GetId(), held) })
 
 	// Only the admitted one grows now: it freezes, the last admitted, once the readings had 10 s to show what W2's
 	// interruption gave back; it stays frozen, never interrupted.
@@ -300,6 +302,10 @@ func TestBrakeFreezesWhatEscapesTheGates(t *testing.T) {
 	if bt.hasEvent(t, w1.GetId(), "resuming") {
 		t.Error("the admitted worker was interrupted")
 	}
+	if st := bt.get(t, w2.GetId()).GetStatus(); st != planv1.TaskStatus_TASK_STATUS_RESUMING ||
+		bt.hasEvent(t, w2.GetId(), "resumed after the memory brake") {
+		t.Fatalf("W2, interrupted, 40 min of short memory later: %v, want still RESUMING, not resumed", st)
+	}
 
 	// Calm: it thaws after a minute of it, not before.
 	bt.press(40, 0)
@@ -310,6 +316,12 @@ func TestBrakeFreezesWhatEscapesTheGates(t *testing.T) {
 	}
 	bt.step(t, 30*time.Second)
 	thawed := bt.until(t, w1.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))
+	// What it interrupted resumes after what it froze thawed, a minute of calm later.
+	if bt.hasEvent(t, w2.GetId(), "resumed after the memory brake") {
+		t.Error("W2 resumed with W1's thaw, not a minute of calm after it")
+	}
+	bt.step(t, time.Minute)
+	waitFor(t, "W2 resumed in its session", func() bool { return bt.hasEvent(t, w2.GetId(), "resumed after the memory brake") })
 	lines := bt.toldLines(t, w1.GetCode()+" thawed")
 	if !slices.ContainsFunc(lines, func(l string) bool {
 		return strings.Contains(l, w1.GetCode()+" thawed: the memory is calm again (40% available). Frozen 41 min at 6 GiB, its command's peak kept by the gates")
@@ -343,6 +355,42 @@ func TestBrakeFreezesWhatEscapesTheGates(t *testing.T) {
 	}
 	bt.release(t, w1.GetId())
 	bt.ended(t, w1.GetId())
+}
+
+// TestBrakeOffResumesInterrupted: a worker the brake interrupted waits for calm, the memory short, its lead told it
+// resumes once calm; the brake turned off, it resumes at the next pass (W25: it resumed at once, into the shortage).
+func TestBrakeOffResumesInterrupted(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	bt := upBrake(t)
+	wishID, _ := bt.wish(t, nativeFolder(t))
+	w := bt.mustSpawn(t, wishID, "Escaped", "wait", nil)
+	bt.until(t, w.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))
+	bt.hold(w.GetId(), 500)
+	bt.step(t, time.Second)
+	bt.hold(w.GetId(), 1500)
+	bt.press(5, 0)
+	bt.step(t, time.Second)
+	bt.step(t, time.Second)
+	bt.until(t, w.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_PAUSED))
+	bt.step(t, 30*time.Second)
+	bt.hold(w.GetId(), 100)
+	lines := bt.toldLines(t, w.GetCode()+" interrupted by the memory brake")
+	if !slices.ContainsFunc(lines, func(l string) bool { return strings.HasSuffix(l, "it resumes in its session once calm.") }) {
+		t.Errorf("the lead heard: %q", lines)
+	}
+	waitFor(t, "held by the brake", func() bool { return bt.hasEvent(t, w.GetId(), "waiting: memory brake: interrupted") })
+	for range 3 {
+		bt.step(t, 10*time.Second)
+	}
+	if st := bt.get(t, w.GetId()).GetStatus(); st != planv1.TaskStatus_TASK_STATUS_RESUMING {
+		t.Fatalf("interrupted, the memory short: %v, want RESUMING", st)
+	}
+
+	bt.h.SetBrake(0)
+	bt.clock.set(bt.clock.now().Add(time.Second))
+	bt.h.Wake()
+	waitFor(t, "resumed with the brake off", func() bool { return bt.hasEvent(t, w.GetId(), "resumed after the memory brake") })
 }
 
 // TestBrakeThawedByHand: a worker the brake froze, resumed by hand, has its containers thawed too, and the brake
@@ -380,6 +428,19 @@ func TestBrakeThawedByHand(t *testing.T) {
 	}
 	bt.release(t, w.GetId())
 	bt.ended(t, w.GetId())
+}
+
+// TestBrakeSpan: what the brake tells reads to the second under 10 min: frozen 1 min 30 s did read 2 min (W25).
+func TestBrakeSpan(t *testing.T) {
+	t.Parallel()
+	for d, want := range map[time.Duration]string{
+		32 * time.Second: "32 s", time.Minute: "1 min", 90*time.Second + 400*time.Millisecond: "1 min 30 s",
+		56*time.Second + 600*time.Millisecond: "57 s", 41*time.Minute + 20*time.Second: "41 min",
+	} {
+		if got := span(d); got != want {
+			t.Errorf("span(%v) = %q, want %q", d, got, want)
+		}
+	}
 }
 
 // TestBrakeDefaultFive: by default the brake freezes under 5 % of the machine's memory available (decision Q22 B),

@@ -52,23 +52,32 @@ func TestLoadService_SetBrake(t *testing.T) {
 		}
 		return res.Msg
 	}
-	if got := get(); got.GetBrakeMemoryPercent() != 5 || got.GetBrakeMemoryFixed() {
-		t.Fatalf("by default: %d%%, fixed %v; want 5%%, not fixed", got.GetBrakeMemoryPercent(), got.GetBrakeMemoryFixed())
+	if got := get(); got.GetBrakeMemoryPercent() != 5 || got.GetBrakeMemoryFixed() || got.GetBrakeOff() {
+		t.Fatalf("by default: %d%%, fixed %v, off %v; want 5%%, not fixed, on", got.GetBrakeMemoryPercent(), got.GetBrakeMemoryFixed(), got.GetBrakeOff())
 	}
 
 	var applied []int
 	client, _ = serveLoad(t, home, nil, nil, nil, nil, WithLoadTickInterval(0),
 		WithLoadBrake(BrakeSetting{Percent: 5, Apply: func(p int) { applied = append(applied, p) }}))
+	var setRes *djinnv1.LoadServiceSetBrakeResponse
 	set := func(p uint32) error {
-		_, err := client.SetBrake(t.Context(), connect.NewRequest(&djinnv1.LoadServiceSetBrakeRequest{Percent: &p}))
+		res, err := client.SetBrake(t.Context(), connect.NewRequest(&djinnv1.LoadServiceSetBrakeRequest{Percent: &p}))
+		if err == nil {
+			setRes = res.Msg
+		}
 		return err
 	}
 	for _, p := range []uint32{8, 0} {
 		if err := set(p); err != nil {
 			t.Fatalf("SetBrake %d: %v", p, err)
 		}
-		if got := get().GetBrakeMemoryPercent(); got != int32(p) {
-			t.Errorf("after SetBrake %d, Get shows %d", p, got)
+		got := get()
+		if got.GetBrakeMemoryPercent() != int32(p) {
+			t.Errorf("after SetBrake %d, Get shows %d", p, got.GetBrakeMemoryPercent())
+		}
+		// The command line prints no field at zero: brake_off says the brake is off where the percent cannot.
+		if off := p == 0; got.GetBrakeOff() != off || setRes.GetBrakeOff() != off {
+			t.Errorf("after SetBrake %d, Get says off %v, SetBrake says off %v; want %v", p, got.GetBrakeOff(), setRes.GetBrakeOff(), off)
 		}
 		if saved, ok := ReadBrake(home); !ok || saved != int(p) {
 			t.Errorf("after SetBrake %d, settings.json says %d, %v", p, saved, ok)

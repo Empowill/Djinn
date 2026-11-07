@@ -10,7 +10,7 @@ package harness
 // at Brake.Full or more, Brake.Readings readings in a row), the brake freezes, one at a time, the worker whose memory
 // grew most over the last Brake.Window, among those that hold no gate nor admission: its scope (cgroup.freeze, as a
 // pause) and its containers (docker pause). Still frozen after Brake.Stop, the memory still short, it is interrupted:
-// its task resumes later in its session, its containers gone. A worker whose command the gates admitted is never
+// its task resumes in its session once calm, as a frozen worker thaws (after them), its containers gone. A worker whose command the gates admitted is never
 // interrupted, nor frozen while anything else grows: when only admitted workers grow, the brake freezes the last one
 // admitted, and only thaws it. Its command lives on, frozen: its admission is not taken back, and the gates keep the
 // peak it reached as its command's cost, which the next run waits for. Once calm (the memory available above Brake.Thaw
@@ -150,6 +150,9 @@ type brakeState struct {
 	froze    time.Time               // the last freeze
 	samples  map[string][]brakePoint // by task: its memory over the window
 	frozen   []*brakeFrozen          // the workers the brake froze, the first frozen first
+	// held are the tasks the brake interrupted, by ID: they resume once calm, after the frozen ones thawed
+	// (brakeHeld). Resumed at once, a worker would grow again into the memory still short (W25).
+	held map[string]bool
 }
 
 // brakePoint is a worker's memory at one time.
@@ -195,6 +198,7 @@ func (h *Harness) brakePass(ctx context.Context) {
 		if len(st.frozen) > 0 {
 			h.brakeThaw(ctx, "the memory brake is off", now)
 		}
+		st.held = nil // What it interrupted resumes.
 		return
 	}
 	if !st.read.IsZero() && now.Sub(st.read) < b.Every {
@@ -214,9 +218,14 @@ func (h *Harness) brakePass(ctx context.Context) {
 		if st.calm.IsZero() {
 			st.calm = now
 		}
-		if len(st.frozen) > 0 && now.Sub(st.calm) >= b.Calm {
+		switch {
+		case now.Sub(st.calm) < b.Calm:
+		case len(st.frozen) > 0:
 			h.brakeThaw(ctx, calmAgain(s), now)
 			st.calm = now // The next thaws after another calm.
+		case len(st.held) > 0:
+			st.held = nil // What it interrupted resumes, once what it froze thawed.
+			st.calm = now
 		}
 		return
 	}
@@ -239,6 +248,22 @@ func (h *Harness) brakePass(ctx context.Context) {
 	if c := h.brakePick(cands, pending); c != nil {
 		h.brakeFreeze(ctx, c, short, now)
 	}
+}
+
+// brakeHeld says why the brake holds back the planned task t, which it interrupted: it waits for the memory to be
+// calm, and for what the brake froze to thaw first; "" when the brake holds nothing back. A task that no longer waits
+// to resume (started by hand, cancelled) is forgotten. The caller holds h.sched.
+func (h *Harness) brakeHeld(t *planv1.Task) string {
+	st := &h.brakeAt
+	if !st.held[t.GetId()] {
+		return ""
+	}
+	if t.GetStatus() != planv1.TaskStatus_TASK_STATUS_RESUMING {
+		delete(st.held, t.GetId())
+		return ""
+	}
+	return fmt.Sprintf("%sinterrupted, it resumes after %s of calm (%.0f%% of memory available or more)",
+		whyBrake, span(h.brake.Calm), 100*h.brake.Thaw)
 }
 
 // brakeTake takes the threshold SetBrake gave last, if any: the readings and the calm count again under it. The
@@ -273,6 +298,9 @@ func (h *Harness) brakeSample(now time.Time) []brakeCandidate {
 	live := map[string]bool{}
 	for id, r := range h.runs {
 		live[id] = true
+		if st.held[id] && !r.stopping && !r.final {
+			delete(st.held, id) // Started again by hand (djinn task start): no longer held.
+		}
 		if r.worker == nil || r.paused || r.stopping || r.final || r.shelved || r.watcher || r.light || r.ifrit {
 			continue
 		}
@@ -493,7 +521,7 @@ func (h *Harness) brakeThaw(ctx context.Context, calm string, now time.Time) {
 // task resumes later in its session. One the gates admitted meanwhile, or that cannot resume, stays frozen.
 func (h *Harness) brakeInterrupt(ctx context.Context, f *brakeFrozen, now time.Time) {
 	st := &h.brakeAt
-	why := fmt.Sprintf("%sfrozen %s, the memory stayed short: it resumes in its session once the machine allows",
+	why := fmt.Sprintf("%sfrozen %s, the memory stayed short: it resumes in its session once calm",
 		whyBrake, span(now.Sub(f.at)))
 	h.mu.Lock()
 	r := h.runs[f.id]
@@ -518,6 +546,10 @@ func (h *Harness) brakeInterrupt(ctx context.Context, f *brakeFrozen, now time.T
 	r.worker.Stop()
 	h.mu.Unlock()
 	st.frozen = slices.DeleteFunc(st.frozen, func(o *brakeFrozen) bool { return o == f })
+	if st.held == nil {
+		st.held = map[string]bool{}
+	}
+	st.held[f.id] = true
 	st.froze = now // What it held goes back to the machine: the next freeze waits for the readings to show it.
 	if err := h.store.Tx(ctx, func(tx *store.Tx) error {
 		return tx.Journal(actorHarness, methodBrake, &planv1.TaskServiceStopRequest{TaskId: f.id})
@@ -526,7 +558,7 @@ func (h *Harness) brakeInterrupt(ctx context.Context, f *brakeFrozen, now time.T
 	}
 	logx.L().Warn("the memory brake interrupted a worker", "task", f.code, "frozen", now.Sub(f.at))
 	h.brakeTell(f.wish, f.code, fmt.Sprintf("%s interrupted by the memory brake: frozen %s, the memory stayed short; "+
-		"it resumes in its session once the machine allows.", f.code, span(now.Sub(f.at))))
+		"it resumes in its session once calm.", f.code, span(now.Sub(f.at))))
 }
 
 // pauseContainers freezes or thaws the task's containers, when it runs any: it says how many.
@@ -555,10 +587,15 @@ func (h *Harness) brakeTell(wishID, code, line string) {
 	}()
 }
 
-// span writes d as a person reads it: 30 s, 3 min.
+// span writes d as a person reads it: 30 s, 1 min 30 s, 41 min. Under 10 min, to the second: a minute and a half
+// rounded to the minute read 2 min (W25).
 func span(d time.Duration) string {
-	if d < time.Minute {
-		return fmt.Sprintf("%d s", int(d.Round(time.Second).Seconds()))
+	d = d.Round(time.Second)
+	switch {
+	case d < time.Minute:
+		return fmt.Sprintf("%d s", int(d.Seconds()))
+	case d < 10*time.Minute && d%time.Minute != 0:
+		return fmt.Sprintf("%d min %d s", int(d/time.Minute), int(d%time.Minute/time.Second))
 	}
 	return fmt.Sprintf("%d min", int(d.Round(time.Minute).Minutes()))
 }

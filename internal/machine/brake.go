@@ -117,5 +117,5 @@ func (s *loadService) SetBrake(
 	if s.brake.Apply != nil {
 		s.brake.Apply(percent)
 	}
-	return connect.NewResponse(&djinnv1.LoadServiceSetBrakeResponse{BrakeMemoryPercent: int32(percent)}), nil
+	return connect.NewResponse(&djinnv1.LoadServiceSetBrakeResponse{BrakeMemoryPercent: int32(percent), BrakeOff: percent == 0}), nil
 }
