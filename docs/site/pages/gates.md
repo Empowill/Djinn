@@ -1,8 +1,9 @@
 # Gates
 
-A gate is a named turn on the machine for one heavy command: the tests, a build, code generation, an end-to-end run.
-Workers, Djinn's merges and pushes, the Djinn and your own terminal all run their heavy commands through the gate of
-the command's name. A gate has **one holder at a time**, and is granted only while the machine can take it.
+A gate is a named turn on the machine for a command: the tests, a build, code generation, an end-to-end run. Workers,
+Djinn's merges and pushes, the Djinn and your own terminal all run their commands through the gate of the command's
+name. A gate is granted only while the machine can take it. A **heavy** command holds its gate **alone**, one holder at
+a time; a **light** one **shares** it with the other light commands of that name.
 
 Besides the gates, every other command a Claude worker runs that neither reads nor edits is **admitted**: it waits
 only while the machine cannot take it, then runs beside the others. Djinn measures each one, and a command measured
@@ -13,7 +14,8 @@ heavy takes its turn, one at a time.
 Workers share one machine. Five workers starting the whole test suite at the same minute would each run five times
 slower, run out of memory, or fail on a port another one holds. Gates turn that crowd into a queue:
 
-- **One at a time per gate.** Two test suites never run side by side; a lint and a test suite may.
+- **Heavy commands one at a time.** Two heavy test suites never run side by side, whatever their gates; two light lints
+  may.
 - **Only when the machine can take it.** A gate waits while the machine is under pressure, and until it has the memory
   the command needed last time.
 - **The most urgent first.** Djinn's merges and pushes go first, then the first wish's commands, the work of its first
@@ -26,7 +28,10 @@ slower, run out of memory, or fail on a port another one holds. Gates turn that 
 
 A command asks for a gate by its name, and waits until all of these hold:
 
-1. **No one holds that gate.** One holder per name, for the whole machine, whatever the project.
+1. **No one holds that gate alone.** A heavy command holds its name alone, for the whole machine, whatever the
+   project; a light command shares it with the other light ones, as many at once as the machine holds. Heavy or light
+   comes from what the command was measured to cost (see Heavy commands take turns, below), not from the gate's name.
+   A command never measured counts as light. A lit ifrit holds its gates alone whatever its server costs.
 2. **The machine is not under pressure.** See [Machine and load](#machine-and-load).
 3. **The memory is there.** A command Djinn has measured before waits until the free memory covers the most it ever
    used, with a margin; the memory the commands already holding gates may still take is counted as used. A command
@@ -92,7 +97,8 @@ found in a few seconds is counted asked, not measured.
 
 **Heavy commands take turns.** A command measured past 2 GiB of memory, or past a minute of CPU time, is heavy: it
 waits while another task's heavy command runs, whether that one came through a gate or an admission, and whatever the
-gates' names. Djinn's merges and pushes keep their place before the workers' heavy commands. A task's own heavy
+gates' names. Under a gate's name, it holds that name alone: a light command of the same name then waits for it, while
+it does not wait for the light ones already sharing the name. Djinn's merges and pushes keep their place before the workers' heavy commands. A task's own heavy
 commands never wait for each other: one may run the other. The window's settings file sets both limits.
 
 When a command waited, its worker reads why beside its result: *waited 2m for its admission by the gates: the machine
@@ -124,21 +130,21 @@ yours to choose. A few are common:
 
 | Name | What it guards |
 | --- | --- |
-| lint, test | The checks of the same names: two test suites never run at once. |
+| lint, test | The checks of the same names: two heavy test suites never run at once. |
 | codegen | Code generation: two generators writing the same files would step on each other. |
-| e2e | An end-to-end run: one browser suite at a time, on one set of ports. |
+| e2e | An end-to-end run: a heavy browser suite runs alone. |
 | stack | The local stack, a database or a development server several workers would share. An [ifrit](#ifrit) serving it can hold the gate for as long as it runs, and gives it back when it goes out. |
-| paid | A run that calls a paid model or service: one at a time, so that costs never pile up in parallel. |
+| paid | A run that calls a paid model or service, to find in the Hourglass what it cost. |
 
-The name keeps its own turn, one holder at a time, and is what you read; whether the command is heavy comes from what
-it was measured to cost, whatever its name. A Claude worker's command that goes through no gate is admitted all the
+The name is what you read and what light commands share; whether a command holds it alone comes from what it was
+measured to cost, whatever its name. Two light stacks, or two light paid runs, may run at once. A Claude worker's command that goes through no gate is admitted all the
 same (see above); a command of another agent, or of your terminal, that goes through no gate is not held back by any.
 See [Project and settings](#project-and-settings).
 
 ## Slots and gates
 
-A worker's own gate is in its slot. A gate held outside a running worker, by your terminal, the Djinn, a merge or a
-push, takes one of the machine's slots while it is held.
+A worker's own gate is in its slot. A gate held alone outside a running worker, by your terminal, the Djinn, a merge or
+a push, takes one of the machine's slots while it is held; a gate shared by light commands takes none.
 
 On a machine with more than one slot, Djinn keeps one free for merges and pushes: a new worker waits rather than take
 it, saying a slot is kept for merges and pushes. On a machine of one slot, only the order above applies.
@@ -161,9 +167,9 @@ Djinn's command line lists, per command, what it cost: CPU time, peak memory, du
 Its list of gates marks a lit ifrit's gates with the time they go back at the latest, and the Djinn's brief says who
 waits on an ifrit, so that the Djinn offers you to end it.
 
-> **Example.** W4 and W5 end within a minute, and W12 runs the test suite for a third task. W4's merge asks for the
-> gate lint, takes it at once, and passes. W5's merge asks for lint next and goes before any worker that asks. Then
-> a push is due: its gate test waits for W12's run to end, and goes before the next worker's test run.
+> **Example.** W4 ends while W7 lints its own work, and W12 runs the heavy test suite for a third task. The lint is
+> light: W4's merge takes the gate lint at once, beside W7's, and passes. Then a push is due: its heavy gate test
+> waits for W12's run to end, and goes before the next worker's heavy run.
 
 ## When Djinn restarts
 
@@ -177,11 +183,11 @@ and why, the most memory its holder used, and whether it took a slot outside a w
 
 ## Good to know
 
-- **Name a gate for what must run alone.** A Claude worker's command is admitted anyway, but only a gate keeps two
-  stacks off the same ports, or two paid runs apart. Outside a gate and an admission, a command does not wait for
-  anyone, and nobody waits for it.
+- **A gate's name does not keep light commands apart.** Two light stacks may start on the same ports, two light paid
+  runs may spend at once: only a command measured heavy, or a lit ifrit, holds its gate alone. Outside a gate and an
+  admission, a command does not wait for anyone, and nobody waits for it.
 - **Gate names are machine-wide.** The gate test of one project and the gate test of another are the same gate.
-- **A gate from your terminal takes a worker's slot.** Hold it for what you need, not longer.
+- **A heavy gate from your terminal takes a worker's slot.** Hold it for what you need, not longer.
 - **Keep commit checks fast.** They run on every task's merge, through their gates, before anything else may: a long
   one slows every wish. Put the long suite before the push.
 - **A long command keeps its gate.** Past 3 times its usual hold, or an hour unmeasured, its lead hears of it; the gate
