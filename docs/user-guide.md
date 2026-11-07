@@ -807,7 +807,7 @@ runaway (a worker's scope and containers); the memory brake catches a slower gro
 cuts a command the gates admitted.
 
 - **When.** Under 10 % of the machine's memory available, or a PSI full of 20 (every task waited for memory a fifth of
-  the last 10 s), two readings in a row, a second apart. `djinn up --brake-memory` (or `DJINN_BRAKE_MEMORY`) sets the
+  the last 10 s), two readings in a row, a second apart. `djinn up --brake-memory 10` (or `DJINN_BRAKE_MEMORY`) sets the
   percent; 0 turns the brake off. The PSI threshold is fixed.
 - **Whom.** Among the running workers, the one whose memory grew most over the last minute (256 MiB at least) while
   holding no gate nor admission: its scope's anonymous memory and its task's containers', not the page cache. Never
