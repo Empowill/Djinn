@@ -76,6 +76,38 @@ type Situation struct {
 	// accounts tells why no sign-in of a task's agent may take its worker now, and whether a task that waits for its
 	// own account's limit moves to another sign-in (WithAccounts); nil: the sign-ins hold nothing back.
 	accounts func(t *planv1.Task) (why string, moves bool)
+	// lane is the branch a task's work merges into (WithLanes), lanes what it said of each task in this pass; nil:
+	// unknown, every branch of the task's wish in its project holds it.
+	lane  func(wish *planv1.Wish, t *planv1.Task) string
+	lanes map[string]string
+}
+
+// WithLanes tells the situation the branch each task's work merges into, "" when it cannot tell (W630): under the
+// per-azima strategy, its azima's own branch, else the wish's integration branch. A red push check, or a correction
+// that repairs a branch, then holds only the tasks whose work merges into that branch.
+func (s *Situation) WithLanes(lane func(wish *planv1.Wish, t *planv1.Task) string) *Situation {
+	s.lane, s.lanes = lane, map[string]string{}
+	return s
+}
+
+// laneOf is the branch t's work merges into, as WithLanes tells it; "" when unknown.
+func (s *Situation) laneOf(t *planv1.Task) string {
+	if s.lane == nil {
+		return ""
+	}
+	if b, ok := s.lanes[t.GetId()]; ok {
+		return b
+	}
+	b := s.lane(s.wishes[t.GetWishId()], t)
+	s.lanes[t.GetId()] = b
+	return b
+}
+
+// sameLane tells whether a hold or a repair of branch, "" when unknown, holds t: t's work merges into branch, or either
+// of them is unknown.
+func (s *Situation) sameLane(t *planv1.Task, branch string) bool {
+	lane := s.laneOf(t)
+	return lane == "" || branch == "" || lane == branch
 }
 
 // WithAccounts tells the situation the sign-ins of the agents (T33): f says why no sign-in of a task's agent may take
@@ -758,7 +790,8 @@ func pushCheckHeld(p *planv1.PushHold) (sha, check string) {
 // holds it. A correction, a review, a question worker, an urgent task, which the lead marks to repair the branch or for
 // quick feedback, and an investigation or a mockup, whose work is never merged (ChangesNoCode), never wait; neither do
 // the workers Djinn resumes (after a restart, a usage limit, a network outage: they were running, and go on, W371), nor
-// a watcher, which starts from no branch and merges nothing. The workers already running go on.
+// a watcher, which starts from no branch and merges nothing. The workers already running go on. Under the per-azima
+// strategy, only its own azima's branch holds it (WithLanes).
 func (s *Situation) pushHeld(t *planv1.Task) string {
 	if plan.IsMerge(t) || QuestionWorker(t) || Urgent(t) || ChangesNoCode(t) || Resuming(t) || Watcher(t) {
 		return ""
@@ -767,14 +800,19 @@ func (s *Situation) pushHeld(t *planv1.Task) string {
 	if wish == nil || t.GetProjectId() == "" {
 		return ""
 	}
-	// Each branch held keeps its hold (W37): the correction of any of them goes on; the first by name says why.
-	if holds := plan.PushHolds(plan.PushStateOf(wish, t.GetProjectId())); len(holds) > 0 &&
-		!slices.ContainsFunc(holds, func(p plan.BranchHold) bool { return p.GetCorrectedBy() == t.GetId() }) {
+	// Each branch held keeps its hold (W37): the correction of any of them goes on; the first by name says why. Only
+	// the holds of the branch t's work merges into hold it (W630): under the per-azima strategy, another azima's red
+	// branch does not.
+	holds := slices.DeleteFunc(plan.PushHolds(plan.PushStateOf(wish, t.GetProjectId())), func(p plan.BranchHold) bool {
+		return !s.sameLane(t, p.Branch)
+	})
+	if len(holds) > 0 && !slices.ContainsFunc(holds, func(p plan.BranchHold) bool { return p.GetCorrectedBy() == t.GetId() }) {
 		sha, check := pushCheckHeld(holds[0].PushHold)
 		return fmt.Sprintf("waits for %s to be green again (push checks red at %s: %s)", holds[0].Branch, sha, check)
 	}
 	for _, c := range s.tasks {
-		if c.GetWishId() == t.GetWishId() && strings.EqualFold(c.GetProjectId(), t.GetProjectId()) && repairing(c) {
+		if c.GetWishId() == t.GetWishId() && strings.EqualFold(c.GetProjectId(), t.GetProjectId()) && repairing(c) &&
+			s.sameLane(t, s.laneOf(c)) {
 			return fmt.Sprintf("waits for %s to %s", c.GetCode(), s.repairs(c))
 		}
 	}
