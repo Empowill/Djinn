@@ -2,8 +2,6 @@ package plan
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -83,7 +81,7 @@ func (c clients) askPlans(t *testing.T, req *planv1.QuestionServiceAskRequest) (
 	return res.Msg.GetQuestion(), nil
 }
 
-// TestAskPlans: a question's options carry their plans, read from a file or given inline, the tasks they name kept by
+// TestAskPlans: a question's options carry their plans, as the command line sends them, the tasks they name kept by
 // identifier with how they stood; a plan that cannot launch is refused when asked.
 func TestAskPlans(t *testing.T) {
 	t.Parallel()
@@ -96,13 +94,12 @@ func TestAskPlans(t *testing.T) {
 	azima.Kind = planv1.TaskKind_TASK_KIND_AZIMA
 	putTasks(t, c.store, before, planned, done, azima)
 
-	file := filepath.Join(t.TempDir(), "plan-b.md")
-	if err := os.WriteFile(file, []byte("option: B\ntitle: Light the paraffin lamp\nafter: w1\nblocks: W2\npart-of: t1\n\nLight it."), 0o600); err != nil {
-		t.Fatal(err)
-	}
 	q, err := c.askPlans(t, &planv1.QuestionServiceAskRequest{
-		WishId: wishID, Options: []string{"Olive", "Paraffin"}, PlanFile: []string{file},
-		Plan: []string{"option: A\ntitle: Light the olive lamp"},
+		WishId: wishID, Options: []string{"Olive", "Paraffin"},
+		Plan: []string{
+			"option: A\ntitle: Light the olive lamp",
+			"option: B\ntitle: Light the paraffin lamp\nafter: w1\nblocks: W2\npart-of: t1\n\nLight it.",
+		},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -116,7 +113,7 @@ func TestAskPlans(t *testing.T) {
 		b.GetDependencies()[0].GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING || b.GetDependencies()[1].GetCode() != "W2" {
 		t.Errorf("plan B = %v", b)
 	}
-	// The journal keeps what the file said, not where it was.
+	// The journal keeps the plans' texts.
 	commands, err := store.Commands(t.Context(), c.store, func(cmd store.Command) bool {
 		return cmd.Method == planv1connect.QuestionServiceAskProcedure
 	})
@@ -127,7 +124,7 @@ func TestAskPlans(t *testing.T) {
 	if err := proto.Unmarshal(commands[0].Request, &asked); err != nil {
 		t.Fatal(err)
 	}
-	if len(asked.GetPlanFile()) != 0 || len(asked.GetPlan()) != 2 || !strings.Contains(asked.GetPlan()[1], "Light it.") {
+	if len(asked.GetPlan()) != 2 || !strings.Contains(asked.GetPlan()[1], "Light it.") {
 		t.Errorf("the journal keeps %v", &asked)
 	}
 

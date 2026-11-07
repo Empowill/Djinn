@@ -2,8 +2,6 @@ package harness
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -291,44 +289,5 @@ func TestTaskWatchAndSendByCode(t *testing.T) {
 	disambigStream.Close()
 	if err := disambigStream.Err(); err != nil || len(got2) != 1 {
 		t.Fatalf("watch W1 --wish-id events = %v, err = %v", got2, err)
-	}
-}
-
-// TestTaskSpawnPromptFile (W453): djinn task spawn --prompt-file reads the prompt from a file and rejects when both
-// --prompt and --prompt-file are given.
-func TestTaskSpawnPromptFile(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-
-	e := up(t, t.TempDir())
-	wishID, projectID := e.wish(t, fakeProject(t, ""))
-	promptPath := filepath.Join(t.TempDir(), "prompt.md")
-	const body = "text from prompt file\n"
-	if err := os.WriteFile(promptPath, []byte(body), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	if _, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
-		WishId:     wishID,
-		ProjectId:  projectID,
-		Title:      "Both flags",
-		Prompt:     "inline",
-		PromptFile: promptPath,
-	})); connect.CodeOf(err) != connect.CodeInvalidArgument {
-		t.Errorf("spawn with both prompt and prompt_file: %v, want InvalidArgument", err)
-	}
-
-	res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
-		WishId:     wishID,
-		ProjectId:  projectID,
-		Title:      "From file",
-		PromptFile: promptPath,
-		Later:      true,
-	}))
-	if err != nil {
-		t.Fatalf("spawn with prompt_file: %v", err)
-	}
-	if got, want := res.Msg.GetTask().GetPrompt(), strings.TrimSpace(body); got != want {
-		t.Errorf("task prompt = %q, want %q", got, want)
 	}
 }

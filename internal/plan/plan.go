@@ -1251,15 +1251,6 @@ func (q *Questions) Ask(
 	ctx context.Context, req *connect.Request[planv1.QuestionServiceAskRequest],
 ) (*connect.Response[planv1.QuestionServiceAskResponse], error) {
 	m := req.Msg
-	if len(m.GetPlanFile()) > 0 {
-		// The journal keeps the plans' texts, not where they were read.
-		plans, err := readPlans(m.GetPlan(), m.GetPlanFile())
-		if err != nil {
-			return nil, err
-		}
-		m = proto.CloneOf(m)
-		m.Plan, m.PlanFile = plans, nil
-	}
 	question := &planv1.Question{
 		Id: store.NewID(), WishId: req.Msg.GetWishId(), Text: req.Msg.GetText(), Options: req.Msg.GetOptions(),
 		Context: m.GetContext(), Recommendation: req.Msg.GetRecommendation(), CreateTime: timestamppb.Now(),

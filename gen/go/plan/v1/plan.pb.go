@@ -11451,18 +11451,12 @@ type QuestionServiceReviseRequest struct {
 	// What the answer is needed before now, like "before the merge"; the former words when not given, none when given
 	// empty (--before ""): the question can wait.
 	Before *string `protobuf:"bytes,7,opt,name=before,proto3,oneof" json:"before,omitempty"`
-	// File holding what is at stake now, in Markdown, read in place of context; a relative path starts from the current
-	// directory.
-	ContextFile string `protobuf:"bytes,8,opt,name=context_file,json=contextFile,proto3" json:"context_file,omitempty"`
 	// The task of the wish the question is about now, by code (W12) or identifier; the former one when not given, none
 	// when given empty (--about "").
 	About *string `protobuf:"bytes,9,opt,name=about,proto3,oneof" json:"about,omitempty"`
 	// The task an option launches now, in the text of a plan file (see djinn question ask --plan): it replaces that
 	// option's plan; one that says its option alone removes it. The options it does not name keep theirs.
 	Plan []string `protobuf:"bytes,10,rep,name=plan,proto3" json:"plan,omitempty"`
-	// A file holding the task an option launches now, read in place of --plan; a relative path starts from the current
-	// directory.
-	PlanFile []string `protobuf:"bytes,11,rep,name=plan_file,json=planFile,proto3" json:"plan_file,omitempty"`
 	// Give back the question's earlier versions too: its rounds, each with what the question said before it. Not set:
 	// the question as it stands now, its current version only.
 	History bool `protobuf:"varint,12,opt,name=history,proto3" json:"history,omitempty"`
@@ -11551,13 +11545,6 @@ func (x *QuestionServiceReviseRequest) GetBefore() string {
 	return ""
 }
 
-func (x *QuestionServiceReviseRequest) GetContextFile() string {
-	if x != nil {
-		return x.ContextFile
-	}
-	return ""
-}
-
 func (x *QuestionServiceReviseRequest) GetAbout() string {
 	if x != nil && x.About != nil {
 		return *x.About
@@ -11568,13 +11555,6 @@ func (x *QuestionServiceReviseRequest) GetAbout() string {
 func (x *QuestionServiceReviseRequest) GetPlan() []string {
 	if x != nil {
 		return x.Plan
-	}
-	return nil
-}
-
-func (x *QuestionServiceReviseRequest) GetPlanFile() []string {
-	if x != nil {
-		return x.PlanFile
 	}
 	return nil
 }
@@ -11682,9 +11662,6 @@ type QuestionServiceAskRequest struct {
 	// kind), then a blank line and the prompt. "option: B" names its option; a question without options needs none.
 	// An answer without a note launches it at once when it has no after and no blocks; otherwise the lead launches it.
 	Plan []string `protobuf:"bytes,11,rep,name=plan,proto3" json:"plan,omitempty"`
-	// A file holding the task an option launches, read in place of --plan, one per option; a relative path starts from
-	// the current directory.
-	PlanFile []string `protobuf:"bytes,12,rep,name=plan_file,json=planFile,proto3" json:"plan_file,omitempty"`
 	// Ask it asleep, until these conditions hold (see djinn question sleep --until): it shows once they all do.
 	SleepUntil []string `protobuf:"bytes,13,rep,name=sleep_until,json=sleepUntil,proto3" json:"sleep_until,omitempty"`
 	// A worker only, about its own task: wait for the answer. Commit what does not depend on it, then end your turn:
@@ -11799,13 +11776,6 @@ func (x *QuestionServiceAskRequest) GetAbout() string {
 func (x *QuestionServiceAskRequest) GetPlan() []string {
 	if x != nil {
 		return x.Plan
-	}
-	return nil
-}
-
-func (x *QuestionServiceAskRequest) GetPlanFile() []string {
-	if x != nil {
-		return x.PlanFile
 	}
 	return nil
 }
@@ -22932,10 +22902,7 @@ type TaskServiceSpawnRequest struct {
 	Repair bool `protobuf:"varint,27,opt,name=repair,proto3" json:"repair,omitempty"`
 	// For a mockup (--kind mockup): the open question of the wish it iterates on, by code (Q61): it puts the next
 	// version of the tilasm the question links, then revises it, and the lead hears what it did when it ends.
-	Question string `protobuf:"bytes,28,opt,name=question,proto3" json:"question,omitempty"`
-	// File holding what to ask the worker, in Markdown, read in place of --prompt; a relative path starts from the
-	// current directory.
-	PromptFile    string `protobuf:"bytes,29,opt,name=prompt_file,json=promptFile,proto3" json:"prompt_file,omitempty"`
+	Question      string `protobuf:"bytes,28,opt,name=question,proto3" json:"question,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -23162,13 +23129,6 @@ func (x *TaskServiceSpawnRequest) GetRepair() bool {
 func (x *TaskServiceSpawnRequest) GetQuestion() string {
 	if x != nil {
 		return x.Question
-	}
-	return ""
-}
-
-func (x *TaskServiceSpawnRequest) GetPromptFile() string {
-	if x != nil {
-		return x.PromptFile
 	}
 	return ""
 }
@@ -28725,7 +28685,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x04note\x18\x02 \x01(\tB\b\xbaH\x05r\x03\x18\xc0>R\x04note\x12$\n" +
 	"\awish_id\x18\x03 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x06wishId\"Q\n" +
 	" QuestionServiceEnlightenResponse\x12-\n" +
-	"\bquestion\x18\x01 \x01(\v2\x11.plan.v1.QuestionR\bquestion\"\xc3\x05\n" +
+	"\bquestion\x18\x01 \x01(\v2\x11.plan.v1.QuestionR\bquestion\"\x8d\x05\n" +
 	"\x1cQuestionServiceReviseRequest\x128\n" +
 	"\bquestion\x18\x01 \x01(\v2\x14.plan.v1.QuestionRefB\x06\xbaH\x03\xc8\x01\x01R\bquestion\x12#\n" +
 	"\acontext\x18\x02 \x01(\tB\t\xbaH\x06r\x04\x18\xa0\x9c\x01R\acontext\x12(\n" +
@@ -28733,21 +28693,19 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x0erecommendation\x18\x04 \x01(\tB\t\xbaH\x06r\x04\x18\xa0\x9c\x01R\x0erecommendation\x12$\n" +
 	"\awish_id\x18\x05 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x06wishId\x125\n" +
 	"\atask_id\x18\x06 \x01(\tB\x1c\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01\xf2\xf3\x18\rDJINN_TASK_IDR\x06taskId\x12$\n" +
-	"\x06before\x18\a \x01(\tB\a\xbaH\x04r\x02\x18dH\x00R\x06before\x88\x01\x01\x12+\n" +
-	"\fcontext_file\x18\b \x01(\tB\b\xbaH\x05r\x03\x18\x80 R\vcontextFile\x12\x81\x01\n" +
+	"\x06before\x18\a \x01(\tB\a\xbaH\x04r\x02\x18dH\x00R\x06before\x88\x01\x01\x12\x81\x01\n" +
 	"\x05about\x18\t \x01(\tBf\xbaHcra2_^([Ww][0-9]{1,4}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})?$H\x01R\x05about\x88\x01\x01\x12$\n" +
 	"\x04plan\x18\n" +
 	" \x03(\tB\x10\xbaH\r\x92\x01\n" +
-	"\x10\x04\"\x06r\x04\x18\xd0\xe8\fR\x04plan\x12,\n" +
-	"\tplan_file\x18\v \x03(\tB\x0f\xbaH\f\x92\x01\t\x10\x04\"\x05r\x03\x18\x80 R\bplanFile\x12\x18\n" +
+	"\x10\x04\"\x06r\x04\x18\xd0\xe8\fR\x04plan\x12\x18\n" +
 	"\ahistory\x18\f \x01(\bR\ahistory\x120\n" +
 	"\vsleep_until\x18\r \x03(\tB\x0f\xbaH\f\x92\x01\t\x10\x10\"\x05r\x03\x18\x80\x10R\n" +
 	"sleepUntilB\t\n" +
 	"\a_beforeB\b\n" +
-	"\x06_about\"j\n" +
+	"\x06_aboutJ\x04\b\b\x10\tJ\x04\b\v\x10\fR\fcontext_fileR\tplan_file\"j\n" +
 	"\x1dQuestionServiceReviseResponse\x12-\n" +
 	"\bquestion\x18\x01 \x01(\v2\x11.plan.v1.QuestionR\bquestion\x12\x1a\n" +
-	"\bwarnings\x18\x02 \x03(\tR\bwarnings\"\x87\x05\n" +
+	"\bwarnings\x18\x02 \x03(\tR\bwarnings\"\xfe\x04\n" +
 	"\x19QuestionServiceAskRequest\x12\x1f\n" +
 	"\x04text\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\x18\xd0\x0fR\x04text\x12(\n" +
 	"\aoptions\x18\x02 \x03(\tB\x0e\xbaH\v\x92\x01\b\x10\x04\"\x04r\x02\x10\x01R\aoptions\x12$\n" +
@@ -28761,11 +28719,10 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x05about\x18\n" +
 	" \x01(\tBh\xbaHe\xd8\x01\x01r`2^^([Ww][0-9]{1,4}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$R\x05about\x12$\n" +
 	"\x04plan\x18\v \x03(\tB\x10\xbaH\r\x92\x01\n" +
-	"\x10\x04\"\x06r\x04\x18\xd0\xe8\fR\x04plan\x12,\n" +
-	"\tplan_file\x18\f \x03(\tB\x0f\xbaH\f\x92\x01\t\x10\x04\"\x05r\x03\x18\x80 R\bplanFile\x120\n" +
+	"\x10\x04\"\x06r\x04\x18\xd0\xe8\fR\x04plan\x120\n" +
 	"\vsleep_until\x18\r \x03(\tB\x0f\xbaH\f\x92\x01\t\x10\x10\"\x05r\x03\x18\x80\x10R\n" +
 	"sleepUntil\x12\x12\n" +
-	"\x04wait\x18\x0e \x01(\bR\x04wait\"g\n" +
+	"\x04wait\x18\x0e \x01(\bR\x04waitJ\x04\b\f\x10\rJ\x04\b\x0f\x10\x10R\tplan_fileR\fcontext_file\"g\n" +
 	"\x1aQuestionServiceAskResponse\x12-\n" +
 	"\bquestion\x18\x01 \x01(\v2\x11.plan.v1.QuestionR\bquestion\x12\x1a\n" +
 	"\bwarnings\x18\x02 \x03(\tR\bwarnings\"\xde\x02\n" +
@@ -29509,7 +29466,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x16MarkServiceListRequest\x12$\n" +
 	"\awish_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06wishId\"@\n" +
 	"\x17MarkServiceListResponse\x12%\n" +
-	"\x05marks\x18\x01 \x03(\v2\x0f.plan.v1.MarkedR\x05marks\"\xdb\t\n" +
+	"\x05marks\x18\x01 \x03(\v2\x0f.plan.v1.MarkedR\x05marks\"\xc3\t\n" +
 	"\x17TaskServiceSpawnRequest\x12$\n" +
 	"\awish_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06wishId\x12 \n" +
 	"\x05title\x18\x02 \x01(\tB\n" +
@@ -29544,9 +29501,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\xd8\x01\x01*\x05\x18\xf0\x01(\x05R\aminutes\x12\x1a\n" +
 	"\bfeedback\x18\x1a \x01(\bR\bfeedback\x12\x16\n" +
 	"\x06repair\x18\x1b \x01(\bR\x06repair\x12#\n" +
-	"\bquestion\x18\x1c \x01(\tB\a\xbaH\x04r\x02\x18@R\bquestion\x12)\n" +
-	"\vprompt_file\x18\x1d \x01(\tB\b\xbaH\x05r\x03\x18\x80 R\n" +
-	"promptFile\"Q\n" +
+	"\bquestion\x18\x1c \x01(\tB\a\xbaH\x04r\x02\x18@R\bquestionJ\x04\b\x1d\x10\x1eR\vprompt_file\"Q\n" +
 	"\x18TaskServiceSpawnResponse\x12!\n" +
 	"\x04task\x18\x01 \x01(\v2\r.plan.v1.TaskR\x04task\x12\x12\n" +
 	"\x04note\x18\x02 \x01(\tR\x04note\"\xd2\x02\n" +
