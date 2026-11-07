@@ -233,38 +233,49 @@ type Read =
   | { state: "error"; message: string };
 
 // useQuery reads a card's table once, and again when its request changes; a request left behind is aborted.
-function useQuery(request: QueryRequest): Read {
+export function useQuery(request: QueryRequest): Read {
   const { query: client } = useClients();
   // The request's canonical JSON: a key that changes only with what it asks, its times included.
   const key = toJsonString(
     QueryServiceQueryRequestSchema,
     create(QueryServiceQueryRequestSchema, request),
   );
-  const [read, setRead] = useState<Read>({ state: "loading" });
+  // The read keeps the key it answers: until the new request's read, the render after a change reads loading, never
+  // the old table, whose columns the new spec does not name (create_time::day under a week).
+  const [read, setRead] = useState<{ key: string; read: Read }>({
+    key,
+    read: { state: "loading" },
+  });
   useEffect(() => {
     const abort = new AbortController();
-    setRead({ state: "loading" });
+    setRead({ key, read: { state: "loading" } });
     query(
       client,
       fromJsonString(QueryServiceQueryRequestSchema, key),
       abort.signal,
     ).then(
       (table) => {
-        if (!abort.signal.aborted) setRead({ state: "done", table });
+        if (!abort.signal.aborted)
+          setRead({ key, read: { state: "done", table } });
       },
       (err: unknown) => {
         if (abort.signal.aborted) return;
         console.error("statistics: a query failed", err);
         setRead({
-          state: "error",
-          message: err instanceof Error ? err.message : String(err),
+          key,
+          read: {
+            state: "error",
+            message: err instanceof Error ? err.message : String(err),
+          },
         });
       },
     );
     return () => abort.abort();
   }, [client, key]);
-  return read;
+  return read.key === key ? read.read : LOADING;
 }
+
+const LOADING: Read = { state: "loading" };
 
 // cell reads a table's cell in its first row, or in the row whose ref holds value.
 function cellOf(

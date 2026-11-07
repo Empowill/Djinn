@@ -58,7 +58,13 @@ export function Chart({ frame, spec, label, height = 220 }: ChartProps) {
       scale,
       font: getComputedStyle(el).fontFamily || undefined,
     };
-    chart.setOption(chartOption(frame, spec, look), { notMerge: true });
+    // A frame the spec does not fit draws nothing: thrown from an effect, the error would unmount the whole window.
+    try {
+      chart.setOption(chartOption(frame, spec, look), { notMerge: true });
+    } catch (err) {
+      console.error("charts: the chart cannot be drawn", err);
+      chart.clear();
+    }
   }, [chart, frame, spec, theme, scale]);
 
   return (

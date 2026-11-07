@@ -32,6 +32,7 @@ export {
   firstDay,
   frameOf,
   typeText,
+  useQuery,
 } from "@/src/statistics.tsx";
 export { Hourglass } from "@/src/hourglass.tsx";
 export * as A from "apache-arrow";`,
@@ -359,6 +360,65 @@ test("the six figures say what the server read: a median, its p90, a dash for no
     assert.equal(
       figure("cost"),
       "Estimated cost$12.50tokens × prices of the providers",
+    );
+  } finally {
+    s.act(() => root.unmount());
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    for (const handle of process._getActiveHandles())
+      if (handle?.constructor?.name === "MessagePort") handle.unref();
+  }
+});
+
+test("a card's read changes with its request: never the old table, whose columns the new chart does not name", async () => {
+  // Grouped by week, the chart asks for create_time::week: a render with the day's table threw ChartError from an
+  // effect, and the window unmounted down to its splash.
+  const container = setupMockDom();
+  const transport = s.createRouterTransport(({ service }) => {
+    service(s.QueryService, {
+      query(request) {
+        const by = texts(request).groupBy[0];
+        return {
+          table: ipc([
+            [field(by, new A.Utf8(), { label: by, type: "text" }), ["a"]],
+            count([1]),
+          ]),
+          total: 1n,
+        };
+      },
+    });
+  });
+  const djinn = s.createDjinn(transport, 10);
+  const seen = [];
+  const Probe = ({ request }) => {
+    const read = s.useQuery(request);
+    seen.push(read.state === "done" ? read.table.columns[0].ref : read.state);
+    return null;
+  };
+  const root = s.createRoot(container);
+  const show = (grain) =>
+    s.act(async () => {
+      root.render(
+        h(
+          s.DjinnProvider,
+          { djinn },
+          h(Probe, { request: s.cardQueries({ ...all, grain }).created }),
+        ),
+      );
+    });
+  const settle = async (ref) => {
+    for (let i = 0; i < 50 && seen.at(-1) !== ref; i++)
+      await s.act(() => new Promise((resolve) => setTimeout(resolve, 10)));
+    assert.equal(seen.at(-1), ref);
+  };
+  try {
+    await show("day");
+    await settle("create_time::day");
+    const from = seen.length;
+    await show("week");
+    await settle("create_time::week");
+    assert.ok(
+      !seen.slice(from).includes("create_time::day"),
+      `the week's renders read ${seen.slice(from).join(", ")}`,
     );
   } finally {
     s.act(() => root.unmount());
