@@ -126,7 +126,7 @@ test("Alt+arrows go back and forward in the views, Ctrl+Up and Ctrl+Down through
     await tab("main").click();
     const link = question
       .locator(".question-context")
-      .getByRole("link", { name: href });
+      .getByRole("link", { name: "The lamp's keys" });
     await link.evaluate((el) => el.scrollIntoView({ block: "center" }));
     await link.click();
     await expect(over.locator("iframe.tilasm-frame")).toBeVisible();
