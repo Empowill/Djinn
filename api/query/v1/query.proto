@@ -1,0 +1,186 @@
+syntax = "proto3";
+
+// Package query.v1 reads Djinn's stored collections as tables: one route for every list, its columns, filters,
+// sorts and aggregates named by refs, its answer an Arrow table whose shape follows the query.
+package query.v1;
+
+import "buf/validate/validate.proto";
+import "djinn/v1/options.proto";
+
+// QueryService reads a collection of Djinn's data as a table. A ref names a column: a field by its path (code,
+// usage.cost_usd), across a field that holds another entity's id (wish_id->title), or a ref Djinn computes
+// (prompt::size, answer::delay). Long texts, such as a prompt or a context, are never columns. Every method only
+// reads: the window, the command line and an agent's client run them freely.
+service QueryService {
+  // Read a collection as a table: the columns selected, the rows the filters keep, sorted, or one row per group when
+  // aggregated. The window reads it in Arrow; the command line prints a table, or CSV with --format csv.
+  rpc Query(QueryServiceQueryRequest) returns (QueryServiceQueryResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // List the refs of a collection: their type, label, unit, what each says, and where a jump leads. The window
+  // builds its filters from it; djinn query schema tasks shows what a query can name.
+  rpc Schema(QueryServiceSchemaRequest) returns (QueryServiceSchemaResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+}
+
+// Collection is a kind of stored entity a query reads.
+enum Collection {
+  // Not set: a query names one.
+  COLLECTION_UNSPECIFIED = 0;
+  // The tasks of every wish.
+  COLLECTION_TASKS = 1;
+  // The questions of every wish.
+  COLLECTION_QUESTIONS = 2;
+  // The wishes.
+  COLLECTION_WISHES = 3;
+  // The projects.
+  COLLECTION_PROJECTS = 4;
+}
+
+// Format is how a query's table comes back.
+enum Format {
+  // Not set: a table in text, aligned, for a person or an agent to read.
+  FORMAT_UNSPECIFIED = 0;
+  // CSV, a header of refs then a line per row: an absent value is an empty cell.
+  FORMAT_CSV = 1;
+  // An Arrow IPC stream, in the arrow field: what the window reads.
+  FORMAT_ARROW = 2;
+}
+
+// ColumnType is the type of a column, taken from the proto, never from the values a row holds.
+enum ColumnType {
+  // Not set.
+  COLUMN_TYPE_UNSPECIFIED = 0;
+  // Text: Utf8 in Arrow.
+  COLUMN_TYPE_STRING = 1;
+  // A value of an enum, by its full name: Dictionary of Utf8 in Arrow.
+  COLUMN_TYPE_ENUM = 2;
+  // A whole number: Int64 in Arrow.
+  COLUMN_TYPE_INT = 3;
+  // A number with a fraction: Float64 in Arrow.
+  COLUMN_TYPE_FLOAT = 4;
+  // True or false: Bool in Arrow.
+  COLUMN_TYPE_BOOL = 5;
+  // An instant: Timestamp in milliseconds, UTC, in Arrow.
+  COLUMN_TYPE_TIME = 6;
+  // A length of time: Duration in milliseconds in Arrow.
+  COLUMN_TYPE_DURATION = 7;
+}
+
+message QueryServiceQueryRequest {
+  // The collection to read: tasks, questions, wishes or projects.
+  Collection collection = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).enum.defined_only = true
+  ];
+  // A filter each row keeps must hold, all of them: ref, an operator, a value. = is equal, text ignoring case, and
+  // a|b one of; != is none of, an absent value included; > >= < <= bound a number, a time (2026-11-01, or RFC 3339)
+  // or a duration (90s); *= contains, ^= begins with, ignoring case; null is the absent value: status=null,
+  // status!=null, status=pending|null. An enum takes its value's name, prefix or not: status=running.
+  repeated string filter = 2 [(buf.validate.field).repeated = {
+    max_items: 50
+    items: {
+      string: {
+        min_len: 2
+        max_len: 2000
+      }
+    }
+  }];
+  // The order of the rows, by a ref, -ref for descending; an absent value comes last either way. When aggregated, a
+  // column of the table: create_time::day, count.
+  repeated string sort = 3 [(buf.validate.field).repeated = {
+    max_items: 10
+    items: {
+      string: {
+        min_len: 1
+        max_len: 200
+      }
+    }
+  }];
+  // The refs of the columns, in order: code, usage.cost_usd, wish_id->title. Not set: the collection's usual
+  // columns.
+  repeated string select = 4 [(buf.validate.field).repeated = {
+    max_items: 100
+    items: {
+      string: {
+        min_len: 1
+        max_len: 200
+      }
+    }
+  }];
+  // Aggregate: a row per group of rows holding the same value of this ref. A time groups by period with ::day, ::week
+  // or ::month (create_time::day, in the machine's time zone). A number or a duration groups by bins with
+  // ::bins(bounds), a value going to the greatest bound at or below it, the first bound's when below them all; every
+  // bin shows, empty or not: answer::delay::bins(0s,1m,10m,1h).
+  repeated string group_by = 5 [(buf.validate.field).repeated = {
+    max_items: 5
+    items: {
+      string: {
+        min_len: 1
+        max_len: 500
+      }
+    }
+  }];
+  // Aggregate: a column computed over each group's rows, absent values skipped: count counts the rows, ref::fn reads
+  // a ref with count, sum, avg, min, max, median or p90 (running::median), name=ref::fn names the column.
+  repeated string measure = 6 [(buf.validate.field).repeated = {
+    max_items: 20
+    items: {
+      string: {
+        min_len: 1
+        max_len: 200
+      }
+    }
+  }];
+  // The most rows to return: the first ones, after the sorts. Not set: all of them.
+  int32 limit = 7 [(buf.validate.field).int32.gte = 0];
+  // How the table comes back: a text table (not set), csv, or arrow for the window.
+  Format format = 8 [(buf.validate.field).enum.defined_only = true];
+}
+
+message QueryServiceQueryResponse {
+  // The table, as the format asks: aligned text, its row count last, or CSV.
+  string text = 1 [(djinn.v1.raw) = true];
+  // The table as an Arrow IPC stream, one record batch, with format arrow: a column per ref, its type from the proto,
+  // an absent value null, never 0. Each field's metadata "djinn" holds a JSON object: ref, label, unit and type, and
+  // for an aggregated column of, fn, granularity or bounds.
+  bytes arrow = 2 [(djinn.v1.json_only) = true];
+  // The rows before the limit: the groups when aggregated.
+  int64 total = 3 [(djinn.v1.json_only) = true];
+}
+
+message QueryServiceSchemaRequest {
+  // The collection whose refs to list: tasks, questions, wishes or projects.
+  Collection collection = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).enum.defined_only = true
+  ];
+}
+
+// QueryColumn is one ref of a collection.
+message QueryColumn {
+  // How a query names it.
+  string ref = 1;
+  // A short label for a person.
+  string label = 2;
+  // Its type.
+  ColumnType type = 3;
+  // A list of values of its type.
+  bool list = 4;
+  // The unit of its numbers, when they have one: usd, tokens.
+  string unit = 5;
+  // What it holds, as the proto or Djinn says it.
+  string doc = 6;
+  // The collection whose id it holds: ref->x reads x there.
+  Collection jump = 7;
+  // The values of an enum, by their full names.
+  repeated string values = 8;
+}
+
+message QueryServiceSchemaResponse {
+  // The collection's own refs, then the ones Djinn computes.
+  repeated QueryColumn columns = 1;
+}

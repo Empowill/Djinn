@@ -93,7 +93,7 @@ func path(md protoreflect.MessageDescriptor, p string, ahead bool) (Column, gett
 			if !ok {
 				return Column{}, nil, fmt.Errorf("%s.%s is a message: name one of its fields", md.FullName(), name)
 			}
-			col := Column{Ref: p, Type: typ, List: fd.IsList(), Field: fd, Jump: jump(fd)}
+			col := Column{Ref: p, Type: typ, List: fd.IsList(), Field: fd, Jump: jump(fd), Unit: unit(fd)}
 			if ahead && col.Jump == "" {
 				return Column{}, nil, fmt.Errorf("%s.%s names no other collection", md.FullName(), name)
 			}

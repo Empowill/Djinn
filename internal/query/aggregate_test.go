@@ -300,3 +300,89 @@ func TestTruncate(t *testing.T) {
 		}
 	}
 }
+
+func TestAggregateBins(t *testing.T) {
+	t.Parallel()
+	c, _ := catalog(t)
+
+	t.Run("a number: every bin shows, below the first bound in the first, null apart", func(t *testing.T) {
+		t.Parallel()
+		// Costs: T1 1.5, T2 0 (a usage with no cost yet), T3 none, T4 0.25.
+		table := aggregate(t, c, Aggregation{
+			By:       []GroupBy{{Ref: "usage.cost_usd", Bounds: []any{0.5, "1", 2}}},
+			Measures: []Measure{{Fn: Count}, {Ref: "usage.cost_usd", Fn: Max}},
+		})
+		refs, types := names(table)
+		if !slices.Equal(refs, []string{"usage.cost_usd::bins", "count", "usage.cost_usd::max"}) ||
+			!slices.Equal(types, []Type{TypeFloat, TypeInt, TypeFloat}) {
+			t.Errorf("columns %v %v", refs, types)
+		}
+		if col := table.Columns[0]; col.Of != "usage.cost_usd" || !slices.Equal(col.Bounds, []any{0.5, 1.0, 2.0}) {
+			t.Errorf("bins column = %+v", col)
+		}
+		rows(t, table, [][]any{
+			{0.5, int64(2), 0.25},
+			{1.0, int64(1), 1.5},
+			{2.0, int64(0), nil},
+			{nil, int64(1), nil},
+		})
+		if table.Total != 4 {
+			t.Errorf("total = %d; want 4", table.Total)
+		}
+	})
+
+	t.Run("a duration, bounds as text, no row at all", func(t *testing.T) {
+		t.Parallel()
+		table := aggregate(t, c, Aggregation{
+			By:       []GroupBy{{Ref: "running", Bounds: []any{"10s", "1m", time.Hour}}},
+			Measures: []Measure{{Fn: Count}},
+		}, Equal{Ref: "code", Value: "nobody"})
+		rows(t, table, [][]any{
+			{10 * time.Second, int64(0)},
+			{time.Minute, int64(0)},
+			{time.Hour, int64(0)},
+		})
+	})
+
+	t.Run("beside another group, each of its values gets every bin", func(t *testing.T) {
+		t.Parallel()
+		table := aggregate(t, c, Aggregation{
+			By:       []GroupBy{{Ref: "wish_id->title"}, {Ref: "running", Bounds: []any{"0s", "1h"}}},
+			Measures: []Measure{{Fn: Count}},
+		})
+		// Stats: T1 ran 90 min, T2 not yet; Docs: T3 not yet; T4's wish is none.
+		rows(t, table, [][]any{
+			{"Docs", time.Duration(0), int64(0)},
+			{"Docs", time.Hour, int64(0)},
+			{"Docs", nil, int64(1)},
+			{"Stats", time.Duration(0), int64(0)},
+			{"Stats", time.Hour, int64(1)},
+			{"Stats", nil, int64(1)},
+			{nil, time.Duration(0), int64(0)},
+			{nil, time.Hour, int64(0)},
+			{nil, nil, int64(1)},
+		})
+	})
+
+	for _, tt := range []struct {
+		name string
+		by   GroupBy
+		want string
+	}{
+		{"a time has periods", GroupBy{Ref: "create_time", Bounds: []any{"1s", "2s"}}, "has no bins"},
+		{"one bound", GroupBy{Ref: "running", Bounds: []any{"1s"}}, "two bounds at least"},
+		{"bounds out of order", GroupBy{Ref: "running", Bounds: []any{"1m", "10s"}}, "is not above"},
+		{"a bound twice", GroupBy{Ref: "usage.cost_usd", Bounds: []any{1, 1.0}}, "is not above"},
+		{"a bound of another type", GroupBy{Ref: "running", Bounds: []any{"1s", "soon"}}, "is not a duration"},
+		{"bins and a period", GroupBy{Ref: "running", Granularity: Day, Bounds: []any{"1s", "2s"}}, "not both"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := c.Run(t.Context(), Query{Collection: "TASKS",
+				Aggregation: &Aggregation{By: []GroupBy{tt.by}, Measures: []Measure{{Fn: Count}}}})
+			if !errors.Is(err, ErrInvalid) || !contains(err, tt.want) {
+				t.Errorf("err = %v; want ErrInvalid with %q", err, tt.want)
+			}
+		})
+	}
+}

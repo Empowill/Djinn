@@ -2495,6 +2495,8 @@ message QuestionRef {
 
 // Questions agents ask, and the decisions taken.
 service QuestionService {
+  // djinn q answer stays a question's, beside djinn query.
+  option (djinn.v1.alias) = "q";
   // Ask the developer a question. Offer up to four options to answer by letter, or none for a yes/no question.
   rpc Ask(QuestionServiceAskRequest) returns (QuestionServiceAskResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;

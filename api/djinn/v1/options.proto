@@ -84,4 +84,6 @@ extend google.protobuf.FieldOptions {
   string ref = 51012;
   // How internal/query shows the field.
   Query query = 51013;
+  // A response field the command line prints as it is, without its name: a table or a CSV that its reader pipes.
+  bool raw = 51014;
 }
