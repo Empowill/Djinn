@@ -92,8 +92,9 @@ instead.
 - **The status bar** counts the gates held: **2 gates held**.
 - **A task's card** counts the time its worker spent **waiting gate**.
 - **A task's events** say each gate it asked for, waited for and why, took, and gave back.
-- **The Hourglass** draws the gates held over time, hatched while a command waits for one, and lists what each command
-  cost and how long it waited.
+- **The Hourglass**, on its **Gates** tab, shows who holds each gate now and who waits, draws the gates held in the
+  last hour, hatched while a command waits for one, and lists each command admitted under a gate, the most total time
+  first, with what it cost and how long it waited.
 - **The project's configuration** lists the checks with how each last ran: on which commit, when, in how long, or why
   it failed.
 

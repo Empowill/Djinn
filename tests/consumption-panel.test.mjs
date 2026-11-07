@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { resources, screens } from "./screens.mjs";
 
 const { s, h, live } = await screens();
-const { t0, at, longTitle, resourceData, resourceCommands } = resources(s);
+const { t0, at, longTitle, resourceData } = resources(s);
 
 const resourceTask = {
   id: "task-w1",
@@ -24,22 +24,18 @@ const resourceTask = {
   usage: { inputTokens: 10n, outputTokens: 2000n, costUsd: 1.25 },
 };
 
-test("the resources panel: the machine's charts, each worker's title line in full with its facts and charts, the commands of the active wishes' projects grouped under their gates", () => {
+test("the resources panel: the machine's charts, each worker's title line in full with its facts and charts, its gate a link to the Gates tab", () => {
   const props = {
     initialData: resourceData(),
-    initialCommands: resourceCommands,
     tasks: new Map([["task-w1", resourceTask]]),
     projects: [
       { id: "p1", name: "djinn" },
       { id: "p2", name: "old-project" },
     ],
-    projectIds: new Set(["p1"]),
+    onGate: () => {},
   };
   const resourcesHtml = s.renderToStaticMarkup(h(s.ConsumptionPanel, props));
-  const gatesHtml = s.renderToStaticMarkup(
-    h(s.ConsumptionPanel, { ...props, initialTab: "gates" }),
-  );
-  const html = resourcesHtml + gatesHtml;
+  const html = resourcesHtml;
 
   // The header: the ranges, up to a week, the one shown pressed.
   assert.match(html, /class="consumption-panel-heading">Resource consumption</);
@@ -47,9 +43,14 @@ test("the resources panel: the machine's charts, each worker's title line in ful
   for (const range of ["10 min", "2 h", "24 h", "7 days"])
     assert.match(html, new RegExp(`aria-pressed="false">${range}</button>`));
 
-  // The machine: shown in the workers view (Resources) as well as Gates — CPU out of 100% and memory against the
-  // machine's, both labelled, the load limit too.
-  for (const tabHtml of [resourcesHtml, gatesHtml]) {
+  // Two tabs, the gates gone to their own tab of the Hourglass.
+  assert.match(
+    html,
+    /id="consumption-tab-resources"[^>]*>Resources<\/button><button type="button" role="tab" id="consumption-tab-disk"/,
+  );
+  assert.doesNotMatch(html, /consumption-tab-gates/);
+  // The machine: CPU out of 100% and memory against the machine's, both labelled, the load limit too.
+  for (const tabHtml of [resourcesHtml]) {
     assert.match(
       tabHtml,
       /<section class="resource-machine" aria-label="Machine">/,
@@ -89,12 +90,8 @@ test("the resources panel: the machine's charts, each worker's title line in ful
     ticks.length >= 3 * 6,
     `time ticks under the six charts: ${ticks.length}`,
   );
-  // The gates held, the project of no active wish left out.
-  assert.match(
-    resourcesHtml,
-    /aria-label="Gate lint \(djinn\): go tool task lint\. Waited 6m40s, held 13m20s\."/,
-  );
-  assert.doesNotMatch(html, /Gate test \(old\)/);
+  // The gates held are no longer drawn under the machine: the Gates tab has them.
+  assert.doesNotMatch(html, /Gate lint \(djinn\)/);
 
   // Worker heatmaps: CPU and memory side by side, no switch.
   assert.doesNotMatch(resourcesHtml, /resource-heatmap-switch/);
@@ -136,7 +133,11 @@ test("the resources panel: the machine's charts, each worker's title line in ful
   // Its turns over its whole life first, its run against its limit beside them.
   assert.match(w1, /<\/svg>412<span class="task-turns-run">37\/500<\/span>/);
   assert.match(w1, /<dt>Spent<\/dt>/);
-  assert.match(w1, /<dt>Gate<\/dt><dd>held 13m20s, once<\/dd>/);
+  // The gate it held leads to the Gates tab.
+  assert.match(
+    w1,
+    /<dt>Gate<\/dt><dd><button type="button" class="text-link resource-worker-gate" title="See gate lint in the Gates tab">held 13m20s, once<\/button><\/dd>/,
+  );
   assert.match(w1, /<dt>CPU<\/dt><dd>now 75\.4% · peak 85%<\/dd>/);
   // Its CPU and memory over time, larger, with the gate it held behind.
   assert.equal(
@@ -168,45 +169,6 @@ test("the resources panel: the machine's charts, each worker's title line in ful
     /class="resource-worker is-paused"|resource-worker-paused">paused</,
   );
   assert.match(w2, /<dt>CPU<\/dt><dd>now 135\.2% · peak 140%<\/dd>/);
-
-  // Where the time goes: djinn's commands, grouped under their gates, the most time first; the old project's not.
-  assert.match(html, /Where the time goes: commands and their gates/);
-  assert.match(html, /A gate is a named lock/);
-  // One section per project of an active wish, saying first where most of its time goes.
-  assert.match(
-    html,
-    /<section class="resource-project" aria-label="Project djinn"><h5 class="resource-project-name">Project djinn<span class="resource-section-detail">45m30s of commands<\/span><\/h5><p class="resource-project-top">Most of its time: go tool task e2e \(gate e2e\), 66% of it\.<\/p>/,
-  );
-  assert.doesNotMatch(html, /old-project|test-old-suite/);
-  const table = html.slice(html.indexOf('class="resource-commands-table"'));
-  const rows = [
-    ...table.matchAll(
-      /<tr class="resource-(gate|command)-row">([\s\S]*?)<\/tr>/g,
-    ),
-  ].map(
-    ([, kind, row]) =>
-      `${kind}: ${row
-        .replace(/<[^>]+>/g, " ")
-        .replace(/\s+/g, " ")
-        .trim()}`,
-  );
-  assert.deepEqual(rows, [
-    // 2 runs of the whole suite and 4 of some specs, 7 asked: 1800 s + 330 s.
-    "gate: gate e2e 7 6 35m30s 5m55s 3m 30s 35m36s 5m56s",
-    "command: go tool task e2e 2 2 30m 66% 15m 2m 1m 30m2s 15m1s",
-    "command: go tool task e2e … 2 sets of arguments: -- e2e/wish-render.spec.ts, -- e2e/flight-plan.spec.ts 5 4 5m30s 12% 1m22s 1m 15s 5m34s 1m23s",
-    "gate: gate lint 15 15 10m 40s 30s 2s 10m15s 41s",
-    "command: go tool task lint 15 15 10m 22% 40s 30s 2s 10m15s 41s",
-  ]);
-  assert.match(
-    html,
-    /<th scope="col" rowSpan="2" class="num-col">Asked<\/th><th scope="col" rowSpan="2" class="num-col">Ran<\/th><th scope="colgroup" colSpan="2" class="resource-col-group">Time<\/th><th scope="colgroup" colSpan="2" class="resource-col-group">Waiting for the gate<\/th><th scope="colgroup" colSpan="2" class="resource-col-group">Holding the gate<\/th>/,
-  );
-  assert.equal(
-    (html.match(/>total<\/th><th scope="col" class="num-col">mean</g) ?? [])
-      .length,
-    3,
-  );
 });
 
 test("a chart says the value under the pointer and at the arrow keys, and keeps it as new samples come", () => {

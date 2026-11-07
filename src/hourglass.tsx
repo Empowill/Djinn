@@ -1,19 +1,28 @@
 // The Hourglass (Decision Q253): the home of every live metric, the work as a function of time. Each section reads its
 // live data only while the page shows: leaving the page unmounts its sections, and their polls and timers stop with
 // them. The machine comes first (consumption-panel.tsx); a later metric is one more entry of sections, and the flying
-// carpet keeps no live graph. Its second tab, Statistics (statistics.tsx, L53 A), reads the past: one query per card,
-// as the tab opens, never polled.
-import { type ComponentType, useEffect, useMemo, useState } from "react";
+// carpet keeps no live graph. Its second tab, Gates (gates-tab.tsx, L05 v3, Q12 B), says what the gates do now and what
+// the commands admitted under them cost. Its third, Statistics (statistics.tsx, L53 A), reads the past: one query per
+// card, as the tab opens, never polled. Each tab bears its icon of the wishes' bank (wish-icon.tsx), drawn as a wish's.
+import {
+  type ComponentType,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 
-import type { Wish } from "../gen/ts/plan/v1/plan_pb";
+import type { Task, Wish } from "../gen/ts/plan/v1/plan_pb";
 import { jump } from "./attention";
 import { ConsumptionPanel } from "./consumption-panel";
 import { useData, useDjinn, useWishDetails } from "./data/djinn";
-import { t } from "./i18n";
+import { GatesTab } from "./gates-tab";
+import { type TextKey, t } from "./i18n";
 import { OperatingLoad } from "./operating-load";
 import { PageHeader } from "./page-header";
 import { formatValue } from "./resource-chart";
 import { Statistics } from "./statistics";
+import { WishIcon } from "./wish-icon";
 import "./hourglass.css";
 
 // What the window shows instead of a wish: the Hourglass. A wish's id is a UUID: never this.
@@ -25,44 +34,85 @@ interface Section {
   Section: ComponentType<{ wishes: readonly Wish[] }>;
 }
 
-// The machine: its CPU and memory, each running worker (its row is worker-<task id>, a link's target), and where the
-// commands' time goes in the projects of the active wishes.
-function MachineSection({ wishes }: { wishes: readonly Wish[] }) {
-  const projects = useData((s) => s.projects);
+// useActiveTasks is the tasks of the active wishes, by id: a worker's row, a gate's holder, a command's run say their
+// task's facts.
+function useActiveTasks(wishes: readonly Wish[]): ReadonlyMap<string, Task> {
   const wishIds = useMemo(() => wishes.map((w) => w.id), [wishes]);
   const details = useWishDetails(wishIds);
-  const tasks = useMemo(
-    () => wishes.flatMap((w) => details[w.id]?.tasks ?? []),
+  return useMemo(
+    () =>
+      new Map(
+        wishes
+          .flatMap((w) => details[w.id]?.tasks ?? [])
+          .map((task) => [task.id, task]),
+      ),
     [wishes, details],
   );
-  const taskById = useMemo(
-    () => new Map(tasks.map((task) => [task.id, task])),
-    [tasks],
+}
+
+// The ways from one tab to another: a link to a gate (gate-<name>) shows the Gates tab, to a worker (worker-<task id>)
+// Machine.
+function useShow() {
+  const djinn = useDjinn();
+  const gate = useCallback(
+    (name: string) =>
+      djinn?.focus.show({ page: HOURGLASS, target: `gate-${name}` }),
+    [djinn],
   );
-  const projectIds = useMemo(
-    () =>
-      new Set([
-        ...wishes.flatMap((w) => w.projectIds),
-        ...tasks.map((task) => task.projectId).filter(Boolean),
-      ]),
-    [wishes, tasks],
+  const worker = useCallback(
+    (taskId: string) =>
+      djinn?.focus.show({ page: HOURGLASS, target: `worker-${taskId}` }),
+    [djinn],
   );
+  const task = useCallback(
+    (task: Task) =>
+      djinn?.focus.show({ wishId: task.wishId, target: `task-${task.id}` }),
+    [djinn],
+  );
+  return { gate, worker, task };
+}
+
+// The machine: its CPU and memory, and each running worker (its row is worker-<task id>, a link's target); the gate a
+// worker holds leads to the Gates tab.
+function MachineSection({ wishes }: { wishes: readonly Wish[] }) {
+  const projects = useData((s) => s.projects);
+  const tasks = useActiveTasks(wishes);
+  const show = useShow();
   return (
     <ConsumptionPanel
       wishes={wishes}
-      tasks={taskById}
+      tasks={tasks}
       projects={projects}
-      projectIds={projectIds}
+      onGate={show.gate}
     />
   );
+}
+
+// The Gates tab, with the tasks of the active wishes: a holder leads to its worker's row, a run to its task.
+function GatesSection({ wishes }: { wishes: readonly Wish[] }) {
+  const tasks = useActiveTasks(wishes);
+  const show = useShow();
+  return <GatesTab tasks={tasks} onWorker={show.worker} onTask={show.task} />;
 }
 
 const sections: readonly Section[] = [
   { id: "hourglass-machine", Section: MachineSection },
 ];
 
-// The tabs of the Hourglass: what runs now, the machine, and what ran, the statistics.
-export type HourglassTab = "machine" | "statistics";
+// The tabs of the Hourglass: what runs now, the machine, the gates, and what ran, the statistics.
+export type HourglassTab = "machine" | "gates" | "statistics";
+
+// Each tab, its label and its icon of the wishes' bank.
+const tabs: readonly [HourglassTab, TextKey, string][] = [
+  ["machine", "hourglass.tab_machine", "server"],
+  ["gates", "hourglass.tab_gates", "arch"],
+  ["statistics", "hourglass.tab_statistics", "chart-bar"],
+];
+
+// tabOf is the tab a link's target is on: a gate's card on Gates, anything else (a worker's row) on Machine.
+function tabOf(target: string): HourglassTab {
+  return target.startsWith("gate-") ? "gates" : "machine";
+}
 
 // The tab shown last: back on the Hourglass, the window shows it again.
 let shownTab: HourglassTab = "machine";
@@ -80,17 +130,18 @@ export function Hourglass({
   target?: { target: string };
 }) {
   const [tab, setTab] = useState<HourglassTab>(() =>
-    target ? "machine" : shownTab,
+    target ? tabOf(target.target) : shownTab,
   );
   const show = (next: HourglassTab) => {
     shownTab = next;
     setTab(next);
   };
-  // The row shows once its series are read: tried again a while, then given up. A worker's row is on the machine.
+  // The row shows once its series are read: tried again a while, then given up. A worker's row is on the machine, a
+  // gate's card on Gates.
   useEffect(() => {
     if (!target) return;
-    shownTab = "machine";
-    setTab("machine");
+    shownTab = tabOf(target.target);
+    setTab(shownTab);
     if (jump(target.target)) return;
     const timer = setInterval(() => {
       if (jump(target.target)) clearInterval(timer);
@@ -116,12 +167,7 @@ export function Hourglass({
         </div>
         <div className="overview-content hourglass-body">
           <div className="view-tabs hourglass-tabs" role="tablist">
-            {(
-              [
-                ["machine", t("hourglass.tab_machine")],
-                ["statistics", t("hourglass.tab_statistics")],
-              ] as const
-            ).map(([id, label]) => (
+            {tabs.map(([id, label, icon]) => (
               <button
                 key={id}
                 type="button"
@@ -131,13 +177,16 @@ export function Hourglass({
                 className={tab === id ? "active" : ""}
                 onClick={() => show(id)}
               >
-                {label}
+                <WishIcon wish={{ id: `hourglass-${id}`, icon }} size={20} />
+                {t(label)}
               </button>
             ))}
           </div>
           <div role="tabpanel" aria-labelledby={`hourglass-tab-${tab}`}>
             {tab === "machine" ? (
               <HourglassSections wishes={wishes} />
+            ) : tab === "gates" ? (
+              <GatesSection wishes={wishes} />
             ) : (
               <Statistics />
             )}

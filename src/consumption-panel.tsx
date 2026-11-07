@@ -1,11 +1,10 @@
 // The resources panel, the Hourglass's machine (hourglass.tsx): the machine total at the very top, then three tabs —
 // Resources (the whole machine's CPU and memory, CPU and memory worker heatmaps side by side, then the running workers
-// grouped by wish with watchers last), Gates (the whole machine's CPU and memory stacked, the gates timeline and the
-// commands grouped under their gates), and Disk (the main folders using the disk, biggest first). The series are kept
+// grouped by wish with watchers last), and Disk (the main folders using the disk, biggest first). The gates have a tab of
+// their own in the Hourglass (gates-tab.tsx): a worker's gate links to it. The series are kept
 // in the store (internal/machine/history.go): the panel reads the range once, then every 5 s only what came since.
 import {
   type CSSProperties,
-  Fragment,
   type ReactNode,
   memo,
   useCallback,
@@ -14,7 +13,7 @@ import {
   useState,
 } from "react";
 import type { Timestamp } from "@bufbuild/protobuf/wkt";
-import { ChevronDown, ChevronRight, Eye, LockKeyhole } from "lucide-react";
+import { ChevronDown, ChevronRight, Eye } from "lucide-react";
 
 import {
   type Project,
@@ -23,11 +22,9 @@ import {
   type Wish,
 } from "../gen/ts/plan/v1/plan_pb";
 import {
-  type CommandCost,
   type Disk,
   type DiskItem,
   DiskRisk,
-  type GateInterval,
   type MachinePoint,
   type MachineSeries,
   type MachineServiceSeriesResponse,
@@ -35,13 +32,6 @@ import {
 } from "../gen/ts/machine/v1/machine_pb";
 import { jump } from "./attention";
 import { CopyButton } from "./copy-command";
-import {
-  type CommandLine,
-  type GateLine,
-  type ProjectLine,
-  groupCommands,
-  mean,
-} from "./data/commands";
 import { useDjinn } from "./data/djinn";
 import {
   shortModel,
@@ -90,9 +80,8 @@ const ranges = [
   [10080, "consumption.range_10080m"],
 ] as const;
 
-// How often the series are read again, and the commands.
+// How often the series are read again.
 const SERIES_EVERY = 5_000;
-const COMMANDS_EVERY = 15_000;
 
 // duration says seconds as the window does elsewhere: 45s, 1m1s, 1h1m; "—" for none.
 export function duration(seconds: number): string {
@@ -113,15 +102,13 @@ function memoryPoints(
   return points.map((p) => ({ t: timeOf(p.time), v: Number(p.memoryBytes) }));
 }
 
-// The machine's CPU and memory, with Djinn's share and the load limit, and the gates held over time.
+// The machine's CPU and memory, with Djinn's share and the load limit.
 const MachineBand = memo(function MachineBand({
   series,
-  gates,
   tMin,
   tMax,
 }: {
   series: MachineSeries;
-  gates: readonly GateInterval[];
   tMin: number;
   tMax: number;
 }) {
@@ -249,89 +236,7 @@ const MachineBand = memo(function MachineBand({
           {t("consumption.legend_djinn_self")}
         </li>
       </ul>
-      <GatesTimeline gates={gates} tMin={tMin} tMax={tMax} />
     </section>
-  );
-});
-
-// The gates held over time, one lane per overlap: the hatched part is the wait, the plain part the hold.
-const GatesTimeline = memo(function GatesTimeline({
-  gates,
-  tMin,
-  tMax,
-}: {
-  gates: readonly GateInterval[];
-  tMin: number;
-  tMax: number;
-}) {
-  const lanes = useMemo(() => {
-    const visible = gates
-      .filter((g) => {
-        const release = g.releaseTime ? timeOf(g.releaseTime) : tMax;
-        return g.grantTime && release >= tMin && timeOf(g.grantTime) <= tMax;
-      })
-      .sort((a, b) => timeOf(a.grantTime) - timeOf(b.grantTime));
-    const ends: number[] = [];
-    return visible.map((g) => {
-      const asked = timeOf(g.askedTime) || timeOf(g.grantTime);
-      const release = g.releaseTime ? timeOf(g.releaseTime) : tMax;
-      let lane = ends.findIndex((end) => end <= asked);
-      if (lane < 0) lane = ends.push(release) - 1;
-      else ends[lane] = release;
-      return { g, lane };
-    });
-  }, [gates, tMin, tMax]);
-  if (lanes.length === 0) return null;
-  const span = Math.max(1, tMax - tMin);
-  const at = (ms: number) =>
-    `${(Math.max(0, Math.min(1, (ms - tMin) / span)) * 100).toFixed(2)}%`;
-  const count = Math.max(...lanes.map((x) => x.lane)) + 1;
-  return (
-    <div className="resource-gates">
-      <h5 className="resource-gates-title">{t("consumption.gates_title")}</h5>
-      <div
-        className="resource-gates-lanes"
-        style={{ height: `${(count * 22) / 16}rem` }}
-        role="list"
-      >
-        {lanes.map(({ g, lane }, i) => {
-          const asked = timeOf(g.askedTime) || timeOf(g.grantTime);
-          const grant = timeOf(g.grantTime);
-          const release = g.releaseTime ? timeOf(g.releaseTime) : tMax;
-          const label = t("consumption.gate_band", {
-            gate: g.gate,
-            command: g.command || "—",
-            project: g.project || "—",
-            wait: duration((grant - asked) / 1000),
-            held: duration((release - grant) / 1000),
-          });
-          return (
-            <div
-              key={i}
-              role="listitem"
-              className="resource-gates-band"
-              title={label}
-              aria-label={label}
-              style={{
-                top: `${(lane * 22) / 16}rem`,
-                left: at(asked),
-                right: `calc(100% - ${at(release)})`,
-              }}
-            >
-              {grant > asked && (
-                <span
-                  className="resource-gates-wait"
-                  style={{
-                    width: `${(((grant - asked) / Math.max(1, release - asked)) * 100).toFixed(2)}%`,
-                  }}
-                />
-              )}
-              <span className="resource-gates-held">{g.gate}</span>
-            </div>
-          );
-        })}
-      </div>
-    </div>
   );
 });
 
@@ -341,11 +246,13 @@ function WorkerFacts({
   task,
   project,
   memoryTotal,
+  onGate,
 }: {
   worker: WorkerSeries;
   task?: Task;
   project?: Project;
   memoryTotal: number;
+  onGate?: (gate: string) => void;
 }) {
   const running = !!task?.startTime && !worker.paused;
   const now = useNow(running);
@@ -390,21 +297,42 @@ function WorkerFacts({
       t("consumption.fact_spent"),
       <TaskUsage key="spent" task={task} />,
     ]);
+  // The gate it holds, or held last, leads to the Hourglass's Gates tab.
+  const gateFact = (text: string, gate: string): ReactNode =>
+    onGate ? (
+      <button
+        key="gate"
+        type="button"
+        className="text-link resource-worker-gate"
+        title={t("consumption.gate_open", { gate })}
+        onClick={() => onGate(gate)}
+      >
+        {text}
+      </button>
+    ) : (
+      text
+    );
   if (holding)
     facts.push([
       t("consumption.fact_gate"),
-      t("consumption.gate_holding", {
-        gate: holding.gate,
-        time: span(now - timeOf(holding.grantTime)),
-      }),
+      gateFact(
+        t("consumption.gate_holding", {
+          gate: holding.gate,
+          time: span(now - timeOf(holding.grantTime)),
+        }),
+        holding.gate,
+      ),
     ]);
   else if (held > 0)
     facts.push([
       t("consumption.fact_gate"),
-      t("consumption.gate_held", {
-        time: span(held),
-        count: worker.gates.length,
-      }),
+      gateFact(
+        t("consumption.gate_held", {
+          time: span(held),
+          count: worker.gates.length,
+        }),
+        worker.gates.at(-1)?.gate ?? "",
+      ),
     ]);
   facts.push([
     t("consumption.cpu"),
@@ -446,6 +374,7 @@ export const WorkerRow = memo(function WorkerRow({
   tMin,
   tMax,
   onOpen,
+  onGate,
 }: {
   worker: WorkerSeries;
   // The scale every worker's charts share, so that their rows compare: the highest peak of them all.
@@ -457,6 +386,7 @@ export const WorkerRow = memo(function WorkerRow({
   tMin: number;
   tMax: number;
   onOpen: (wishId: string, taskId: string) => void;
+  onGate?: (gate: string) => void;
 }) {
   const cpu = useMemo(() => cpuPoints(worker.points), [worker.points]);
   const memory = useMemo(() => memoryPoints(worker.points), [worker.points]);
@@ -496,6 +426,7 @@ export const WorkerRow = memo(function WorkerRow({
           task={task}
           project={project}
           memoryTotal={memoryTotal}
+          onGate={onGate}
         />
         <div className="resource-worker-charts">
           <ResourceChart
@@ -531,196 +462,7 @@ export const WorkerRow = memo(function WorkerRow({
   );
 });
 
-function Times({ total, ran }: { total: number; ran: number }) {
-  return (
-    <>
-      <td className="num-col">{duration(total)}</td>
-      <td className="num-col">{duration(mean(total, ran))}</td>
-    </>
-  );
-}
-
-function CommandRow({ line, share }: { line: CommandLine; share: number }) {
-  const shown = line.variants.slice(0, 3).join(", ");
-  return (
-    <tr className="resource-command-row">
-      <th scope="row" className="resource-command-name">
-        <code>{line.withArgs ? `${line.head} …` : line.head}</code>
-        {line.withArgs && line.variants.length > 0 && (
-          <span
-            className="resource-command-args"
-            title={line.variants.join("\n")}
-          >
-            {t("consumption.variants", {
-              count: line.variants.length,
-              shown: line.variants.length > 3 ? `${shown}, …` : shown,
-            })}
-          </span>
-        )}
-      </th>
-      <td className="num-col">{line.asked}</td>
-      <td className="num-col">{line.ran}</td>
-      <td className="num-col resource-command-total">
-        {duration(line.seconds)}
-        <span className="resource-share" aria-hidden="true">
-          <span style={{ width: `${Math.round(share * 100)}%` }} />
-        </span>
-        <span className="resource-share-text">
-          {t("consumption.share", { share: Math.round(share * 100) })}
-        </span>
-      </td>
-      <td className="num-col">{duration(mean(line.seconds, line.ran))}</td>
-      <Times total={line.waitSeconds} ran={line.ran} />
-      <Times total={line.heldSeconds} ran={line.ran} />
-    </tr>
-  );
-}
-
-function GateRows({ gate, total }: { gate: GateLine; total: number }) {
-  return (
-    <tbody className="resource-gate">
-      <tr className="resource-gate-row">
-        <th scope="rowgroup">
-          <LockKeyhole size={12} aria-hidden="true" />
-          {gate.gate
-            ? t("consumption.gate_named", { gate: gate.gate })
-            : t("consumption.no_gate")}
-        </th>
-        <td className="num-col">{gate.asked}</td>
-        <td className="num-col">{gate.ran}</td>
-        <td className="num-col">{duration(gate.seconds)}</td>
-        <td className="num-col">{duration(mean(gate.seconds, gate.ran))}</td>
-        <Times total={gate.waitSeconds} ran={gate.ran} />
-        <Times total={gate.heldSeconds} ran={gate.ran} />
-      </tr>
-      {gate.commands.map((line) => (
-        <CommandRow
-          key={line.key}
-          line={line}
-          share={total > 0 ? line.seconds / total : 0}
-        />
-      ))}
-    </tbody>
-  );
-}
-
-// ProjectTop says where most of a project's time goes: its costliest command, under its gate, and its share.
-function ProjectTop({ project }: { project: ProjectLine }) {
-  let top: { line: CommandLine; gate: string } | undefined;
-  for (const g of project.gates)
-    for (const line of g.commands)
-      if (!top || line.seconds > top.line.seconds) top = { line, gate: g.gate };
-  if (!top || !(project.seconds > 0)) return null;
-  return (
-    <p className="resource-project-top">
-      {t("consumption.project_top", {
-        command: top.line.withArgs ? `${top.line.head} …` : top.line.head,
-        gate: top.gate || "—",
-        share: Math.round((top.line.seconds / project.seconds) * 100),
-      })}
-    </p>
-  );
-}
-
-// Where the time of the commands goes, in the projects of the active wishes: by project, by gate, by command.
-export const CommandGroups = memo(function CommandGroups({
-  costs,
-  projectIds,
-  projectNames,
-}: {
-  costs: readonly CommandCost[];
-  projectIds?: ReadonlySet<string>;
-  projectNames?: ReadonlyMap<string, string>;
-}) {
-  const projects = useMemo(
-    () => groupCommands(costs, projectIds, projectNames),
-    [costs, projectIds, projectNames],
-  );
-  return (
-    <section
-      className="resource-commands"
-      aria-label={t("consumption.commands_title")}
-    >
-      <h4 className="resource-section-title">
-        {t("consumption.commands_title")}
-      </h4>
-      <p className="resource-commands-help">{t("consumption.commands_help")}</p>
-      {projects.length === 0 && (
-        <p className="muted-text">{t("consumption.no_commands")}</p>
-      )}
-      {projects.map((p) => (
-        <section
-          key={p.projectId}
-          className="resource-project"
-          aria-label={t("consumption.project", { project: p.name })}
-        >
-          <h5 className="resource-project-name">
-            {t("consumption.project", { project: p.name })}
-            <span className="resource-section-detail">
-              {t("consumption.project_time", { time: duration(p.seconds) })}
-            </span>
-          </h5>
-          <ProjectTop project={p} />
-          <div className="resource-table-scroll">
-            <table className="resource-commands-table">
-              <thead>
-                <tr>
-                  <th scope="col" rowSpan={2}>
-                    {t("consumption.col_what")}
-                  </th>
-                  <th scope="col" rowSpan={2} className="num-col">
-                    {t("consumption.col_asked")}
-                  </th>
-                  <th scope="col" rowSpan={2} className="num-col">
-                    {t("consumption.col_ran")}
-                  </th>
-                  <th
-                    scope="colgroup"
-                    colSpan={2}
-                    className="resource-col-group"
-                  >
-                    {t("consumption.col_time")}
-                  </th>
-                  <th
-                    scope="colgroup"
-                    colSpan={2}
-                    className="resource-col-group"
-                  >
-                    {t("consumption.col_wait")}
-                  </th>
-                  <th
-                    scope="colgroup"
-                    colSpan={2}
-                    className="resource-col-group"
-                  >
-                    {t("consumption.col_held")}
-                  </th>
-                </tr>
-                <tr>
-                  {[0, 1, 2].map((i) => (
-                    <Fragment key={i}>
-                      <th scope="col" className="num-col">
-                        {t("consumption.col_total")}
-                      </th>
-                      <th scope="col" className="num-col">
-                        {t("consumption.col_mean")}
-                      </th>
-                    </Fragment>
-                  ))}
-                </tr>
-              </thead>
-              {p.gates.map((g) => (
-                <GateRows key={g.gate} gate={g} total={p.seconds} />
-              ))}
-            </table>
-          </div>
-        </section>
-      ))}
-    </section>
-  );
-});
-
-export type ConsumptionTab = "resources" | "gates" | "disk";
+export type ConsumptionTab = "resources" | "disk";
 
 // CPU and memory heatmaps on top of the Resources tab to spot at a glance the workers that consume: one cell per
 // running worker, its code on hover, side by side and stacked under a narrow width.
@@ -1338,24 +1080,22 @@ export function ConsumptionPanel({
   initialFolded = false,
   initialTab = "resources",
   initialData = null,
-  initialCommands = [],
   wishes,
   tasks,
   projects = [],
-  projectIds,
+  onGate,
 }: {
   initialMinutes?: number;
   initialFolded?: boolean;
   initialTab?: ConsumptionTab;
   initialData?: MachineServiceSeriesResponse | null;
-  initialCommands?: CommandCost[];
   // The active wishes, in order: running workers are grouped by wish.
   wishes?: readonly Wish[];
   // The tasks of the active wishes, by id: a worker's row shows the facts of its job.
   tasks?: ReadonlyMap<string, Task>;
   projects?: readonly Project[];
-  // The projects of the active wishes: only their commands show; all when undefined.
-  projectIds?: ReadonlySet<string>;
+  // Shows a gate in the Hourglass's Gates tab: a worker's gate links to it.
+  onGate?: (gate: string) => void;
 } = {}) {
   const djinn = useDjinn();
   const [minutes, setMinutes] = useState<number>(initialMinutes);
@@ -1364,7 +1104,6 @@ export function ConsumptionPanel({
   const [data, setData] = useState<MachineServiceSeriesResponse | null>(
     initialData,
   );
-  const [commands, setCommands] = useState<CommandCost[]>(initialCommands);
 
   // The range once, then what came since its last point.
   useEffect(() => {
@@ -1392,21 +1131,6 @@ export function ConsumptionPanel({
     };
   }, [djinn, folded, minutes]);
 
-  useEffect(() => {
-    if (!djinn || folded) return;
-    let active = true;
-    const read = async () => {
-      const res = await djinn.clients.commands.list({}).catch(() => null);
-      if (active && res) setCommands(res.costs);
-    };
-    void read();
-    const stop = keepLive(() => void read(), COMMANDS_EVERY);
-    return () => {
-      active = false;
-      stop();
-    };
-  }, [djinn, folded]);
-
   const open = useCallback(
     (wishId: string, taskId: string) =>
       djinn?.focus.show({ wishId, target: `task-${taskId}` }),
@@ -1427,18 +1151,6 @@ export function ConsumptionPanel({
     () => new Map(projects.map((p) => [p.id, p])),
     [projects],
   );
-  const projectNames = useMemo(
-    () => new Map(projects.map((p) => [p.id, p.name])),
-    [projects],
-  );
-  const gates = useMemo(() => {
-    const names = projectIds
-      ? new Set([...projectIds].map((id) => projectById.get(id)?.name ?? id))
-      : undefined;
-    return (data?.gates ?? []).filter(
-      (g) => !names || !g.project || names.has(g.project),
-    );
-  }, [data, projectIds, projectById]);
   const workers = useMemo(() => data?.workers ?? [], [data]);
   // Workers grouped by wish, watchers last in each group (they consume little).
   const wishGroups = useMemo(() => {
@@ -1567,7 +1279,6 @@ export function ConsumptionPanel({
             {(
               [
                 ["resources", t("consumption.tab_resources")],
-                ["gates", t("consumption.tab_gates")],
                 ["disk", t("consumption.tab_disk")],
               ] as const
             ).map(([id, label]) => (
@@ -1598,13 +1309,8 @@ export function ConsumptionPanel({
                   : ""}
               </p>
             )}
-            {(tab === "resources" || tab === "gates") && data?.machine && (
-              <MachineBand
-                series={data.machine}
-                gates={gates}
-                tMin={tMin}
-                tMax={tMax}
-              />
+            {tab === "resources" && data?.machine && (
+              <MachineBand series={data.machine} tMin={tMin} tMax={tMax} />
             )}
             {tab === "resources" && (
               <section
@@ -1655,6 +1361,7 @@ export function ConsumptionPanel({
                             tMin={tMin}
                             tMax={tMax}
                             onOpen={open}
+                            onGate={onGate}
                           />
                         );
                       })}
@@ -1662,14 +1369,6 @@ export function ConsumptionPanel({
                   ))
                 )}
               </section>
-            )}
-
-            {tab === "gates" && (
-              <CommandGroups
-                costs={commands}
-                projectIds={projectIds}
-                projectNames={projectNames}
-              />
             )}
 
             {tab === "disk" && <DiskSection disk={data?.disk} />}

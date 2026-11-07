@@ -428,14 +428,26 @@ test("a card's read changes with its request: never the old table, whose columns
   }
 });
 
-test("the Hourglass has two tabs, the machine first; Statistics shows its filters and its cards as it reads", () => {
+test("the Hourglass has three tabs, the machine first, each with its icon of the wishes' bank; Statistics shows its filters and its cards as it reads", () => {
   const { djinn } = statisticsDjinn();
   const html = s.renderToStaticMarkup(
     h(s.DjinnProvider, { djinn }, h(s.Hourglass, { wishes: [] })),
   );
-  assert.match(
-    html,
-    /<div class="view-tabs hourglass-tabs" role="tablist"><button type="button" role="tab" id="hourglass-tab-machine" aria-selected="true" class="active">Machine<\/button><button type="button" role="tab" id="hourglass-tab-statistics" aria-selected="false" class="">Statistics<\/button><\/div>/,
+  const tabs = html.slice(
+    html.indexOf('<div class="view-tabs hourglass-tabs"'),
+    html.indexOf('<div role="tabpanel"'),
+  );
+  assert.deepEqual(
+    [
+      ...tabs.matchAll(
+        /<button type="button" role="tab" id="hourglass-tab-(\w+)" aria-selected="(\w+)"[^>]*><svg class="lucide wish-icon wish-duo-\w+"[^>]*>[\s\S]*?<\/svg>(\w+)<\/button>/g,
+      ),
+    ].map(([, id, selected, label]) => `${id} ${selected} ${label}`),
+    [
+      "machine true Machine",
+      "gates false Gates",
+      "statistics false Statistics",
+    ],
   );
   assert.match(html, /class="consumption-panel"/);
 
