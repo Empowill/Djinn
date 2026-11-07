@@ -2887,8 +2887,8 @@ func (h *Harness) azimaPRPass(
 
 		pr := h.queryForgePR(ctx, repo, project, branch)
 		if pr == nil {
-			if azima.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE {
-				continue
+			if azima.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE || h.opening(ctx, wish.GetId(), project, branch) {
+				continue // A task opens it with the project's skill: asked, a yes would open a second (W623).
 			}
 			proposed := hasQuestion(func(q *planv1.Question) bool {
 				return q.GetTaskId() == azima.GetId() && strings.Contains(strings.ToLower(q.GetText()), "pull request")
