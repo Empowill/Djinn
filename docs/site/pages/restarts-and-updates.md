@@ -149,8 +149,8 @@ every task of the wish waited.
   provider's address. Failed, the outage is confirmed; answered, it was not one, and nothing changes. While all goes
   well, Djinn probes nothing.
 - **While it is down,** no worker starts; the running ones are paused once the command they run ends, never failed for
-  their silence; pushes, fetches and the questions to the forge wait. A worker the outage cut is not failed: it shows
-  **Resuming**, network down since 15:12. The status bar says **network down since 15:12**.
+  their silence; pushes, fetches and the questions to the forge wait. A worker the outage cut is not failed, nor
+  paused as it ends on its error: it shows **Resuming**, network down since 15:12. The status bar says **network down since 15:12**.
 - **When it comes back,** Djinn resumes the work one task per pass, repairs first: the paused workers, then the tasks
   the outage cut, each told that the network came back. Push checks that failed on the network run once again instead
   of starting a correction: a network failure is never a code failure. Red again once the network is up, they hold the

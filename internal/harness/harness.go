@@ -85,6 +85,9 @@ type Harness struct {
 	children *children
 
 	beforeStart func() // runs before a worker's process starts (WithBeforeStart); nil: nothing
+	// netSigned runs in a worker's pump once its error was read as a network sign, before the run ends: a test
+	// pauses there (withNetSigned); nil: nothing.
+	netSigned func(taskID string)
 
 	clock func() time.Time // nil: the machine's (WithClock)
 
@@ -225,6 +228,7 @@ type run struct {
 	slotPaused         bool                 // paused to give its slot to an investigator: resumed first when a slot frees
 	netPaused          bool                 // paused while the network is down: resumed once it is back (network.go)
 	inTool             bool                 // a tool call of the worker runs: the network does not pause it (network.go)
+	failing            bool                 // the worker said its error and is ending on it: the network does not pause it (W646)
 	forced             bool                 // started or resumed by hand, whatever the slots (Harness.Forced)
 	holdWhy            string               // why the worker holds still (preemption or pause reason)
 	preemptedWhy       string               // if set, stopping to make room for an investigator
@@ -1695,6 +1699,9 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 	})
 	r.failure, r.limit = "", nil
 	r.answered, r.closingFailed = false, false
+	h.mu.Lock()
+	r.failing = false // A new worker of the run: it has said no error yet.
+	h.mu.Unlock()
 	if r.startHead == "" {
 		wt := t.GetWorktree()
 		if wt == "" {
@@ -1973,7 +1980,21 @@ func (h *Harness) record(r *run, ev Event) {
 	}
 	if ev.Kind == planv1.TaskEventKind_TASK_EVENT_KIND_ERROR {
 		r.failure = ev.Text
+		// Ending on its error, before netSign may confirm an outage: the network pauses it not, else its run would
+		// close as "pause" and the task it cuts would resume with no "network" run (W646).
+		h.mu.Lock()
+		r.failing = true
+		h.mu.Unlock()
 		h.netSign(r.task.GetProvider(), ev.Text, true) // Its agent cannot reach its provider: the network may be down.
+		if h.netSigned != nil {
+			h.netSigned(r.task.GetId())
+		}
+	}
+	if r.failing && (ev.Kind == planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT ||
+		ev.Kind == planv1.TaskEventKind_TASK_EVENT_KIND_STATUS && strings.HasPrefix(ev.Text, "continued: ")) {
+		h.mu.Lock()
+		r.failing = false // A new turn: the worker goes on.
+		h.mu.Unlock()
 	}
 	if ev.Kind == planv1.TaskEventKind_TASK_EVENT_KIND_TEXT && strings.TrimSpace(ev.Text) != "" && !strings.HasSuffix(ev.Text, " [cut]") {
 		r.answered = true
@@ -3007,6 +3028,10 @@ func (h *Harness) hold(ctx context.Context, procedure string, req proto.Message,
 	if r == nil || r.worker == nil || r.stopping || r.final {
 		h.mu.Unlock()
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s is not running: %s", task.GetCode(), short(task.GetStatus())))
+	}
+	if pause && procedure == methodNetwork && r.failing { // It failed since pauseForNetwork listed it (W646).
+		h.mu.Unlock()
+		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s is ending on its error", task.GetCode()))
 	}
 	if pause {
 		for _, g := range []struct {
