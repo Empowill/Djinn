@@ -194,6 +194,50 @@ func TestWorkerGuard(t *testing.T) {
 			want: &planv1.LeadServiceShowRequest{Id: "01a153e0"},
 		},
 		{
+			// W473: a mockup's prompt asks it to read the lead's notes and reply to the comments.
+			name: "lead notes allowed: it only reads",
+			call: func(c *plan.WorkerCaller) (proto.Message, error) {
+				return guarded[planv1.LeadServiceNotesResponse](planv1connect.LeadServiceNotesProcedure, c,
+					&planv1.LeadServiceNotesRequest{Name: "readable-questions"})
+			},
+			want: &planv1.LeadServiceNotesRequest{Name: "readable-questions"},
+		},
+		{
+			name: "tilasm comments in its own wish by default",
+			call: func(c *plan.WorkerCaller) (proto.Message, error) {
+				return guarded[planv1.TilasmServiceCommentsResponse](planv1connect.TilasmServiceCommentsProcedure, c,
+					&planv1.TilasmServiceCommentsRequest{Tilasm: &planv1.TilasmRef{Ref: &planv1.TilasmRef_Code{Code: "L49"}}, Send: 1})
+			},
+			want: &planv1.TilasmServiceCommentsRequest{Tilasm: &planv1.TilasmRef{Ref: &planv1.TilasmRef_Code{Code: "L49"}}, Send: 1,
+				Wish: "wish-1"},
+		},
+		{
+			name: "tilasm reply own wish defaults",
+			call: func(c *plan.WorkerCaller) (proto.Message, error) {
+				return guarded[planv1.TilasmServiceReplyResponse](planv1connect.TilasmServiceReplyProcedure, c,
+					&planv1.TilasmServiceReplyRequest{Tilasm: &planv1.TilasmRef{Ref: &planv1.TilasmRef_Code{Code: "L49"}}, Comment: "C1", Text: "Done."})
+			},
+			want: &planv1.TilasmServiceReplyRequest{Tilasm: &planv1.TilasmRef{Ref: &planv1.TilasmRef_Code{Code: "L49"}}, Comment: "C1",
+				Text: "Done.", Wish: "wish-1"},
+		},
+		{
+			name: "tilasm reply other wish denied",
+			call: func(c *plan.WorkerCaller) (proto.Message, error) {
+				return guarded[planv1.TilasmServiceReplyResponse](planv1connect.TilasmServiceReplyProcedure, c,
+					&planv1.TilasmServiceReplyRequest{Comment: "C1", Wish: "wish-other"})
+			},
+			refused: "a worker cannot reply on a tilasm of wish",
+		},
+		{
+			// The developer's drafts are the window's: no agent reads them, though nothing changes.
+			name: "tilasm drafts refused",
+			call: func(c *plan.WorkerCaller) (proto.Message, error) {
+				return guarded[planv1.TilasmServiceDraftsResponse](planv1connect.TilasmServiceDraftsProcedure, c,
+					&planv1.TilasmServiceDraftsRequest{Wish: "wish-1"})
+			},
+			refused: "a worker cannot call",
+		},
+		{
 			name: "other mutating procedure refused",
 			call: func(c *plan.WorkerCaller) (proto.Message, error) {
 				return guarded[planv1.WishServicePauseResponse](planv1connect.WishServicePauseProcedure, c, &planv1.WishServicePauseRequest{WishId: "wish-1"})

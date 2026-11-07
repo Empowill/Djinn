@@ -169,8 +169,9 @@ func TestTilasmSendIterate(t *testing.T) {
 	if len(events) != 1 {
 		t.Fatalf("events = %v, want one for the send", events)
 	}
-	want := "Djinn: L01 v1, 4 comments (2 general, 1 on a passage, 1 on an element), iterate: its next version with " +
-		"them: djinn tilasm comments L01 --send 1"
+	// The command names the wish, a code being in several (W474): what the comments are on waits in it.
+	want := "Djinn: L01 v1, 4 comments, iterate: its next version with them: djinn tilasm comments L01 --wish " + f.wish +
+		" --send 1"
 	if e := events[0]; e.GetText() != want || e.GetCode() != "L01" || e.GetWishId() != f.wish || !DigestKeeps(e) {
 		t.Errorf("event = %v\nwant %q", e, want)
 	}
@@ -187,7 +188,7 @@ func TestTilasmSendIterate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if line := "- L01 [Try Djinn on itself] comments: v1, 4 comments (2 general, 1 on a passage, 1 on an element), iterate"; !strings.Contains(digest.Msg.GetText(), line) {
+	if line := "- L01 [Try Djinn on itself] comments: v1, 4 comments, iterate"; !strings.Contains(digest.Msg.GetText(), line) {
 		t.Errorf("djinn lead watch --timeout 0s:\n%s\nwant %q", digest.Msg.GetText(), line)
 	}
 	drafts, err := f.c.tilasms.Drafts(ctx, connect.NewRequest(&planv1.TilasmServiceDraftsRequest{Wish: f.wish}))
@@ -295,7 +296,8 @@ func TestTilasmSendLaunch(t *testing.T) {
 			}
 		}
 		events := commentEvents(t, f.c.store)
-		want := "Djinn: L01 v1, 1 comment (1 general), launch " + q.GetCode() + " with them: djinn tilasm comments L01 --send 1"
+		want := "Djinn: L01 v1, 1 comment (1 general), launch " + q.GetCode() + " with them: djinn tilasm comments L01 --wish " +
+			f.wish + " --send 1"
 		if len(events) != 1 || events[0].GetText() != want {
 			t.Errorf("events = %v, want one: %q", events, want)
 		}
@@ -316,7 +318,8 @@ func TestTilasmSendLaunch(t *testing.T) {
 		if err != nil || res.GetAnswered() != "" {
 			t.Fatalf("launch = %v, %v", res, err)
 		}
-		want := "Djinn: L01 v1, launch its work: no comment, and no open question links it (djinn tilasm get L01)."
+		want := "Djinn: L01 v1, launch its work: no comment, and no open question links it (djinn tilasm get L01 --wish " +
+			f.wish + ")."
 		if events := commentEvents(t, f.c.store); len(events) != 1 || events[0].GetText() != want {
 			t.Errorf("events = %v, want %q", events, want)
 		}

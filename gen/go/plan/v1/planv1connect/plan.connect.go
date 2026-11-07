@@ -3472,8 +3472,10 @@ type TaskServiceClient interface {
 	// Continue a task no worker runs (done, failed, stopped, cut short) where it stopped: a new turn of its own
 	// session, in its own worktree and branch, with the prompt. It goes back to the scheduler, like a planned task.
 	// Refused while it runs, but for a worker the scheduler flagged stalled (Task.health): that one is ended and
-	// continued on its session, as the Lamplighter wakes one. Refused when its worktree is gone, or when its agent cannot
-	// resume a session. To start another task from its context, fork it instead (djinn task spawn --fork).
+	// continued on its session, as the Lamplighter wakes one. Refused when its worktree is gone (Djinn removes it once
+	// the task's work merges), or when its agent cannot resume a session. To start another task from its context, fork
+	// it instead: the refusal of a gone worktree gives that spawn in full, ready to run (--part-of its azima, --fork,
+	// --after a done task, its write scopes and the prompt given).
 	Continue(context.Context, *connect.Request[v1.TaskServiceContinueRequest]) (*connect.Response[v1.TaskServiceContinueResponse], error)
 	// Send a message to a running worker: an instruction added while it works. The message is an event of the task,
 	// and a "received" event follows once the worker says something after it.
@@ -3910,8 +3912,10 @@ type TaskServiceHandler interface {
 	// Continue a task no worker runs (done, failed, stopped, cut short) where it stopped: a new turn of its own
 	// session, in its own worktree and branch, with the prompt. It goes back to the scheduler, like a planned task.
 	// Refused while it runs, but for a worker the scheduler flagged stalled (Task.health): that one is ended and
-	// continued on its session, as the Lamplighter wakes one. Refused when its worktree is gone, or when its agent cannot
-	// resume a session. To start another task from its context, fork it instead (djinn task spawn --fork).
+	// continued on its session, as the Lamplighter wakes one. Refused when its worktree is gone (Djinn removes it once
+	// the task's work merges), or when its agent cannot resume a session. To start another task from its context, fork
+	// it instead: the refusal of a gone worktree gives that spawn in full, ready to run (--part-of its azima, --fork,
+	// --after a done task, its write scopes and the prompt given).
 	Continue(context.Context, *connect.Request[v1.TaskServiceContinueRequest]) (*connect.Response[v1.TaskServiceContinueResponse], error)
 	// Send a message to a running worker: an instruction added while it works. The message is an event of the task,
 	// and a "received" event follows once the worker says something after it.

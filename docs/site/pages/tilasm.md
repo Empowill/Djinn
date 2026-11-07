@@ -43,7 +43,7 @@ again. Most often you meet one through a question:
   that the worker starts from the same picture.
 
 The Djinn links a tilasm the wish already has before it makes another one. A worker can put tilasms in its own wish
-only. A worker sent by **Enlighten me** writes no file: it links a tilasm the wish has, or has another worker make
+only, read the comments on them and reply to them, as a mockup does; a tilasm it names by code is its wish's. A worker sent by **Enlighten me** writes no file: it links a tilasm the wish has, or has another worker make
 one. See [Enlighten me](#enlighten).
 
 ## Opening one

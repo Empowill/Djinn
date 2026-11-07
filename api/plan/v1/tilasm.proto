@@ -486,7 +486,8 @@ message TilasmServiceReplyRequest {
     (buf.validate.field).repeated.items.string.min_len = 1,
     (buf.validate.field).repeated.items.string.max_len = 64
   ];
-  // The wish, when a code is given and several wishes have it.
+  // The wish, when a code is given and several wishes have it; a worker's own by default. A worker replies on the
+  // tilasms of its own wish only, signed with its task's code.
   string wish = 5 [
     (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
     (buf.validate.field).string.uuid = true

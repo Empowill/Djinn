@@ -200,8 +200,8 @@ func TestServeMCP(t *testing.T) {
 			},
 		},
 		{
-			name: "arguments are checked before sending", request: call("question_answer", `{"choice":"b","wish_id":"W1"}`), isError: true,
-			want: "question: value is required; expected a match of ^Q[0-9]{2,3}$ or a UUID\nwish_id: must be a valid UUID; expected a UUID",
+			name: "arguments are checked before sending", request: call("question_answer", `{"choice":"b","task_id":"X1"}`), isError: true,
+			want: "question: value is required; expected a match of ^Q[0-9]{2,3}$ or a UUID\ntask_id: must be a valid UUID; expected a UUID",
 		},
 		{
 			name: "the server's error", request: call("question_answer", `{"question":"Q99","choice":"a"}`), isError: true,

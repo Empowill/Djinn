@@ -333,7 +333,13 @@ func (h *Harness) resolveTaskID(ctx context.Context, ref, wishID string) (*planv
 	case 1:
 		return matches[0], nil
 	default:
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("multiple tasks match code %s: specify --wish-id", ref))
+		var wishes []string
+		for _, t := range matches {
+			wishes = append(wishes, t.GetWishId())
+		}
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf(
+			"%d wishes have a task %s: run it again with %s", len(matches), strings.ToUpper(ref),
+			plan.WishFlags(ctx, h.store, "--wish-id", wishes)))
 	}
 }
 

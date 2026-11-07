@@ -213,9 +213,9 @@ func (s *Tasks) Overlaps(
 func (s *Tasks) Get(
 	ctx context.Context, req *connect.Request[planv1.TaskServiceGetRequest],
 ) (*connect.Response[planv1.TaskServiceGetResponse], error) {
-	task, err := store.Get[*planv1.Task](ctx, s.h.store, req.Msg.GetTaskId())
+	task, err := s.h.resolveTaskID(ctx, req.Msg.GetTaskId(), req.Msg.GetWishId())
 	if err != nil {
-		return nil, plan.Status(err)
+		return nil, err
 	}
 	_, _ = s.h.checkCommentsResolution(ctx, task)
 	filled, err := s.fillTasks(ctx, []*planv1.Task{task})

@@ -7,7 +7,12 @@ import (
 	"strings"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protoreflect"
+	"google.golang.org/protobuf/reflect/protoregistry"
+	"google.golang.org/protobuf/types/descriptorpb"
 
+	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
 )
@@ -45,7 +50,8 @@ func CallerActor(ctx context.Context) string {
 // WorkerGuard intercepts Connect RPC calls to enforce permissions for workers.
 // A worker cannot make a wish, or execute mutating commands on wishes, tasks, or plans
 // other than those permitted for workers (question ask, question revise, block put,
-// task update of own task, tilasm put, tilasm publish in its wish).
+// task update of own task, tilasm put, tilasm publish and tilasm reply in its wish). A method that only reads
+// (NO_SIDE_EFFECTS) is open to every worker.
 var WorkerGuard = connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect.UnaryFunc {
 	return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
 		caller := CallerFromContext(ctx)
@@ -155,6 +161,20 @@ var WorkerGuard = connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) conn
 			}
 			return next(ctx, req)
 
+		case planv1connect.TilasmServiceReplyProcedure:
+			// A reply on a tilasm of its wish only, which a mockup's or an investigation's prompt asks for; signed with
+			// its task's code (Tilasms.Reply).
+			if r, ok := req.Any().(*planv1.TilasmServiceReplyRequest); ok {
+				if r.Wish == "" {
+					r.Wish = caller.WishID
+				} else if r.Wish != caller.WishID {
+					return nil, connect.NewError(connect.CodePermissionDenied, fmt.Errorf(
+						"a worker cannot reply on a tilasm of wish %s (its task is in wish %s)", r.Wish, caller.WishID,
+					))
+				}
+			}
+			return next(ctx, req)
+
 		case planv1connect.TilasmServicePublishProcedure:
 			// A tilasm of its wish only; the first publish of each stays the developer's (Tilasms.Publish).
 			if r, ok := req.Any().(*planv1.TilasmServicePublishRequest); ok {
@@ -169,8 +189,10 @@ var WorkerGuard = connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) conn
 			return next(ctx, req)
 		}
 
-		// 3. Check if procedure is read-only.
+		// 3. Check if procedure is read-only. A tilasm named by its code is looked for in the worker's wish first: the
+		// code its prompt gives (L49) may be in several wishes.
 		if isReadOnlyProcedure(procedure) {
+			ownTilasmWish(req.Any(), caller)
 			return next(ctx, req)
 		}
 
@@ -208,7 +230,36 @@ func ownServes(msg any, caller *WorkerCaller) error {
 	return nil
 }
 
+// ownTilasmWish points a worker's TilasmService request that names no wish at the worker's own.
+func ownTilasmWish(msg any, caller *WorkerCaller) {
+	m, ok := msg.(proto.Message)
+	if !ok {
+		return
+	}
+	r := m.ProtoReflect()
+	if !strings.HasPrefix(string(r.Descriptor().Name()), "TilasmService") {
+		return
+	}
+	fd := r.Descriptor().Fields().ByName("wish")
+	if fd == nil || fd.Kind() != protoreflect.StringKind || fd.IsList() || r.Get(fd).String() != "" {
+		return
+	}
+	r.Set(fd, protoreflect.ValueOfString(caller.WishID))
+}
+
+// isReadOnlyProcedure tells whether procedure only reads: a public method (a command) that says idempotency_level =
+// NO_SIDE_EFFECTS, as djinn mcp reads it, or a method whose name starts like a read's.
 func isReadOnlyProcedure(procedure string) bool {
+	name := protoreflect.FullName(strings.ReplaceAll(strings.Trim(procedure, "/"), "/", "."))
+	if d, err := protoregistry.GlobalFiles.FindDescriptorByName(name); err == nil {
+		if md, ok := d.(protoreflect.MethodDescriptor); ok {
+			opts, _ := md.Options().(*descriptorpb.MethodOptions)
+			if opts.GetIdempotencyLevel() == descriptorpb.MethodOptions_NO_SIDE_EFFECTS &&
+				proto.GetExtension(opts, djinnv1.E_Visibility) == djinnv1.Visibility_VISIBILITY_PUBLIC {
+				return true
+			}
+		}
+	}
 	idx := strings.LastIndexByte(procedure, '/')
 	if idx < 0 {
 		return false

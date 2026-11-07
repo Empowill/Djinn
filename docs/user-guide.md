@@ -149,9 +149,10 @@ At the top of a wish:
 
 From a terminal: `djinn wish pause <wish-id>`, `djinn wish activate <wish-id>`, `djinn wish move <wish-id> --to 1`,
 `djinn wish reorder <wish-id> --to 1` (a paused or granted wish, first in its list),
-`djinn wish rename <wish-id> --title "…"`, `djinn wish delete <wish-id>`.
-`djinn wish add-project <wish-id> --project-id <project>` adds a project, by its name or identifier, to a wish made
-without it: its tasks may spawn there, and its finished work goes to the project's reference branch, unless you choose
+`djinn wish rename <wish-id> --title "…"`, `djinn wish delete <wish-id>`. Wherever a command wants a wish, its title
+works too, or the start of only one title: `djinn wish pause "Ship the docs"`.
+`djinn wish add-project <wish-id> <project>` (or `--project-id <project>`) adds a project, by its name or identifier,
+to a wish made without it: its tasks may spawn there, and its finished work goes to the project's reference branch, unless you choose
 another.
 
 ## The Djinn

@@ -884,23 +884,6 @@ func (h *Harness) Spawn(ctx context.Context, procedure string, req *planv1.TaskS
 func (h *Harness) spawn(
 	ctx context.Context, procedure string, req *planv1.TaskServiceSpawnRequest, made *planv1.Task,
 ) (*planv1.Task, error) {
-	if path := req.GetPromptFile(); path != "" {
-		if req.GetPrompt() != "" {
-			return nil, connect.NewError(connect.CodeInvalidArgument,
-				errors.New("give prompt or prompt_file, not both"))
-		}
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("read prompt_file: %w", err))
-		}
-		text := strings.TrimRight(string(data), "\r\n")
-		if len(text) > 200000 {
-			return nil, connect.NewError(connect.CodeInvalidArgument,
-				fmt.Errorf("prompt_file exceeds 200000 bytes (%d)", len(text)))
-		}
-		req = proto.CloneOf(req)
-		req.Prompt, req.PromptFile = text, ""
-	}
 	if req.GetKind() == planv1.TaskKind_TASK_KIND_AZIMA {
 		return h.spawnAzima(ctx, procedure, req)
 	}
@@ -930,7 +913,7 @@ func (h *Harness) spawn(
 	if err != nil {
 		return nil, plan.Status(err)
 	}
-	project, err := pickProject(ctx, h.store, wish, req.GetProjectId())
+	project, err := pickProject(ctx, h.store, wish, req.GetProjectId(), req.GetPartOf())
 	if err != nil {
 		return nil, plan.Status(err)
 	}
@@ -1831,17 +1814,27 @@ func editQuestion(t *planv1.Task, project *planv1.Project) *planv1.Question {
 	}
 }
 
-// pickProject is the project a task of wish works in: id, or the wish's only project; none for a wish without
-// any project.
-func pickProject(ctx context.Context, tx store.Reader, wish *planv1.Wish, id string) (*planv1.Project, error) {
+// pickProject is the project a task of wish works in: id, else the project of the azima partOf names when it has
+// one, else the wish's only project; none for a wish without any project. A refusal names the wish's projects, which
+// the command line offers as the corrected commands.
+func pickProject(ctx context.Context, tx store.Reader, wish *planv1.Wish, id, partOf string) (*planv1.Project, error) {
 	ids := wish.GetProjectIds()
+	if id == "" && len(ids) > 1 && partOf != "" {
+		// What resolveAzima refuses is said again where the part is placed.
+		if azimaID, err := resolveAzima(ctx, tx, wish.GetId(), partOf); err == nil {
+			if azima, err := store.Get[*planv1.Task](ctx, tx, azimaID); err == nil && slices.Contains(ids, azima.GetProjectId()) {
+				id = azima.GetProjectId()
+			}
+		}
+	}
 	if id == "" {
 		if len(ids) == 0 {
 			return nil, nil
 		}
 		if len(ids) != 1 {
 			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf(
-				"the wish has %d projects: name one with --project-id", len(ids)))
+				"the wish has %d projects: run it again with %s, or give --part-of an azima of one",
+				len(ids), plan.ProjectFlags(ctx, tx, ids)))
 		}
 		id = ids[0]
 	}
@@ -1851,7 +1844,8 @@ func pickProject(ctx context.Context, tx store.Reader, wish *planv1.Wish, id str
 	}
 	if len(ids) > 0 && !slices.ContainsFunc(ids, func(s string) bool { return s == project.GetId() }) {
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf(
-			"project %s is not one of the wish's projects", project.GetName()))
+			"project %s is not one of the wish's projects (%s): add it first with djinn wish add-project %s --project-id %s, or run it again with %s",
+			project.GetName(), plan.ProjectNames(ctx, tx, ids), wish.GetId(), project.GetName(), plan.ProjectFlags(ctx, tx, ids)))
 	}
 	return project, nil
 }

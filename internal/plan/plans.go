@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -21,12 +20,9 @@ import (
 // The task an option of a question plans (decision Q25): the asker writes it as a plan's text, the question keeps it,
 // and an answer launches it, or leaves it to the lead.
 
-const (
-	// planTextMax is the most a plan's text holds: a prompt of djinn task spawn, and its header.
-	planTextMax = 210000
-	// planPromptClip is how much of a plan's prompt the lead's revision quotes.
-	planPromptClip = 400
-)
+// planPromptClip is how much of a plan's prompt the lead's revision quotes. The most a plan's text holds is the
+// requests' rule (210000 bytes: a prompt of djinn task spawn, and its header).
+const planPromptClip = 400
 
 // planKeys are the header keys of a plan's text: djinn task spawn's flags, the option, and a mockup's rounds.
 var planKeys = []string{"option", "title", "prompt", "project-id", "provider", "model", "part-of", "after", "blocks",
@@ -134,23 +130,6 @@ func enumWord(values map[string]int32, prefix, key, word string) (int32, error) 
 // planNames are the names a plan's header line gives, separated by commas or spaces.
 func planNames(value string) []string {
 	return strings.FieldsFunc(value, func(r rune) bool { return r == ',' || unicode.IsSpace(r) })
-}
-
-// readPlans is texts, then the text of each file of files: the plans a request gives, as the journal keeps them.
-func readPlans(texts, files []string) ([]string, error) {
-	out := slices.Clone(texts)
-	for _, file := range files {
-		data, err := os.ReadFile(file)
-		if err != nil {
-			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("read plan_file: %w", err))
-		}
-		if len(data) > planTextMax {
-			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("plan_file %s exceeds %d bytes (%d)",
-				file, planTextMax, len(data)))
-		}
-		out = append(out, string(data))
-	}
-	return out, nil
 }
 
 // setPlans puts in q the plans texts give, resolved in its wish, each in place of the plan of its option. When remove
@@ -585,7 +564,9 @@ func (q *Questions) Launch(
 	precondition := func(format string, a ...any) error {
 		return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(format, a...))
 	}
-	question, err := find(ctx, q.Store, req.Msg.GetQuestion(), req.Msg.GetWishId())
+	question, err := findAmong(ctx, q.Store, req.Msg.GetQuestion(), req.Msg.GetWishId(), func(c *planv1.Question) bool {
+		return c.GetAnswer() != nil // A code in several wishes: the answered question of them, its plan launched.
+	})
 	if err != nil {
 		return nil, Status(err)
 	}
