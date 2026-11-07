@@ -51,7 +51,7 @@ func (h *Harness) openDraft(ctx context.Context, o *opening) string {
 	}
 	if skill := openSkill(h.home, o.project); skill != "" {
 		task, err := h.spawn(ctx, planv1connect.TaskServiceSpawnProcedure, &planv1.TaskServiceSpawnRequest{
-			WishId: o.wish.GetId(), ProjectId: o.project.GetId(), Title: "Open the draft " + kind + " of " + o.branch,
+			WishId: o.wish.GetId(), ProjectId: o.project.GetId(), Title: openerTitle(kind, o.branch),
 			Prompt: openPrompt(o, kind, skill),
 		}, &planv1.Task{}) // Djinn spawns it: never a repair it claims.
 		if err != nil {
@@ -183,6 +183,35 @@ func openSkill(home string, project *planv1.Project) string {
 	return ""
 }
 
+// openerTitle is the title of the task that opens the request of branch with the project's skill.
+func openerTitle(kind, branch string) string {
+	return "Open the draft " + kind + " of " + branch
+}
+
+// opening tells whether a task of wish opens the request of branch with the project's skill still (W623): while it
+// works, the forge knows no request, and asking to open one would open a second. Done, its final note naming the
+// request it opened or found, it counts still: the forge may list it a pass late (W624). Ended otherwise, its request
+// is on the forge, or the question is the way back.
+func (h *Harness) opening(ctx context.Context, wishID string, project *planv1.Project, branch string) bool {
+	title := openerTitle(requestKind(forgeOf(ctx, project)), branch)
+	tasks, _ := store.List[*planv1.Task](ctx, h.store, store.Where{"wish_id": wishID})
+	return slices.ContainsFunc(tasks, func(t *planv1.Task) bool {
+		if t.GetTitle() != title {
+			return false
+		}
+		if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE {
+			return requestURL.MatchString(h.finalNote(ctx, t.GetId()))
+		}
+		return !slices.Contains(openerEnded, t.GetStatus())
+	})
+}
+
+// openerEnded are the statuses of an opener that opens no more; an interrupted one resumes.
+var openerEnded = []planv1.TaskStatus{
+	planv1.TaskStatus_TASK_STATUS_DONE, planv1.TaskStatus_TASK_STATUS_FAILED,
+	planv1.TaskStatus_TASK_STATUS_STOPPED, planv1.TaskStatus_TASK_STATUS_CANCELLED,
+}
+
 // openPrompt is the prompt of the worker that opens o with the project's skill.
 func openPrompt(o *opening, kind, skill string) string {
 	return fmt.Sprintf("Djinn opens the %[1]s of branch %[2]s into %[3]s. Open it as a draft, "+
@@ -196,8 +225,8 @@ func openPrompt(o *opening, kind, skill string) string {
 // with no question (decision Q375; wish Dew, 07/11/2026: four azimas pushed, none had its draft): once, while the azima
 // records no request and its branch holds work main lacks. Opened, or found open, it is recorded open; handed to the
 // project's skill, or failed, recorded proposed, and the lead hears what Djinn did. The question "Open a pull request
-// for T07?" once the parts are done stays the way back when it could not. It tells whether it tried, the azima as read
-// stale then.
+// for T07?" once the parts are done stays the way back when it could not, never while the skill's task opens it
+// (W623). It tells whether it tried, the azima as read stale then.
 func (h *Harness) openAzimaDraft(
 	ctx context.Context, wish *planv1.Wish, project *planv1.Project, settings plan.Settings, azima *planv1.Task, branch string,
 ) bool {
