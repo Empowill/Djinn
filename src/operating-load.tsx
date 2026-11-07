@@ -955,10 +955,16 @@ const OperatingLoadForecast = React.memo(function OperatingLoadForecast() {
           className="operating-load-forecast-label"
           aria-description={lowerText}
         >
-          {t("load.forecast_cpu_running", {
-            running: data.runningWorkers,
-            workers: Math.round(animatedWorkers),
-          })}
+          {/* Overclock runs its workers at Djinn's own priority, the others below the window (Q371). */}
+          {t(
+            displayNotch === LoadNotch.OVERCLOCK
+              ? "load.forecast_cpu_running_standard"
+              : "load.forecast_cpu_running",
+            {
+              running: data.runningWorkers,
+              workers: Math.round(animatedWorkers),
+            },
+          )}
           {data.pausedWorkers > 0 && (
             <span className="operating-load-forecast-paused">
               {" · "}

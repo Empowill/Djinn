@@ -15,17 +15,17 @@ import (
 	"time"
 )
 
-// wantNice is the nice level a worker must run at: the test process's own at standard priority, as Djinn's own is a
-// worker's; nice 10 at low priority, or the test process's own when it runs lower already. A CI runner does not run
-// at nice 0: macOS's ran the tests at -10, and nice -n 5 go test runs them at 5.
-func wantNice(t *testing.T, low bool) int {
+// wantNice is the nice level a process asked to run at nice must run at: the test process's own at 0, as Djinn's own
+// is a worker's; nice, or the test process's own when it runs lower already. A CI runner does not run at nice 0:
+// macOS's ran the tests at -10, and nice -n 5 go test runs them at 5.
+func wantNice(t *testing.T, nice int) int {
 	t.Helper()
 	own, err := niceOf(0)
 	if err != nil {
 		t.Fatalf("read the test process's nice: %v", err)
 	}
-	if low {
-		return max(own, 10)
+	if nice > 0 {
+		return max(own, nice)
 	}
 	return own
 }
@@ -80,11 +80,11 @@ func ownLevel() string {
 }
 
 // wantLevel is wantNice as ownLevel prints it.
-func wantLevel(t *testing.T, low bool) string { return strconv.Itoa(wantNice(t, low)) }
+func wantLevel(t *testing.T, nice int) string { return strconv.Itoa(wantNice(t, nice)) }
 
-func checkWorkerPriority(t *testing.T, what string, pid int, low bool) {
+func checkWorkerPriority(t *testing.T, what string, pid int, nice int) {
 	t.Helper()
-	want := wantNice(t, low)
+	want := wantNice(t, nice)
 	waitNice(t, what, pid, want)
 	if runtime.GOOS == "linux" && what == "worker" {
 		procNice, err := readProcStatNice(pid)
@@ -114,7 +114,7 @@ func TestWorkerChildPriorityInheritanceUnix(t *testing.T) {
 	}
 
 	// The worker prints its child's PID, then waits for it.
-	p, err := startProcess(t.TempDir(), "sh", []string{"-c", "sleep 10 & echo $!; wait"}, nil, nil, time.Second, true, nil)
+	p, err := startProcess(t.TempDir(), "sh", []string{"-c", "sleep 10 & echo $!; wait"}, nil, nil, time.Second, lowNice, nil)
 	if err != nil {
 		t.Fatalf("start the worker: %v", err)
 	}
@@ -138,7 +138,7 @@ func TestWorkerChildPriorityInheritanceUnix(t *testing.T) {
 	}
 	mu.Unlock()
 
-	want := wantNice(t, true)
+	want := wantNice(t, lowNice)
 	for _, pr := range []struct {
 		name string
 		pid  int
@@ -162,7 +162,7 @@ func TestWorkerPriorityUnderNice(t *testing.T) {
 	if err != nil {
 		t.Skipf("no nice command to start the test process under: %v", err)
 	}
-	tests := []string{"TestWorkerPriority", "TestWorkerPriorityAnyNotch", "TestCheckPriority",
+	tests := []string{"TestWorkerPriority", "TestWorkerPriorityByNotch", "TestCheckPriority",
 		"TestWorkerChildPriorityInheritanceUnix"}
 	cmd := exec.CommandContext(t.Context(), nice, "-n", "5", os.Args[0],
 		"-test.run", "^("+strings.Join(tests, "|")+")$", "-test.count=1", "-test.v")
@@ -170,7 +170,7 @@ func TestWorkerPriorityUnderNice(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the priority tests fail under nice -n 5: %v\n%s", err, out)
 	}
-	for _, name := range []string{"TestWorkerPriority/normal_priority", "TestWorkerPriorityAnyNotch",
+	for _, name := range []string{"TestWorkerPriority/normal_priority", "TestWorkerPriorityByNotch",
 		"TestCheckPriority/install_by_the_developer"} {
 		if !strings.Contains(string(out), "--- PASS: "+name+" ") {
 			t.Errorf("%s did not pass under nice -n 5:\n%s", name, out)

@@ -49,14 +49,14 @@ type line struct {
 // environment plus env, which Djinn passes on without reading, and a mark of its own (markVar). On Unix it leads a
 // process group of its own, so that stopping it stops what it started; in a scope, its cgroup holds even what left
 // the group, and elsewhere its mark finds it. Once it ended, what it left running is stopped too (stopLeft).
-// When lowPriority is true, the process starts at low CPU priority (under nice 10 on Unix, BELOW_NORMAL_PRIORITY_CLASS
-// on Windows); else at Djinn's own priority.
+// The process starts at the nice level nice (nice.go): under nice on Unix, in its priority class on Windows; at 0,
+// at Djinn's own priority.
 // When track is set, it is told of the process as it starts, and what it returns is called once the process ended.
 func startProcess(
-	dir, name string, args, env []string, scope func() machine.Scope, grace time.Duration, lowPriority bool,
+	dir, name string, args, env []string, scope func() machine.Scope, grace time.Duration, nice int,
 	track func(pid int, cgroup, mark string) func(),
 ) (*process, error) {
-	return startCommand(dir, name, args, env, scope, grace, false, lowPriority, track)
+	return startCommand(dir, name, args, env, scope, grace, false, nice, track)
 }
 
 // pwdEntry is the PWD of a process started in dir, as exec sets it when it builds the environment itself (not on
@@ -74,7 +74,7 @@ func pwdEntry(dir string) []string {
 
 // startCommand is startProcess; with blanks, the empty lines of the output are lines too.
 func startCommand(
-	dir, name string, args, env []string, scope func() machine.Scope, grace time.Duration, blanks bool, lowPriority bool,
+	dir, name string, args, env []string, scope func() machine.Scope, grace time.Duration, blanks bool, nice int,
 	track func(pid int, cgroup, mark string) func(),
 ) (*process, error) {
 	var sc machine.Scope
@@ -83,16 +83,16 @@ func startCommand(
 	}
 	program := filepath.Base(name) // Logged without its arguments, which may hold a prompt.
 	atLevel := false
-	if lowPriority || len(sc.Prefix) > 0 {
-		// The prefix, and nice at low priority, run the program found here, and a missing one fails here, as without
+	if nice > 0 || len(sc.Prefix) > 0 {
+		// The prefix, and nice below Djinn's priority, run the program found here, and a missing one fails here, as without
 		// them.
 		path, err := exec.LookPath(name)
 		if err != nil {
 			return nil, fmt.Errorf("%s not found in PATH", name)
 		}
 		name = path
-		if lowPriority {
-			name, args, atLevel = lowCommand(name, args)
+		if nice > 0 {
+			name, args, atLevel = lowCommand(name, args, nice)
 		}
 		if prefix := sc.Prefix; len(prefix) > 0 {
 			name, args = prefix[0], append(append(slices.Clone(prefix[1:]), name), args...)
@@ -103,7 +103,7 @@ func startCommand(
 	mark := rand.Text()
 	// Last, so that it replaces the mark of whatever started Djinn. Its Go builds are trimmed (goenv.go).
 	cmd.Env = append(trimmedGoFlags(append(append(os.Environ(), pwdEntry(dir)...), env...)), markEntry(mark))
-	ownGroup(cmd, lowPriority)
+	ownGroup(cmd, nice)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, err
@@ -119,7 +119,9 @@ func startCommand(
 		}
 		return nil, err
 	}
-	applyPriority(cmd, lowPriority && !atLevel)
+	if !atLevel {
+		applyPriority(cmd, nice)
+	}
 	ended := func() {}
 	if track != nil {
 		ended = track(cmd.Process.Pid, sc.Cgroup, mark)

@@ -350,7 +350,8 @@ func (h *Harness) startServing(s *serving, command, taskID string) error {
 		return h.children.trackServe(pid, cgroup, mark, s.code, s.stop, s.dir)
 	}
 	args := shellArgs(command)
-	p, err := startCommand(s.dir, args[0], args[1:], nil, scope, Grace, true, false, track)
+	// A worker's load: below the window at every notch (serveNice, Q371).
+	p, err := startCommand(s.dir, args[0], args[1:], nil, scope, Grace, true, serveNice, track)
 	if err != nil {
 		s.closeLog()
 		return err
@@ -644,7 +645,7 @@ func (h *Harness) stopServing(s *serving, why string, forget bool) (*planv1.Serv
 		if s.stop != "" {
 			s.logLine(fmt.Sprintf("== %s stop command: %s", h.now().Format(time.RFC3339), s.stop))
 			ctx, cancel := context.WithTimeout(context.Background(), serveStopLimit)
-			_, code, err := runTracked(ctx, s.dir, shellArgs(s.stop), h.children.tracker(s.code, "serve stop"), s.logLine, false, false)
+			_, code, err := runTracked(ctx, s.dir, shellArgs(s.stop), h.children.tracker(s.code, "serve stop"), s.logLine, 0, false)
 			late := ctx.Err() != nil
 			cancel()
 			switch {

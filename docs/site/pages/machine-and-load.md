@@ -11,12 +11,14 @@ line counts every process Djinn started, those a worker left behind included. On
 Djinn, of its workers and of its own checks, which run in a scope of their own: a test that ends leaves the time it
 used on the Djinn line, never on the programs outside.
 
-**CPU priority.** Every worker, what it starts, and every check Djinn runs (before a merge, before a push, the setup,
-a generation) take the CPU after the window and your own programs: nice 10 on Linux and macOS, below normal on
-Windows, at any load level. The load level sets only how many workers run. Under a heavy load, typing in the window
-stays fluid: a keystroke no longer waits behind them. No CPU is lost: when nothing else asks for it, they use all of it.
-An install you start from the window runs at Djinn's own priority, as you wait for it; one Djinn starts by itself runs
-low too.
+**CPU priority.** The window, Djinn's server and the lead come first. The checks Djinn runs (before a merge, before a
+push, the setup, a generation) come next, at nice 5: every merge waits for them. The workers, what they start, and the
+local stack a worker runs (a serve) come last, at nice 10 on Linux and macOS, below normal on Windows, at every load
+level but Overclock. Under a heavy load, typing in the window stays fluid: a keystroke no longer waits behind them. No
+CPU is lost: when nothing else asks for it, they use all of it. At Overclock, the workers run at Djinn's own priority,
+beside the window, and the checks with them, never below them; a serve stays low. A worker keeps the priority of the
+level it started under. An install you start from the window runs at Djinn's own priority, as you wait for it; one
+Djinn starts by itself runs as a check.
 
 **Pressure.** A worker starts, and a gate is granted, only while the machine is not under pressure: while tasks waited
 for a core less than 40 % of the last 10 seconds on Minimal, 65 % on Medium, 80 % on High, 90 % on Max and 95 % on

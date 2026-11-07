@@ -1724,11 +1724,13 @@ func (h *Harness) command(ctx context.Context, name, taskID, line, dir string) (
 		}
 		return out, code, err
 	}
-	// A check, a setup or a generation runs at a low-priority worker's CPU priority, below the window (Q298, L50), as
-	// does an install Djinn starts by itself; one the developer asked for runs at Djinn's own, waited for.
-	low, late := run.low || !installing, false
-	if low {
-		prog, rest, started := lowCommand(args[0], args[1:])
+	// A check, a setup or a generation runs at a check's nice level, below the window and above the workers (Q371,
+	// checkNiceAt), as does an install Djinn starts by itself; one the developer asked for runs at Djinn's own, waited
+	// for.
+	nice, late := 0, false
+	if run.low || !installing {
+		nice = h.checkNice()
+		prog, rest, started := lowCommand(args[0], args[1:], nice)
 		args, late = append([]string{prog}, rest...), !started // Not started at its level: set once started.
 	}
 	track := h.children.tracker("", name+" check")
@@ -1741,7 +1743,7 @@ func (h *Harness) command(ctx context.Context, name, taskID, line, dir string) (
 			track = func(pid int, _, mark string) func() { return in(pid, sc.Cgroup, mark) }
 		}
 	}
-	return runTracked(ctx, dir, args, track, run.output, low, late)
+	return runTracked(ctx, dir, args, track, run.output, nice, late)
 }
 
 // gateWaitKey is the context key of a function told why a command waits for its gate ("gate install: held by …"), and
@@ -1768,15 +1770,16 @@ func InstallWith(ctx context.Context, output func(line string), low bool) contex
 
 // runCommand runs args in dir, and returns the end of what it wrote and its exit code.
 func runCommand(ctx context.Context, dir string, args []string) (string, int, error) {
-	return runTracked(ctx, dir, args, nil, nil, false, false)
+	return runTracked(ctx, dir, args, nil, nil, 0, false)
 }
 
 // runTracked is runCommand; track, when set, is told of the command as it starts, and what it returns is called once
-// it ended; lines, when set, each line the command writes, as it writes it. low runs it at a low-priority worker's CPU
-// priority: in its priority class on Windows, under nice (lowCommand) on Unix, or set once started when late.
+// it ended; lines, when set, each line the command writes, as it writes it. It runs at the nice level nice (nice.go):
+// in its priority class on Windows, under nice (lowCommand, which args already holds) on Unix, or set once started
+// when late.
 func runTracked(
 	ctx context.Context, dir string, args []string, track func(pid int, cgroup, mark string) func(), lines func(string),
-	low, late bool,
+	nice int, late bool,
 ) (string, int, error) {
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 	cmd.Dir = dir
@@ -1785,7 +1788,7 @@ func runTracked(
 	cmd.Env = append(trimmedGoFlags(os.Environ()), "DJINN_CALLER="+CallerDjinn)
 	// At ctx's end (Djinn stops), what the command started dies with it: a check's test runner, left alone, would
 	// hold the output open, and Djinn's shutdown with it, for as long as the tests run (W504).
-	ownGroup(cmd, low)
+	ownGroup(cmd, nice)
 	cmd.Cancel = func() error {
 		kill(&process{cmd: cmd})
 		return nil
@@ -1802,7 +1805,9 @@ func runTracked(
 	start := time.Now()
 	err := cmd.Start()
 	if err == nil {
-		applyPriority(cmd, low && late)
+		if late {
+			applyPriority(cmd, nice)
+		}
 		if track != nil {
 			defer track(cmd.Process.Pid, "", "")()
 		}
