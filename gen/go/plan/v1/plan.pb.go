@@ -11525,10 +11525,7 @@ type QuestionServiceAskRequest struct {
 	// Djinn puts your task WAITING on the question, frees its slot and keeps its worktree, branch and session; the answer
 	// continues it with "Decision Qnn: ...", once a slot is free. One blocking question at a time, two per task; three
 	// that do not block.
-	Wait bool `protobuf:"varint,14,opt,name=wait,proto3" json:"wait,omitempty"`
-	// File holding what is at stake, in Markdown, read in place of --context; a relative path starts from the current
-	// directory.
-	ContextFile   string `protobuf:"bytes,15,opt,name=context_file,json=contextFile,proto3" json:"context_file,omitempty"`
+	Wait          bool `protobuf:"varint,14,opt,name=wait,proto3" json:"wait,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -11659,13 +11656,6 @@ func (x *QuestionServiceAskRequest) GetWait() bool {
 		return x.Wait
 	}
 	return false
-}
-
-func (x *QuestionServiceAskRequest) GetContextFile() string {
-	if x != nil {
-		return x.ContextFile
-	}
-	return ""
 }
 
 type QuestionServiceAskResponse struct {
@@ -28124,7 +28114,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x06_about\"j\n" +
 	"\x1dQuestionServiceReviseResponse\x12-\n" +
 	"\bquestion\x18\x01 \x01(\v2\x11.plan.v1.QuestionR\bquestion\x12\x1a\n" +
-	"\bwarnings\x18\x02 \x03(\tR\bwarnings\"\xb4\x05\n" +
+	"\bwarnings\x18\x02 \x03(\tR\bwarnings\"\x87\x05\n" +
 	"\x19QuestionServiceAskRequest\x12\x1f\n" +
 	"\x04text\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\x18\xd0\x0fR\x04text\x12(\n" +
 	"\aoptions\x18\x02 \x03(\tB\x0e\xbaH\v\x92\x01\b\x10\x04\"\x04r\x02\x10\x01R\aoptions\x12$\n" +
@@ -28142,8 +28132,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\tplan_file\x18\f \x03(\tB\x0f\xbaH\f\x92\x01\t\x10\x04\"\x05r\x03\x18\x80 R\bplanFile\x120\n" +
 	"\vsleep_until\x18\r \x03(\tB\x0f\xbaH\f\x92\x01\t\x10\x10\"\x05r\x03\x18\x80\x10R\n" +
 	"sleepUntil\x12\x12\n" +
-	"\x04wait\x18\x0e \x01(\bR\x04wait\x12+\n" +
-	"\fcontext_file\x18\x0f \x01(\tB\b\xbaH\x05r\x03\x18\x80 R\vcontextFile\"g\n" +
+	"\x04wait\x18\x0e \x01(\bR\x04wait\"g\n" +
 	"\x1aQuestionServiceAskResponse\x12-\n" +
 	"\bquestion\x18\x01 \x01(\v2\x11.plan.v1.QuestionR\bquestion\x12\x1a\n" +
 	"\bwarnings\x18\x02 \x03(\tR\bwarnings\"\xde\x02\n" +

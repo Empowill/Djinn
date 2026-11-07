@@ -1251,14 +1251,6 @@ func (q *Questions) Ask(
 	ctx context.Context, req *connect.Request[planv1.QuestionServiceAskRequest],
 ) (*connect.Response[planv1.QuestionServiceAskResponse], error) {
 	m := req.Msg
-	if path := m.GetContextFile(); path != "" {
-		text, err := readContextFile(m.GetContext(), path)
-		if err != nil {
-			return nil, err
-		}
-		m = proto.CloneOf(m)
-		m.Context, m.ContextFile = text, ""
-	}
 	if len(m.GetPlanFile()) > 0 {
 		// The journal keeps the plans' texts, not where they were read.
 		plans, err := readPlans(m.GetPlan(), m.GetPlanFile())
