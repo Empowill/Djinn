@@ -6,6 +6,7 @@
 package harness
 
 import (
+	"fmt"
 	"os"
 	"strings"
 	"sync/atomic"
@@ -85,13 +86,30 @@ func pausedStream(t *testing.T) (w Worker, events <-chan Event, input string, id
 	}
 }
 
+// waitStopped waits until the process has entered the stopped state (SIGSTOP took hold).
+func waitStopped(pid int) {
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		b, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+		if err != nil {
+			time.Sleep(40 * time.Millisecond) // macOS or process gone: give SIGSTOP time to take hold.
+			return
+		}
+		fields := strings.Fields(string(b))
+		if len(fields) > 2 && (fields[2] == "T" || fields[2] == "t") {
+			return
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+}
+
 // startPaused is one try of pausedStream: false when the worker ended before its first words.
 func startPaused(t *testing.T, idle time.Duration) (w Worker, events <-chan Event, input string, ok bool) {
 	t.Helper()
 	env, _, input := fake{provider: "claude", fixture: "stream-idle", end: "eof"}.env(t)
 	spec := Spec{TaskID: "t-paused", Dir: t.TempDir(), Prompt: "x", Env: env}
 	a := streamAgent{name: "claude", parser: &claudeParser{}, encode: claudeMessageLine, idle: idle}
-	w, err := startStream(t.Context(), spec, os.Args[0], Claude{}.args(spec), Grace, a)
+	sw, err := startStream(t.Context(), spec, os.Args[0], Claude{}.args(spec), Grace, a)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,7 +119,7 @@ func startPaused(t *testing.T, idle time.Duration) (w Worker, events <-chan Even
 		defer close(all)
 		defer close(ended)
 		said := false
-		for ev := range w.Events() {
+		for ev := range sw.Events() {
 			all <- ev
 			if !said && ev.Kind.String() == "TASK_EVENT_KIND_TEXT" {
 				said = true
@@ -110,20 +128,38 @@ func startPaused(t *testing.T, idle time.Duration) (w Worker, events <-chan Even
 		}
 	}()
 	select {
-	case <-first:
 	case <-ended:
-		if res := w.Wait(); !isStreamIdle(res.Err) {
+		if res := sw.Wait(); !isStreamIdle(res.Err) {
 			t.Fatalf("the worker ended before its first words: %+v", res)
 		}
 		return nil, nil, "", false
+	case <-first:
 	case <-time.After(30 * time.Second):
-		w.Stop()
+		sw.Stop()
 		t.Fatal("the worker said nothing in 30s")
 	}
-	if err := w.(Pauser).Pause(); err != nil {
+	select {
+	case <-ended:
+		if res := sw.Wait(); !isStreamIdle(res.Err) {
+			t.Fatalf("the worker ended before its first words: %+v", res)
+		}
+		return nil, nil, "", false
+	default:
+	}
+	s := sw.(*streamWorker)
+	if err := s.Pause(); err != nil {
 		t.Fatal(err)
 	}
-	return w, all, input, true
+	waitStopped(s.p.cmd.Process.Pid)
+	select {
+	case <-ended:
+		if res := sw.Wait(); !isStreamIdle(res.Err) {
+			t.Fatalf("the worker ended before its first words: %+v", res)
+		}
+		return nil, nil, "", false
+	default:
+	}
+	return sw, all, input, true
 }
 
 // TestStreamWorker_Pause (W226): a worker Djinn holds paused cannot stream; held longer than its idle timeout, it is
