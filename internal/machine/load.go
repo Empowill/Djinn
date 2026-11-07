@@ -234,6 +234,7 @@ func LoadHandler(
 		subs:         make(map[chan struct{}]struct{}),
 		tickInterval: AutoBeat,
 		stopAuto:     make(chan struct{}),
+		brake:        brakeOf(home),
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -307,6 +308,9 @@ type loadService struct {
 
 	mu   sync.Mutex
 	subs map[chan struct{}]struct{}
+
+	brakeMu sync.Mutex   // guards brake
+	brake   BrakeSetting // the memory brake's threshold (brake.go)
 }
 
 func (s *loadService) runAutoLoop() {
@@ -515,6 +519,8 @@ func (s *loadService) Get(
 		ChosenNotch: r.chosen,
 		AutoReason:  r.reason,
 	}
+	brake, fixed := s.brakeNow()
+	resp.BrakeMemoryPercent, resp.BrakeMemoryFixed = int32(brake), fixed
 	if s.monitor != nil {
 		// The slots take the measured peak, which they add the margin to: the forecast, its margin in, would count it
 		// twice.

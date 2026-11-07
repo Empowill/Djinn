@@ -190,6 +190,9 @@ and why, the most memory its holder used, and whether it took a slot outside a w
 - **A heavy gate from your terminal takes a worker's slot.** Hold it for what you need, not longer.
 - **Keep commit checks fast.** They run on every task's merge, through their gates, before anything else may: a long
   one slows every wish. Put the long suite before the push.
+- **What escapes the gates meets the memory brake.** A process a command left running, or the sum of the workers, can
+  still fill the memory: under 5 % available, the brake freezes the worker that grows outside the gates, never a command
+  they admitted. Its percent is chosen in the Summoning Circle ([Machine and load](#machine-and-load)).
 - **A long command keeps its gate.** Past 3 times its usual hold, or an hour unmeasured, its lead hears of it; the gate
   goes back only when the command ends. A lit ifrit's gates last as long as it is lit.
 

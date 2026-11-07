@@ -381,3 +381,68 @@ func TestBrakeThawedByHand(t *testing.T) {
 	bt.release(t, w.GetId())
 	bt.ended(t, w.GetId())
 }
+
+// TestBrakeDefaultFive: by default the brake freezes under 5 % of the machine's memory available (decision Q22 B),
+// and thaws above 10 %.
+func TestBrakeDefaultFive(t *testing.T) {
+	t.Parallel()
+	if machine.DefaultBrakeMemory != 5 {
+		t.Fatalf("DefaultBrakeMemory = %d, want 5", machine.DefaultBrakeMemory)
+	}
+	b := DefaultBrake(machine.DefaultBrakeMemory)
+	const total = 32 << 30
+	at := func(availablePercent int) machine.Snapshot {
+		return machine.Snapshot{MemoryTotal: total, MemoryAvailable: total / 100 * uint64(availablePercent)}
+	}
+	if b.short(at(6)) != "" || b.short(at(4)) == "" {
+		t.Errorf("short at 6 %%: %q, at 4 %%: %q; want only 4 %% short", b.short(at(6)), b.short(at(4)))
+	}
+	if b.calm(at(9)) || !b.calm(at(11)) {
+		t.Errorf("calm at 9 %%: %v, at 11 %%: %v; want only 11 %% calm", b.calm(at(9)), b.calm(at(11)))
+	}
+}
+
+// TestBrakeSetAtOnce: a threshold the window sets (SetBrake) counts from the next pass: lowered to 5 %, 8 % available
+// freezes nothing, 4 % does; set to 0, the brake is off and what it froze thaws, its lead told.
+func TestBrakeSetAtOnce(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	bt := upBrake(t) // 10 %
+	wishID, _ := bt.wish(t, nativeFolder(t))
+	w := bt.mustSpawn(t, wishID, "Escaped", "wait", nil)
+	bt.until(t, w.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))
+	bt.hold(w.GetId(), 500)
+	bt.step(t, time.Second)
+
+	bt.h.SetBrake(5)
+	bt.hold(w.GetId(), 1500)
+	bt.press(8, 0)
+	for range 3 {
+		bt.step(t, time.Second)
+	}
+	if st := bt.get(t, w.GetId()).GetStatus(); st != planv1.TaskStatus_TASK_STATUS_RUNNING {
+		t.Fatalf("8 %% available under a brake at 5 %%: %v, want RUNNING", st)
+	}
+	bt.press(4, 0)
+	bt.step(t, time.Second)
+	bt.step(t, time.Second)
+	bt.until(t, w.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_PAUSED))
+	bt.toldLines(t, w.GetCode()+" frozen by the memory brake")
+
+	// Off, the memory still short: it thaws at the next pass, and no reading freezes it again.
+	bt.h.SetBrake(0)
+	bt.clock.set(bt.clock.now().Add(time.Second))
+	bt.h.Wake()
+	bt.until(t, w.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))
+	bt.toldLines(t, w.GetCode()+" thawed: the memory brake is off")
+	bt.clock.set(bt.clock.now().Add(time.Minute))
+	bt.h.Wake()
+	bt.h.sched.Lock()
+	frozen := len(bt.h.brakeAt.frozen)
+	bt.h.sched.Unlock()
+	if frozen != 0 {
+		t.Errorf("the brake, off, still counts %d frozen", frozen)
+	}
+	bt.release(t, w.GetId())
+	bt.ended(t, w.GetId())
+}

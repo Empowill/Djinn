@@ -815,9 +815,13 @@ run through an absolute path, an agent without a hook, or simply the sum of the 
 runaway (a worker's scope and containers); the memory brake catches a slower growth, which no ceiling sees. It never
 cuts a command the gates admitted.
 
-- **When.** Under 10 % of the machine's memory available, or a PSI full of 20 (every task waited for memory a fifth of
-  the last 10 s), two readings in a row, a second apart. `djinn up --brake-memory 10` (or `DJINN_BRAKE_MEMORY`) sets the
-  percent; 0 turns the brake off. The PSI threshold is fixed.
+- **When.** Under 5 % of the machine's memory available, or a PSI full of 20 (every task waited for memory a fifth of
+  the last 10 s), two readings in a row, a second apart. The PSI threshold is fixed.
+- **Its percent.** Chosen at the end of the **Summoning Circle** (Memory brake), or `djinn load set-brake 3`, for this
+  machine: it applies at once and is kept in `settings.json` for the next launches; **Off** (0) turns the brake off, and
+  what it froze thaws. On a 16 GB laptop where the browser leaves Djinn 2 or 3 GB, 5 % comes fast: choose 3 %, or Off.
+  `djinn up --brake-memory 8` (or `DJINN_BRAKE_MEMORY`) fixes the percent for that run instead: the Circle shows it and
+  `djinn load set-brake` refuses until Djinn starts without it.
 - **Whom.** Among the running workers, the one whose memory grew most over the last minute (256 MiB at least) while
   holding no gate nor admission: its scope's anonymous memory and its task's containers', not the page cache. Never
   Djinn, its merges, pushes and checks, the lead, a watcher, a question worker or an ifrit; a worker a `git` runs in

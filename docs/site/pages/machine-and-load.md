@@ -26,14 +26,16 @@ Overclock; memory has limits of its own. On a machine of many cores, a test run'
 the machine is idle: from Medium up, they hold no worker.
 
 **The memory brake.** The gates share the machine; what escapes them, a process a command left running, an agent
-without a hook, or the sum of the workers, can still fill its memory. Under 10 % of the memory available, or when every
+without a hook, or the sum of the workers, can still fill its memory. Under 5 % of the memory available, or when every
 task waited for memory a fifth of the last 10 seconds, two readings in a row, Djinn freezes the worker whose memory
 grew most over the last minute while it held no gate nor admission, and its containers with it. Frozen 30 seconds with
 the memory still short, it is interrupted, and resumes later in its session. A worker whose command a gate admitted is
 never interrupted: only when admitted workers alone grow is the last one admitted frozen, and its command lives on.
 After a minute of calm, the frozen workers thaw one at a time, the last frozen first. The Djinn hears each freeze,
-interruption and thaw; a frozen worker's time is left out of its budget. The percent is a flag of djinn up; 0 turns the
-brake off.
+interruption and thaw; a frozen worker's time is left out of its budget. You choose the percent at the end of the
+**Summoning Circle**, for this machine: it applies at once and holds for the next launches; Off turns the brake off and
+thaws what it froze. On a laptop where the browser leaves Djinn little room, 5 % comes fast: choose 3 %, or Off. A flag
+of djinn up, or its environment variable, fixes the percent for one run instead, and the Circle then says so.
 
 **The disk.** The **Disk** tab of the Hourglass draws a bar of the whole disk (with the 30 GB and 10 GB guard marks)
 above two tabs: **Djinn and its workers** (worktrees, Playwright, tilasms, scratch, logs, and any isolated Go build
