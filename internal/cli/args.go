@@ -33,13 +33,13 @@ func parse(md protoreflect.MessageDescriptor, args []string) (*dynamicpb.Message
 }
 
 // parseLine reads a command line as parse does, the command line's own --wish-id of a scoped request, and its own
-// file flags (fileFlags) of a request that takes their text but no file of it (fileField).
+// file flags (fileFlags) of a request that takes their text (fileField).
 func parseLine(md protoreflect.MessageDescriptor, args []string) (line, error) {
 	msg := dynamicpb.NewMessage(md)
 	l := line{req: msg}
 	pos := positionals(md)
 	next, onlyPositional := 0, false
-	files := map[string]string{}
+	files := map[string][]string{}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		if !onlyPositional && arg == "--" {
@@ -64,7 +64,7 @@ func parseLine(md protoreflect.MessageDescriptor, args []string) (line, error) {
 		own := (name == "wish-id" || name == "wish") && scoped(md) || ownFile(md, name) != nil
 		if fd == nil && own {
 			// The command line's own flags: the wish a task given by code is looked up in (its UUID or its title,
-			// resolve reads it), the file a prompt or a context is read from.
+			// resolve reads it), the file a prompt, a context or a plan is read from.
 			if !hasValue {
 				if i+1 == len(args) {
 					return line{}, fmt.Errorf("--%s needs a value", name)
@@ -73,7 +73,7 @@ func parseLine(md protoreflect.MessageDescriptor, args []string) (line, error) {
 				value = args[i]
 			}
 			if ownFile(md, name) != nil {
-				files[name] = value
+				files[name] = append(files[name], value)
 			} else {
 				l.wish = value
 			}
@@ -97,8 +97,8 @@ func parseLine(md protoreflect.MessageDescriptor, args []string) (line, error) {
 		}
 	}
 	for _, f := range fileFlags {
-		if path, ok := files[f.flag]; ok {
-			if err := readFile(msg, fileField(md, f), f, path); err != nil {
+		if paths, ok := files[f.flag]; ok {
+			if err := readFiles(msg, fileField(md, f), f, paths); err != nil {
 				return line{}, err
 			}
 		}
@@ -107,7 +107,8 @@ func parseLine(md protoreflect.MessageDescriptor, args []string) (line, error) {
 }
 
 // fileFlag is a flag of the command line's own, which reads a file into a text field of the request: the server
-// never sees the file, only its text, so what Djinn stores depends on no file.
+// never sees the file, only its text, so what Djinn stores depends on no file and no path leaves this machine
+// (W621, W627).
 type fileFlag struct {
 	field, flag, help string
 }
@@ -118,14 +119,15 @@ var fileFlags = []fileFlag{
 		"command line; a relative path starts from the current directory."},
 	{"context", "context-file", "File holding what is at stake, in Markdown, read in place of --context by the " +
 		"command line; a relative path starts from the current directory."},
+	{"plan", "plan-file", "File holding the task an option launches, read by the command line and sent after the " +
+		"--plan texts, one per option; a relative path starts from the current directory."},
 }
 
-// fileField is the field of md the file flag f fills: a singular string field of its name, beside no <name>_file
-// the server reads (djinn task spawn's prompt_file, djinn question revise's context_file). nil otherwise.
+// fileField is the field of md the file flag f fills: a string field of its name, singular or repeated (a plan per
+// option). nil otherwise.
 func fileField(md protoreflect.MessageDescriptor, f fileFlag) protoreflect.FieldDescriptor {
 	fd := md.Fields().ByName(protoreflect.Name(f.field))
-	if fd == nil || fd.Kind() != protoreflect.StringKind || fd.IsList() ||
-		md.Fields().ByName(protoreflect.Name(f.field+"_file")) != nil {
+	if fd == nil || fd.Kind() != protoreflect.StringKind {
 		return nil
 	}
 	return fd
@@ -141,17 +143,24 @@ func ownFile(md protoreflect.MessageDescriptor, flag string) *fileFlag {
 	return nil
 }
 
-// readFile sets the field fd of msg from the file at path, its last line breaks cut, as the server reads its own
-// file fields; refused beside the field's own flag.
-func readFile(msg *dynamicpb.Message, fd protoreflect.FieldDescriptor, f fileFlag, path string) error {
-	if msg.Has(fd) {
+// readFiles sets the field fd of msg from the files at paths. A singular field takes the last file, its last line
+// breaks cut, and is refused beside the field's own flag; a repeated one takes each file whole, after the texts its
+// own flag gave.
+func readFiles(msg *dynamicpb.Message, fd protoreflect.FieldDescriptor, f fileFlag, paths []string) error {
+	if !fd.IsList() && msg.Has(fd) {
 		return fmt.Errorf("give --%s or --%s, not both", kebab(f.field), f.flag)
 	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return fmt.Errorf("--%s: %w", f.flag, err)
+	for _, path := range paths {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("--%s: %w", f.flag, err)
+		}
+		if fd.IsList() {
+			msg.Mutable(fd).List().Append(protoreflect.ValueOfString(string(data)))
+		} else {
+			msg.Set(fd, protoreflect.ValueOfString(strings.TrimRight(string(data), "\r\n")))
+		}
 	}
-	msg.Set(fd, protoreflect.ValueOfString(strings.TrimRight(string(data), "\r\n")))
 	return nil
 }
 

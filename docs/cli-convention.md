@@ -92,11 +92,14 @@ several, the only one not granted. The command line lists the wishes and sends t
 titles share is refused with the command again for each wish, as a server's refusal gives it (below); a title no wish
 has is refused, naming what is expected.
 
-**A prompt from a file** (W481). A request with a `prompt` but no `prompt_file` (`djinn task update`, `djinn question
-launch`, `djinn task continue`, `djinn wish make`) takes the command line's own `--prompt-file <path>`: the command
-line reads the file, its last line breaks cut, and sends its text as the prompt; beside `--prompt` it is refused.
-`djinn task spawn` has a `prompt_file` the server reads, the same way. The lead writes a prompt of several lines with
-its Write tool and passes the file: a `#` line inside `--prompt` is refused by Claude Code's shell guard.
+**A text from a file** (W481, W621, W627). A request with a `prompt`, a `context` or a `plan` takes the command
+line's own `--prompt-file <path>`, `--context-file <path>` or `--plan-file <path>`: `djinn task spawn`, `djinn task
+update`, `djinn task continue`, `djinn question launch`, `djinn wish make` read a prompt, `djinn question ask` and
+`djinn question revise` a context and the plans of their options. The command line reads the file and sends its text:
+a prompt or a context with its last line breaks cut, refused beside `--prompt` or `--context`; each plan whole, after
+the `--plan` texts. The server never receives a path, so a request works when the server does not see the caller's
+files, and the journal keeps the text. The lead writes a text of several lines with its Write tool and passes the
+file: a `#` line inside `--prompt` is refused by Claude Code's shell guard.
 
 **A refusal that names another command gives it whole** (W592). `djinn task continue` on a task whose worktree is
 gone, removed once its work merged into its azima's branch, says so and prints the spawn that goes on from its

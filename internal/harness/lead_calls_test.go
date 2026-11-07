@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
@@ -256,6 +257,91 @@ func TestLeadCallsContextFile(t *testing.T) {
 	l.refused(t, []string{"question", "ask", "Push now?", l.dew, "--context", "x", "--context-file", file},
 		"give --context or --context-file, not both")
 }
+
+// TestLeadCallsFilesStayHere (W627): djinn task spawn --prompt-file, djinn question revise --context-file and
+// --plan-file of djinn question ask and revise read their file on the command line and send its text. Each file is
+// removed before any request reaches the server, as on a server that does not see the caller's files; the journal
+// holds no path.
+func TestLeadCallsFilesStayHere(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	l := newLeadCalls(t)
+	dir := t.TempDir()
+	write := func(name, text string) string {
+		t.Helper()
+		file := filepath.Join(dir, name)
+		if err := os.WriteFile(file, []byte(text), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return file
+	}
+	prompt := "# Gain\nThe lamp lights at dusk."
+	context := "~~~\n# prints the lamps\ndjinn task list\n~~~\n\nWhy: two lamps."
+	planA, planB := "option: A\ntitle: Light the olive lamp\n", "option: B\ntitle: Light the paraffin lamp\n"
+	files := map[string]string{
+		"prompt": write("prompt.md", prompt+"\n"), "context": write("context.md", context+"\r\n"),
+		"planA": write("plan-a.md", planA), "planB": write("plan-b.md", planB),
+	}
+	// Each command reads all its files before it sends anything: a request that reaches the server finds none.
+	next := l.client.Transport
+	if next == nil {
+		next = http.DefaultTransport
+	}
+	l.client = &http.Client{Transport: roundTrip(func(r *http.Request) (*http.Response, error) {
+		for _, file := range files {
+			_ = os.Remove(file)
+		}
+		return next.RoundTrip(r)
+	})}
+
+	l.passes(t, "task", "spawn", l.dew, "--title", "Light at dusk", "--project-id", "djinn", "--later",
+		"--prompt-file", files["prompt"])
+	spawns, err := store.Commands(t.Context(), l.db, func(cmd store.Command) bool {
+		return cmd.Method == planv1connect.TaskServiceSpawnProcedure
+	})
+	if err != nil || len(spawns) != 1 {
+		t.Fatalf("spawns = %v, %v", spawns, err)
+	}
+	var spawned planv1.TaskServiceSpawnRequest
+	if err := proto.Unmarshal(spawns[0].Request, &spawned); err != nil || spawned.GetPrompt() != prompt {
+		t.Errorf("spawn sent %v, %v, want the prompt %q", &spawned, err, prompt)
+	}
+
+	l.passes(t, "question", "ask", "Which lamp?", l.dew, "--options", "Olive", "--options", "Paraffin",
+		"--plan-file", write("plan-a.md", planA))
+	asked, err := store.List[*planv1.Question](t.Context(), l.db, store.Where{"wish_id": l.dew})
+	if err != nil || len(asked) != 1 || len(asked[0].GetPlans()) != 1 ||
+		asked[0].GetPlans()[0].GetTitle() != "Light the olive lamp" {
+		t.Fatalf("asked = %v, %v, want one question with plan A", asked, err)
+	}
+
+	write("context.md", context+"\r\n")
+	write("plan-b.md", planB)
+	l.passes(t, "question", "revise", asked[0].GetCode(), "--wish-id", l.dew, "--context-file", files["context"],
+		"--plan-file", files["planB"])
+	revised, err := store.Get[*planv1.Question](t.Context(), l.db, asked[0].GetId())
+	if err != nil || revised.GetContext() != context || len(revised.GetPlans()) != 2 ||
+		revised.GetPlans()[1].GetTitle() != "Light the paraffin lamp" {
+		t.Errorf("revised = %v, %v, want the file's context and plans A and B", revised, err)
+	}
+	l.refused(t, []string{"question", "revise", asked[0].GetCode(), "--wish-id", l.dew, "--context", "x",
+		"--context-file", write("context.md", context)}, "give --context or --context-file, not both")
+
+	commands, err := store.Commands(t.Context(), l.db, func(store.Command) bool { return true })
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, cmd := range commands {
+		if bytes.Contains(cmd.Request, []byte(dir)) {
+			t.Errorf("the journal's %s names a file of %s", cmd.Method, dir)
+		}
+	}
+}
+
+// roundTrip is an http.RoundTripper of a function.
+type roundTrip func(*http.Request) (*http.Response, error)
+
+func (f roundTrip) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
 // TestLeadCallsGates (W592): the calls the leads of 07/11 00:28 and 00:29 typed seven times in a wish of three
 // projects, on a binary without W474: each passes, or its refusal gives the flag and the values that pass.

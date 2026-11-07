@@ -2,7 +2,6 @@ package plan
 
 import (
 	"context"
-	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -13,10 +12,6 @@ import (
 	"github.com/empowill/djinn/internal/render"
 	"github.com/empowill/djinn/internal/store"
 )
-
-func writeTestFile(path, content string) error {
-	return os.WriteFile(path, []byte(content), 0o600)
-}
 
 // TestRounds: the developer asks to investigate, the lead revises, twice; each round keeps what the question said
 // before it. A decided question takes no round. The brief lists what to investigate, with its note.
@@ -113,9 +108,9 @@ func TestRounds(t *testing.T) {
 	})
 
 	// A revised question's context is its current version only (W114), what the caller pastes of an older history cut;
-	// each earlier version lives in its round, Tour 0 on the first. Revise reads --context-file, Markdown headers,
-	// arrows and parentheses as written, and gives back the rounds only with history.
-	t.Run("history and context file", func(t *testing.T) {
+	// each earlier version lives in its round, Tour 0 on the first. Revise keeps Markdown headers, arrows and
+	// parentheses as written, and gives back the rounds only with history.
+	t.Run("history and context", func(t *testing.T) {
 		t.Parallel()
 		ctx := t.Context()
 		c := serve(t)
@@ -142,14 +137,10 @@ func TestRounds(t *testing.T) {
 			t.Fatalf("Tour 0 not preserved on enlighten round: %v", r0)
 		}
 
-		// Revise 1 via ContextFile containing #, ->, and parentheses.
-		ctxFile := t.TempDir() + "/rev1.md"
+		// Revise 1 with a context containing #, ->, and parentheses.
 		rev1Body := "~~~\n# check streaming\ncurl https://example.com\n~~~\n\nWhy: browser -> server streaming (verified)."
-		if err := writeTestFile(ctxFile, rev1Body+"\n"); err != nil {
-			t.Fatal(err)
-		}
 		rev1, err := c.questions.Revise(ctx, connect.NewRequest(&planv1.QuestionServiceReviseRequest{
-			Question: ref, WishId: wish, ContextFile: ctxFile, Recommendation: "B: Connect streams cleanly.",
+			Question: ref, WishId: wish, Context: rev1Body, Recommendation: "B: Connect streams cleanly.",
 		}))
 		if err != nil {
 			t.Fatal(err)
@@ -196,13 +187,6 @@ func TestRounds(t *testing.T) {
 		}
 		if stored.GetContext() != "Tour 2 context." || len(stored.GetRounds()) != 4 {
 			t.Errorf("stored = %v, want the current context and its four rounds", stored)
-		}
-
-		// Passing both context and context_file is rejected.
-		if _, err := c.questions.Revise(ctx, connect.NewRequest(&planv1.QuestionServiceReviseRequest{
-			Question: ref, WishId: wish, Context: "x", ContextFile: ctxFile,
-		})); connect.CodeOf(err) != connect.CodeInvalidArgument {
-			t.Errorf("both context and context_file: %v, want invalid_argument", err)
 		}
 	})
 }
