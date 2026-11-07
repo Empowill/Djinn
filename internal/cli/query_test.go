@@ -3,9 +3,11 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -17,10 +19,11 @@ import (
 	"github.com/empowill/djinn/internal/store"
 )
 
-// TestQueryTexts: djinn query query reads its texts on the caller's side, typed by the schema the server gives, and
-// the server, which reads typed messages only, answers a text table; a text that does not read fails before the query.
-func TestQueryTexts(t *testing.T) {
-	t.Parallel()
+// queryServer serves the real QueryService over a store holding two tasks: W1, done, created on 1 November 2026 and
+// costing 2 dollars; W2, running, created two days later, an old review. queries counts the calls to
+// QueryService.Query.
+func queryServer(t *testing.T) (srv *httptest.Server, queries *atomic.Int32) {
+	t.Helper()
 	s, err := store.Open(t.Context(), "", plan.Entities()...)
 	if err != nil {
 		t.Fatal(err)
@@ -52,10 +55,24 @@ func TestQueryTexts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	queries = &atomic.Int32{}
 	mux := http.NewServeMux()
-	mux.Handle(path, h)
-	srv := httptest.NewServer(mux)
+	mux.Handle(path, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/Query") {
+			queries.Add(1)
+		}
+		h.ServeHTTP(w, r)
+	}))
+	srv = httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
+	return srv, queries
+}
+
+// TestQueryTexts: djinn query query reads its texts on the caller's side, typed by the schema the server gives, and
+// the server, which reads typed messages only, answers a text table; a text that does not read fails before the query.
+func TestQueryTexts(t *testing.T) {
+	t.Parallel()
+	srv, _ := queryServer(t)
 	run := func(args ...string) (int, string, string) {
 		var out, errs bytes.Buffer
 		code := Run(context.Background(), args, Config{
@@ -91,6 +108,79 @@ func TestQueryTexts(t *testing.T) {
 			for _, w := range tt.want {
 				if !strings.Contains(out, w) {
 					t.Errorf("stdout lacks %q:\n%s", w, out)
+				}
+			}
+		})
+	}
+}
+
+// TestMCPQueryTexts: djinn mcp's query_query tool reads its texts as the command line does, typed by the schema the
+// real QueryService gives, and answers the server's table; a text that does not read is a tool error, and the
+// query is never asked.
+func TestMCPQueryTexts(t *testing.T) {
+	t.Parallel()
+	srv, queries := queryServer(t)
+	call := func(args string) (mcpCallResult, int32) {
+		t.Helper()
+		before := queries.Load()
+		var out, errs bytes.Buffer
+		in := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"query_query",` +
+			`"arguments":` + args + `}}` + "\n")
+		cfg := Config{Version: "test", Addr: srv.URL, HTTP: srv.Client(), Stdin: in, Stdout: &out, Stderr: &errs,
+			Getenv: noEnv}
+		if code := Run(context.Background(), []string{"mcp"}, cfg); code != 0 {
+			t.Fatalf("djinn mcp exited with %d: %s", code, errs.String())
+		}
+		var msg struct {
+			Result mcpCallResult `json:"result"`
+			Error  *rpcError     `json:"error"`
+		}
+		if err := json.Unmarshal(out.Bytes(), &msg); err != nil || msg.Error != nil || len(msg.Result.Content) != 1 {
+			t.Fatalf("answer %q: %v", out.String(), err)
+		}
+		return msg.Result, queries.Load() - before
+	}
+	for _, tt := range []struct {
+		name    string
+		args    string
+		wantErr bool
+		want    []string
+		lacks   []string
+	}{
+		{"typed filters, a number and a time",
+			`{"collection":"tasks","select":"code","filter":["usage.cost_usd>1","create_time<2026-11-02T00:00:00Z"]}`,
+			false, []string{"W1", "1 row"}, []string{"W2"}},
+		{"a kind read from an old review", `{"collection":"tasks","select":["code"],"filter":"type=review"}`,
+			false, []string{"W2", "1 row"}, []string{"W1"}},
+		{"sorted, descending", `{"collection":"tasks","select":"code","sort":"-code","format":"csv"}`,
+			false, []string{"code\nW2\nW1\n"}, nil},
+		{"a group by day, counted",
+			`{"collection":"tasks","group_by":"create_time::day","measure":"n=count","format":"csv"}`,
+			false, []string{"create_time::day,n\n", "Z,1\n"}, []string{",2\n"}},
+		{"a value of the wrong type", `{"collection":"tasks","filter":"usage.cost_usd>a"}`,
+			true, []string{"is not a number"}, nil},
+		{"an unknown ref", `{"collection":"tasks","filter":"nope=1"}`, true, []string{"no ref nope"}, nil},
+		{"bins on a text ref", `{"collection":"tasks","group_by":"code::bins(1,2)","measure":"n=count"}`,
+			true, []string{"has no bins"}, nil},
+		{"an empty sort", `{"collection":"tasks","sort":""}`, true, []string{"no ref"}, nil},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			res, asked := call(tt.args)
+			text := res.Content[0].Text
+			if res.IsError != tt.wantErr {
+				t.Fatalf("isError %v, want %v: %s", res.IsError, tt.wantErr, text)
+			}
+			if want := map[bool]int32{false: 1, true: 0}[tt.wantErr]; asked != want {
+				t.Errorf("QueryService.Query asked %d times, want %d: %s", asked, want, text)
+			}
+			for _, w := range tt.want {
+				if !strings.Contains(text, w) {
+					t.Errorf("answer lacks %q:\n%s", w, text)
+				}
+			}
+			for _, l := range tt.lacks {
+				if strings.Contains(text, l) {
+					t.Errorf("answer holds %q:\n%s", l, text)
 				}
 			}
 		})
