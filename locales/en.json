@@ -510,6 +510,7 @@
   "load.forecast_by_hand.one": "1 started by hand",
   "load.forecast_by_hand.other": "{count} started by hand",
   "load.forecast_cpu_running": "CPU: {running} of {workers} workers run, at low priority",
+  "load.forecast_cpu_running_standard": "CPU: {running} of {workers} workers run, at standard priority",
   "load.forecast_finishing.one": "1 above the limit finishes its run",
   "load.forecast_finishing.other": "{count} above the limit finish their run",
   "load.forecast_ifrits.one": "{count} ifrit",

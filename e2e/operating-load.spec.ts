@@ -578,8 +578,8 @@ test.describe("operating load slider", () => {
     // Hover over overclock button
     await ocBtn.hover();
     await expect(forecastEl).toHaveAttribute("data-notch", "overclock");
-    // Every notch runs the workers at low priority, below the window (Q298).
-    await expect(forecastEl).toContainText(/low priority/i);
+    // Overclock runs the workers at standard priority, the other notches below the window (Q371).
+    await expect(forecastEl).toContainText(/standard priority/i);
 
     // But server notch is still medium
     expect(getNotch()).toBe("medium");

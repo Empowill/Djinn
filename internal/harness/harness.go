@@ -1724,8 +1724,8 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 		kind = "watcher"
 	}
 	spec.Track = h.children.tracker(t.GetCode(), kind)
-	// Below the window, whatever the notch, which sets only how many run: typing stays fluid under load (Q298, L50).
-	spec.LowPriority = true
+	// Below the window at every notch but Overclock: typing stays fluid under load (Q298, L50, Q371).
+	spec.Nice = h.workerNice()
 	spec.StartHead = r.startHead
 	spec.Branch = t.GetBranch()
 	spec.IsWorkDone = func() bool {

@@ -68,9 +68,9 @@ type Spec struct {
 	// LastLine is the first line of the last paragraph a watcher's task said before this start (Task.last_line): its
 	// command's first paragraph wakes no one when it says it again. Agents ignore it.
 	LastLine string
-	// LowPriority runs the worker process with low CPU priority (nice 10 on Unix, BELOW_NORMAL_PRIORITY_CLASS on
-	// Windows); else it runs at Djinn's own priority. Djinn starts every worker with it, at any load notch (Q298).
-	LowPriority bool
+	// Nice is the nice level the worker process starts at (nice.go): 10 is below the window (BELOW_NORMAL_PRIORITY_CLASS
+	// on Windows), 0 Djinn's own priority. Djinn gives a worker 10 at every load notch but Overclock (workerNiceAt).
+	Nice int
 	// StartHead is the git commit hash at task start, used to verify progress.
 	StartHead string
 	// Branch is the task's git branch name.

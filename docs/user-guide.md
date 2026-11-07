@@ -53,7 +53,8 @@ djinn up --browser    # no window: prints the URL to open in your browser
   notch's label or its round stop on the track (or Tab to a stop, then Enter or Space).
   Hovering the slider, or reaching it with the keyboard, shows a dual gauge forecast under it: CPU (how many workers run of the most the notch lets run, exactly what the
   scheduler allows there, every agent counted and watchers not, with the workers started by hand and those finishing
-  their run above the limit, all at low CPU priority, below the window, whatever the notch) and Memory
+  their run above the limit, all at low CPU priority, below the window, at every notch but Overclock, where they run at
+  standard priority) and Memory
   (peak memory Djinn may engage against current usage and total machine RAM). The **Overclock** notch pushes up to
   150 % of standard memory capacity with an amber visual pulse. In Auto mode, Djinn follows the load of the
   programs outside it, never its own: the machine's CPU and memory beyond the Djinn line of the Hourglass (djinn up, its
@@ -636,7 +637,7 @@ since, each with its title and folded summary, and the commits' titles, folded. 
 Djinn was built from comes first; the other branches' builds are folded under one line that names them, each with its
 own **Install and restart** and ×. Nothing of another branch installs before your click; × hides that build until a
 newer one comes. A build of the running Djinn's own line (its branch, or one that carries it on), pushed past the
-push checks, installs by itself, at low priority, once no gate runs and the machine is not under pressure: the banner
+push checks, installs by itself, at a check's priority, once no gate runs and the machine is not under pressure: the banner
 then says "Djinn local-abc1234 is ready" with what it adds, and **Restart** stays your click (the project setting
 `install_builds: false` turns it off). While an install runs, the banner says what it waits for, then which step of
 the install command runs; an install that fails, or works past its deadline (20 minutes), says why with the last lines

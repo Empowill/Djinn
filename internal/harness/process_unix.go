@@ -19,13 +19,10 @@ var setPriorityFn = syscall.Setpriority
 
 // ownGroup makes the process lead a group of its own: a signal to the group reaches what it started. On Linux, it
 // dies with Djinn (dieWithParent).
-func ownGroup(cmd *exec.Cmd, _ bool) {
+func ownGroup(cmd *exec.Cmd, _ int) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	dieWithParent(cmd.SysProcAttr)
 }
-
-// lowNice is the nice level of a worker at low CPU priority, below the developer's applications (nice 0).
-const lowNice = 10
 
 // niceOf reads the nice level of pid, 0 for the calling process. Linux's raw getpriority returns 20 - nice; the
 // other systems return the nice level itself.
@@ -40,47 +37,51 @@ func niceOf(pid int) (int, error) {
 	return prio, nil
 }
 
-// workerNice is the nice level of a worker. At standard priority, Djinn's own: a worker runs as Djinn was started
-// (nice djinn, a launcher at -10), and an unprivileged process cannot go below its own nice level anyway. At low
-// priority, lowNice, or Djinn's own when Djinn already runs lower.
-func workerNice(low bool) int {
+// levelOf is the nice level a process asked to run at nice (nice.go) runs at. At 0, Djinn's own: it runs as Djinn was
+// started (nice djinn, a launcher at -10), and an unprivileged process cannot go below its own nice level anyway.
+// Above, nice, or Djinn's own when Djinn already runs lower.
+func levelOf(nice int) int {
 	own, err := niceOf(0)
 	if err != nil {
 		own = 0
 	}
-	if low && own < lowNice {
-		return lowNice
+	if nice > 0 && own < nice {
+		return nice
 	}
 	return own
 }
 
-// lowCommand runs path under nice(1) at a worker's low nice level: nice sets its own level, then execs the program,
-// which starts at it. A setpriority once the process started is not enough: on macOS, a program that execs another at
-// once (/bin/sh execs bash, env execs node) can lose it, and the low-priority sh of PR #2's CI ran on at nice -10, its
-// child too. When Djinn already runs at that level or lower, path as it is, which inherits it. False when the program
-// does not start at its level (Djinn's own unknown, no nice on PATH): applyPriority sets it then.
-func lowCommand(path string, args []string) (string, []string, bool) {
+// lowCommand runs path under nice(1) at the nice level nice (nice.go): nice sets its own level, then execs the
+// program, which starts at it. A setpriority once the process started is not enough: on macOS, a program that execs
+// another at once (/bin/sh execs bash, env execs node) can lose it, and the low-priority sh of PR #2's CI ran on at
+// nice -10, its child too. At 0, or when Djinn already runs at that level or lower, path as it is, which inherits
+// Djinn's. False when the program does not start at its level (Djinn's own unknown, no nice on PATH): applyPriority
+// sets it then.
+func lowCommand(path string, args []string, nice int) (string, []string, bool) {
+	if nice <= 0 {
+		return path, args, true
+	}
 	own, err := niceOf(0)
 	if err != nil {
 		return path, args, false
 	}
-	if own >= lowNice {
+	if own >= nice {
 		return path, args, true
 	}
-	nice, err := exec.LookPath("nice")
+	prog, err := exec.LookPath("nice")
 	if err != nil {
 		return path, args, false
 	}
-	return nice, append([]string{"-n", strconv.Itoa(lowNice - own), path}, args...), true
+	return prog, append([]string{"-n", strconv.Itoa(nice - own), path}, args...), true
 }
 
-// applyPriority sets low CPU priority on the started process if lowPriority is true, when it did not start under nice
-// (lowCommand); at standard priority, it runs at Djinn's own, which it inherited.
-func applyPriority(cmd *exec.Cmd, lowPriority bool) {
-	if !lowPriority || cmd.Process == nil {
+// applyPriority sets the nice level nice on the started process, when it did not start under nice (lowCommand); at
+// 0, it runs at Djinn's own, which it inherited.
+func applyPriority(cmd *exec.Cmd, nice int) {
+	if nice <= 0 || cmd.Process == nil {
 		return
 	}
-	_ = setPriorityFn(syscall.PRIO_PROCESS, cmd.Process.Pid, workerNice(true))
+	_ = setPriorityFn(syscall.PRIO_PROCESS, cmd.Process.Pid, levelOf(nice))
 }
 
 // terminate asks the process group to stop, and in a scope every process of its cgroup that left the group. A

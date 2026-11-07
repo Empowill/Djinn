@@ -16,6 +16,7 @@ import (
 	"github.com/empowill/djinn/internal/testx"
 )
 
+// isWorkerLowPriority says whether the task's fake worker was started below the window (lowNice).
 func isWorkerLowPriority(h *Harness, taskID string) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -24,13 +25,13 @@ func isWorkerLowPriority(h *Harness, taskID string) bool {
 		return false
 	}
 	if fw, ok := r.worker.(*fakeWorker); ok {
-		return fw.IsLowPriority()
+		return fw.Nice() == lowNice
 	}
 	return false
 }
 
 // TestNotchRuntimePriorityAndPause verifies that lowering the operating load notch:
-// 1. Leaves the running workers at low CPU priority, where they run at any notch (Q298).
+// 1. Leaves the running workers at the low CPU priority they started at under High (Q298, Q371).
 // 2. Immediately pauses extra running workers in Q121 order (Q117 reversed).
 // 3. Emits a paused status event and a journal entry with method "harness/notch".
 // 4. Raising the notch back resumes paused workers first (Q123), still at low priority.
@@ -268,7 +269,7 @@ func TestNotchRuntimeAutoNeverPauses(t *testing.T) {
 		t.Errorf("harness.Paused() = %d in Auto mode, want 0", paused)
 	}
 
-	// Low priority, as at any notch.
+	// Low priority, as at any notch but Overclock.
 	if !isWorkerLowPriority(e.h, w1.GetId()) || !isWorkerLowPriority(e.h, w2.GetId()) {
 		t.Errorf("expected low priority on running workers in Auto mode under Minimal notch")
 	}

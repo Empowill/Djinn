@@ -41,7 +41,7 @@ func endedPID(t *testing.T) identity {
 func startOther(t *testing.T) (*exec.Cmd, identity) {
 	t.Helper()
 	cmd := exec.Command(os.Args[0], fakeWatchArg, "wait")
-	ownGroup(cmd, false)
+	ownGroup(cmd, 0)
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -188,7 +188,7 @@ func fakeParent(args []string) int {
 	default:
 		name, cargs = "sh", []string{"-c", "sleep 600 & echo $!; wait"}
 	}
-	p, err := startProcess(os.TempDir(), name, cargs, nil, nil, time.Second, false, cs.tracker("W1", "worker"))
+	p, err := startProcess(os.TempDir(), name, cargs, nil, nil, time.Second, 0, cs.tracker("W1", "worker"))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1

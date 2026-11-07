@@ -12,32 +12,33 @@ import (
 )
 
 // ownGroup starts the process in a group of its own, so that a Ctrl+C in Djinn's console does not reach it, and in
-// its worker priority class (workerClass).
-func ownGroup(cmd *exec.Cmd, lowPriority bool) {
-	flags := uint32(syscall.CREATE_NEW_PROCESS_GROUP) | workerClass(lowPriority)
+// the priority class of its nice level (classOf).
+func ownGroup(cmd *exec.Cmd, nice int) {
+	flags := uint32(syscall.CREATE_NEW_PROCESS_GROUP) | classOf(nice)
 	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: flags}
 }
 
-// workerClass is the priority class of a worker. At standard priority, Djinn's own: a worker runs as Djinn was
-// started, as on Unix (Windows alone would give a child NORMAL_PRIORITY_CLASS under an ABOVE_NORMAL Djinn, and
-// BELOW_NORMAL_PRIORITY_CLASS under a BELOW_NORMAL one). At low priority, BELOW_NORMAL_PRIORITY_CLASS, below the
-// developer's applications, or Djinn's own when Djinn already runs lower (IDLE_PRIORITY_CLASS).
-func workerClass(low bool) uint32 {
+// classOf is the priority class of a process asked to run at the nice level nice (nice.go). Below lowNice (a check at
+// nice 5, Djinn's own at 0), Djinn's own: it runs as Djinn was started, as on Unix (Windows alone would give a child
+// NORMAL_PRIORITY_CLASS under an ABOVE_NORMAL Djinn, and BELOW_NORMAL_PRIORITY_CLASS under a BELOW_NORMAL one); Windows
+// has no class between NORMAL and BELOW_NORMAL. At lowNice, BELOW_NORMAL_PRIORITY_CLASS, below the developer's
+// applications, or Djinn's own when Djinn already runs lower (IDLE_PRIORITY_CLASS).
+func classOf(nice int) uint32 {
 	own, err := windows.GetPriorityClass(windows.CurrentProcess())
 	if err != nil {
 		own = windows.NORMAL_PRIORITY_CLASS
 	}
-	if low && own != windows.IDLE_PRIORITY_CLASS {
+	if nice >= lowNice && own != windows.IDLE_PRIORITY_CLASS {
 		return windows.BELOW_NORMAL_PRIORITY_CLASS
 	}
 	return own
 }
 
-// lowCommand runs path as it is: on Windows, a worker starts in its class (ownGroup).
-func lowCommand(path string, args []string) (string, []string, bool) { return path, args, true }
+// lowCommand runs path as it is: on Windows, a process starts in its class (ownGroup).
+func lowCommand(path string, args []string, _ int) (string, []string, bool) { return path, args, true }
 
 // applyPriority is a no-op on Windows: the priority class is set at process creation via CreationFlags.
-func applyPriority(cmd *exec.Cmd, lowPriority bool) {}
+func applyPriority(*exec.Cmd, int) {}
 
 // jobs are the job objects of the processes that run, each nested in Djinn's (startGuard): what a process starts once
 // it is in its job joins it.

@@ -85,7 +85,7 @@ type idleCapper interface {
 // The input stays open for more messages, and is closed once every message has its result: the agent then exits.
 // Started with Spec.Listen (an ifrit), it stays open until CloseInput: the agent listens between turns.
 func startStream(ctx context.Context, spec Spec, command string, args []string, grace time.Duration, a streamAgent) (Worker, error) {
-	p, err := startProcess(spec.Dir, command, args, spec.Env, spec.Scope, grace, spec.LowPriority, spec.Track)
+	p, err := startProcess(spec.Dir, command, args, spec.Env, spec.Scope, grace, spec.Nice, spec.Track)
 	if err != nil {
 		return nil, fmt.Errorf("start %s: %w", command, err)
 	}

@@ -23,16 +23,17 @@ func processPriorityClass(pid int) (uint32, error) {
 	return windows.GetPriorityClass(handle)
 }
 
-// wantClass is the priority class a worker must run at: the test process's own at standard priority, as Djinn's own
-// is a worker's; BELOW_NORMAL_PRIORITY_CLASS at low priority, or the test process's own when it runs lower already
-// (IDLE_PRIORITY_CLASS). A CI runner does not run at NORMAL_PRIORITY_CLASS: Windows's ran the tests at BELOW_NORMAL.
-func wantClass(t *testing.T, low bool) uint32 {
+// wantClass is the priority class a process asked to run at nice must run at: the test process's own below lowNice
+// (a check's 5, Djinn's own 0), as Djinn's own is a worker's; BELOW_NORMAL_PRIORITY_CLASS at lowNice, or the test
+// process's own when it runs lower already (IDLE_PRIORITY_CLASS). A CI runner does not run at NORMAL_PRIORITY_CLASS:
+// Windows's ran the tests at BELOW_NORMAL.
+func wantClass(t *testing.T, nice int) uint32 {
 	t.Helper()
 	own, err := windows.GetPriorityClass(windows.CurrentProcess())
 	if err != nil {
 		t.Fatalf("read the test process's priority class: %v", err)
 	}
-	if low && own != windows.IDLE_PRIORITY_CLASS {
+	if nice >= lowNice && own != windows.IDLE_PRIORITY_CLASS {
 		return windows.BELOW_NORMAL_PRIORITY_CLASS
 	}
 	return own
@@ -48,11 +49,11 @@ func ownLevel() string {
 }
 
 // wantLevel is wantClass as ownLevel prints it.
-func wantLevel(t *testing.T, low bool) string { return fmt.Sprintf("0x%08x", wantClass(t, low)) }
+func wantLevel(t *testing.T, nice int) string { return fmt.Sprintf("0x%08x", wantClass(t, nice)) }
 
-func checkWorkerPriority(t *testing.T, what string, pid int, low bool) {
+func checkWorkerPriority(t *testing.T, what string, pid int, nice int) {
 	t.Helper()
-	want := wantClass(t, low)
+	want := wantClass(t, nice)
 	cls, err := processPriorityClass(pid)
 	if err != nil {
 		t.Fatalf("read priority class for %s (PID %d): %v", what, pid, err)
@@ -67,7 +68,7 @@ func checkWorkerPriority(t *testing.T, what string, pid int, low bool) {
 // Djinn's own class (PR #2's CI). The Unix twin starts it under nice -n 5.
 func TestWorkerPriorityUnderBelowNormal(t *testing.T) {
 	t.Parallel()
-	tests := []string{"TestWorkerPriority", "TestWorkerPriorityAnyNotch", "TestCheckPriority"}
+	tests := []string{"TestWorkerPriority", "TestWorkerPriorityByNotch", "TestCheckPriority"}
 	cmd := exec.CommandContext(t.Context(), os.Args[0],
 		"-test.run", "^("+strings.Join(tests, "|")+")$", "-test.count=1", "-test.v")
 	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: windows.BELOW_NORMAL_PRIORITY_CLASS}
@@ -75,7 +76,7 @@ func TestWorkerPriorityUnderBelowNormal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the priority tests fail at BELOW_NORMAL_PRIORITY_CLASS: %v\n%s", err, out)
 	}
-	for _, name := range []string{"TestWorkerPriority/normal_priority", "TestWorkerPriorityAnyNotch",
+	for _, name := range []string{"TestWorkerPriority/normal_priority", "TestWorkerPriorityByNotch",
 		"TestCheckPriority/install_by_the_developer"} {
 		if !strings.Contains(string(out), "--- PASS: "+name+" ") {
 			t.Errorf("%s did not pass at BELOW_NORMAL_PRIORITY_CLASS:\n%s", name, out)
