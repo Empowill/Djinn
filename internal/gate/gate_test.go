@@ -237,6 +237,7 @@ func TestTake(t *testing.T) {
 		m.setFree(18 * machine.GiB / 10)
 		g := New(m, peaks{"go tool task e2e": 31 * machine.GiB / 10, "go tool task test": 5 * machine.GiB, "go tool task lint": 200 << 20}, f)
 		g.tick = 10 * time.Millisecond
+		g.Heavy(64*machine.GiB, time.Hour) // The memory alone keeps them apart here, not their turn (TestAdmission).
 
 		heavy, waits := run(t, g, "e2e", "W1", "go tool task e2e")
 		if why := await(t, waits, "reason"); why != "go tool task e2e peaks at 3.1 GiB, 1.8 GiB free" {

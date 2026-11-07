@@ -175,6 +175,7 @@ type Harness struct {
 	held         func(taskID string) []string // the gates a task holds (HeldGates); nil: none known
 	waiting      func(taskID string) []string // the gates a task waits for (HeldGates); nil: none known
 	outside      func() (int, int)            // the gates held outside the running workers, and of them the merges' and pushes' (GatesOutside); nil: none
+	admit        string                       // djinn's path, whose gate hook admits the workers' commands (WithAdmit); "": none
 	silenceLimit time.Duration                // silence limit before the Lamplighter checks a worker (lamplighter.go)
 	maxWallTime  time.Duration                // ceiling on wall time budget per task (lamplighter.go)
 	ifritIdle    time.Duration                // how long the developer may leave Djinn alone before an ifrit goes out (ifrit.go)
@@ -1753,6 +1754,8 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 	kind := "worker"
 	if r.watcher {
 		kind = "watcher"
+	} else {
+		spec.Admit = h.admit
 	}
 	spec.Track = h.children.tracker(t.GetCode(), kind)
 	// Below the window at every notch but Overclock: typing stays fluid under load (Q298, L50, Q371).
@@ -3048,7 +3051,8 @@ func (h *Harness) hold(ctx context.Context, procedure string, req proto.Message,
 			if g.names == nil {
 				continue
 			}
-			if names := g.names(id); len(names) > 0 {
+			// An admitted command holds nothing another waits for: pausing its worker freezes no one else's turn.
+			if names := slices.DeleteFunc(slices.Clone(g.names(id)), func(n string) bool { return n == AdmissionGate }); len(names) > 0 {
 				h.mu.Unlock()
 				gate := "gate"
 				if len(names) > 1 {

@@ -19,6 +19,12 @@ import (
 func TestHandwritten(t *testing.T) {
 	t.Parallel()
 	documented := map[string]bool{}
+	for _, b := range cli.Hidden {
+		documented[b.Name] = true
+		if handwritten[b.Name] == nil {
+			t.Errorf("djinn %s is hidden and runs nowhere", b.Name)
+		}
+	}
 	for _, b := range cli.Builtins {
 		documented[b.Name] = true
 		if handwritten[b.Name] != nil {

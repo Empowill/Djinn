@@ -254,6 +254,12 @@ func runUp(args []string) (restart bool, err error) {
 		// to the provider's API host every 30 s, only while it is suspected (network.go).
 		harness.WithNetworkProbe(harness.ProbeHTTP),
 	}
+	// Each Claude worker's Bash command that neither reads nor edits is admitted by the gates first (gate.Hook).
+	if exe, err := os.Executable(); err == nil {
+		opts = append(opts, harness.WithAdmit(exe))
+	} else {
+		logx.L().Warn("no admission of the workers' commands", "err", err)
+	}
 	if !calm {
 		// Before a worker starts and before push checks, the free space of the data folder's disk and the Go build
 		// cache's: low, the cache's old entries go; almost full, the lead hears it and the push checks wait (disk.go).
@@ -301,6 +307,7 @@ func runUp(args []string) (restart bool, err error) {
 	}
 	workers.Schedule()
 	gates = gate.New(monitor, machine.NewPeaks(db), workers)
+	gates.Heavy(machine.ReadHeavy(home))
 	workers.HeldGates(gates.Held, gates.Waiting)
 	workers.GatesOutside(gates.Outside)
 	gates.Freed(workers.Wake)

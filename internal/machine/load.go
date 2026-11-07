@@ -80,6 +80,24 @@ func ReadIfritIdle(home string) uint32 {
 	return 0
 }
 
+// ReadHeavy reads when a command is heavy from settings.json in home (ui.v1.Settings.heavy_command_memory_mib and
+// heavy_command_cpu_seconds): past memory bytes of peak memory, or cpu of CPU time. Either is 0 when the file does
+// not say: the gates keep their default.
+func ReadHeavy(home string) (memory uint64, cpu time.Duration) {
+	if home == "" {
+		return 0, 0
+	}
+	data, err := os.ReadFile(filepath.Join(home, settingsFile))
+	if err != nil {
+		return 0, 0
+	}
+	var settings uiv1.Settings
+	if err := (protojson.UnmarshalOptions{DiscardUnknown: true}).Unmarshal(data, &settings); err != nil {
+		return 0, 0
+	}
+	return uint64(settings.GetHeavyCommandMemoryMib()) << 20, time.Duration(settings.GetHeavyCommandCpuSeconds()) * time.Second
+}
+
 // ReadLeadDriven tells whether settings.json in home says that Djinn drives the lead (ui.v1.Settings.lead_driven,
 // decision Q31, Q51): true unless the file says false.
 func ReadLeadDriven(home string) bool {

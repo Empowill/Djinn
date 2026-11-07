@@ -169,6 +169,13 @@ message Settings {
   repeated SignInRef unlimited_forced = 13;
   // The sign-ins the developer forced to count with a quota (djinn lead unlimited ... limited), whatever Djinn detects.
   repeated SignInRef unlimited_unforced = 14;
+  // A command measured past this many MiB of peak memory is heavy: it goes through the gates one at a time, whatever
+  // its gate's name, and a worker's Bash command so measured waits its turn. Unset or 0: 2048. djinn up reads it as it
+  // starts.
+  optional uint32 heavy_command_memory_mib = 15;
+  // A command measured past this many seconds of CPU time is heavy, as above. Unset or 0: 60. djinn up reads it as it
+  // starts.
+  optional uint32 heavy_command_cpu_seconds = 16;
 }
 
 // SignInRef names a sign-in of an agent: its own (no account) or one of its accounts.

@@ -103,6 +103,8 @@ func TestClaudeArgs(t *testing.T) {
 		"--permission-prompts", "none"}
 	const agentsMd = `"pluginConfigs":{"cc-plugin-agents-md@builtin":{"options":{"instructionFiles":"claude-md-and-agents-md"}}}`
 	native := `{` + agentsMd + `}`
+	const admitHook = `{"hooks":{"PreToolUse":[{"hooks":[{"args":["gate","hook"],"command":"/opt/djinn","onFailure":"continue",` +
+		`"timeout":3600,"type":"command"}],"matcher":"Bash|Monitor"}]},`
 	tests := []struct {
 		name string
 		spec Spec
@@ -134,6 +136,16 @@ func TestClaudeArgs(t *testing.T) {
 			append(slices.Clone(base), "--permission-mode", "dontAsk", "--settings", `{"permissions":{`+
 				`"allow":[],"defaultMode":"dontAsk","deny":["Edit","Write","NotebookEdit","WebFetch","WebSearch"]},`+agentsMd+`}`,
 				"--session-id", "t1")},
+		{"commands admitted", Spec{TaskID: "t1", Admit: "/opt/djinn"},
+			append(slices.Clone(base), "--settings", admitHook+agentsMd+`}`, "--session-id", "t1")},
+		{"commands admitted, listed permissions", Spec{TaskID: "t1", Admit: "/opt/djinn",
+			Permissions: &djinnv1.Permissions{Edit: true, Network: true, Commands: []string{"go"}}},
+			append(slices.Clone(base), "--permission-mode", "dontAsk", "--settings", admitHook+`"permissions":{`+
+				`"allow":["Edit","Write","NotebookEdit","WebFetch","WebSearch","Bash(go *)","PowerShell(go *)"],`+
+				`"defaultMode":"dontAsk","deny":[]},`+agentsMd+`}`, "--session-id", "t1")},
+		{"read-only, nothing to admit", Spec{TaskID: "t1", ReadOnly: true, Admit: "/opt/djinn"},
+			append(slices.Clone(base), "--restricted", "--tools", "Read,Glob,Grep", "--permission-mode", "plan",
+				"--strict-mcp-config", "--session-id", "t1")},
 		{"system prompt file", Spec{TaskID: "t1", Dir: "/d/lead", SystemPrompt: "# Leading in Djinn"},
 			append(slices.Clone(base), "--settings", native, "--session-id", "t1",
 				"--append-system-prompt-file", filepath.Join("/d/lead", claudeRulesFile), "--exclude-dynamic-system-prompt-sections")},

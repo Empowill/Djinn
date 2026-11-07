@@ -202,9 +202,40 @@ func (b *box) setFree(free uint64) {
 // peaks is fake costs: the highest peak memory of each command measured, wherever it runs.
 type peaks map[string]uint64
 
-func (p peaks) Peak(_ context.Context, _, _, command string) uint64 { return p[command] }
+func (p peaks) Cost(_ context.Context, _, _, command string) machine.Cost {
+	return machine.Cost{Peak: p[command]}
+}
 
 func (p peaks) Ask(context.Context, string, string, string, string) {}
+
+func (p peaks) Record(context.Context, *machinev1.CommandServiceRecordRequest) {}
+
+// measured is fake costs: what each command was measured to cost, wherever it runs, and the runs Djinn recorded.
+type measured struct {
+	mu    sync.Mutex
+	costs map[string]machine.Cost
+	runs  []*machinev1.CommandServiceRecordRequest
+}
+
+func (m *measured) Cost(_ context.Context, _, _, command string) machine.Cost {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.costs[command]
+}
+
+func (m *measured) Ask(context.Context, string, string, string, string) {}
+
+func (m *measured) Record(_ context.Context, run *machinev1.CommandServiceRecordRequest) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.runs = append(m.runs, run)
+}
+
+func (m *measured) recorded() []*machinev1.CommandServiceRecordRequest {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return slices.Clone(m.runs)
+}
 
 // costs records what djinn gate run sends.
 type costs struct {

@@ -12,6 +12,7 @@ import (
 
 	machinev1 "github.com/empowill/djinn/gen/go/machine/v1"
 	"github.com/empowill/djinn/gen/go/machine/v1/machinev1connect"
+	"github.com/empowill/djinn/internal/machine"
 	"github.com/empowill/djinn/internal/plan"
 )
 
@@ -72,6 +73,50 @@ func (s *service) Hold(
 			State: machinev1.GateState_GATE_STATE_TAKEN_BACK, Reason: "gate " + name + " taken back: " + hold.TakenBack(),
 		})
 	}
+}
+
+// Admit admits a command of a worker's Bash before it runs: it says why it waits, then that it is admitted, and ends;
+// the admission is held until the shell that runs the command, found among the agent's processes, ends.
+func (s *service) Admit(
+	ctx context.Context, req *connect.Request[machinev1.GateServiceAdmitRequest],
+	stream *connect.ServerStream[machinev1.GateServiceAdmitResponse],
+) error {
+	if err := protovalidate.Validate(req.Msg); err != nil {
+		return connect.NewError(connect.CodeInvalidArgument, err)
+	}
+	taskID, err := ownTask(ctx, req.Msg.GetTaskId())
+	if err != nil {
+		return err
+	}
+	agent, match := int(req.Msg.GetAgentPid()), req.Msg.GetMatch()
+	_, err = s.g.Take(ctx, Request{
+		Shared: true, TaskID: taskID, What: req.Msg.GetWhat(), Dir: req.Msg.GetDirectory(),
+		Find: func(skip func(int) bool) int { return machine.FindCommand(agent, match, skip) },
+	}, func(why string) {
+		_ = stream.Send(&machinev1.GateServiceAdmitResponse{State: machinev1.GateState_GATE_STATE_WAITING, Reason: why})
+	})
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil //nolint:nilerr // The hook left while it waited: nothing to answer.
+		}
+		return plan.Status(err)
+	}
+	// Held until the command's shell ends (keep), not until this call does: the hook ends now, and the command runs.
+	return stream.Send(&machinev1.GateServiceAdmitResponse{State: machinev1.GateState_GATE_STATE_HELD, Reason: "admitted"})
+}
+
+// ownTask is the task a call names, a worker's own when it names none; a worker naming another's is refused.
+func ownTask(ctx context.Context, taskID string) (string, error) {
+	caller := plan.CallerFromContext(ctx)
+	switch {
+	case caller == nil:
+		return taskID, nil
+	case taskID == "":
+		return caller.TaskID, nil
+	case taskID != caller.TaskID:
+		return "", connect.NewError(connect.CodePermissionDenied, fmt.Errorf("a worker's command is admitted for its own task only (%s)", caller.TaskID))
+	}
+	return taskID, nil
 }
 
 func (s *service) List(

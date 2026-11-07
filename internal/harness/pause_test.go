@@ -153,7 +153,7 @@ func TestPauseResume(t *testing.T) {
 
 // TestPauseHoldingGate: a worker that holds a gate is not paused, which would freeze the gate for every other
 // worker, nor one that waits for a gate, which would hold it frozen once its turn comes; it is once it has given the
-// gate back.
+// gate back, even while a command of its Bash is admitted, which keeps no one waiting.
 func TestPauseHoldingGate(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
@@ -196,9 +196,10 @@ func TestPauseHoldingGate(t *testing.T) {
 		t.Errorf("pause while holding two gates: %v", err)
 	}
 
-	// Given back: the pause goes through, wherever the worker can pause.
+	// Given back, only a command of its Bash admitted: the pause goes through, wherever the worker can pause.
 	mu.Lock()
-	delete(held, id)
+	held[id] = []string{AdmissionGate}
+	waiting[id] = []string{AdmissionGate}
 	mu.Unlock()
 	if runtime.GOOS == "windows" {
 		return

@@ -184,7 +184,8 @@ var GateRun = Command{
 or is interrupted. Djinn grants a gate to one holder at a time, and only while the machine is not under pressure;
 meanwhile it says why it waits. The exit code is the command's. Djinn records what the command cost in its project
 (CPU time, peak memory, duration): djinn command list. Outside a running worker, the gate takes a worker's slot.
-Djinn takes it back after an hour, the command going on.`,
+Djinn takes it back after an hour, the command going on. A command measured heavy (past 2 GiB of peak memory or a
+minute of CPU time) also waits while another task's heavy command runs, whatever its gate.`,
 	Args: []Param{
 		{Name: "<name>", Type: "string", Help: "The gate: codegen, stack, e2e, paid, or any other."},
 		{Name: "<command>", Type: "string", Help: "The command to run, after --, then its arguments."},
@@ -223,14 +224,28 @@ Send the dump with logs/djinn.log when you report a freeze. On Linux and macOS, 
 	},
 }
 
+// GateHook is djinn gate hook, which no one types.
+var GateHook = Command{
+	Name:    "gate hook",
+	Usage:   "djinn gate hook",
+	Summary: "Claude's PreToolUse hook on a worker's Bash and Monitor: wait until Djinn admits a command that neither reads nor edits.",
+	Help: `Read a PreToolUse call of Claude on its standard input. A command that only reads or edits (ls, rg, cat, sed,
+git status, djinn…) goes on at once; any other waits until Djinn admits it, then runs as the worker wrote it: the hook
+changes nothing in the call, and tells the worker why its command waited when it did. Djinn passes it to its Claude
+workers in the settings it gives them.`,
+}
+
 // Builtins are the commands written by hand, in the order the help lists them.
 var Builtins = []Command{Up, Open, Update, Backup, Restore, Version, MCP, GateRun, MachineCommands, DebugDump}
+
+// Hidden are the commands written by hand that Djinn runs, never a person nor an agent: no help lists them.
+var Hidden = []Command{GateHook}
 
 // Builtin returns the command written by hand whose words args start with, the longest, and the arguments after them.
 func Builtin(args []string) (Command, []string, bool) {
 	var found Command
 	n := 0
-	for _, b := range Builtins {
+	for _, b := range slices.Concat(Builtins, Hidden) {
 		words := strings.Fields(b.Name)
 		if len(words) > n && len(args) >= len(words) && slices.Equal(args[:len(words)], words) {
 			found, n = b, len(words)

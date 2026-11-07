@@ -94,11 +94,23 @@ type Spec struct {
 	// Claude's folder rules; Codex's workspace-write sandbox on them (it reads everywhere already); write_file and
 	// read_file grants of agy's project.
 	WriteDirs, ReadDirs []string
+	// Admit, when set, is the path of djinn, whose gate hook Claude runs before each command of the worker's Bash and
+	// Monitor: one that neither reads nor edits waits until the gates admit it (gate.Hook). Other agents, and a
+	// read-only worker, ignore it.
+	Admit string
 	// Track, when set, is told of each process the worker starts, its PID, the cgroup of its scope and its mark
 	// (markVar), as it starts; what it returns is called once the process, and what it left running, ended. Djinn
 	// records them so that none outlives it (W514).
 	Track func(pid int, cgroup, mark string) (ended func())
 }
+
+// AdmissionGate is the name the admissions of the workers' commands go by among the gates a task holds or waits for
+// (HeldGates): the worker is neither paused for a slot nor judged silent meanwhile, but the developer may pause it.
+const AdmissionGate = "commands"
+
+// WithAdmit has the gates admit the commands of each Claude worker's Bash, Claude running djinn's gate hook, djinn
+// being at path (Spec.Admit); "": none.
+func WithAdmit(path string) Option { return func(h *Harness) { h.admit = path } }
 
 // Skill is a skill summoned from another project: its folder stays in its source, and the worker reads it there.
 type Skill struct {

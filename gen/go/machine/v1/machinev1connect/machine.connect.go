@@ -47,6 +47,8 @@ const (
 	GateServiceHoldProcedure = "/machine.v1.GateService/Hold"
 	// GateServiceListProcedure is the fully-qualified name of the GateService's List RPC.
 	GateServiceListProcedure = "/machine.v1.GateService/List"
+	// GateServiceAdmitProcedure is the fully-qualified name of the GateService's Admit RPC.
+	GateServiceAdmitProcedure = "/machine.v1.GateService/Admit"
 	// CommandServiceListProcedure is the fully-qualified name of the CommandService's List RPC.
 	CommandServiceListProcedure = "/machine.v1.CommandService/List"
 	// CommandServiceRecordProcedure is the fully-qualified name of the CommandService's Record RPC.
@@ -167,6 +169,11 @@ type GateServiceClient interface {
 	Hold(context.Context, *connect.Request[v1.GateServiceHoldRequest]) (*connect.ServerStreamForClient[v1.GateServiceHoldResponse], error)
 	// List the gates held or waited for.
 	List(context.Context, *connect.Request[v1.GateServiceListRequest]) (*connect.Response[v1.GateServiceListResponse], error)
+	// Admit a command of a worker's Bash or Monitor before it runs (djinn gate hook, Claude's PreToolUse hook): the
+	// stream says why it waits, then that it is admitted, and ends; the command then runs as the worker wrote it. Djinn
+	// finds the shell that runs it among the agent's processes, and holds the admission, reading what it uses, until it
+	// ends: shared with the other commands, unless the command was measured heavy, which goes one at a time.
+	Admit(context.Context, *connect.Request[v1.GateServiceAdmitRequest]) (*connect.ServerStreamForClient[v1.GateServiceAdmitResponse], error)
 }
 
 // NewGateServiceClient constructs a client for the machine.v1.GateService service. By default, it
@@ -193,13 +200,20 @@ func NewGateServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
+		admit: connect.NewClient[v1.GateServiceAdmitRequest, v1.GateServiceAdmitResponse](
+			httpClient,
+			baseURL+GateServiceAdmitProcedure,
+			connect.WithSchema(gateServiceMethods.ByName("Admit")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // gateServiceClient implements GateServiceClient.
 type gateServiceClient struct {
-	hold *connect.Client[v1.GateServiceHoldRequest, v1.GateServiceHoldResponse]
-	list *connect.Client[v1.GateServiceListRequest, v1.GateServiceListResponse]
+	hold  *connect.Client[v1.GateServiceHoldRequest, v1.GateServiceHoldResponse]
+	list  *connect.Client[v1.GateServiceListRequest, v1.GateServiceListResponse]
+	admit *connect.Client[v1.GateServiceAdmitRequest, v1.GateServiceAdmitResponse]
 }
 
 // Hold calls machine.v1.GateService.Hold.
@@ -212,6 +226,11 @@ func (c *gateServiceClient) List(ctx context.Context, req *connect.Request[v1.Ga
 	return c.list.CallUnary(ctx, req)
 }
 
+// Admit calls machine.v1.GateService.Admit.
+func (c *gateServiceClient) Admit(ctx context.Context, req *connect.Request[v1.GateServiceAdmitRequest]) (*connect.ServerStreamForClient[v1.GateServiceAdmitResponse], error) {
+	return c.admit.CallServerStream(ctx, req)
+}
+
 // GateServiceHandler is an implementation of the machine.v1.GateService service.
 type GateServiceHandler interface {
 	// Take a gate, waiting as long as needed, and hold it until the call ends: the stream says why it waits, then
@@ -220,6 +239,11 @@ type GateServiceHandler interface {
 	Hold(context.Context, *connect.Request[v1.GateServiceHoldRequest], *connect.ServerStream[v1.GateServiceHoldResponse]) error
 	// List the gates held or waited for.
 	List(context.Context, *connect.Request[v1.GateServiceListRequest]) (*connect.Response[v1.GateServiceListResponse], error)
+	// Admit a command of a worker's Bash or Monitor before it runs (djinn gate hook, Claude's PreToolUse hook): the
+	// stream says why it waits, then that it is admitted, and ends; the command then runs as the worker wrote it. Djinn
+	// finds the shell that runs it among the agent's processes, and holds the admission, reading what it uses, until it
+	// ends: shared with the other commands, unless the command was measured heavy, which goes one at a time.
+	Admit(context.Context, *connect.Request[v1.GateServiceAdmitRequest], *connect.ServerStream[v1.GateServiceAdmitResponse]) error
 }
 
 // NewGateServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -242,12 +266,20 @@ func NewGateServiceHandler(svc GateServiceHandler, opts ...connect.HandlerOption
 		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
+	gateServiceAdmitHandler := connect.NewServerStreamHandler(
+		GateServiceAdmitProcedure,
+		svc.Admit,
+		connect.WithSchema(gateServiceMethods.ByName("Admit")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/machine.v1.GateService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case GateServiceHoldProcedure:
 			gateServiceHoldHandler.ServeHTTP(w, r)
 		case GateServiceListProcedure:
 			gateServiceListHandler.ServeHTTP(w, r)
+		case GateServiceAdmitProcedure:
+			gateServiceAdmitHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -263,6 +295,10 @@ func (UnimplementedGateServiceHandler) Hold(context.Context, *connect.Request[v1
 
 func (UnimplementedGateServiceHandler) List(context.Context, *connect.Request[v1.GateServiceListRequest]) (*connect.Response[v1.GateServiceListResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("machine.v1.GateService.List is not implemented"))
+}
+
+func (UnimplementedGateServiceHandler) Admit(context.Context, *connect.Request[v1.GateServiceAdmitRequest], *connect.ServerStream[v1.GateServiceAdmitResponse]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("machine.v1.GateService.Admit is not implemented"))
 }
 
 // CommandServiceClient is a client for the machine.v1.CommandService service.
