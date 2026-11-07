@@ -163,7 +163,7 @@ func TestBriefUnansweredComments(t *testing.T) {
 
 	rules := StableBrief(home, nil)
 	for _, want := range []string{
-		"Then reply to every comment, `djinn tilasm reply L01 C3 --wish <wish> --text \"…\" --task W60`", "*Launch*: turn the comments into the planned work",
+		"Then reply to every comment, `djinn tilasm reply L01 C3 --wish <wish> --text \"…\" --task W60`", "*Launch*: turn the comments into the work", "settles that question itself, no event then",
 		"*Iterate*: a task that puts the tilasm's next version", "never a guess", "`djinn tilasm comments <code> --send <n>`",
 	} {
 		if !strings.Contains(rules, want) {

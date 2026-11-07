@@ -105,6 +105,9 @@ func (m *Marks) approve(ctx context.Context, tx *store.Tx, q *planv1.Question, m
 			"the recommendation of %s names no option: answer it with djinn question answer", q.GetCode()))
 	}
 	q.Answer = &planv1.Answer{Choice: choice, CreateTime: mark.GetCreateTime(), Actor: planv1.Closer_CLOSER_DEVELOPER}
+	if err := sendWithAnswer(ctx, tx, q); err != nil { // The drafts on its tilasms go with it (W13).
+		return nil, err
+	}
 	return settled(ctx, m.Settle, tx, q)
 }
 

@@ -140,7 +140,9 @@ it:
   that task at once, if it waits on no other task and holds none back. A note, or such a link, goes to the Djinn first
   (**Send to the lead**), which launches the task as planned or adjusted to it. The decision then links the task it
   launched, on its own line: **Launched as planned**. It is given the tilasms of its plan at the version you saw when
-  you answered.
+  you answered, and the comments you left in draft on the tilasms the question links: your answer sends them with
+  it. **Launch** on such a tilasm, with comments, is that answer too: the recommended option, a note that cites the
+  send, the task launched with them.
 - **An option that iterates on a mockup.** When its plan is a [mockup](#mockup) (**Iterates:**), picking it is no
   answer: the question stays open, one version further, and a mockup task puts the tilasm's next version with your
   note, then brings the question back. At the plan's last version, the answer goes to the Djinn instead (**To the

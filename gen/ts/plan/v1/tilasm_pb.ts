@@ -607,15 +607,16 @@ export type TilasmSend = Message<"plan.v1.TilasmSend"> & {
   number: number;
 
   /**
-   * What the developer chose: launch the work with the comments, or iterate on the tilasm.
+   * What the developer chose: launch the work with the comments, or iterate on the tilasm; a launch that started an
+   * iteration round is an iterate.
    *
    * @generated from field: plan.v1.SendChoice choice = 5;
    */
   choice: SendChoice;
 
   /**
-   * The open question that linked the tilasm when it was sent, by identifier; empty when none did. A launch without
-   * a comment answered it with its recommended option.
+   * The open question that linked the tilasm when it was sent, by identifier; empty when none did. A launch answered
+   * it with its recommended option; the developer's answer to it sends the drafts with it, a launch (W13).
    *
    * @generated from field: string question_id = 6;
    */
@@ -1162,16 +1163,16 @@ export type TilasmServiceSendCommentsResponse = Message<"plan.v1.TilasmServiceSe
   comments: TilasmComment[];
 
   /**
-   * The question a launch without a comment answered, by code (Q29); empty when it answered none.
+   * The question a launch answered, by code (Q29, W13); empty when it answered none.
    *
    * @generated from field: string answered = 3;
    */
   answered: string;
 
   /**
-   * The question an iterate send started an iteration round on, by code (Q61), when an option of that open question
-   * linking the tilasm plans a mockup within its rounds (ROUND_KIND_ITERATE): the mockup task reads the comments, no
-   * comments event goes to the lead. Empty otherwise.
+   * The question an iterate send, or a launch on the option that iterates (W13), started an iteration round on, by code
+   * (Q61), when an option of that open question linking the tilasm plans a mockup within its rounds
+   * (ROUND_KIND_ITERATE): the mockup task reads the comments, no comments event goes to the lead. Empty otherwise.
    *
    * @generated from field: string iterated = 4;
    */
@@ -2351,9 +2352,11 @@ export const TilasmService: GenService<{
   },
   /**
    * Send every draft of a tilasm to the Djinn at once, from the window, with the developer's choice: launch the work it
-   * explains, or iterate on the tilasm. One lead event per send, whatever the number of comments. A launch without a
-   * comment answers the open question that links the tilasm with its recommended option, as approving it does. A
-   * tilasm held (TilasmHold) takes no send: a launch is never given twice.
+   * explains, or iterate on the tilasm. A launch answers the open question that links the tilasm with its recommended
+   * option: without a comment as approving it does, with comments by an answer whose note cites the send, its plan
+   * launched with the comments in its prompt (W13). An iterate send, or a launch whose option iterates, on a tilasm a
+   * mockup option of that question iterates on starts its iteration round. Any other send is one lead event, whatever
+   * the number of comments. A tilasm held (TilasmHold) takes no send: a launch is never given twice.
    *
    * @generated from rpc plan.v1.TilasmService.SendComments
    */

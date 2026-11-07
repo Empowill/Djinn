@@ -19,10 +19,12 @@ import (
 )
 
 // The send of a tilasm's comments (L08, step 6, decision Q29): every draft at once, with a comment on the whole tilasm
-// written above the buttons, and the developer's choice, launch or iterate. One lead event per send; a launch without
-// a comment answers the question that links the tilasm instead, as its approval does. An iterate send on a tilasm that
-// a mockup option of the open question linking it iterates on (W268) records that question's iteration round instead:
-// the mockup task reads the comments, as when the developer answers that option. A tilasm held takes no send.
+// written above the buttons, and the developer's choice, launch or iterate. A launch answers the open question that
+// links the tilasm with the option its recommendation names: without a comment as its approval does, with comments by
+// an answer whose note cites the send, its plan launched with them (W13, tilasm_answer.go). An iterate send on a
+// tilasm that a mockup option of the open question linking it iterates on (W268), or a launch whose option is that
+// one, records that question's iteration round instead: the mockup task reads the comments, as when the developer
+// answers that option. Any other send is one lead event. A tilasm held takes no send.
 
 func (t *Tilasms) SendComments(
 	ctx context.Context, req *connect.Request[planv1.TilasmServiceSendCommentsRequest],
@@ -105,14 +107,37 @@ func (t *Tilasms) SendComments(
 			answered, res.Answered = question, question.GetCode()
 			return tx.Put(question)
 		}
-		if p := MockupOption(question, tilasm.GetId()); p != nil && m.GetChoice() == planv1.SendChoice_SEND_CHOICE_ITERATE &&
-			t.Questions != nil {
+		rec, recommended := Recommended(question)
+		launch := m.GetChoice() == planv1.SendChoice_SEND_CHOICE_LAUNCH
+		if p := MockupOption(question, tilasm.GetId()); p != nil && t.Questions != nil &&
+			(!launch || recommended && rec == p.GetOption()) {
+			// Iterate, or Launch on the option that iterates: an iteration round that reads the send (W268, W13).
+			if launch {
+				send.Choice = planv1.SendChoice_SEND_CHOICE_ITERATE
+				if err := tx.Put(send); err != nil {
+					return err
+				}
+			}
 			if iteration, err = iterationRound(ctx, tx, question, p, "", send.GetNumber()); err != nil {
 				return err
 			}
 			iteration.TilasmId, iteration.Version = tilasm.GetId(), latestVersion(tilasm)
 			question.Rounds = append(question.Rounds, iteration)
 			iterating, res.Iterated = question, question.GetCode()
+			return tx.Put(question)
+		}
+		if question != nil && launch && recommended && t.Marks != nil {
+			// Launch with comments answers the question with the option Launch names, its note citing the send (W13):
+			// its plan launches with them, the lead has nothing to tie by hand.
+			question.Answer = &planv1.Answer{Choice: rec, Note: SendNote(tilasm, send, drafts), CreateTime: now,
+				Actor: planv1.Closer_CLOSER_DEVELOPER, SendId: send.GetId()}
+			if err := sendWithAnswer(ctx, tx, question); err != nil {
+				return err
+			}
+			if then, err = settled(ctx, t.Marks.Settle, tx, question); err != nil {
+				return err
+			}
+			answered, res.Answered = question, question.GetCode()
 			return tx.Put(question)
 		}
 		queued = true

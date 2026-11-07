@@ -55,6 +55,11 @@ func (h *Harness) Answered(ctx context.Context, q *planv1.Question) string {
 	if d, ok := h.answerPlan(ctx, q); ok {
 		did = append(did, d)
 	}
+	if sent, err := plan.AnswerComments(ctx, h.store, q); err != nil {
+		logx.L().Error("read the comments sent with an answer", "question", q.GetCode(), "err", err)
+	} else if line := plan.SentWithLine(sent); line != "" {
+		did = append(did, line) // The lead reads them where they went (W13).
+	}
 	if d, ok := h.answerAsker(ctx, q); ok {
 		did = append(did, d)
 	}
@@ -237,8 +242,17 @@ func (h *Harness) LaunchPlan(ctx context.Context, q *planv1.Question, p *planv1.
 	}
 	// The tilasms it is given are the versions the developer saw when they chose it: what they approved (W268).
 	tilasms := pinned(ctx, h.store, cur, p.GetTilasm())
+	// The comments sent with the answer are in its prompt, whoever launches it (W13).
+	sent, err := plan.AnswerComments(ctx, h.store, cur)
+	if err != nil {
+		return nil, plan.Status(err)
+	}
+	prompt := p.GetPrompt()
+	if comments := plan.CommentsPrompt(sent); comments != "" {
+		prompt = strings.TrimRight(prompt, "\n") + "\n\n" + comments
+	}
 	task, err := h.Spawn(ctx, planv1connect.TaskServiceSpawnProcedure, &planv1.TaskServiceSpawnRequest{
-		WishId: cur.GetWishId(), Title: p.GetTitle(), Prompt: p.GetPrompt(), ProjectId: p.GetProjectId(),
+		WishId: cur.GetWishId(), Title: p.GetTitle(), Prompt: prompt, ProjectId: p.GetProjectId(),
 		Provider: p.GetProvider(), Model: p.GetModel(), PartOf: p.GetPartOf(), After: p.GetAfter(),
 		Blocks: p.GetBlocks(), Tilasm: tilasms, Kind: p.GetKind(), Decision: cur.GetCode(),
 	})

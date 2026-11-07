@@ -239,13 +239,7 @@ func mockupPrompt(
 	if tilasm != nil {
 		fmt.Fprintf(&b, "## The comments sent on %s\n\n", name)
 		for _, c := range comments {
-			on := "the whole tilasm"
-			if a := c.GetAnchor(); a.GetExact() != "" {
-				on = fmt.Sprintf("%q", a.GetExact())
-			} else if a.GetElementId() != "" || a.GetPath() != "" {
-				on = "an element"
-			}
-			fmt.Fprintf(&b, "- %s, on %s: %s\n", c.GetCode(), on, strings.Join(strings.Fields(c.GetText()), " "))
+			b.WriteString(plan.CommentLine(c) + "\n")
 		}
 		if len(comments) == 0 {
 			b.WriteString("None sent on this version.\n")
