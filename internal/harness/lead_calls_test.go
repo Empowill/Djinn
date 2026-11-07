@@ -234,7 +234,8 @@ func TestLeadCallsCodes(t *testing.T) {
 }
 
 // TestLeadCallsContextFile (W474): djinn question ask reads its context from a file, as djinn question revise does:
-// the lead writes a context of several lines with its Write tool, never inline.
+// the lead writes a context of several lines with its Write tool, never inline. The command line reads the file and
+// sends its text: the request and the journal hold no path (W621).
 func TestLeadCallsContextFile(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
@@ -253,7 +254,7 @@ func TestLeadCallsContextFile(t *testing.T) {
 		t.Errorf("context = %q, want the file's %q", got, text)
 	}
 	l.refused(t, []string{"question", "ask", "Push now?", l.dew, "--context", "x", "--context-file", file},
-		"give context or context_file, not both")
+		"give --context or --context-file, not both")
 }
 
 // TestLeadCallsGates (W592): the calls the leads of 07/11 00:28 and 00:29 typed seven times in a wish of three

@@ -50,8 +50,10 @@ func TestReference(t *testing.T) {
 			if scoped(md.Input()) {
 				want++ // The command line's own --wish-id, the wish a task given by code is looked up in.
 			}
-			if promptFlag(md.Input()) != nil {
-				want++ // The command line's own --prompt-file.
+			for _, f := range fileFlags {
+				if fileField(md.Input(), f) != nil {
+					want++ // The command line's own --prompt-file or --context-file.
+				}
 			}
 			if got := len(c.Args) + len(c.Flags); got != want {
 				t.Errorf("djinn %s documents %d arguments and flags, want %d", name, got, want)

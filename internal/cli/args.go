@@ -33,13 +33,13 @@ func parse(md protoreflect.MessageDescriptor, args []string) (*dynamicpb.Message
 }
 
 // parseLine reads a command line as parse does, the command line's own --wish-id of a scoped request, and its own
-// --prompt-file of a request that takes a prompt but no file of it (promptFlag).
+// file flags (fileFlags) of a request that takes their text but no file of it (fileField).
 func parseLine(md protoreflect.MessageDescriptor, args []string) (line, error) {
 	msg := dynamicpb.NewMessage(md)
 	l := line{req: msg}
 	pos := positionals(md)
 	next, onlyPositional := 0, false
-	promptFile := ""
+	files := map[string]string{}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		if !onlyPositional && arg == "--" {
@@ -61,10 +61,10 @@ func parseLine(md protoreflect.MessageDescriptor, args []string) (line, error) {
 		}
 		name, value, hasValue := strings.Cut(arg[2:], "=")
 		fd := flag(md, name)
-		own := (name == "wish-id" || name == "wish") && scoped(md) || name == "prompt-file" && promptFlag(md) != nil
+		own := (name == "wish-id" || name == "wish") && scoped(md) || ownFile(md, name) != nil
 		if fd == nil && own {
 			// The command line's own flags: the wish a task given by code is looked up in (its UUID or its title,
-			// resolve reads it), the file a prompt is read from.
+			// resolve reads it), the file a prompt or a context is read from.
 			if !hasValue {
 				if i+1 == len(args) {
 					return line{}, fmt.Errorf("--%s needs a value", name)
@@ -72,8 +72,8 @@ func parseLine(md protoreflect.MessageDescriptor, args []string) (line, error) {
 				i++
 				value = args[i]
 			}
-			if name == "prompt-file" {
-				promptFile = value
+			if ownFile(md, name) != nil {
+				files[name] = value
 			} else {
 				l.wish = value
 			}
@@ -96,37 +96,60 @@ func parseLine(md protoreflect.MessageDescriptor, args []string) (line, error) {
 			return line{}, fmt.Errorf("%s: %w", label(fd), err)
 		}
 	}
-	if promptFile != "" {
-		if err := readPrompt(msg, promptFlag(md), promptFile); err != nil {
-			return line{}, err
+	for _, f := range fileFlags {
+		if path, ok := files[f.flag]; ok {
+			if err := readFile(msg, fileField(md, f), f, path); err != nil {
+				return line{}, err
+			}
 		}
 	}
 	return l, nil
 }
 
-// promptFileHelp is the help of the command line's own --prompt-file.
-const promptFileHelp = "File holding what to ask the worker, in Markdown, read in place of --prompt by the command line; " +
-	"a relative path starts from the current directory."
+// fileFlag is a flag of the command line's own, which reads a file into a text field of the request: the server
+// never sees the file, only its text, so what Djinn stores depends on no file.
+type fileFlag struct {
+	field, flag, help string
+}
 
-// promptFlag is the prompt field of md when the command line reads it from a file of its own flag --prompt-file: a
-// singular string prompt, beside no prompt_file the server reads (djinn task spawn has one). nil otherwise.
-func promptFlag(md protoreflect.MessageDescriptor) protoreflect.FieldDescriptor {
-	fd := md.Fields().ByName("prompt")
-	if fd == nil || fd.Kind() != protoreflect.StringKind || fd.IsList() || md.Fields().ByName("prompt_file") != nil {
+// fileFlags are the command line's own file flags.
+var fileFlags = []fileFlag{
+	{"prompt", "prompt-file", "File holding what to ask the worker, in Markdown, read in place of --prompt by the " +
+		"command line; a relative path starts from the current directory."},
+	{"context", "context-file", "File holding what is at stake, in Markdown, read in place of --context by the " +
+		"command line; a relative path starts from the current directory."},
+}
+
+// fileField is the field of md the file flag f fills: a singular string field of its name, beside no <name>_file
+// the server reads (djinn task spawn's prompt_file, djinn question revise's context_file). nil otherwise.
+func fileField(md protoreflect.MessageDescriptor, f fileFlag) protoreflect.FieldDescriptor {
+	fd := md.Fields().ByName(protoreflect.Name(f.field))
+	if fd == nil || fd.Kind() != protoreflect.StringKind || fd.IsList() ||
+		md.Fields().ByName(protoreflect.Name(f.field+"_file")) != nil {
 		return nil
 	}
 	return fd
 }
 
-// readPrompt sets the prompt fd of msg from the file at path, its last line breaks cut, as djinn task spawn
-// --prompt-file reads it on the server; refused beside --prompt.
-func readPrompt(msg *dynamicpb.Message, fd protoreflect.FieldDescriptor, path string) error {
+// ownFile is the file flag of md named flag, when the command line reads it; nil otherwise.
+func ownFile(md protoreflect.MessageDescriptor, flag string) *fileFlag {
+	for i, f := range fileFlags {
+		if f.flag == flag && fileField(md, f) != nil {
+			return &fileFlags[i]
+		}
+	}
+	return nil
+}
+
+// readFile sets the field fd of msg from the file at path, its last line breaks cut, as the server reads its own
+// file fields; refused beside the field's own flag.
+func readFile(msg *dynamicpb.Message, fd protoreflect.FieldDescriptor, f fileFlag, path string) error {
 	if msg.Has(fd) {
-		return errors.New("give --prompt or --prompt-file, not both")
+		return fmt.Errorf("give --%s or --%s, not both", kebab(f.field), f.flag)
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return fmt.Errorf("--prompt-file: %w", err)
+		return fmt.Errorf("--%s: %w", f.flag, err)
 	}
 	msg.Set(fd, protoreflect.ValueOfString(strings.TrimRight(string(data), "\r\n")))
 	return nil
