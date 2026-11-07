@@ -30,7 +30,8 @@ Djinn proposes a request when the work it would carry is ready, as a question in
   branch pushed and holding commits main lacks: *Open a pull request to main?*
 - **Per azima**: no question first. At the azima branch's first push, holding commits main lacks, Djinn opens its
   request as a draft, as below, and the Djinn hears it. While the task of the project's skill opens it, Djinn asks
-  nothing. When it cannot, or that task ends with none open, Djinn asks once every part of the azima is committed:
+  nothing, nor once it ends naming the request it opened, which the forge may list a little later. When it cannot,
+  or that task ends with none open, Djinn asks once every part of the azima is committed:
   *Open a pull request for T07 to main?* Its card shows **PR proposed**.
 
 The question carries the drafted title and description. **Open pull request** opens it, as a draft:

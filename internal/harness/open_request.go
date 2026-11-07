@@ -189,13 +189,20 @@ func openerTitle(kind, branch string) string {
 }
 
 // opening tells whether a task of wish opens the request of branch with the project's skill still (W623): while it
-// works, the forge knows no request, and asking to open one would open a second. Ended, its request is on the forge,
-// or the question is the way back.
+// works, the forge knows no request, and asking to open one would open a second. Done, its final note naming the
+// request it opened or found, it counts still: the forge may list it a pass late (W624). Ended otherwise, its request
+// is on the forge, or the question is the way back.
 func (h *Harness) opening(ctx context.Context, wishID string, project *planv1.Project, branch string) bool {
 	title := openerTitle(requestKind(forgeOf(ctx, project)), branch)
 	tasks, _ := store.List[*planv1.Task](ctx, h.store, store.Where{"wish_id": wishID})
 	return slices.ContainsFunc(tasks, func(t *planv1.Task) bool {
-		return t.GetTitle() == title && !slices.Contains(openerEnded, t.GetStatus())
+		if t.GetTitle() != title {
+			return false
+		}
+		if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE {
+			return requestURL.MatchString(h.finalNote(ctx, t.GetId()))
+		}
+		return !slices.Contains(openerEnded, t.GetStatus())
 	})
 }
 

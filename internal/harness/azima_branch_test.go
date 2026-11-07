@@ -1345,77 +1345,13 @@ func TestAzimaPRPass(t *testing.T) {
 	// would open a second, nor spawns a second opener. Stopped with nothing opened, the question is the way back.
 	t.Run("skill opens it: no question", func(t *testing.T) {
 		t.Parallel()
-		in := integrating(t)
-		in.mu.Lock()
-		in.forge = &fakeForge{}
-		in.mu.Unlock()
-		in.correctWith(func(_, prompt string) string { // The opener works on, as long as the test wants.
-			if strings.HasPrefix(prompt, "Djinn opens the") {
-				return "wait"
-			}
-			return ""
-		})
-		in.setAzimaStrategy(t)
-		in.remote(t)
-		head := in.git(t, in.repo, "rev-parse", "HEAD")
-		in.git(t, in.repo, "checkout", "--quiet", "--detach")
-		writeFile(t, in.repo, filepath.Join("app", ".agents", "skills", "open-mr-acme", "SKILL.md"),
-			"---\nname: open-mr-acme\ndescription: Open a MR.\n---\n")
-		in.git(t, in.repo, "add", ".")
-		in.git(t, in.repo, "commit", "--quiet", "-m", "The skill")
-		in.git(t, in.repo, "push", "--quiet", "origin", "HEAD:refs/heads/"+in.branch)
-		in.git(t, in.repo, "checkout", "--quiet", in.branch)
-		in.git(t, in.repo, "reset", "--quiet", "--hard", head)
-
-		t1 := in.azima(t, in.wishID, "One Alpha")
-		in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}, func(task *planv1.Task) { task.PartOf = t1.GetId() })
-		in.pass(t, 0)
-		b1 := "djinn/T1-one-alpha"
-		in.git(t, in.repo, "push", "--quiet", "origin", b1)
-		in.git(t, in.repo, "update-ref", "refs/remotes/origin/"+b1, in.git(t, in.repo, "rev-parse", "refs/heads/"+b1))
-		in.pass(t, 0)
-		in.pass(t, 0)
-		in.pass(t, 0)
-
-		openers := func() []*planv1.Task {
-			tasks, err := store.List[*planv1.Task](t.Context(), in.db, store.Where{"wish_id": in.wishID})
-			if err != nil {
-				t.Fatal(err)
-			}
-			return slices.DeleteFunc(tasks, func(task *planv1.Task) bool {
-				return task.GetTitle() != "Open the draft PR of "+b1
-			})
-		}
-		asked := func() []string {
-			questions, err := store.List[*planv1.Question](t.Context(), in.db, store.Where{"wish_id": in.wishID})
-			if err != nil {
-				t.Fatal(err)
-			}
-			var texts []string
-			for _, q := range questions {
-				if q.GetDjinnMove().GetKind() == planv1.MoveKind_MOVE_KIND_PULL_REQUEST {
-					texts = append(texts, q.GetText())
-				}
-			}
-			return texts
-		}
-		opener := openers()
-		if len(opener) != 1 {
-			t.Fatalf("openers %v; want one", opener)
-		}
-		if got := asked(); len(got) > 0 {
-			t.Errorf("asked %q while the skill's task opens the request", got)
-		}
-		if got := creates(in.forge); len(got) > 0 {
-			t.Errorf("Djinn created %q itself", got)
-		}
-
-		stop := &planv1.TaskServiceStopRequest{TaskId: opener[0].GetId()}
+		in, opener, asked, openers := skillOpens(t, "wait")
+		stop := &planv1.TaskServiceStopRequest{TaskId: opener.GetId()}
 		if _, err := in.tasks.Stop(t.Context(), connect.NewRequest(stop)); err != nil {
 			t.Fatal(err)
 		}
 		waitFor(t, "the opener stopped", func() bool {
-			return in.stored(t, opener[0].GetId()).GetStatus() == planv1.TaskStatus_TASK_STATUS_STOPPED
+			return in.stored(t, opener.GetId()).GetStatus() == planv1.TaskStatus_TASK_STATUS_STOPPED
 		})
 		in.pass(t, 0)
 		if want := []string{fmt.Sprintf("Open a pull request for T1 to %s?", in.branch)}; !slices.Equal(asked(), want) {
@@ -1423,6 +1359,36 @@ func TestAzimaPRPass(t *testing.T) {
 		}
 		if got := openers(); len(got) != 1 {
 			t.Errorf("openers %v; want the one stopped", got)
+		}
+	})
+
+	// W624, the case W623 left: the skill's task opened the draft and ended, its note naming the request, but the
+	// forge lists no request for the branch yet, a pass late. Djinn asks nothing: a yes would open a second. Ended
+	// with no request named, the question is the way back.
+	t.Run("skill opened it, forge late: no question", func(t *testing.T) {
+		t.Parallel()
+		in, opener, asked, openers := skillOpens(t, "text Opened the draft PR: https://github.com/acme/app/pull/7")
+		waitFor(t, "the opener done", func() bool {
+			return in.stored(t, opener.GetId()).GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE
+		})
+		in.pass(t, 0)
+		in.pass(t, 0)
+		if got := asked(); len(got) > 0 {
+			t.Errorf("asked %q while the forge has not listed the request the skill's task opened", got)
+		}
+		if got := openers(); len(got) != 1 {
+			t.Errorf("openers %v; want the one done", got)
+		}
+	})
+	t.Run("skill opened none: question", func(t *testing.T) {
+		t.Parallel()
+		in, opener, asked, _ := skillOpens(t, "text The skill failed: no PR opened.")
+		waitFor(t, "the opener done", func() bool {
+			return in.stored(t, opener.GetId()).GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE
+		})
+		in.pass(t, 0)
+		if want := []string{fmt.Sprintf("Open a pull request for T1 to %s?", in.branch)}; !slices.Equal(asked(), want) {
+			t.Errorf("opener done with none opened: asked %q, want %q", asked(), want)
 		}
 	})
 
@@ -1632,4 +1598,77 @@ func TestAzimaPRPass(t *testing.T) {
 			t.Errorf("a merge request was re-targeted: %v", forge.called())
 		}
 	})
+}
+
+// skillOpens sets up an azima whose parts are done and green, in a project whose skill opens its draft, and pushes
+// its branch: Djinn spawns the opener, whose fake agent plays script, on a forge that lists no request. It checks that
+// no pull request question is asked and that Djinn created none itself, and returns the opener with what lists the
+// pull request questions asked and the openers.
+func skillOpens(t *testing.T, script string) (in *integration, opener *planv1.Task, asked func() []string, openers func() []*planv1.Task) {
+	t.Helper()
+	in = integrating(t)
+	in.mu.Lock()
+	in.forge = &fakeForge{}
+	in.mu.Unlock()
+	in.correctWith(func(_, prompt string) string {
+		if strings.HasPrefix(prompt, "Djinn opens the") {
+			return script
+		}
+		return ""
+	})
+	in.setAzimaStrategy(t)
+	in.remote(t)
+	head := in.git(t, in.repo, "rev-parse", "HEAD")
+	in.git(t, in.repo, "checkout", "--quiet", "--detach")
+	writeFile(t, in.repo, filepath.Join("app", ".agents", "skills", "open-mr-acme", "SKILL.md"),
+		"---\nname: open-mr-acme\ndescription: Open a MR.\n---\n")
+	in.git(t, in.repo, "add", ".")
+	in.git(t, in.repo, "commit", "--quiet", "-m", "The skill")
+	in.git(t, in.repo, "push", "--quiet", "origin", "HEAD:refs/heads/"+in.branch)
+	in.git(t, in.repo, "checkout", "--quiet", in.branch)
+	in.git(t, in.repo, "reset", "--quiet", "--hard", head)
+
+	t1 := in.azima(t, in.wishID, "One Alpha")
+	in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}, func(task *planv1.Task) { task.PartOf = t1.GetId() })
+	in.pass(t, 0)
+	b1 := "djinn/T1-one-alpha"
+	in.git(t, in.repo, "push", "--quiet", "origin", b1)
+	in.git(t, in.repo, "update-ref", "refs/remotes/origin/"+b1, in.git(t, in.repo, "rev-parse", "refs/heads/"+b1))
+	in.pass(t, 0)
+	in.pass(t, 0)
+	in.pass(t, 0)
+
+	openers = func() []*planv1.Task {
+		tasks, err := store.List[*planv1.Task](t.Context(), in.db, store.Where{"wish_id": in.wishID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return slices.DeleteFunc(tasks, func(task *planv1.Task) bool {
+			return task.GetTitle() != "Open the draft PR of "+b1
+		})
+	}
+	asked = func() []string {
+		questions, err := store.List[*planv1.Question](t.Context(), in.db, store.Where{"wish_id": in.wishID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var texts []string
+		for _, q := range questions {
+			if q.GetDjinnMove().GetKind() == planv1.MoveKind_MOVE_KIND_PULL_REQUEST {
+				texts = append(texts, q.GetText())
+			}
+		}
+		return texts
+	}
+	all := openers()
+	if len(all) != 1 {
+		t.Fatalf("openers %v; want one", all)
+	}
+	if got := asked(); len(got) > 0 && script == "wait" {
+		t.Errorf("asked %q while the skill's task opens the request", got)
+	}
+	if got := creates(in.forge); len(got) > 0 {
+		t.Errorf("Djinn created %q itself", got)
+	}
+	return in, all[0], asked, openers
 }
