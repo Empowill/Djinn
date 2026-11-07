@@ -24,8 +24,9 @@ import (
 )
 
 // ConfigFolders are the folders of a project that hold its configuration as Djinn reads it: its settings, its
-// permissions and its skills. Djinn extracts them from the reference branch's tree.
-var ConfigFolders = []string{".agents", filepath.Join(".claude", "skills")}
+// permissions and its skills, and the djinn.yaml at its root (ProjectConfigFiles). Djinn extracts them from the
+// reference branch's tree.
+var ConfigFolders = []string{".agents", filepath.Join(".claude", "skills"), "djinn.yaml"}
 
 // Config is where Djinn reads a project's configuration on this machine: its .agents/settings.txtpb, its
 // .agents/permissions.txtpb and its skills. In Git, with a remote, Djinn reads them in the reference branch's tree at

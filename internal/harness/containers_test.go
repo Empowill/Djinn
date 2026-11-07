@@ -77,8 +77,8 @@ func TestContainersCounted(t *testing.T) {
 	}
 }
 
-// TestContainerCaps: a project's .agents/containers.txtpb sets the ceilings of its workers' containers; without it,
-// or with a field left out, Djinn's defaults hold, never more than a quarter of the machine's memory.
+// TestContainerCaps: a project's djinn.yaml sets the ceilings of its workers' containers, and the wrapper names it;
+// without it, or with a field left out, Djinn's defaults hold, never more than a quarter of the machine's memory.
 func TestContainerCaps(t *testing.T) {
 	t.Parallel()
 	defaultMemory := uint64(defaultContainerMemory)
@@ -90,19 +90,16 @@ func TestContainerCaps(t *testing.T) {
 		want       wrap.Caps
 	}{
 		{"no file", "", wrap.Caps{Memory: defaultMemory, PIDs: 1024}},
-		{"both", "memory_mib: 8192\npids: 2048\n", wrap.Caps{Memory: 8 << 30, PIDs: 2048}},
-		{"memory only", "memory_mib: 6144\n", wrap.Caps{Memory: 6 << 30, PIDs: 1024}},
-		{"invalid", "memory_mib: 1\n", wrap.Caps{Memory: defaultMemory, PIDs: 1024}},
+		{"both", "containers: {memory_mib: 8192, pids: 2048}\n", wrap.Caps{Memory: 8 << 30, PIDs: 2048, File: "djinn.yaml"}},
+		{"memory only", "containers:\n  memory_mib: 6144\n", wrap.Caps{Memory: 6 << 30, PIDs: 1024, File: "djinn.yaml"}},
+		{"invalid", "containers:\n  memory_mib: 1\n", wrap.Caps{Memory: defaultMemory, PIDs: 1024, File: "djinn.yaml"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
 			dir := t.TempDir()
 			if c.file != "" {
-				if err := os.MkdirAll(filepath.Join(dir, ".agents"), 0o700); err != nil {
-					t.Fatal(err)
-				}
-				if err := os.WriteFile(filepath.Join(dir, ".agents", "containers.txtpb"), []byte(c.file), 0o600); err != nil {
+				if err := os.WriteFile(filepath.Join(dir, "djinn.yaml"), []byte(c.file), 0o600); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -123,7 +120,7 @@ func TestWrapperEnv(t *testing.T) {
 	t.Parallel()
 	home := t.TempDir()
 	h := &Harness{home: home, admit: "/opt/djinn/djinn"}
-	caps := wrap.Caps{Memory: 4 << 30, PIDs: 1024}
+	caps := wrap.Caps{Memory: 4 << 30, PIDs: 1024, File: "djinn.yaml"}
 	root := wrap.Root(home)
 	for _, heads := range []bool{false, true} {
 		got, err := h.wrapperEnv(Spec{containers: caps}, heads)
@@ -144,7 +141,9 @@ func TestWrapperEnv(t *testing.T) {
 		if len(dirs) <= len(want) || !slices.Equal(dirs[:len(want)], want) {
 			t.Errorf("heads %v: PATH = %q, want %q first", heads, path, want)
 		}
-		for _, kv := range []string{wrap.EnvMemory + "=4294967296", wrap.EnvPIDs + "=1024", wrap.EnvHome + "=" + home} {
+		for _, kv := range []string{
+			wrap.EnvMemory + "=4294967296", wrap.EnvPIDs + "=1024", wrap.EnvFile + "=djinn.yaml", wrap.EnvHome + "=" + home,
+		} {
 			if !slices.Contains(got, kv) {
 				t.Errorf("heads %v: env %q lacks %s", heads, got, kv)
 			}

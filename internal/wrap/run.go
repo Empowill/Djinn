@@ -18,6 +18,8 @@ const (
 	// EnvMemory and EnvPIDs are the ceilings of the worker's containers (Caps); without them, docker runs as is.
 	EnvMemory = "DJINN_CONTAINER_MEMORY"
 	EnvPIDs   = "DJINN_CONTAINER_PIDS"
+	// EnvFile is the project's file they were read in (Caps.File); without it, the wrapper names ConfigFile.
+	EnvFile = "DJINN_CONTAINER_FILE"
 	// EnvHome is the data folder of the Djinn that runs the worker, its containers' HomeLabel.
 	EnvHome = "DJINN_CONTAINER_HOME"
 	// EnvAdmit, "1", has the wrapped commands wait for their admission by the gates: a worker whose agent has no
@@ -114,7 +116,7 @@ func Main(root, head string, args []string, stderr io.Writer, admit Admit, exec 
 				return 1
 			}
 			for _, n := range notes {
-				fmt.Fprintf(stderr, "djinn: %s; %s raises it\n", n, Setting)
+				fmt.Fprintf(stderr, "djinn: %s; %s raises it\n", n, caps.Setting())
 			}
 		}
 	}
@@ -139,7 +141,7 @@ func capsFrom(getenv func(string) string) (Caps, bool) {
 	if err1 != nil || err2 != nil || memory == 0 || pids <= 0 {
 		return Caps{}, false
 	}
-	return Caps{Memory: memory, PIDs: pids}, true
+	return Caps{Memory: memory, PIDs: pids, File: getenv(EnvFile)}, true
 }
 
 // lookPath finds the executable head on path, leaving out the folders under root: the wrappers.
@@ -173,6 +175,9 @@ func Env(root, home, path string, caps Caps, heads bool) []string {
 		EnvMemory + "=" + strconv.FormatUint(caps.Memory, 10),
 		EnvPIDs + "=" + strconv.FormatInt(caps.PIDs, 10),
 		EnvHome + "=" + home,
+	}
+	if caps.File != "" {
+		env = append(env, EnvFile+"="+caps.File)
 	}
 	if heads {
 		env = append(env, EnvAdmit+"=1")
