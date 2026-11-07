@@ -1233,6 +1233,29 @@ test("a copy button copies the exact command and says so, and never answers the 
     preventDefault: () => {},
   });
   assert.equal(options()[0].props["aria-pressed"], true);
+  // Space on the option already selected, where the arrows leave the focus, is the page's: it scrolls (W491).
+  let scrolls = true;
+  options()[0].props.onKeyDown({
+    key: " ",
+    target: "self",
+    currentTarget: "self",
+    preventDefault: () => {
+      scrolls = false;
+    },
+  });
+  assert.ok(scrolls);
+  // Enter on it is the question's: the card takes it (in the column, the note).
+  let taken = true;
+  options()[0].props.onKeyDown({
+    key: "Enter",
+    target: "self",
+    currentTarget: "self",
+    preventDefault: () => {
+      taken = false;
+    },
+  });
+  assert.ok(taken);
+  assert.equal(options()[0].props["aria-pressed"], true);
   await card.settle();
   assert.deepEqual(answered, []);
   // Enter on a focused option picks it too, and answers nothing (W574).

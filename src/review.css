@@ -1103,7 +1103,10 @@ html[data-theme="light"] .lead-side-log-line.done {
   cursor: auto;
 }
 /* The question that has the focus, the one Enter acts on, by the keys or a click: a gold ring around the whole of it,
-   uniform on its rounded edge, in both themes. The hover only tints a closed one's ground. */
+   uniform on its rounded edge, in both themes, the focus on it or on one of its options or fields (W491: the arrows
+   give it to its option selected). The hover only tints a closed one's ground. :focus, which :focus-within holds, stays
+   named for tests/styles.test.cjs. */
+.review .question-card.question-row:focus-within,
 .review .question-card.question-row:focus {
   outline: 2px solid var(--sand);
   outline-offset: 2px;

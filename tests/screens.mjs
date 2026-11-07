@@ -23,7 +23,11 @@ export { createRouterTransport } from "@connectrpc/connect";
 export { createDjinn, DjinnProvider } from "@/src/data/djinn.tsx";
 export { ProjectGear, WishSidebar } from "@/src/wish-sidebar.tsx";
 export { SyncLine, SyncLines, syncTitle } from "@/src/project-sync.tsx";
-export { WishQuestion } from "@/src/wish-question.tsx";
+export {
+  WishQuestion,
+  NOTE_KEY,
+  optionStep,
+} from "@/src/wish-question.tsx";
 export {
   NoteCounter,
   TextField,
@@ -31,6 +35,14 @@ export {
   hasText,
   useTyped,
 } from "@/src/text-field.tsx";
+export {
+  historyStep,
+  nextWish,
+  typingIn,
+  wishOrder,
+  wishStep,
+} from "@/src/window-keys.ts";
+export { LAYERS, ViewHistory, WAY_MS, samePlace } from "@/src/view-history.ts";
 export {
   AsleepQuestions,
   QuestionColumn,
