@@ -98,6 +98,7 @@ type Service struct {
 	installed  bool             // it is at the path of the running one already: Update only restarts
 	notesURL   string           // where its release notes are; empty for none
 	notResumed []string         // terminals the last restart could not run again
+	held       heldStart        // why this start resumed no worker (SetHeld); unspecified: it resumed them
 	builds     []*uiv1.Build    // the last build pushed of each integration branch, not installed; the running one's first
 	readyBuild *uiv1.Build      // the newer Djinn waiting, named as a build; nil when not known
 	installing *uiv1.Installing // the install that runs now, or the last one when it failed; nil for none
@@ -567,6 +568,7 @@ func (s *Service) updateState() *uiv1.UiServiceWatchUpdateResponse {
 	return &uiv1.UiServiceWatchUpdateResponse{
 		Current: s.Version, Ready: s.ready, NotResumed: slices.Clone(s.notResumed), NotesUrl: s.notesURL,
 		Builds: builds, Installing: proto.CloneOf(s.installing), ReadyBuild: proto.CloneOf(s.readyBuild), Installed: s.installed,
+		HeldStart: s.held.why, HeldMemoryPercent: s.held.memoryPercent, HeldTasks: slices.Clone(s.held.tasks),
 	}
 }
 
@@ -594,6 +596,22 @@ func (s *Service) SetNotResumed(lines []string) {
 	defer s.updates.Unlock()
 	s.notResumed = slices.Clone(lines)
 	s.notifyUpdate()
+}
+
+// SetHeld reports why this start resumed none of the workers the last djinn up left interrupted, the machine's memory
+// at the Hourglass's last reading for HELD_START_MEMORY, and the tasks it held (cmd/djinn/held.go).
+func (s *Service) SetHeld(why uiv1.HeldStart, memoryPercent float64, tasks []string) {
+	s.updates.Lock()
+	defer s.updates.Unlock()
+	s.held = heldStart{why: why, memoryPercent: memoryPercent, tasks: slices.Clone(tasks)}
+	s.notifyUpdate()
+}
+
+// heldStart is what SetHeld reports.
+type heldStart struct {
+	why           uiv1.HeldStart
+	memoryPercent float64
+	tasks         []string
 }
 
 // LastShow is the last wish and terminal the window was asked to show, however old; empty for none.

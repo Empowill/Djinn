@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -107,6 +108,24 @@ func (s *Store) Samples(ctx context.Context, series string, from time.Time) ([]S
 		out = append(out, x)
 	}
 	return out, rows.Err()
+}
+
+// LastSample is the latest sample of series, and false when it has none.
+func (s *Store) LastSample(ctx context.Context, series string) (Sample, bool, error) {
+	var at, memory, djinnMemory, selfMemory int64
+	x := Sample{Series: series}
+	err := s.db.QueryRowContext(ctx,
+		`SELECT at, seconds, cpu, memory, djinn_cpu, djinn_memory, self_cpu, self_memory FROM sample
+		WHERE series = ? ORDER BY at DESC LIMIT 1`, series).
+		Scan(&at, &x.Seconds, &x.CPU, &memory, &x.DjinnCPU, &djinnMemory, &x.SelfCPU, &selfMemory)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Sample{}, false, nil
+	}
+	if err != nil {
+		return Sample{}, false, err
+	}
+	x.At, x.Memory, x.DjinnMemory, x.SelfMemory = time.UnixMilli(at), uint64(memory), uint64(djinnMemory), uint64(selfMemory)
+	return x, true, nil
 }
 
 // Retention is how long the samples are kept, and how many at most.
