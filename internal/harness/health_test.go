@@ -345,7 +345,10 @@ func TestHealthRetriable(t *testing.T) {
 	if r := got.GetHealth().GetReason(); r != "a crash: claude ended before the end of its turn" {
 		t.Errorf("reason %q", r)
 	}
-	e.until(t, final.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_FAILED))
+	// FAILED is stored before the lead hears it (ended, workerEnded), and a health before its line (judge, tellHealth):
+	// wait until the end is handled whole and the line is told, then let a few passes tell a second line, if any.
+	e.ended(t, final.GetId())
+	waitFor(t, "the health line", func() bool { return len(healthEvents(queue)) > 0 })
 	e.passes(3)
 	if h := e.get(t, final.GetId()).GetHealth(); h != nil {
 		t.Errorf("failed for good: %v, want no health", h)
