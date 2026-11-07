@@ -55,7 +55,9 @@ func TestCorrectionOnTheProjectsProvider(t *testing.T) {
 	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}, onAntigravity)
 
 	in.pass(t, 0)
-	in.assertOwnProvider(t, in.correction(t, w1), w1)
+	c := in.correction(t, w1)
+	in.assertOwnProvider(t, c, w1)
+	assertKind(t, in.get(t, c.GetId()), planv1.TaskKind_TASK_KIND_CORRECTION)
 }
 
 // TestReviewOnTheProjectsProvider (Q95): a review worker of work left not committed runs on the project's provider and
@@ -72,7 +74,9 @@ func TestReviewOnTheProjectsProvider(t *testing.T) {
 	in.leave(t, w1, map[string]string{"app/src/b.txt": "b\n"})
 
 	in.pass(t, 0)
-	in.assertOwnProvider(t, in.reviewer(t, w1), w1)
+	r := in.reviewer(t, w1)
+	in.assertOwnProvider(t, r, w1)
+	assertKind(t, in.get(t, r.GetId()), planv1.TaskKind_TASK_KIND_REVIEW)
 }
 
 // TestPushCorrectionOnTheProjectsProvider (Q95): a correction worker of red push checks runs on the project's provider
@@ -98,5 +102,7 @@ func TestPushCorrectionOnTheProjectsProvider(t *testing.T) {
 	if state.GetCorrectedBy() == "" {
 		t.Fatalf("the push %v; want corrected by a worker", state)
 	}
-	in.assertOwnProvider(t, in.ended(t, state.GetCorrectedBy()), w1)
+	c := in.ended(t, state.GetCorrectedBy())
+	in.assertOwnProvider(t, c, w1)
+	assertKind(t, c, planv1.TaskKind_TASK_KIND_CORRECTION)
 }

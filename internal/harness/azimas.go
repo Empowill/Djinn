@@ -180,6 +180,37 @@ func (h *Harness) migrateAzimas(ctx context.Context, tasks []*planv1.Task) error
 	return nil
 }
 
+// migrateKinds gives each of tasks, every task of the store, stored before correction, review and watcher were kinds
+// the one its fields tell (plan.FillKind), in one transaction, each journaled: changed in place, for Recover to go on
+// with. A second djinn up finds none to change.
+func (h *Harness) migrateKinds(ctx context.Context, tasks []*planv1.Task) error {
+	var changed []*planv1.Task
+	for _, t := range tasks {
+		if plan.FillKind(t) {
+			changed = append(changed, t)
+		}
+	}
+	if len(changed) == 0 {
+		return nil
+	}
+	err := h.store.Tx(ctx, func(tx *store.Tx) error {
+		for _, t := range changed {
+			if err := tx.Journal(actorHarness, methodKind, t); err != nil {
+				return err
+			}
+			if err := tx.Put(t); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("give %d tasks their kind: %w", len(changed), err)
+	}
+	logx.L().Info("tasks given their kind, stored before it was one", "count", len(changed))
+	return nil
+}
+
 // ungroupOrphans makes part of no azima each of tasks, every task of the store, that is part of an azima its wish no
 // longer has (deleted before Delete refused it): journaled, said in the log and, for work, in its events, so that the
 // window shows it where it shows work of no azima. Changed in place, for Recover to go on with.

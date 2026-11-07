@@ -137,10 +137,7 @@ func TestDerivedValues(t *testing.T) {
 		{"another message is null", QuestionRefs, "context::size", &planv1.Task{Prompt: "abcd"}, nil},
 		// Every case of plan.Kind is TestKind's: the ref gives its value by name.
 		{"a task without kind is work", TaskRefs, "type", &planv1.Task{}, "TASK_KIND_WORK"},
-		{"an old review, by its field", TaskRefs, "type", &planv1.Task{Review: &planv1.TaskReview{}},
-			"TASK_KIND_REVIEW"},
-		{"a watcher, by its provider", TaskRefs, "type", &planv1.Task{Provider: planv1.Provider_PROVIDER_WATCH},
-			"TASK_KIND_WATCHER"},
+		{"a review", TaskRefs, "type", &planv1.Task{Kind: planv1.TaskKind_TASK_KIND_REVIEW}, "TASK_KIND_REVIEW"},
 		{"azima", TaskRefs, "type", &planv1.Task{Kind: planv1.TaskKind_TASK_KIND_AZIMA}, "TASK_KIND_AZIMA"},
 		{"type of another message is null", TaskRefs, "type", &planv1.Question{}, nil},
 	} {

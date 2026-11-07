@@ -363,6 +363,7 @@ func TestMergeMain(t *testing.T) {
 			t.Fatalf("after the conflict: tip %s, %v", u.tip(t), state)
 		}
 		c := u.ended(t, state.GetCorrectedBy())
+		assertKind(t, c, planv1.TaskKind_TASK_KIND_CORRECTION)
 		f := c.GetCorrection().GetFailure()
 		if c.GetTitle() != "Merge: origin/"+u.main+" — conflict in app/README.md" || c.GetProvider() != planv1.Provider_PROVIDER_FAKE ||
 			f.GetMainSha() != theirs || f.GetBase() != old || !slices.Equal(f.GetFiles(), []string{"app/README.md"}) || len(f.GetTaskIds()) != 0 {
