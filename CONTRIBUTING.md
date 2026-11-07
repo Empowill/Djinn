@@ -443,6 +443,7 @@ their contributors.
   [xterm.js](https://github.com/xtermjs/xterm.js) and its fit and web-links addons (the terminal),
   [Apache ECharts](https://github.com/apache/echarts) and its [ZRender](https://github.com/ecomfe/zrender) (the charts,
   loaded on demand),
+  [Apache Arrow for JavaScript](https://github.com/apache/arrow-js) (the tables of QueryService, read on demand),
   [Fontsource](https://github.com/fontsource/font-files) (DM Sans, IBM Plex Mono).
 - Documentation site, vendored in `docs/site`: Cormorant Garamond, DM Sans and IBM Plex Mono from Fontsource.
 - Build and tests: [Vite](https://github.com/vitejs/vite) and
