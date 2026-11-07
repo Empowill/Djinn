@@ -31,8 +31,8 @@ median time running of the work done this week, the tasks created each day by ty
 or a status equal to a value, one of several, containing or beginning with another, ignoring case; a number, a time or
 a duration equal to, greater or smaller than a value; true or false; or absent. Filters join in groups, all of them,
 one of them, or none. All the filters of a query hold together. An equality on an identifier narrows what the store
-reads before anything is decoded. The window sends each filter typed; the command line writes it as a short text that
-Djinn reads with the type of its ref.
+reads before anything is decoded. The window sends each filter typed; the command line writes it as a short text, which it
+reads itself into the typed filter, with the type the schema gives its ref.
 
 **Aggregates.** A query may group its rows instead of listing them: by the value of a ref, by the day, the week or the
 month of a time, in the machine's time zone, or by bins of a number or a duration whose bounds it gives, such as below

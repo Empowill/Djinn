@@ -75,9 +75,7 @@ func collection(c queryv1.Collection) string {
 	return strings.TrimPrefix(c.String(), "COLLECTION_")
 }
 
-// Request turns a QueryService request into a Query. A filter, a sort, a group or a measure is read from its
-// message, or from its text when set, as ParseFilter, ParseSort, ParseGroup and ParseMeasure read it. Its errors wrap
-// ErrInvalid.
+// Request turns a QueryService request, its typed messages, into a Query. Its errors wrap ErrInvalid.
 func Request(req *queryv1.QueryServiceQueryRequest) (Query, error) {
 	q := Query{Collection: collection(req.GetCollection()), Selects: req.GetSelect(), Limit: int(req.GetLimit())}
 	for _, f := range req.GetFilter() {
@@ -89,12 +87,6 @@ func Request(req *queryv1.QueryServiceQueryRequest) (Query, error) {
 	}
 	for _, o := range req.GetSort() {
 		srt := Sort{Ref: o.GetRef(), Desc: o.GetDesc()}
-		if o.GetText() != "" {
-			var err error
-			if srt, err = ParseSort(o.GetText()); err != nil {
-				return Query{}, err
-			}
-		}
 		if srt.Ref == "" {
 			return Query{}, fmt.Errorf("%w: a sort without ref", ErrInvalid)
 		}
@@ -123,8 +115,6 @@ func Request(req *queryv1.QueryServiceQueryRequest) (Query, error) {
 // filterOf is the Filter f says, each comparison bound to the types of ref it may read.
 func filterOf(f *queryv1.Filter) (Filter, error) {
 	switch w := f.GetWhere().(type) {
-	case *queryv1.Filter_Text:
-		return ParseFilter(w.Text)
 	case *queryv1.Filter_Group:
 		g := Group{Op: And}
 		switch w.Group.GetOp() {
@@ -195,9 +185,6 @@ func comparison(ref string, op queryv1.CompareOp, v any) Filter {
 
 // groupOf is the GroupBy g says.
 func groupOf(g *queryv1.GroupBy) (GroupBy, error) {
-	if g.GetText() != "" {
-		return ParseGroup(g.GetText())
-	}
 	by := GroupBy{Ref: g.GetRef()}
 	if by.Ref == "" {
 		return GroupBy{}, fmt.Errorf("%w: a group without ref", ErrInvalid)
@@ -221,9 +208,6 @@ func groupOf(g *queryv1.GroupBy) (GroupBy, error) {
 
 // measureOf is the Measure m says.
 func measureOf(m *queryv1.Measure) (Measure, error) {
-	if m.GetText() != "" {
-		return ParseMeasure(m.GetText())
-	}
 	measure := Measure{Ref: m.GetRef(), Fn: Count, Alias: m.GetName()}
 	if fn := m.GetFn(); fn != queryv1.MeasureFn_MEASURE_FN_UNSPECIFIED {
 		measure.Fn = Fn(fn) // MeasureFn numbers its functions as Fn does.
@@ -277,27 +261,7 @@ func (s *service) Schema(
 	}
 	res := &queryv1.QueryServiceSchemaResponse{}
 	for _, c := range cols {
-		qc := &queryv1.QueryColumn{Ref: c.Ref, Label: Label(c), Type: queryv1.ColumnType(c.Type), List: c.List,
-			Unit: c.Unit, Doc: c.Doc}
-		if c.Field != nil {
-			qc.Doc = doc(c.Field)
-		}
-		if c.Type == TypeEnum && c.Enum != nil {
-			values := c.Enum.Values()
-			for i := range values.Len() {
-				if v := values.Get(i); v.Number() != 0 {
-					qc.Values = append(qc.Values, string(v.Name()))
-				}
-			}
-		}
-		if c.Jump != "" {
-			for name, src := range s.cat.byName {
-				if src.Source.Descriptor().FullName() == c.Jump {
-					qc.Jump = queryv1.Collection(queryv1.Collection_value["COLLECTION_"+name])
-				}
-			}
-		}
-		res.Columns = append(res.Columns, qc)
+		res.Columns = append(res.Columns, s.cat.queryColumn(c))
 	}
 	return connect.NewResponse(res), nil
 }
@@ -343,4 +307,29 @@ func (r imports) FindDescriptorByName(name protoreflect.FullName) (protoreflect.
 		return d, nil
 	}
 	return protoregistry.GlobalFiles.FindDescriptorByName(name)
+}
+
+// queryColumn is col as QueryService.Schema gives it: its type, its enum's values, the collection it jumps to.
+func (cat *Catalog) queryColumn(c Column) *queryv1.QueryColumn {
+	qc := &queryv1.QueryColumn{Ref: c.Ref, Label: Label(c), Type: queryv1.ColumnType(c.Type), List: c.List,
+		Unit: c.Unit, Doc: c.Doc}
+	if c.Field != nil {
+		qc.Doc = doc(c.Field)
+	}
+	if c.Type == TypeEnum && c.Enum != nil {
+		values := c.Enum.Values()
+		for i := range values.Len() {
+			if v := values.Get(i); v.Number() != 0 {
+				qc.Values = append(qc.Values, string(v.Name()))
+			}
+		}
+	}
+	if c.Jump != "" {
+		for name, src := range cat.byName {
+			if src.Source.Descriptor().FullName() == c.Jump {
+				qc.Jump = queryv1.Collection(queryv1.Collection_value["COLLECTION_"+name])
+			}
+		}
+	}
+	return qc
 }

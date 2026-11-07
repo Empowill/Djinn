@@ -25,8 +25,10 @@ const (
 )
 
 // parse builds the request md from the arguments of a command line: the required fields are positional, in
-// field-number order, and the other fields are --kebab-case flags.
-func parse(md protoreflect.MessageDescriptor, args []string) (*dynamicpb.Message, error) {
+// field-number order, and the other fields are --kebab-case flags. The texts given for a field with a text form come
+// back apart, for readTexts once a server answers.
+func parse(md protoreflect.MessageDescriptor, args []string) (*dynamicpb.Message, []pendingText, error) {
+	var texts []pendingText
 	msg := dynamicpb.NewMessage(md)
 	pos := positionals(md)
 	next, onlyPositional := 0, false
@@ -38,10 +40,10 @@ func parse(md protoreflect.MessageDescriptor, args []string) (*dynamicpb.Message
 		}
 		if onlyPositional || !strings.HasPrefix(arg, "--") {
 			if next == len(pos) {
-				return nil, fmt.Errorf("unexpected argument %q", arg)
+				return nil, nil, fmt.Errorf("unexpected argument %q", arg)
 			}
 			if err := set(msg, pos[next], arg); err != nil {
-				return nil, fmt.Errorf("%s: %w", label(pos[next]), err)
+				return nil, nil, fmt.Errorf("%s: %w", label(pos[next]), err)
 			}
 			next++
 			continue
@@ -49,7 +51,7 @@ func parse(md protoreflect.MessageDescriptor, args []string) (*dynamicpb.Message
 		name, value, hasValue := strings.Cut(arg[2:], "=")
 		fd := flag(md, name)
 		if fd == nil {
-			return nil, fmt.Errorf("unknown flag --%s", name)
+			return nil, nil, fmt.Errorf("unknown flag --%s", name)
 		}
 		if fd.Kind() == protoreflect.BoolKind && !fd.IsList() && !hasValue {
 			value, hasValue = "true", true
@@ -57,16 +59,20 @@ func parse(md protoreflect.MessageDescriptor, args []string) (*dynamicpb.Message
 		if !hasValue {
 			rest := args[i+1:]
 			if len(rest) == 0 {
-				return nil, fmt.Errorf("%s needs a value", label(fd))
+				return nil, nil, fmt.Errorf("%s needs a value", label(fd))
 			}
 			value = rest[0]
 			i++
 		}
+		if hasForm(fd) {
+			texts = append(texts, pendingText{fd, value})
+			continue
+		}
 		if err := set(msg, fd, value); err != nil {
-			return nil, fmt.Errorf("%s: %w", label(fd), err)
+			return nil, nil, fmt.Errorf("%s: %w", label(fd), err)
 		}
 	}
-	return msg, nil
+	return msg, texts, nil
 }
 
 // format is the inverse of parse: the arguments that build msg.
@@ -182,8 +188,8 @@ func supported(fd protoreflect.FieldDescriptor) error {
 		return errors.New("maps are not supported")
 	case fd.Kind() == protoreflect.BytesKind || fd.Kind() == protoreflect.GroupKind:
 		return fmt.Errorf("%s fields are not supported", fd.Kind())
-	case fd.Kind() == protoreflect.MessageKind && fd.Message().FullName() != timestampName && fd.Message().FullName() != durationName && ref(fd) == nil && !isPair(fd) && textField(fd) == nil:
-		return errors.New("only a Timestamp, a Duration, a message holding a single oneof of scalars, a string and a list of strings, or a field marked (djinn.v1.text) is supported")
+	case fd.Kind() == protoreflect.MessageKind && fd.Message().FullName() != timestampName && fd.Message().FullName() != durationName && ref(fd) == nil && !isPair(fd) && !hasForm(fd):
+		return errors.New("only a Timestamp, a Duration, a message holding a single oneof of scalars, a string and a list of strings, or a message with a text form (textForms) is supported")
 	}
 	return nil
 }
@@ -205,22 +211,6 @@ func pair(fd protoreflect.FieldDescriptor) (key, list protoreflect.FieldDescript
 func isPair(fd protoreflect.FieldDescriptor) bool {
 	key, _ := pair(fd)
 	return key != nil
-}
-
-// textField returns the string field of fd's message marked (djinn.v1.text), which the command line fills from one
-// input when fd is a message: a query's filter typed status=running lands in Filter.text.
-func textField(fd protoreflect.FieldDescriptor) protoreflect.FieldDescriptor {
-	if fd.Kind() != protoreflect.MessageKind {
-		return nil
-	}
-	fields := fd.Message().Fields()
-	for i := range fields.Len() {
-		f := fields.Get(i)
-		if f.Kind() == protoreflect.StringKind && !f.IsList() && proto.GetExtension(f.Options(), djinnv1.E_Text) == true {
-			return f
-		}
-	}
-	return nil
 }
 
 // ref returns the oneof of fd when fd is a message that holds nothing but a oneof of scalars, which the command
@@ -245,19 +235,6 @@ func ref(fd protoreflect.FieldDescriptor) protoreflect.OneofDescriptor {
 func set(msg protoreflect.Message, fd protoreflect.FieldDescriptor, s string) error {
 	if err := supported(fd); err != nil {
 		return err
-	}
-	if tf := textField(fd); tf != nil {
-		if fd.IsList() {
-			list := msg.Mutable(fd).List()
-			sub := list.NewElement()
-			sub.Message().Set(tf, protoreflect.ValueOfString(s))
-			list.Append(sub)
-			return nil
-		}
-		sub := msg.NewField(fd)
-		sub.Message().Set(tf, protoreflect.ValueOfString(s))
-		msg.Set(fd, sub)
-		return nil
 	}
 	if od := ref(fd); od != nil {
 		// The input goes into the first member whose rules accept it.
@@ -426,8 +403,9 @@ func scalar(fd protoreflect.FieldDescriptor, s string) (protoreflect.Value, erro
 // text writes one value as the command line reads it.
 func text(fd protoreflect.FieldDescriptor, v protoreflect.Value) string {
 	switch {
-	case textField(fd) != nil:
-		return v.Message().Get(textField(fd)).String()
+	case hasForm(fd):
+		form, _ := formOf(fd)
+		return formText(fd, form, v)
 	case ref(fd) != nil:
 		sub := v.Message()
 		if member := sub.WhichOneof(ref(fd)); member != nil {
@@ -464,13 +442,8 @@ func text(fd protoreflect.FieldDescriptor, v protoreflect.Value) string {
 
 // expect says what a field accepts, for help and errors.
 func expect(fd protoreflect.FieldDescriptor) string {
-	if tf := textField(fd); tf != nil {
-		// What the text field says of its text: the grammar of a query's filter.
-		c := strings.TrimSuffix(comment(tf), ".")
-		if c == "" {
-			return "a text"
-		}
-		return strings.ToLower(c[:1]) + c[1:]
+	if form, ok := formOf(fd); ok {
+		return form.help
 	}
 	if od := ref(fd); od != nil {
 		var alts []string

@@ -335,14 +335,6 @@ var file_djinn_v1_options_proto_extTypes = []protoimpl.ExtensionInfo{
 	},
 	{
 		ExtendedType:  (*descriptorpb.FieldOptions)(nil),
-		ExtensionType: (*bool)(nil),
-		Field:         51015,
-		Name:          "djinn.v1.text",
-		Tag:           "varint,51015,opt,name=text",
-		Filename:      "djinn/v1/options.proto",
-	},
-	{
-		ExtendedType:  (*descriptorpb.FieldOptions)(nil),
 		ExtensionType: (*string)(nil),
 		Field:         51016,
 		Name:          "djinn.v1.client_default",
@@ -426,16 +418,13 @@ var (
 	//
 	// optional bool raw = 51014;
 	E_Raw = &file_djinn_v1_options_proto_extTypes[12]
-	// The string field a message is filled from when the command line or djinn mcp gives it one text: a query's filter
-	// typed status=running lands in Filter.text, which the server reads.
-	//
-	// optional bool text = 51015;
-	E_Text = &file_djinn_v1_options_proto_extTypes[13]
+	// 51015 is left out: (djinn.v1.text) marked a field a message was filled from, before the command line read the
+	// texts of a query itself (internal/querytext).
 	// The value the command line and djinn mcp give the field when the caller leaves it empty, where a request that
 	// leaves it empty means another for the window: djinn query asks a text table, where the window reads Arrow.
 	//
 	// optional string client_default = 51016;
-	E_ClientDefault = &file_djinn_v1_options_proto_extTypes[14]
+	E_ClientDefault = &file_djinn_v1_options_proto_extTypes[13]
 )
 
 var File_djinn_v1_options_proto protoreflect.FileDescriptor
@@ -473,8 +462,7 @@ const file_djinn_v1_options_proto_rawDesc = "" +
 	"\tjson_only\x12\x1d.google.protobuf.FieldOptions\x18\u008e\x03 \x01(\bR\bjsonOnly:1\n" +
 	"\x03ref\x12\x1d.google.protobuf.FieldOptions\x18Ď\x03 \x01(\tR\x03ref:F\n" +
 	"\x05query\x12\x1d.google.protobuf.FieldOptions\x18Ŏ\x03 \x01(\x0e2\x0f.djinn.v1.QueryR\x05query:1\n" +
-	"\x03raw\x12\x1d.google.protobuf.FieldOptions\x18Ǝ\x03 \x01(\bR\x03raw:3\n" +
-	"\x04text\x12\x1d.google.protobuf.FieldOptions\x18ǎ\x03 \x01(\bR\x04text:F\n" +
+	"\x03raw\x12\x1d.google.protobuf.FieldOptions\x18Ǝ\x03 \x01(\bR\x03raw:F\n" +
 	"\x0eclient_default\x12\x1d.google.protobuf.FieldOptions\x18Ȏ\x03 \x01(\tR\rclientDefaultB\x90\x01\n" +
 	"\fcom.djinn.v1B\fOptionsProtoP\x01Z1github.com/empowill/djinn/gen/go/djinn/v1;djinnv1\xa2\x02\x03DXX\xaa\x02\bDjinn.V1\xca\x02\bDjinn\\V1\xe2\x02\x14Djinn\\V1\\GPBMetadata\xea\x02\tDjinn::V1b\x06proto3"
 
@@ -516,16 +504,15 @@ var file_djinn_v1_options_proto_depIdxs = []int32{
 	7,  // 10: djinn.v1.ref:extendee -> google.protobuf.FieldOptions
 	7,  // 11: djinn.v1.query:extendee -> google.protobuf.FieldOptions
 	7,  // 12: djinn.v1.raw:extendee -> google.protobuf.FieldOptions
-	7,  // 13: djinn.v1.text:extendee -> google.protobuf.FieldOptions
-	7,  // 14: djinn.v1.client_default:extendee -> google.protobuf.FieldOptions
-	0,  // 15: djinn.v1.visibility:type_name -> djinn.v1.Visibility
-	1,  // 16: djinn.v1.writes:type_name -> djinn.v1.Writes
-	3,  // 17: djinn.v1.unique:type_name -> djinn.v1.Unique
-	2,  // 18: djinn.v1.query:type_name -> djinn.v1.Query
-	19, // [19:19] is the sub-list for method output_type
-	19, // [19:19] is the sub-list for method input_type
-	15, // [15:19] is the sub-list for extension type_name
-	0,  // [0:15] is the sub-list for extension extendee
+	7,  // 13: djinn.v1.client_default:extendee -> google.protobuf.FieldOptions
+	0,  // 14: djinn.v1.visibility:type_name -> djinn.v1.Visibility
+	1,  // 15: djinn.v1.writes:type_name -> djinn.v1.Writes
+	3,  // 16: djinn.v1.unique:type_name -> djinn.v1.Unique
+	2,  // 17: djinn.v1.query:type_name -> djinn.v1.Query
+	18, // [18:18] is the sub-list for method output_type
+	18, // [18:18] is the sub-list for method input_type
+	14, // [14:18] is the sub-list for extension type_name
+	0,  // [0:14] is the sub-list for extension extendee
 	0,  // [0:0] is the sub-list for field type_name
 }
 
@@ -541,7 +528,7 @@ func file_djinn_v1_options_proto_init() {
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_djinn_v1_options_proto_rawDesc), len(file_djinn_v1_options_proto_rawDesc)),
 			NumEnums:      3,
 			NumMessages:   1,
-			NumExtensions: 15,
+			NumExtensions: 14,
 			NumServices:   0,
 		},
 		GoTypes:           file_djinn_v1_options_proto_goTypes,

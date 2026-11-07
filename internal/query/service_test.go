@@ -1,6 +1,7 @@
 package query
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -15,6 +16,7 @@ import (
 
 	queryv1 "github.com/empowill/djinn/gen/go/query/v1"
 	"github.com/empowill/djinn/gen/go/query/v1/queryv1connect"
+	"github.com/empowill/djinn/internal/querytext"
 )
 
 // route serves QueryService on the frozen set, and gives a client of it.
@@ -31,38 +33,68 @@ func route(t *testing.T) queryv1connect.QueryServiceClient {
 	return queryv1connect.NewQueryServiceClient(srv.Client(), srv.URL)
 }
 
-// filters are the filters of texts, as the command line gives them.
-func filters(texts ...string) []*queryv1.Filter {
-	out := make([]*queryv1.Filter, len(texts))
-	for i, s := range texts {
-		out[i] = &queryv1.Filter{Where: &queryv1.Filter_Text{Text: s}}
+// texts reads the texts of a query as the command line does (internal/querytext), the refs typed by the schema
+// QueryService serves.
+type texts struct {
+	t     *testing.T
+	types *querytext.Types
+	c     queryv1.Collection
+}
+
+func textsOf(t *testing.T, client queryv1connect.QueryServiceClient, c queryv1.Collection) texts {
+	return texts{t, querytext.NewTypes(func(ctx context.Context, c queryv1.Collection) ([]*queryv1.QueryColumn, error) {
+		res, err := client.Schema(ctx, connect.NewRequest(&queryv1.QueryServiceSchemaRequest{Collection: c}))
+		if err != nil {
+			return nil, err
+		}
+		return res.Msg.GetColumns(), nil
+	}), c}
+}
+
+func (x texts) filters(in ...string) []*queryv1.Filter {
+	out := make([]*queryv1.Filter, len(in))
+	for i, s := range in {
+		f, err := querytext.Filter(x.t.Context(), s, x.c, x.types)
+		if err != nil {
+			x.t.Fatal(err)
+		}
+		out[i] = f
 	}
 	return out
 }
 
-// sorts are the sorts of texts.
-func sorts(texts ...string) []*queryv1.Order {
-	out := make([]*queryv1.Order, len(texts))
-	for i, s := range texts {
-		out[i] = &queryv1.Order{Text: s}
+func (x texts) sorts(in ...string) []*queryv1.Order {
+	out := make([]*queryv1.Order, len(in))
+	for i, s := range in {
+		o, err := querytext.Order(s)
+		if err != nil {
+			x.t.Fatal(err)
+		}
+		out[i] = o
 	}
 	return out
 }
 
-// groups are the groups of texts.
-func groups(texts ...string) []*queryv1.GroupBy {
-	out := make([]*queryv1.GroupBy, len(texts))
-	for i, s := range texts {
-		out[i] = &queryv1.GroupBy{Text: s}
+func (x texts) groups(in ...string) []*queryv1.GroupBy {
+	out := make([]*queryv1.GroupBy, len(in))
+	for i, s := range in {
+		g, err := querytext.Group(x.t.Context(), s, x.c, x.types)
+		if err != nil {
+			x.t.Fatal(err)
+		}
+		out[i] = g
 	}
 	return out
 }
 
-// measures are the measures of texts.
-func measures(texts ...string) []*queryv1.Measure {
-	out := make([]*queryv1.Measure, len(texts))
-	for i, s := range texts {
-		out[i] = &queryv1.Measure{Text: s}
+func (x texts) measures(in ...string) []*queryv1.Measure {
+	out := make([]*queryv1.Measure, len(in))
+	for i, s := range in {
+		m, err := querytext.Measure(s)
+		if err != nil {
+			x.t.Fatal(err)
+		}
+		out[i] = m
 	}
 	return out
 }
@@ -74,8 +106,9 @@ func TestRoute(t *testing.T) {
 
 	t.Run("a table in text, its usual columns", func(t *testing.T) {
 		t.Parallel()
+		x := textsOf(t, client, tasks)
 		res, err := client.Query(t.Context(), connect.NewRequest(&queryv1.QueryServiceQueryRequest{
-			Collection: tasks, Filter: filters("wish_id->title=stats"), Sort: sorts("-code"),
+			Collection: tasks, Filter: x.filters("wish_id->title=stats"), Sort: x.sorts("-code"),
 			Format: queryv1.Format_FORMAT_TEXT}))
 		if err != nil {
 			t.Fatal(err)
@@ -105,9 +138,10 @@ func TestRoute(t *testing.T) {
 
 	t.Run("arrow by default, aggregated, limited", func(t *testing.T) {
 		t.Parallel()
+		x := textsOf(t, client, tasks)
 		res, err := client.Query(t.Context(), connect.NewRequest(&queryv1.QueryServiceQueryRequest{
-			Collection: tasks, GroupBy: groups("wish_id->title"), Measure: measures("n=count", "usage.cost_usd::sum"),
-			Sort: sorts("-n"), Limit: 1}))
+			Collection: tasks, GroupBy: x.groups("wish_id->title"), Measure: x.measures("n=count", "usage.cost_usd::sum"),
+			Sort: x.sorts("-n"), Limit: 1}))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -151,16 +185,14 @@ func TestRoute(t *testing.T) {
 		want string
 	}{
 		{"no collection", &queryv1.QueryServiceQueryRequest{}, "collection"},
-		{"a filter without operator", &queryv1.QueryServiceQueryRequest{Collection: tasks, Filter: filters("status")},
-			"no operator"},
 		{"an unknown ref", &queryv1.QueryServiceQueryRequest{Collection: tasks, Select: []string{"nope"}}, "no field nope"},
-		{"a hidden ref", &queryv1.QueryServiceQueryRequest{Collection: tasks, Filter: filters("prompt*=x")}, "hidden"},
-		{"a value of the wrong type", &queryv1.QueryServiceQueryRequest{Collection: tasks,
-			Filter: filters("running>soon")}, "is not a duration"},
-		{"an unknown function", &queryv1.QueryServiceQueryRequest{Collection: tasks, Measure: measures("running::mean")},
-			"no function"},
-		{"bins on a text", &queryv1.QueryServiceQueryRequest{Collection: tasks, GroupBy: groups("code::bins(a,b)"),
-			Measure: measures("count")}, "has no bins"},
+		{"a hidden ref", &queryv1.QueryServiceQueryRequest{Collection: tasks, Filter: []*queryv1.Filter{
+			{Where: &queryv1.Filter_String_{String_: &queryv1.StringComparison{Ref: "prompt", Value: "x"}}}}}, "hidden"},
+		{"an unknown function", &queryv1.QueryServiceQueryRequest{Collection: tasks,
+			Measure: []*queryv1.Measure{{Ref: "running", Fn: 99}}}, "fn"},
+		{"bins on a text", &queryv1.QueryServiceQueryRequest{Collection: tasks, GroupBy: []*queryv1.GroupBy{
+			{Ref: "code", Bucket: &queryv1.GroupBy_NumberBins{NumberBins: &queryv1.NumberBins{Bounds: []float64{0, 1}}}}},
+			Measure: []*queryv1.Measure{{}}}, "has no bins"},
 		{"a negative limit", &queryv1.QueryServiceQueryRequest{Collection: tasks, Limit: -1}, "limit"},
 		{"a number filter on a duration", &queryv1.QueryServiceQueryRequest{Collection: tasks,
 			Filter: []*queryv1.Filter{{Where: &queryv1.Filter_Number{Number: &queryv1.NumberComparison{Ref: "running"}}}}},
@@ -171,7 +203,7 @@ func TestRoute(t *testing.T) {
 		{"an empty filter", &queryv1.QueryServiceQueryRequest{Collection: tasks, Filter: []*queryv1.Filter{{}}},
 			"filter"},
 		{"a sort without ref", &queryv1.QueryServiceQueryRequest{Collection: tasks, Sort: []*queryv1.Order{{}}},
-			"a sort without ref"},
+			"sort[0].ref"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()

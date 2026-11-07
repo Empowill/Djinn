@@ -274,8 +274,9 @@ djinn query query tasks --filter type=work --filter status=done --group-by "runn
   empty in text, null in Arrow, never 0.
 - **Typed requests**: over the API, a filter is a message typed by its ref (`string`, `string_in`, `number`, `time`,
   `duration`, `bool`, `null`, or a `group` joined by and, or, not), a sort an `Order` (ref, desc), a group a `GroupBy`
-  (ref, and a period or bins), a measure a `Measure` (ref, function, name). The texts above fill each message's `text`
-  field, which Djinn reads with the type of its ref.
+  (ref, and a period or bins), a measure a `Measure` (ref, function, name). The command line and MCP read the texts above into
+  these messages themselves, a filter typed by its ref from the collection's schema: QueryService reads typed messages
+  only.
 
 The questions keep their short word: q is an alias of the question command, beside query.
 

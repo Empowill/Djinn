@@ -640,8 +640,8 @@ func (x *QueryServiceQueryRequest) GetFormat() Format {
 	return Format_FORMAT_UNSPECIFIED
 }
 
-// Filter is one condition a row must hold: a comparison typed by the ref it reads, a group of filters, or a text the
-// command line types. A null value holds for none but Null and StringIn with include_null. On a list, a filter holds
+// Filter is one condition a row must hold: a comparison typed by the ref it reads, or a group of filters. The command
+// line types it as a text it reads into this message (internal/querytext): status=running. A null value holds for none but Null and StringIn with include_null. On a list, a filter holds
 // when it holds for one of the list's values.
 type Filter struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -655,7 +655,6 @@ type Filter struct {
 	//	*Filter_Number
 	//	*Filter_Time
 	//	*Filter_Duration
-	//	*Filter_Text
 	Where         isFilter_Where `protobuf_oneof:"where"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -770,15 +769,6 @@ func (x *Filter) GetDuration() *DurationComparison {
 	return nil
 }
 
-func (x *Filter) GetText() string {
-	if x != nil {
-		if x, ok := x.Where.(*Filter_Text); ok {
-			return x.Text
-		}
-	}
-	return ""
-}
-
 type isFilter_Where interface {
 	isFilter_Where()
 }
@@ -823,15 +813,6 @@ type Filter_Duration struct {
 	Duration *DurationComparison `protobuf:"bytes,8,opt,name=duration,proto3,oneof"`
 }
 
-type Filter_Text struct {
-	// A filter as the command line types it, read with the type of its ref: ref, an operator, a value. = is equal,
-	// text ignoring case, and a|b one of; != is none of, an absent value included; > >= < <= bound a number, a time
-	// (2026-11-01, or RFC 3339) or a duration (90s); *= contains, ^= begins with, ignoring case; null is the absent
-	// value: status=null, status!=null, status=pending|null. An enum takes its value's name, prefix or not:
-	// status=running.
-	Text string `protobuf:"bytes,20,opt,name=text,proto3,oneof"`
-}
-
 func (*Filter_Group) isFilter_Where() {}
 
 func (*Filter_Null) isFilter_Where() {}
@@ -847,8 +828,6 @@ func (*Filter_Number) isFilter_Where() {}
 func (*Filter_Time) isFilter_Where() {}
 
 func (*Filter_Duration) isFilter_Where() {}
-
-func (*Filter_Text) isFilter_Where() {}
 
 // FilterGroup joins filters: one at least.
 type FilterGroup struct {
@@ -1333,9 +1312,7 @@ type Order struct {
 	// The ref, or the column, sorted by.
 	Ref string `protobuf:"bytes,1,opt,name=ref,proto3" json:"ref,omitempty"`
 	// Descending: ascending when not set.
-	Desc bool `protobuf:"varint,2,opt,name=desc,proto3" json:"desc,omitempty"`
-	// A sort as the command line types it, which stands for ref and desc: ref ascending, -ref descending.
-	Text          string `protobuf:"bytes,3,opt,name=text,proto3" json:"text,omitempty"`
+	Desc          bool `protobuf:"varint,2,opt,name=desc,proto3" json:"desc,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1384,13 +1361,6 @@ func (x *Order) GetDesc() bool {
 	return false
 }
 
-func (x *Order) GetText() string {
-	if x != nil {
-		return x.Text
-	}
-	return ""
-}
-
 // GroupBy is one key of an aggregate: a row per value of its ref, by period for a time, by bins for a number or a
 // duration.
 type GroupBy struct {
@@ -1404,10 +1374,7 @@ type GroupBy struct {
 	//	*GroupBy_Period
 	//	*GroupBy_NumberBins
 	//	*GroupBy_DurationBins
-	Bucket isGroupBy_Bucket `protobuf_oneof:"bucket"`
-	// A group as the command line types it, which stands for ref and bucket: ref, ref::day, ref::week, ref::month, or
-	// ref::bins(b1,b2,…), answer::delay::bins(0s,1m,10m,1h).
-	Text          string `protobuf:"bytes,5,opt,name=text,proto3" json:"text,omitempty"`
+	Bucket        isGroupBy_Bucket `protobuf_oneof:"bucket"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1481,13 +1448,6 @@ func (x *GroupBy) GetDurationBins() *DurationBins {
 		}
 	}
 	return nil
-}
-
-func (x *GroupBy) GetText() string {
-	if x != nil {
-		return x.Text
-	}
-	return ""
 }
 
 type isGroupBy_Bucket interface {
@@ -1616,10 +1576,7 @@ type Measure struct {
 	// The function: count when not set.
 	Fn MeasureFn `protobuf:"varint,2,opt,name=fn,proto3,enum=query.v1.MeasureFn" json:"fn,omitempty"`
 	// The column's name: fn, or ref::fn, when not set.
-	Name string `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
-	// A measure as the command line types it, which stands for ref, fn and name: count, ref::fn, or name=ref::fn to
-	// name its column (running::median).
-	Text          string `protobuf:"bytes,4,opt,name=text,proto3" json:"text,omitempty"`
+	Name          string `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1671,13 +1628,6 @@ func (x *Measure) GetFn() MeasureFn {
 func (x *Measure) GetName() string {
 	if x != nil {
 		return x.Name
-	}
-	return ""
-}
-
-func (x *Measure) GetText() string {
-	if x != nil {
-		return x.Text
 	}
 	return ""
 }
@@ -1953,7 +1903,7 @@ const file_query_v1_query_proto_rawDesc = "" +
 	"\bgroup_by\x18\x05 \x03(\v2\x11.query.v1.GroupByB\b\xbaH\x05\x92\x01\x02\x10\x05R\agroupBy\x125\n" +
 	"\ameasure\x18\x06 \x03(\v2\x11.query.v1.MeasureB\b\xbaH\x05\x92\x01\x02\x10\x14R\ameasure\x12\x1d\n" +
 	"\x05limit\x18\a \x01(\x05B\a\xbaH\x04\x1a\x02(\x00R\x05limit\x12:\n" +
-	"\x06format\x18\b \x01(\x0e2\x10.query.v1.FormatB\x10\xbaH\x05\x82\x01\x02\x10\x01\xc2\xf4\x18\x04textR\x06format\"\xd4\x03\n" +
+	"\x06format\x18\b \x01(\x0e2\x10.query.v1.FormatB\x10\xbaH\x05\x82\x01\x02\x10\x01\xc2\xf4\x18\x04textR\x06format\"\xae\x03\n" +
 	"\x06Filter\x12-\n" +
 	"\x05group\x18\x01 \x01(\v2\x15.query.v1.FilterGroupH\x00R\x05group\x12*\n" +
 	"\x04null\x18\x02 \x01(\v2\x14.query.v1.NullFilterH\x00R\x04null\x12.\n" +
@@ -1962,8 +1912,7 @@ const file_query_v1_query_proto_rawDesc = "" +
 	"\tstring_in\x18\x05 \x01(\v2\x12.query.v1.StringInH\x00R\bstringIn\x124\n" +
 	"\x06number\x18\x06 \x01(\v2\x1a.query.v1.NumberComparisonH\x00R\x06number\x12.\n" +
 	"\x04time\x18\a \x01(\v2\x18.query.v1.TimeComparisonH\x00R\x04time\x12:\n" +
-	"\bduration\x18\b \x01(\v2\x1c.query.v1.DurationComparisonH\x00R\bduration\x12$\n" +
-	"\x04text\x18\x14 \x01(\tB\x0e\xbaH\ar\x05\x10\x02\x18\xd0\x0f\xb8\xf4\x18\x01H\x00R\x04textB\x0e\n" +
+	"\bduration\x18\b \x01(\v2\x1c.query.v1.DurationComparisonH\x00R\bdurationB\x0e\n" +
 	"\x05where\x12\x05\xbaH\x02\b\x01\"x\n" +
 	"\vFilterGroup\x121\n" +
 	"\x02op\x18\x01 \x01(\x0e2\x17.query.v1.FilterGroupOpB\b\xbaH\x05\x82\x01\x02\x10\x01R\x02op\x126\n" +
@@ -2001,19 +1950,19 @@ const file_query_v1_query_proto_rawDesc = "" +
 	"\x03ref\x18\x01 \x01(\tB\n" +
 	"\xbaH\ar\x05\x10\x01\x18\xc8\x01R\x03ref\x12-\n" +
 	"\x02op\x18\x02 \x01(\x0e2\x13.query.v1.CompareOpB\b\xbaH\x05\x82\x01\x02\x10\x01R\x02op\x127\n" +
-	"\x05value\x18\x03 \x01(\v2\x19.google.protobuf.DurationB\x06\xbaH\x03\xc8\x01\x01R\x05value\"Y\n" +
-	"\x05Order\x12\x1a\n" +
-	"\x03ref\x18\x01 \x01(\tB\b\xbaH\x05r\x03\x18\xc8\x01R\x03ref\x12\x12\n" +
-	"\x04desc\x18\x02 \x01(\bR\x04desc\x12 \n" +
-	"\x04text\x18\x03 \x01(\tB\f\xbaH\x05r\x03\x18\xc8\x01\xb8\xf4\x18\x01R\x04text\"\x81\x02\n" +
-	"\aGroupBy\x12\x1a\n" +
-	"\x03ref\x18\x01 \x01(\tB\b\xbaH\x05r\x03\x18\xc8\x01R\x03ref\x126\n" +
+	"\x05value\x18\x03 \x01(\v2\x19.google.protobuf.DurationB\x06\xbaH\x03\xc8\x01\x01R\x05value\"9\n" +
+	"\x05Order\x12\x1c\n" +
+	"\x03ref\x18\x01 \x01(\tB\n" +
+	"\xbaH\ar\x05\x10\x01\x18\xc8\x01R\x03ref\x12\x12\n" +
+	"\x04desc\x18\x02 \x01(\bR\x04desc\"\xe1\x01\n" +
+	"\aGroupBy\x12\x1c\n" +
+	"\x03ref\x18\x01 \x01(\tB\n" +
+	"\xbaH\ar\x05\x10\x01\x18\xf4\x03R\x03ref\x126\n" +
 	"\x06period\x18\x02 \x01(\x0e2\x10.query.v1.PeriodB\n" +
 	"\xbaH\a\x82\x01\x04\x10\x01 \x00H\x00R\x06period\x127\n" +
 	"\vnumber_bins\x18\x03 \x01(\v2\x14.query.v1.NumberBinsH\x00R\n" +
 	"numberBins\x12=\n" +
-	"\rduration_bins\x18\x04 \x01(\v2\x16.query.v1.DurationBinsH\x00R\fdurationBins\x12 \n" +
-	"\x04text\x18\x05 \x01(\tB\f\xbaH\x05r\x03\x18\xf4\x03\xb8\xf4\x18\x01R\x04textB\b\n" +
+	"\rduration_bins\x18\x04 \x01(\v2\x16.query.v1.DurationBinsH\x00R\fdurationBinsB\b\n" +
 	"\x06bucket\"0\n" +
 	"\n" +
 	"NumberBins\x12\"\n" +
@@ -2021,12 +1970,11 @@ const file_query_v1_query_proto_rawDesc = "" +
 	"\xbaH\a\x92\x01\x04\b\x01\x10dR\x06bounds\"M\n" +
 	"\fDurationBins\x12=\n" +
 	"\x06bounds\x18\x01 \x03(\v2\x19.google.protobuf.DurationB\n" +
-	"\xbaH\a\x92\x01\x04\b\x01\x10dR\x06bounds\"\x93\x01\n" +
+	"\xbaH\a\x92\x01\x04\b\x01\x10dR\x06bounds\"q\n" +
 	"\aMeasure\x12\x1a\n" +
 	"\x03ref\x18\x01 \x01(\tB\b\xbaH\x05r\x03\x18\xc8\x01R\x03ref\x12-\n" +
 	"\x02fn\x18\x02 \x01(\x0e2\x13.query.v1.MeasureFnB\b\xbaH\x05\x82\x01\x02\x10\x01R\x02fn\x12\x1b\n" +
-	"\x04name\x18\x03 \x01(\tB\a\xbaH\x04r\x02\x18dR\x04name\x12 \n" +
-	"\x04text\x18\x04 \x01(\tB\f\xbaH\x05r\x03\x18\xc8\x01\xb8\xf4\x18\x01R\x04text\"S\n" +
+	"\x04name\x18\x03 \x01(\tB\a\xbaH\x04r\x02\x18dR\x04name\"S\n" +
 	"\x19QueryServiceQueryResponse\x12\x1a\n" +
 	"\x05table\x18\x01 \x01(\fB\x04\xb0\xf4\x18\x01R\x05table\x12\x1a\n" +
 	"\x05total\x18\x02 \x01(\x03B\x04\x90\xf4\x18\x01R\x05total\"^\n" +
@@ -2208,7 +2156,6 @@ func file_query_v1_query_proto_init() {
 		(*Filter_Number)(nil),
 		(*Filter_Time)(nil),
 		(*Filter_Duration)(nil),
-		(*Filter_Text)(nil),
 	}
 	file_query_v1_query_proto_msgTypes[11].OneofWrappers = []any{
 		(*GroupBy_Period)(nil),

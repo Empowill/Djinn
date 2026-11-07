@@ -172,7 +172,7 @@ func run(ctx context.Context, args []string, cfg Config) error {
 		return nil
 	}
 
-	req, err := parse(md.Input(), rest[2:])
+	req, texts, err := parse(md.Input(), rest[2:])
 	if err == nil {
 		fromEnv(req, cfg.getenv())
 		err = check(req, label)
@@ -182,6 +182,16 @@ func run(ctx context.Context, args []string, cfg Config) error {
 	}
 	if cfg, err = autostart(ctx, cfg, md); err != nil {
 		return err
+	}
+	if len(texts) > 0 {
+		// A text such as a query's filter reads with what the server knows, a ref's type: once it answers.
+		err = readTexts(ctx, req, texts, serverLookup(cfg))
+		if err == nil {
+			err = check(req, label)
+		}
+		if err != nil {
+			return usageError{fmt.Errorf("%w\nrun djinn %s %s --help for the arguments", err, command(sd), name)}
+		}
 	}
 	if md.IsStreamingServer() && !md.IsStreamingClient() {
 		// A stream prints each message as it comes: a JSON object per line with --json, a blank line between

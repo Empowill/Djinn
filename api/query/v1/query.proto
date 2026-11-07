@@ -111,8 +111,8 @@ message QueryServiceQueryRequest {
   ];
 }
 
-// Filter is one condition a row must hold: a comparison typed by the ref it reads, a group of filters, or a text the
-// command line types. A null value holds for none but Null and StringIn with include_null. On a list, a filter holds
+// Filter is one condition a row must hold: a comparison typed by the ref it reads, or a group of filters. The command
+// line types it as a text it reads into this message (internal/querytext): status=running. A null value holds for none but Null and StringIn with include_null. On a list, a filter holds
 // when it holds for one of the list's values.
 message Filter {
   oneof where {
@@ -133,18 +133,6 @@ message Filter {
     TimeComparison time = 7;
     // A duration ref.
     DurationComparison duration = 8;
-    // A filter as the command line types it, read with the type of its ref: ref, an operator, a value. = is equal,
-    // text ignoring case, and a|b one of; != is none of, an absent value included; > >= < <= bound a number, a time
-    // (2026-11-01, or RFC 3339) or a duration (90s); *= contains, ^= begins with, ignoring case; null is the absent
-    // value: status=null, status!=null, status=pending|null. An enum takes its value's name, prefix or not:
-    // status=running.
-    string text = 20 [
-      (djinn.v1.text) = true,
-      (buf.validate.field).string = {
-        min_len: 2
-        max_len: 2000
-      }
-    ];
   }
 }
 
@@ -288,21 +276,22 @@ enum CompareOp {
 // Order is one sort of the rows: by a ref, or when aggregated by a column of the table (create_time::day, count).
 message Order {
   // The ref, or the column, sorted by.
-  string ref = 1 [(buf.validate.field).string.max_len = 200];
+  string ref = 1 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 200
+  }];
   // Descending: ascending when not set.
   bool desc = 2;
-  // A sort as the command line types it, which stands for ref and desc: ref ascending, -ref descending.
-  string text = 3 [
-    (djinn.v1.text) = true,
-    (buf.validate.field).string.max_len = 200
-  ];
 }
 
 // GroupBy is one key of an aggregate: a row per value of its ref, by period for a time, by bins for a number or a
 // duration.
 message GroupBy {
   // The ref grouped by.
-  string ref = 1 [(buf.validate.field).string.max_len = 200];
+  string ref = 1 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 500
+  }];
   // How its values are bucketed: each value its own group when not set.
   oneof bucket {
     // A time by period, in the machine's time zone.
@@ -315,12 +304,6 @@ message GroupBy {
     // A duration by bins.
     DurationBins duration_bins = 4;
   }
-  // A group as the command line types it, which stands for ref and bucket: ref, ref::day, ref::week, ref::month, or
-  // ref::bins(b1,b2,…), answer::delay::bins(0s,1m,10m,1h).
-  string text = 5 [
-    (djinn.v1.text) = true,
-    (buf.validate.field).string.max_len = 500
-  ];
 }
 
 // Period is the bucket of a time a GroupBy groups by.
@@ -362,12 +345,6 @@ message Measure {
   MeasureFn fn = 2 [(buf.validate.field).enum.defined_only = true];
   // The column's name: fn, or ref::fn, when not set.
   string name = 3 [(buf.validate.field).string.max_len = 100];
-  // A measure as the command line types it, which stands for ref, fn and name: count, ref::fn, or name=ref::fn to
-  // name its column (running::median).
-  string text = 4 [
-    (djinn.v1.text) = true,
-    (buf.validate.field).string.max_len = 200
-  ];
 }
 
 // MeasureFn is the function of a Measure.

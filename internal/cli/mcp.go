@@ -140,7 +140,7 @@ func fieldSchema(fd protoreflect.FieldDescriptor) map[string]any {
 // Schema ECMAScript.
 func valueSchema(fd protoreflect.FieldDescriptor) map[string]any {
 	switch {
-	case ref(fd) != nil, isPair(fd), textField(fd) != nil:
+	case ref(fd) != nil, isPair(fd), hasForm(fd):
 		return map[string]any{"type": "string"}
 	case fd.Kind() == protoreflect.MessageKind:
 		return map[string]any{"type": "string", "format": "date-time"}
@@ -167,11 +167,12 @@ func valueSchema(fd protoreflect.FieldDescriptor) map[string]any {
 
 // request builds the request of md from the arguments of a tool call, each value read as the command line reads
 // its text.
-func request(md protoreflect.MessageDescriptor, args map[string]json.RawMessage) (*dynamicpb.Message, error) {
+func request(md protoreflect.MessageDescriptor, args map[string]json.RawMessage) (*dynamicpb.Message, []pendingText, error) {
 	msg := dynamicpb.NewMessage(md)
+	var texts []pendingText
 	for name := range args {
 		if md.Fields().ByName(protoreflect.Name(name)) == nil {
-			return nil, fmt.Errorf("unknown argument %q", name)
+			return nil, nil, fmt.Errorf("unknown argument %q", name)
 		}
 	}
 	for _, fd := range byNumber(md) {
@@ -187,15 +188,19 @@ func request(md protoreflect.MessageDescriptor, args map[string]json.RawMessage)
 		}
 		for _, item := range items {
 			s, null, err := argument(item)
-			if err == nil && !null {
+			switch {
+			case err != nil || null:
+			case hasForm(fd):
+				texts = append(texts, pendingText{fd, s})
+			default:
 				err = set(msg, fd, s)
 			}
 			if err != nil {
-				return nil, fmt.Errorf("%s: %w", fd.Name(), err)
+				return nil, nil, fmt.Errorf("%s: %w", fd.Name(), err)
 			}
 		}
 	}
-	return msg, nil
+	return msg, texts, nil
 }
 
 // argument is a JSON value as the text the command line would read. A null is no value.
@@ -343,10 +348,11 @@ func (s *mcpServer) handle(ctx context.Context, msg rpcMessage) {
 
 // call checks the arguments as the command line does, calls the method and returns its response as JSON.
 func (s *mcpServer) call(ctx context.Context, md protoreflect.MethodDescriptor, args map[string]json.RawMessage) (string, error) {
-	req, err := request(md.Input(), args)
+	req, texts, err := request(md.Input(), args)
+	name := func(fd protoreflect.FieldDescriptor) string { return string(fd.Name()) }
 	if err == nil {
 		fromEnv(req, s.cfg.getenv())
-		err = check(req, func(fd protoreflect.FieldDescriptor) string { return string(fd.Name()) })
+		err = check(req, name)
 	}
 	if err != nil {
 		return "", err
@@ -354,6 +360,14 @@ func (s *mcpServer) call(ctx context.Context, md protoreflect.MethodDescriptor, 
 	cfg, err := autostart(ctx, s.cfg, md)
 	if err != nil {
 		return "", err
+	}
+	if len(texts) > 0 {
+		if err := readTexts(ctx, req, texts, serverLookup(cfg)); err != nil {
+			return "", err
+		}
+		if err := check(req, name); err != nil {
+			return "", err
+		}
 	}
 	res, err := call(ctx, cfg, md, req)
 	if err != nil {
