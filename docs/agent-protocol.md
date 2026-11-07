@@ -175,6 +175,9 @@ The Djinn is the agent the developer talks to. It changes the plan with `djinn`,
     `ended` event says it, with the first line of its final note (`W1 done: …`, incident W1 of wish Dew,
     12/10/2026); a worker with no commit of its own is never merged, its line saying so (`W103 done, nothing to
     merge: no commit of its own. …`, W196);
+  - an azima's branch pushed for the first time, ahead of main, under the per-azima strategy: Djinn opens its request as
+    a draft, and one `move` line says what it did (`T45 pushed: Djinn opened draft PR #41: <url>`, or why it could
+    not, or the task it spawned to open it by the project's skill), Q375;
   - work that waits out of its azima's branch, the azima done or its branch deleted: one `move` line, once (`azima T2
     is done: …; reopen T2 or drop the work`), Djinn making no branch again and pushing nothing;
   - the calls a worker's permissions refused in its run (its `permission denied: …` events, counted on the task's

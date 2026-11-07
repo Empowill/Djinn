@@ -2882,6 +2882,9 @@ func (h *Harness) azimaPRPass(
 		if !h.isBranchPushed(ctx, wish, project, branch) {
 			continue
 		}
+		if h.openAzimaDraft(ctx, wish, project, settings, azima, branch) {
+			continue
+		}
 		ok, parts := h.azimaPartsDoneAndGreen(ctx, wish.GetId(), azima.GetId())
 		if !ok {
 			continue
