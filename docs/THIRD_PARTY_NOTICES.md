@@ -343,6 +343,23 @@ Licensed under the Apache License, Version 2.0: its text is the LICENSE file bes
 Djinn links its arrow packages (array, ipc, memory and their internals) only: flight, parquet and compute, where Arrow
 Go holds code under other terms (Go's BSD, brotli's MIT, LLVM's exception), are not in its binary.
 
+## Apache Arrow JavaScript 21.2.0 (the window's reader of QueryService's tables, src/data/query.ts)
+
+https://github.com/apache/arrow-js/tree/v21.2.0
+
+Licensed under the Apache License, Version 2.0: its text is the LICENSE file beside this one. Its NOTICE file reads:
+
+    Apache Arrow JavaScript
+    Copyright 2017-2025 The Apache Software Foundation
+
+    This product includes software developed at
+    The Apache Software Foundation (http://www.apache.org/).
+
+The window loads its IPC reader on demand, in a chunk of its own. That chunk also holds FlatBuffers for JavaScript
+25.9.23 (https://github.com/google/flatbuffers, Apache-2.0, Copyright Google Inc., no NOTICE file) and helpers of
+tslib (https://github.com/microsoft/tslib, 0BSD, Copyright (c) Microsoft Corporation), both through Apache Arrow
+JavaScript.
+
 ## FlatBuffers 25.12.19 (the Arrow IPC format, through Apache Arrow for Go)
 
 https://github.com/google/flatbuffers/tree/v25.12.19

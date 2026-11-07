@@ -26,6 +26,7 @@ import {
   WishService,
 } from "../../gen/ts/plan/v1/plan_pb";
 import { TilasmService } from "../../gen/ts/plan/v1/tilasm_pb";
+import { QueryService } from "../../gen/ts/query/v1/query_pb";
 import { UiService } from "../../gen/ts/ui/v1/ui_pb";
 
 // djinnTransport reaches the djinn server at baseUrl in the binary Protobuf format: against JSON, it encodes and
@@ -54,6 +55,7 @@ export function createClients(transport: Transport) {
     commands: createClient(CommandService, transport),
     load: createClient(LoadService, transport),
     ui: createClient(UiService, transport),
+    query: createClient(QueryService, transport),
   };
 }
 
