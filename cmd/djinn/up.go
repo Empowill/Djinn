@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -42,6 +43,7 @@ import (
 	"github.com/empowill/djinn/internal/terminal"
 	"github.com/empowill/djinn/internal/ui"
 	"github.com/empowill/djinn/internal/window"
+	"github.com/empowill/djinn/internal/wrap"
 )
 
 // readMachine reads the machine for the scheduler and the gates; nil reads this machine, the disk of its data folder
@@ -268,6 +270,16 @@ func runUp(args []string) (restart bool, err error) {
 	if machine.NotMeasured == "" {
 		opts = append(opts, harness.WithMeasure(5*time.Second, machine.ReadWorker))
 	}
+	// A worker's containers count in its task's series and go once it ends; those a past run of this Djinn left go
+	// now, before any worker starts.
+	wrap.Remove(ctx, wrap.HomeLabel+"="+home)
+	containers := harness.Containers{Remove: wrap.Remove}
+	if machine.NotMeasured == "" {
+		containers.Read = func(taskID string) (machine.Group, error) {
+			return machine.ReadSlice(os.DirFS("/"), path.Join(machine.ContainersSlice, wrap.Slice(taskID)))
+		}
+	}
+	opts = append(opts, harness.WithContainers(containers))
 	if enlightenSet {
 		opts = append(opts, harness.WithEnlightenWorkers(enlightenWorkers))
 	}

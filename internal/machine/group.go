@@ -308,7 +308,8 @@ type Work struct {
 }
 
 // ReadWork reads what Djinn's work uses, pid being Djinn's process: the cgroups (v2) that hold it alone, every
-// djinn-*.scope under slice (Scopes.Slice: any Djinn's workers and commands, an end-to-end test's too) and in cgroups
+// djinn-*.scope under slice (Scopes.Slice: any Djinn's workers and commands, an end-to-end test's too), the scopes of
+// the containers of every task's slice (ContainersSlice) and in cgroups
 // (the scopes of its running workers, Scope.Cgroup), and the processes of its work out of them; from the same listing
 // as ReadWorker. Without cgroups, its tree's processes alone.
 func ReadWork(pid int, slice string, cgroups []string) (Work, error) {
@@ -336,6 +337,8 @@ func work(fsys fs.FS, procs []proc, pid int, slice string, cgroups []string) Wor
 			}
 		}
 	}
+	// The containers of the workers, under their tasks' slices: Djinn's work too, not the load from outside (W253).
+	dirs = append(dirs, containerScopes(fsys, ContainersSlice)...)
 	counted := map[int]bool{} // the processes a cgroup counts
 	scoped := map[int]bool{}  // those in Djinn's scopes, whose children are Djinn's wherever they go
 	for _, dir := range dirs {
