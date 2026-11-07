@@ -673,8 +673,9 @@ much one may spend. Your own file, in Djinn's data folder, wins over the team's;
 
 A repository also tells Djinn about itself in `djinn.yaml`, at its root or in `.agents/djinn.yaml`, read on the
 reference branch like the permissions, so that a worker never changes what bounds it. With both files, the root's is
-read and Djinn's log warns that the other is not; a field Djinn does not know refuses the file, Djinn's defaults then
-hold, and the log names the file and the field. Today it holds the runaway ceilings of the containers the workers start
+read and a warning under "To fix" says the other is not; a field Djinn does not know is ignored, the rest of the file
+applies, and a warning under "To fix" names the file and the field, the gear left grey; a file that does not parse, or
+a value of the wrong type or out of range, is a thing to fix, Djinn's defaults then holding. Today it holds the runaway ceilings of the containers the workers start
 (`docker run`, `docker create`): without it, 4 GiB of memory (a quarter of the machine's when that is less) and 1024
 processes per container. Djinn's `docker`, first on each worker's path, brings a higher limit down to them and names
 the file to raise them in.

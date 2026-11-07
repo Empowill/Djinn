@@ -133,6 +133,13 @@
 .notice.to-fix .notice-text > svg {
   color: var(--st-failed);
 }
+/* A warning: quieter than a thing to fix, its sentence in the muted text of the details. */
+.notice.warning .notice-text {
+  color: var(--n-b6);
+}
+.notice.warning .notice-text > svg {
+  color: var(--st-waiting);
+}
 .notice-detail {
   margin: 0.375rem 0 0 1.3125rem;
   font: var(--font-size-body, 0.75rem) var(--mono);
