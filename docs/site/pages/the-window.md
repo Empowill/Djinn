@@ -237,8 +237,10 @@ window reads them about once a minute, and catches up as it shows.
 
 ## The Hourglass
 
-**Hourglass**, Ctrl+2, is where the live metrics are, as time goes by: the machine total stays at the top, with the
-time range from 10 minutes to 7 days, above three tabs.
+**Hourglass**, Ctrl+2, has two tabs under its title: **Machine**, the live metrics, as time goes by, and
+**Statistics**, what the work has been. It opens on the tab you left.
+
+**Machine.** The machine total stays at the top, with the time range from 10 minutes to 7 days, above three tabs.
 
 - **Resources.** The CPU and memory of the whole machine (as in **Gates**), then CPU and memory heatmaps side by side
   (one cell per running worker, its code on hover, stacked in a narrow page) and the running workers grouped by wish,
@@ -254,8 +256,29 @@ time range from 10 minutes to 7 days, above three tabs.
   **Rebuilds**, **Data loss**) with each item's size, reclaimable space, and cleanup command to copy—plus **All “safe”
   at once** at the bottom. Djinn never runs those commands itself: it displays them to copy.
 
-A running task's card links to its row, **Live in the Hourglass**. The page reads its figures only while it shows:
-leave it, or fold its panel, and the reads stop. See [Machine and load](#machine-and-load).
+A running task's card links to its row, **Live in the Hourglass**, on the Machine tab. The page reads its figures
+only while it shows: leave it, or fold its panel, and the reads stop. See [Machine and load](#machine-and-load).
+
+**Statistics.** The tasks of every wish, granted ones included, read as [queries](#queries): each figure and each card
+asks Djinn for its own total, computed by Djinn, and the window draws it as it comes. The tab reads them when it opens
+and when you change a filter, never in the background. Its filters, in one line: a **project** or all, the **period**
+(7 days, 30 days, all), counted from the tasks' creation, and the buckets of the time charts (**Day**, **Week**).
+Then six figures:
+
+- **Tasks done**, azimas aside, with how many were cancelled or failed.
+- **Azimas merged**, of the azimas created in the period.
+- **Run of a work**: the median time a work task ran, pauses and gates excluded, and its p90.
+- **End → wish branch**: from a task's end to its commit into its wish's branch.
+- **Developer's answer**: how long a question waited for your answer.
+- **Estimated cost**: the tokens of every task, priced.
+
+And the cards: the tasks created by day or week, by type (work, correction, review, investigation, mockup, then the
+others in one series); the azimas merged on main; how long work took to reach its wish's branch; the time of a task by
+type, waiting before its start, running, held by a gate, paused, each as a median and a p90, never a sum nor a mean;
+how long your answers took; the size of the prompts, in tokens estimated as characters divided by four; and a line per
+project, whose name filters the whole tab. A time is drawn from zero, or on a scale that says it is logarithmic; a
+chart shows six series at most, the smallest folded into **Others**; and a value Djinn does not know shows a dash,
+never a zero.
 
 ## The load gauge
 
@@ -334,7 +357,10 @@ The **global shortcut**, set in Connections & preferences, brings Djinn forward 
   holds them all.
 - **Reading the rank as a count.** The last figure of a wish's line, #3, is its rank.
 - **Leaving the Hourglass open to keep figures.** It reads only while it shows; Djinn records the machine's history
-  anyway, for a week, across restarts.
+  anyway, for a week, across restarts. The Statistics tab reads the past: open it again, or change a filter, to read
+  it anew.
+- **Adding up times.** An azima's times sum its parts': the Statistics tab leaves azimas and watchers out of the
+  times it draws.
 - **Waiting for the eye to move while you type.** It waits on purpose: it stays by the field you type in.
 - **Taking a slower window for a bug.** After a hang of the graphics card, a new view draws in software rendering until
   Djinn restarts: restart Djinn to draw on the graphics card again.

@@ -207,13 +207,23 @@ Under them, one line says the machine's load, with a link to the [Hourglass](#th
 
 ## The Hourglass
 
-**Hourglass**, near the bottom of the side panel, after Import a wish, or Ctrl+2 (Cmd+2 on macOS), is where the live metrics are, as
-time goes by. First the machine: its CPU and memory over the time you pick (10 minutes to 7 days), with Djinn's share,
+**Hourglass**, near the bottom of the side panel, after Import a wish, or Ctrl+2 (Cmd+2 on macOS), has two tabs:
+**Machine**, where the live metrics are, as time goes by, and **Statistics**, what the work has been. On Machine, first
+the machine: its CPU and memory over the time you pick (10 minutes to 7 days), with Djinn's share,
 the load limit and the gates held; each running worker, its facts and its own graphs (its eye opens the task in its
 wish); where the time of the commands goes, by project and gate; and on the **Disk** tab, a bar of the whole disk above
 **Djinn and its workers** and **Machine** (caches and Docker storage grouped by risk—**Safe**, **Rebuilds**, **Data
 loss**—with each item's reclaimable space and cleanup command to copy). The page reads them only while it shows: leave it,
 and its reads stop. A running task's card links to its worker's row (**Live in the Hourglass**).
+
+**Statistics** reads the tasks and questions of every wish as [queries](#queries), one per figure or card, when the tab
+opens and when a filter changes, never polled: Djinn computes each total, the window only draws it. Filters: a project
+or all, the period (7 days, 30 days, all, from the tasks' creation), and day or week buckets. Six figures (tasks done,
+azimas merged, the median run of a work task and its p90, from a task's end to its wish's branch, the developer's
+answer time, the estimated cost), then the tasks created by type, the azimas merged on main, the time to the wish's
+branch, the time of a task by type (waiting before its start, running, gates, pauses: median and p90), the answer
+times, the prompt sizes (characters divided by 4) and a line per project, whose name filters the tab. Azimas and
+watchers stay out of the times: an azima sums its parts'.
 
 Ctrl+1 and Ctrl+2 are the keys' places, not their characters: on a French AZERTY keyboard, Ctrl with the key of &
 and Ctrl with the key of the e acute next to it; the numpad's 1 and 2 work too. They work in a text field, never in
