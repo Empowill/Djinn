@@ -315,8 +315,8 @@ not started) to another wish.
 Each wish has a **Push strategy**: **Per wish** (one integration branch per wish and project) or **Per azima** (one
 branch per azima, named `djinn/<code>-<slug of its title>`: `djinn/T07-the-orchestrator`). In the wish header, the push
 strategy can be switched, or set from a terminal with `djinn wish push-strategy <wish-id> --strategy wish|azima`. For an
-azima with its own branch, status badges show **PR proposed**, **PR open** or **PR merged**, with buttons to open or
-merge the PR. An individual **Push** button (`djinn project push <project> --wish <wish>`) pushes the branch on demand
+azima with its own branch, status badges show **PR proposed** (pushed with no request open: the Djinn opens it as a
+draft), **PR open** or **PR merged**, with buttons to open or merge the PR. An individual **Push** button (`djinn project push <project> --wish <wish>`) pushes the branch on demand
 when you choose.
 
 **Where work lands.** Per wish, a wish's work lands in its integration branch, in each project the project's reference

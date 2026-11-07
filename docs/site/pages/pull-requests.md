@@ -29,7 +29,8 @@ Djinn proposes a request when the work it would carry is ready, as a question in
 - **Per wish**: once the wish has settled, no worker running and no work waiting to merge or failed, its integration
   branch pushed and holding commits main lacks: *Open a pull request to main?*
 - **Per azima**: once every part of an azima is committed and its branch pushed: *Open a pull request for T07 to
-  main?* Its card shows **PR proposed**.
+  main?* Its card shows **PR proposed** earlier, from the branch's first push with no request open: the Djinn hears it
+  once, and opens the request as a draft by a task without waiting for the question.
 
 The question carries the drafted title and description. **Open pull request** opens it, as a draft:
 

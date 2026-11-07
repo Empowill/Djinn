@@ -1297,6 +1297,97 @@ func TestAzimaPRPass(t *testing.T) {
 		}
 	})
 
+	// W593: an azima's branch pushed, ahead of main, with no request on the forge, is its request proposed from the
+	// first push, its parts not all done: the lead hears it once, until the request opens. One open is recorded open;
+	// an azima done asks the forge nothing.
+	t.Run("pushed with no request", func(t *testing.T) {
+		t.Parallel()
+		in := integrating(t)
+		in.setAzimaStrategy(t)
+		in.remote(t)
+		forge := &fakeForge{views: map[string]string{}}
+		in.mu.Lock()
+		in.forge = forge
+		in.mu.Unlock()
+		queue := &leadQueue{}
+		in.h.NotifyLead(queue.notify)
+		moves := func(code string) []string {
+			var lines []string
+			for _, e := range queue.all() {
+				if e.GetCode() == code && e.GetKind() == planv1.LeadEventKind_LEAD_EVENT_KIND_MOVE {
+					lines = append(lines, e.GetText())
+				}
+			}
+			return lines
+		}
+		push := func(branch string) {
+			in.git(t, in.repo, "push", "--quiet", "origin", branch)
+			in.git(t, in.repo, "update-ref", "refs/remotes/origin/"+branch, in.git(t, in.repo, "rev-parse", "refs/heads/"+branch))
+		}
+
+		t1 := in.azima(t, in.wishID, "One Alpha")
+		in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}, func(task *planv1.Task) { task.PartOf = t1.GetId() })
+		putTask(t, in.db, &planv1.Task{ // A part left: Djinn asks no question yet.
+			Id: store.NewID(), WishId: in.wishID, ProjectId: in.projectID, Code: "W2", Title: "Second part", PartOf: t1.GetId(),
+			Status: planv1.TaskStatus_TASK_STATUS_PENDING, CreateTime: timestamppb.Now(),
+		}, "second part")
+		in.pass(t, 0)
+		b1 := "djinn/T1-one-alpha"
+		if got := in.stored(t, t1.GetId()).GetAzima().GetPr(); got != nil || len(moves("T1")) > 0 {
+			t.Fatalf("not pushed yet: PR %v, lead told %q; want nothing", got, moves("T1"))
+		}
+
+		push(b1)
+		in.pass(t, 0)
+		in.pass(t, 0)
+		if got := in.stored(t, t1.GetId()).GetAzima().GetPr().GetState(); got != planv1.AzimaPrState_AZIMA_PR_STATE_PROPOSED {
+			t.Errorf("pushed with no request: PR state %v, want proposed", got)
+		}
+		want := []string{"Djinn: T1 pushed, no PR: open it as a draft, by a task (djinn lead notes azima-draft-request)."}
+		if got := moves("T1"); !slices.Equal(got, want) {
+			t.Errorf("lead told %q; want %q once", got, want)
+		}
+		questions, err := store.List[*planv1.Question](t.Context(), in.db, store.Where{"wish_id": in.wishID})
+		if err != nil || len(questions) > 0 {
+			t.Errorf("questions %v (%v); want none before the parts are done", questions, err)
+		}
+
+		// Its draft opened, by the lead's task: recorded open, the lead told nothing more.
+		const url = "https://github.com/acme/app/pull/43"
+		forge.mu.Lock()
+		forge.views[b1] = `{"number":43,"state":"OPEN","baseRefName":"main","mergeable":"MERGEABLE","url":"` + url + `"}`
+		forge.mu.Unlock()
+		in.pass(t, 0)
+		if got := in.stored(t, t1.GetId()).GetAzima().GetPr(); got.GetState() != planv1.AzimaPrState_AZIMA_PR_STATE_OPEN || got.GetUrl() != url {
+			t.Errorf("draft opened: PR %v, want open at %s", got, url)
+		}
+		calls := len(forge.called())
+		in.pass(t, 0)
+		if got := moves("T1"); !slices.Equal(got, want) {
+			t.Errorf("lead told %q; want only %q", got, want)
+		}
+		if got := forge.called()[calls:]; len(got) > 0 {
+			t.Errorf("forge asked %q once the request is known open; want nothing", got)
+		}
+
+		// An azima merged and done, its branch still pushed, ahead of main, with no request: nothing.
+		t2 := in.azima(t, in.wishID, "Two Beta")
+		b2 := "djinn/T2-two-beta"
+		in.git(t, in.repo, "branch", "--quiet", "--force", b2, b1)
+		push(b2)
+		done := in.stored(t, t2.GetId())
+		done.Status = planv1.TaskStatus_TASK_STATUS_DONE
+		done.Azima.Merged = &planv1.AzimaMerged{MainBranch: in.branch}
+		putTaskInDB(t, in.db, done)
+		in.pass(t, 0)
+		if got := in.stored(t, t2.GetId()).GetAzima().GetPr(); got != nil || len(moves("T2")) > 0 {
+			t.Errorf("azima done: PR %v, lead told %q; want nothing", got, moves("T2"))
+		}
+		if got := slices.DeleteFunc(forge.called(), func(c string) bool { return !strings.Contains(c, b2) }); len(got) > 0 {
+			t.Errorf("forge asked %q about the done azima; want nothing", got)
+		}
+	})
+
 	// Each azima's pull request targets main from the start and follows its branch: another one merged leaves it as it
 	// is, never re-targeted; the merged one closes its azima, shown merged.
 	t.Run("kept never retargeted", func(t *testing.T) {

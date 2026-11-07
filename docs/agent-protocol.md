@@ -178,6 +178,10 @@ The Djinn is the agent the developer talks to. It changes the plan with `djinn`,
     merge: no commit of its own. …`, W196);
   - work that waits out of its azima's branch, the azima done or its branch deleted: one `move` line, once (`azima T2
     is done: …; reopen T2 or drop the work`), Djinn making no branch again and pushing nothing;
+  - an azima's branch pushed, ahead of main, with no pull or merge request on the forge (W593): one `move` line, once
+    until the request opens (`Djinn: T45 pushed, no PR: open it as a draft, by a task (djinn lead notes
+    azima-draft-request).`); its request is recorded proposed, and the brief's azima line says it too. A forge that
+    does not answer (no login, no forge for the remote) tells nothing;
   - the calls a worker's permissions refused in its run (its `permission denied: …` events, counted on the task's
     `refused`), in its `ended` or `failed` event, with the command that would grant them, whole in the digest: `W1 done,
     6 commands refused (permission): djinn, ls, git, …; djinn wish allow <wish> --mode auto would let the agent judge
