@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -69,25 +70,42 @@ func find(all []*machinev1.CommandCost, command string) *machinev1.CommandCost {
 	return nil
 }
 
-// Peaks reads the highest peak memory measured of each command, for the gates.
+// Peaks reads what each command was measured to cost, for the gates.
 type Peaks struct{ db *store.Store }
 
-// NewPeaks reads the peaks in the store.
+// NewPeaks reads the costs in the store.
 func NewPeaks(db *store.Store) *Peaks { return &Peaks{db: db} }
 
-// Peak is the highest peak memory, in bytes, of the command in its project: the task's, else the one holding dir.
-// It is 0 when the command was never measured, or outside any project.
-func (p *Peaks) Peak(ctx context.Context, taskID, dir, command string) uint64 {
+// Cost is what a command was measured to cost: its highest peak memory, in bytes, and its CPU time, user and system,
+// the higher of its mean and its last run's.
+type Cost struct {
+	Peak uint64
+	CPU  time.Duration
+}
+
+// Cost is what the command was measured to cost in its project: the task's, else the one holding dir. It is zero
+// when the command was never measured, or outside any project.
+func (p *Peaks) Cost(ctx context.Context, taskID, dir, command string) Cost {
 	c := &costs{db: p.db}
 	projectID, err := c.project(ctx, taskID, dir)
 	if err != nil || projectID == "" {
-		return 0
+		return Cost{}
 	}
 	all, err := store.List[*machinev1.CommandCost](ctx, p.db, store.Where{"project_id": projectID})
 	if err != nil {
-		return 0
+		return Cost{}
 	}
-	return find(all, command).GetPeakMemoryBytes()
+	found := find(all, command)
+	cpu := max(found.GetCpuSeconds(), found.GetLastCpuSeconds())
+	return Cost{Peak: found.GetPeakMemoryBytes(), CPU: time.Duration(cpu * float64(time.Second))}
+}
+
+// Record counts a run of a command that Djinn measured itself, as djinn gate run would send it: a worker's command
+// admitted by the gates (djinn gate hook). Nothing is counted outside any project; a failure is logged.
+func (p *Peaks) Record(ctx context.Context, run *machinev1.CommandServiceRecordRequest) {
+	if _, err := (&costs{db: p.db}).Record(ctx, connect.NewRequest(run)); err != nil {
+		logx.L().Warn("record an admitted command", "task", run.GetTaskId(), "command", logx.Cut(run.GetCommand(), 80), "err", err)
+	}
 }
 
 // Ask counts a run asked of the command in its project: the task's, else the one holding dir; the hold of gate asked

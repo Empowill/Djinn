@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -8,7 +9,11 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"time"
 
+	"connectrpc.com/connect"
+
+	machinev1 "github.com/empowill/djinn/gen/go/machine/v1"
 	"github.com/empowill/djinn/gen/go/machine/v1/machinev1connect"
 	"github.com/empowill/djinn/internal/cli"
 	"github.com/empowill/djinn/internal/gate"
@@ -54,16 +59,7 @@ func runGate(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return 2
 	}
 	code, err := func() (int, error) {
-		if addr == "" {
-			home, err := ui.Home()
-			if err != nil {
-				return -1, err
-			}
-			if addr, err = server.ReadAddr(home); err != nil {
-				return -1, errors.New("no djinn answers: run djinn up first")
-			}
-		}
-		client, base, err := cli.Dial(addr)
+		client, base, err := dialDjinn(addr)
 		if err != nil {
 			return -1, err
 		}
@@ -80,4 +76,57 @@ func runGate(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return 1
 	}
 	return code
+}
+
+// dialDjinn reaches the djinn at addr, or the one djinn up runs when addr is empty.
+func dialDjinn(addr string) (connect.HTTPClient, string, error) {
+	if addr == "" {
+		home, err := ui.Home()
+		if err != nil {
+			return nil, "", err
+		}
+		if addr, err = server.ReadAddr(home); err != nil {
+			return nil, "", errors.New("no djinn answers: run djinn up first")
+		}
+	}
+	return cli.Dial(addr)
+}
+
+// runGateHook is djinn gate hook, Claude's PreToolUse hook on a worker's Bash and Monitor (cli.GateHook): it waits
+// until Djinn admits a command that neither reads nor edits, then lets it run as it was, telling the worker why it
+// waited when it did.
+func runGateHook(stdin io.Reader, stdout, stderr io.Writer) int {
+	err := gate.Hook(stdin, stdout, func(what, dir, match string) (string, error) {
+		client, base, err := dialDjinn(os.Getenv("DJINN_ADDR"))
+		if err != nil {
+			return "", err
+		}
+		asked := time.Now()
+		stream, err := machinev1connect.NewGateServiceClient(client, base).Admit(context.Background(), connect.NewRequest(&machinev1.GateServiceAdmitRequest{
+			TaskId: os.Getenv("DJINN_TASK_ID"), What: what, Directory: dir, AgentPid: int32(os.Getppid()), Match: match,
+		}))
+		if err != nil {
+			return "", err
+		}
+		defer stream.Close()
+		why := ""
+		for stream.Receive() {
+			switch msg := stream.Msg(); msg.GetState() {
+			case machinev1.GateState_GATE_STATE_WAITING:
+				why = msg.GetReason()
+			case machinev1.GateState_GATE_STATE_HELD:
+				if why == "" {
+					return "", nil
+				}
+				return fmt.Sprintf("djinn: this command waited %s for its admission by the gates: %s",
+					time.Since(asked).Round(time.Second), why), nil
+			}
+		}
+		return "", cmp.Or(stream.Err(), errors.New("djinn ended the call"))
+	})
+	if err != nil {
+		fmt.Fprintln(stderr, "djinn gate hook:", err)
+		return 1
+	}
+	return 0
 }

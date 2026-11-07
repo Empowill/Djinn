@@ -738,8 +738,26 @@ from the others, even when the memory would hold a lighter command; a gate alrea
 Each waiter says why it waits: `a merge or a push, served before the workers: held by W12 (…)` for Djinn's, `held by
 W12 (…), for 40s, then 1 merge or push goes first` or `a merge or a push goes first: …` for the others.
 
+Every other command of a Claude worker's Bash or Monitor that neither reads nor edits is admitted by the gates before
+it runs: Claude's PreToolUse hook (`djinn gate hook`, in the settings Djinn passes to its workers) waits for the
+admission, then lets the command run unchanged, so the worker's permissions judge it as before. Reading and editing
+commands (`ls`, `cat`, `rg`, `sed`, `cp`, `git status`, `git diff`, Djinn's own commands, and the like) go at once.
+An admission is shared: it waits only while the machine is under pressure or lacks the memory the command peaked at, in the gates'
+order. Djinn finds the command's shell among the worker's processes (Linux and macOS), reads what it uses, and records
+its cost (`djinn machine commands`, gate `commands`, exit code `-1`) when it ends; a command too short to be found
+within 3 seconds is counted asked only. The task's events say `gate commands: asked`, `taken`, `given back`; a worker
+whose command waited reads why beside its result.
+
+A command measured heavy, past 2 GiB of peak memory or 60 s of CPU time, goes one at a time: it waits while another
+task's heavy command holds its gate or its admission (`heavy commands go one at a time: W12: go test ./... runs one,
+for 40s`), a merge or a push keeping its place before the workers. `heavyCommandMemoryMib` and
+`heavyCommandCpuSeconds` in `settings.json` of Djinn's data folder change both limits; `djinn up` reads them as it
+starts. A gate's name keeps its own turn as before.
+
+A worker holding or waiting for an admission is neither paused for a slot nor judged silent; you may still pause it.
+
 A gate held outside a running worker (a merge's, a push's, your terminal's) takes one of the machine's slots; a
-worker's own gate is in its slot. On a machine of more than one slot, one stays free for the merges and pushes: a new
+worker's own gate is in its slot. An admission takes none, unless its command is heavy. On a machine of more than one slot, one stays free for the merges and pushes: a new
 worker waits (`5 workers run, 1 slot is kept for merges and pushes, the most this machine holds`), and a merge's gate
 takes that slot. On a machine of one slot, none is kept: only the order above applies.
 

@@ -32,6 +32,7 @@ type Group struct {
 // proc is one process, as a listing gives it.
 type proc struct {
 	pid, ppid, pgrp int
+	start           uint64        // when it started, in clock ticks since the boot (Linux); 0 when not known
 	cpu             time.Duration // its own and that of the children it waited for
 	own             time.Duration // its own alone
 	memory          uint64
@@ -112,6 +113,9 @@ func parseStat(b []byte, page uint64) (proc, error) {
 	}
 	if rss, err = n(21); err != nil {
 		return proc{}, err
+	}
+	if start, err := n(19); err == nil && start > 0 {
+		p.start = uint64(start)
 	}
 	p.ppid, p.pgrp = int(ppid), int(pgrp)
 	p.cpu = time.Duration(ticks) * time.Second / clockTicks

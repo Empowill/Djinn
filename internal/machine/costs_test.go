@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 
@@ -301,28 +302,45 @@ func TestCosts_List(t *testing.T) {
 	}
 }
 
-// TestPeaks_Peak: the gates read the highest peak of a command in its project; 0 for one never measured there.
-func TestPeaks_Peak(t *testing.T) {
+// TestPeaks_Cost: the gates read the highest peak of a command in its project; 0 for one never measured there.
+func TestPeaks_Cost(t *testing.T) {
 	t.Parallel()
 	r := sharedCosts(t)
 	peaks := NewPeaks(r.db)
 	cases := []struct {
 		name                 string
 		taskID, dir, command string
-		want                 uint64
+		want                 Cost
 	}{
-		{"by the folder", "", filepath.Join(r.dir, "src"), "Go Test ./...", 300 << 20},
-		{"by the task, another project", r.task.GetId(), os.TempDir(), "go test ./...", 0},
-		{"outside any project", "", os.TempDir(), "go test ./...", 0},
-		{"never run", "", r.dir, "go vet ./...", 0},
+		// Its CPU time is the higher of the mean (15 s) and the last run's (20 s).
+		{"by the folder", "", filepath.Join(r.dir, "src"), "Go Test ./...", Cost{Peak: 300 << 20, CPU: 20 * time.Second}},
+		{"by the task, another project", r.task.GetId(), os.TempDir(), "go test ./...", Cost{}},
+		{"outside any project", "", os.TempDir(), "go test ./...", Cost{}},
+		{"never run", "", r.dir, "go vet ./...", Cost{}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
-			if got := peaks.Peak(t.Context(), c.taskID, c.dir, c.command); got != c.want {
-				t.Errorf("peak of %q in %q, task %q = %d, want %d", c.command, c.dir, c.taskID, got, c.want)
+			if got := peaks.Cost(t.Context(), c.taskID, c.dir, c.command); got != c.want {
+				t.Errorf("cost of %q in %q, task %q = %+v, want %+v", c.command, c.dir, c.taskID, got, c.want)
 			}
 		})
+	}
+}
+
+// TestPeaks_Record: a run Djinn measured itself, an admitted command's, counts as one djinn gate run sends; outside
+// any project, nothing is counted.
+func TestPeaks_Record(t *testing.T) {
+	t.Parallel()
+	r := newCostsRig(t)
+	peaks := NewPeaks(r.db)
+	peaks.Record(t.Context(), &machinev1.CommandServiceRecordRequest{
+		Directory: r.dir, Command: "npm run build", Gate: "commands", CpuSeconds: 90, Seconds: 30,
+		PeakMemoryBytes: 3 << 30, ExitCode: -1, HeldSeconds: 30,
+	})
+	peaks.Record(t.Context(), &machinev1.CommandServiceRecordRequest{Directory: os.TempDir(), Command: "npm run build"})
+	if got := peaks.Cost(t.Context(), "", r.dir, "npm run build"); got != (Cost{Peak: 3 << 30, CPU: 90 * time.Second}) {
+		t.Errorf("cost after the record = %+v", got)
 	}
 }
 

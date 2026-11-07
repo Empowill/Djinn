@@ -335,6 +335,13 @@ service GateService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option idempotency_level = NO_SIDE_EFFECTS;
   }
+  // Admit a command of a worker's Bash or Monitor before it runs (djinn gate hook, Claude's PreToolUse hook): the
+  // stream says why it waits, then that it is admitted, and ends; the command then runs as the worker wrote it. Djinn
+  // finds the shell that runs it among the agent's processes, and holds the admission, reading what it uses, until it
+  // ends: shared with the other commands, unless the command was measured heavy, which goes one at a time.
+  rpc Admit(GateServiceAdmitRequest) returns (stream GateServiceAdmitResponse) {
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
 }
 
 // GateState is where a holder stands with its gate.
@@ -348,6 +355,32 @@ enum GateState {
   // Djinn took the gate back before the call ended: its holder's process ended, or it held the gate past its
   // timeout; the reason says which.
   GATE_STATE_TAKEN_BACK = 3;
+}
+
+message GateServiceAdmitRequest {
+  // Task whose worker runs the command; a worker's own by default.
+  string task_id = 1 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+  // The command, up to 200 characters: what its cost is measured and found under.
+  string what = 2 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.max_len = 200
+  ];
+  // Folder the command runs in, absolute: it finds the project when no task is given.
+  string directory = 3 [(buf.validate.field).string.max_len = 4096];
+  // The agent's process, which starts the shell of the command once it is admitted.
+  int32 agent_pid = 4 [(buf.validate.field).int32.gt = 0];
+  // The letters and digits of the command's first line, up to 120: Djinn finds the shell that runs it by them.
+  string match = 5 [(buf.validate.field).string.max_len = 480];
+}
+
+message GateServiceAdmitResponse {
+  // Where the command stands: waiting, or held once admitted.
+  GateState state = 1;
+  // Why it waits.
+  string reason = 2;
 }
 
 // Gate is a gate held or waited for.
@@ -521,7 +554,7 @@ message CommandServiceRecordRequest {
   double seconds = 5 [(buf.validate.field).double.gte = 0];
   // Peak memory, in bytes; 0 when unknown.
   uint64 peak_memory_bytes = 6;
-  // Exit code of the command.
+  // Exit code of the command; -1 when not known: a command of a worker's Bash that Djinn admitted and measured itself.
   int32 exit_code = 7;
   // Queue wait time before the gate was granted, in seconds.
   double wait_seconds = 8;

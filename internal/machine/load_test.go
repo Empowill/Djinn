@@ -142,6 +142,36 @@ func TestReadIfritIdle(t *testing.T) {
 	}
 }
 
+// TestReadHeavy: when a command is heavy, from settings.json; 0 where it does not say.
+func TestReadHeavy(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name     string
+		noHome   bool
+		settings string
+		memory   uint64
+		cpu      time.Duration
+	}{
+		{name: "no home", noHome: true},
+		{name: "missing file"},
+		{name: "broken file", settings: `{"heavyCommandMemoryMib":`},
+		{name: "memory only", settings: `{"heavyCommandMemoryMib":4096}`, memory: 4 << 30},
+		{name: "both", settings: `{"heavyCommandMemoryMib":1024,"heavyCommandCpuSeconds":120}`, memory: 1 << 30, cpu: 2 * time.Minute},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			home := ""
+			if !c.noHome {
+				home = settingsHome(t, c.settings)
+			}
+			if memory, cpu := ReadHeavy(home); memory != c.memory || cpu != c.cpu {
+				t.Errorf("ReadHeavy = %d, %v, want %d, %v", memory, cpu, c.memory, c.cpu)
+			}
+		})
+	}
+}
+
 // TestReadLeadDriven: whether Djinn drives the lead, true unless settings.json says false.
 func TestReadLeadDriven(t *testing.T) {
 	t.Parallel()

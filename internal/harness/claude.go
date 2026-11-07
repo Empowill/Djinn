@@ -91,7 +91,19 @@ func (c Claude) args(spec Spec) []string {
 			perms["allow"] = append(perms["allow"].([]string), allow...)
 			perms["deny"] = append(perms["deny"].([]string), deny...)
 		}
-		b, _ := json.Marshal(settings) // Maps of strings and slices of strings: it cannot fail.
+		if spec.Admit != "" {
+			// Each command of its Bash that neither reads nor edits waits until the gates admit it (gate.Hook), then
+			// runs unchanged: the permissions judge it as before. The hook waits as long as the gates make it, an hour
+			// at most; a failing hook lets the command run.
+			settings["hooks"] = map[string]any{"PreToolUse": []any{map[string]any{
+				"matcher": "Bash|Monitor",
+				"hooks": []any{map[string]any{
+					"type": "command", "command": spec.Admit, "args": []string{"gate", "hook"}, "timeout": 3600,
+					"onFailure": "continue",
+				}},
+			}}}
+		}
+		b, _ := json.Marshal(settings) // Maps, strings, numbers and slices of them: it cannot fail.
 		args = append(args, "--settings", string(b))
 	}
 	if spec.SkillsDir != "" {

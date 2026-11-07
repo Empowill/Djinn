@@ -4,6 +4,10 @@ A gate is a named turn on the machine for one heavy command: the tests, a build,
 Workers, Djinn's merges and pushes, the Djinn and your own terminal all run their heavy commands through the gate of
 the command's name. A gate has **one holder at a time**, and is granted only while the machine can take it.
 
+Besides the gates, every other command a Claude worker runs that neither reads nor edits is **admitted**: it waits
+only while the machine cannot take it, then runs beside the others. Djinn measures each one, and a command measured
+heavy takes its turn, one at a time.
+
 ## Why gates
 
 Workers share one machine. Five workers starting the whole test suite at the same minute would each run five times
@@ -15,6 +19,7 @@ slower, run out of memory, or fail on a port another one holds. Gates turn that 
 - **The most urgent first.** Djinn's merges and pushes go first, then the first wish's commands, the work of its first
   azima first.
 - **Measured.** Djinn records what each command cost, and knows next time what it needs.
+- **Nothing slips by.** A worker's command that goes through no gate is admitted all the same: see below.
 
 ## How a gate is granted
 
@@ -45,6 +50,34 @@ latest, which each of your actions in Djinn pushes back, or when it ends. It goe
 then the first come. Those who wait read *held by ifrit W12: task run-back; released when you leave, at 15:42 at the
 latest*.
 
+## Admitted commands
+
+A Claude worker does not have to name a gate. Before each command of its terminal and of its watches, Djinn looks at
+it:
+
+- **A command that reads or edits** goes at once: listing and reading files, searching them, editing and moving them,
+  git's status, log and diff, Djinn's own commands.
+- **Any other** (tests, builds, package managers, scripts, interpreters, loops) waits for its **admission**, then
+  runs exactly as the worker wrote it: its permissions judge it as before.
+
+An admission is shared: many commands hold one at once. It waits only while the machine is under pressure or lacks
+the memory the command peaked at, in the same order as the gates: the first wish first. Once admitted, Djinn finds the
+command among the worker's processes, reads what it uses, and records its cost when it ends. A command too short to be
+found in a few seconds is counted asked, not measured.
+
+**Heavy commands take turns.** A command measured past 2 GiB of memory, or past a minute of CPU time, is heavy: it
+waits while another task's heavy command runs, whether that one came through a gate or an admission, and whatever the
+gates' names. Djinn's merges and pushes keep their place before the workers' heavy commands. A task's own heavy
+commands never wait for each other: one may run the other. The window's settings file sets both limits.
+
+When a command waited, its worker reads why beside its result: *waited 2m for its admission by the gates: the machine
+is under pressure*. Its task's events say each admission asked, taken and given back, under the name commands.
+
+A worker whose command waits for its admission, or runs admitted, is neither paused to make room nor judged silent;
+you may still pause it yourself: an admitted command keeps no one else waiting. An admission takes no slot of the
+machine, unless its command is heavy and held outside a running worker. Admissions are not listed among the gates,
+and the Hourglass draws only those that waited or were heavy.
+
 ## The gates Djinn runs through
 
 Djinn's own commands each go through a gate:
@@ -72,9 +105,10 @@ yours to choose. A few are common:
 | stack | The local stack, a database or a development server several workers would share. An [ifrit](#ifrit) serving it can hold the gate for as long as it runs, and gives it back when it goes out. |
 | paid | A run that calls a paid model or service: one at a time, so that costs never pile up in parallel. |
 
-A command that goes through no gate is not held back by any. Djinn does not force a worker's heavy command through a
-gate: the project's permissions and the workers' instructions do. A project that lets workers run commands only through
-gates keeps every heavy one in the queue. See [Project and settings](#project-and-settings).
+The name keeps its own turn, one holder at a time, and is what you read; whether the command is heavy comes from what
+it was measured to cost, whatever its name. A Claude worker's command that goes through no gate is admitted all the
+same (see above); a command of another agent, or of your terminal, that goes through no gate is not held back by any.
+See [Project and settings](#project-and-settings).
 
 ## Slots and gates
 
@@ -112,7 +146,9 @@ is lost, and the queue starts again from the commands that ask anew.
 
 ## Good to know
 
-- **Run heavy commands through a gate.** Outside one, a command does not wait for anyone, and nobody waits for it.
+- **Name a gate for what must run alone.** A Claude worker's command is admitted anyway, but only a gate keeps two
+  stacks off the same ports, or two paid runs apart. Outside a gate and an admission, a command does not wait for
+  anyone, and nobody waits for it.
 - **Gate names are machine-wide.** The gate test of one project and the gate test of another are the same gate.
 - **A gate from your terminal takes a worker's slot.** Hold it for what you need, not longer.
 - **Keep commit checks fast.** They run on every task's merge, through their gates, before anything else may: a long
