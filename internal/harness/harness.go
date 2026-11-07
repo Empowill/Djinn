@@ -92,10 +92,13 @@ type Harness struct {
 
 	clock func() time.Time // nil: the machine's (WithClock)
 
-	measureEvery time.Duration    // how often a worker is read (WithMeasure); 0: never
-	measureRead  MeasureFunc      // nil: workers are not measured
-	containers   Containers       // what reads and removes the workers' containers (WithContainers); zero: neither
-	history      *machine.History // nil: the readings are kept in memory only (WithHistory)
+	measureEvery time.Duration           // how often a worker is read (WithMeasure); 0: never
+	measureRead  MeasureFunc             // nil: workers are not measured
+	containers   Containers              // what reads and removes the workers' containers (WithContainers); zero: neither
+	brake        Brake                   // when the memory brake freezes and thaws (WithBrake); zero: no brake
+	brakeRead    func() machine.Snapshot // the machine as the brake reads it (WithBrake); nil: no brake
+	brakeAt      brakeState              // what the brake remembers between passes, guarded by sched (brake.go)
+	history      *machine.History        // nil: the readings are kept in memory only (WithHistory)
 
 	tell       TellFunc      // wakes the lead of a watcher's wish (TellLeads); guarded by mu
 	notifyLead NotifyFunc    // queues an event for the lead (NotifyLead), in place of tell; guarded by mu
@@ -176,6 +179,7 @@ type Harness struct {
 	held         func(taskID string) []string // the gates a task holds (HeldGates); nil: none known
 	waiting      func(taskID string) []string // the gates a task waits for (HeldGates); nil: none known
 	outside      func() (int, int)            // the gates held outside the running workers, and of them the merges' and pushes' (GatesOutside); nil: none
+	grants       func() map[string]time.Time  // when each task's latest gate or admission held now was granted (GateGrants); nil: none known
 	admit        string                       // djinn's path: its gate hook and its wrappers (WithAdmit); "": none
 	silenceLimit time.Duration                // silence limit before the Lamplighter checks a worker (lamplighter.go)
 	maxWallTime  time.Duration                // ceiling on wall time budget per task (lamplighter.go)
@@ -230,6 +234,7 @@ type run struct {
 	notchPaused        bool                 // paused by the operating load notch
 	slotPaused         bool                 // paused to give its slot to an investigator: resumed first when a slot frees
 	netPaused          bool                 // paused while the network is down: resumed once it is back (network.go)
+	brakePaused        bool                 // frozen by the memory brake: thawed once calm, or interrupted (brake.go)
 	inTool             bool                 // a tool call of the worker runs: the network does not pause it (network.go)
 	failing            bool                 // the worker said its error and is ending on it: the network does not pause it (W646)
 	forced             bool                 // started or resumed by hand, whatever the slots (Harness.Forced)
@@ -3051,7 +3056,9 @@ func (h *Harness) hold(ctx context.Context, procedure string, req proto.Message,
 		h.mu.Unlock()
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s is ending on its error", task.GetCode()))
 	}
-	if pause {
+	// The memory brake freezes the last admitted worker when only admitted ones grow (brake.go): under such pressure the
+	// gates grant nothing to any other meanwhile.
+	if pause && procedure != methodBrake {
 		for _, g := range []struct {
 			names func(taskID string) []string
 			verb  string
@@ -3093,14 +3100,17 @@ func (h *Harness) hold(ctx context.Context, procedure string, req proto.Message,
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s: %w", task.GetCode(), err))
 	}
 	r.paused = pause
-	byHarness := procedure == methodNotch || procedure == methodPreempt || procedure == methodNetwork
+	byHarness := procedure == methodNotch || procedure == methodPreempt || procedure == methodNetwork || procedure == methodBrake
+	// Thawed by hand, what the brake froze of its containers thaws too (brake.go).
+	thawContainers := !pause && r.brakePaused && procedure != methodBrake
 	if pause {
 		r.notchPaused = (procedure == methodNotch)
 		r.slotPaused = (procedure == methodPreempt)
 		r.netPaused = (procedure == methodNetwork)
+		r.brakePaused = (procedure == methodBrake)
 	} else {
 		// Resumed by hand, it takes a slot whatever the others: the load bar shows it (Forced).
-		r.notchPaused, r.slotPaused, r.netPaused, r.forced = false, false, false, !byHarness
+		r.notchPaused, r.slotPaused, r.netPaused, r.brakePaused, r.forced = false, false, false, false, !byHarness
 	}
 	if len(why) > 0 {
 		r.holdWhy = why[0]
@@ -3108,6 +3118,12 @@ func (h *Harness) hold(ctx context.Context, procedure string, req proto.Message,
 	h.mu.Unlock()
 	if pause {
 		h.wake() // Its slot is free.
+	}
+	if thawContainers {
+		go func() {
+			defer logx.Crash("thaw containers", "task", id)
+			h.pauseContainers(context.WithoutCancel(ctx), id, false)
+		}()
 	}
 	actor := actorLocal
 	if byHarness {

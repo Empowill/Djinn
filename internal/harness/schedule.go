@@ -269,6 +269,7 @@ func (h *Harness) schedule(ctx context.Context) {
 	if !p.Auto && h.capacity != nil {
 		h.enforceNotchCapacity(ctx, p)
 	}
+	h.brakePass(ctx)   // Under strong memory pressure, freeze what grows outside the gates; calm, thaw it (brake.go).
 	if !h.netHolds() { // Resumed now, it would be paused again for the network (network.go).
 		h.resumeNotchPaused(ctx)
 	}
@@ -373,7 +374,7 @@ func (h *Harness) situation(ctx context.Context, tasks []*planv1.Task) (*dispatc
 		h.mu.Lock()
 		outside := h.outside
 		for _, r := range h.runs {
-			if r.paused && (r.notchPaused || r.slotPaused || r.netPaused) && !r.watcher && !r.stopping && !r.final {
+			if r.paused && (r.notchPaused || r.slotPaused || r.netPaused || r.brakePaused) && !r.watcher && !r.stopping && !r.final {
 				m.Resuming++
 			}
 		}
