@@ -257,7 +257,7 @@ func TestLeadCallsContextFile(t *testing.T) {
 }
 
 // TestLeadCallsGates (W592): the calls the leads of 07/11 00:28 and 00:29 typed seven times in a wish of three
-// projects, on a binary without W474: each passes, or its refusal gives the command that passes, which does.
+// projects, on a binary without W474: each passes, or its refusal gives the flag and the values that pass.
 func TestLeadCallsGates(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
@@ -282,10 +282,9 @@ func TestLeadCallsGates(t *testing.T) {
 	if got := l.task(t, wish, "T1").GetProjectId(); got != l.projects["djinn"] {
 		t.Errorf("T1 works in %s, want djinn", got)
 	}
-	// 00:29: "the wish has 3 projects: name one with --project-id", with nothing to run.
+	// 00:29: "the wish has 3 projects: name one with --project-id", with no flag to add.
 	l.refused(t, []string{"task", "spawn", wish, "--kind", "azima", "--title", "Remote branches have a PR"},
-		"the wish has 3 projects: name one with --project-id (dolmen-git, terraform or djinn)",
-		"djinn task spawn "+wish+" --title 'Remote branches have a PR' --project-id djinn --kind azima")
+		"the wish has 3 projects: run it again with --project-id dolmen-git, --project-id terraform or --project-id djinn")
 
 	// W588's state at 00:29: done, merged into its azima's branch, which removed its worktree.
 	l.passes(t, "task", "spawn", wish, "--kind", "azima", "--title", "The job boarder has time", "--project-id", "dolmen-git")
