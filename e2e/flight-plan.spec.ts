@@ -158,7 +158,7 @@ async function assertHeaderChrome(
   if (await actions.count()) {
     const actionsBox = await actions.boundingBox();
     expect(actionsBox).not.toBeNull();
-    // The icon actions of a wish (the flying carpet has only Lead: the seat's chip, driven, or Talk to the Djinn).
+    // The icon actions of a wish (the flying carpet has only Lead: Talk to the Djinn, or the driven lead's batch).
     const iconAction = actions.locator(".page-header-action").first();
     if (await iconAction.count()) {
       const iconActionBox = await iconAction.boundingBox();
@@ -167,7 +167,7 @@ async function assertHeaderChrome(
         Math.abs(rowCenter - (iconActionBox!.y + iconActionBox!.height / 2)),
       ).toBeLessThan(1);
     }
-    // The labelled actions too: Pause, and Lead (the seat's chip, or Talk to the Djinn and its arrow).
+    // The labelled actions too: Pause, and Lead (Talk to the Djinn, or the driven lead's batch).
     for (const box of await actions
       .locator("button:visible")
       .evaluateAll((els) => els.map((el) => el.getBoundingClientRect())))

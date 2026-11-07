@@ -244,3 +244,143 @@ test("in the Circle, a drop of a sign-in sends the whole order to Djinn", async 
       if (handle?.constructor?.name === "MessagePort") handle.unref();
   }
 });
+
+test("the lead in its terminal: when the Djinn's row names another agent, the Circle starts the Djinn there on demand (W578)", async () => {
+  const lead = s.WorkerKind.LEAD;
+  const models = [
+    {
+      id: "claude-opus-5-5",
+      label: "Claude Opus 5.5",
+      provider: s.Provider.CLAUDE,
+    },
+    { id: "gpt-5.5", label: "GPT-5.5", provider: s.Provider.CODEX },
+  ];
+  const agents = {
+    env: environment(),
+    checking: false,
+    error: "",
+    check() {},
+    setPaused() {},
+  };
+  const circle = (rowProvider, initialLead) =>
+    s.renderToStaticMarkup(
+      h(s.SummoningCircle, {
+        initialRows: [
+          {
+            kind: lead,
+            provider: rowProvider,
+            model:
+              rowProvider === s.Provider.CODEX ? "gpt-5.5" : "claude-opus-5-5",
+          },
+        ],
+        initialModels: models,
+        initialAgents: agents,
+        initialTasks: [],
+        initialLead,
+      }),
+    );
+  const recordedClaude = { recorded: s.Provider.CLAUDE, driven: false };
+  const other = circle(s.Provider.CODEX, recordedClaude);
+  assert.match(
+    other,
+    /<div class="summoning-lead-start"><p>Talk to the Djinn resumes its session on Claude\.<\/p><button type="button" class="button secondary small" title="A new session of the Djinn starts on this agent from the brief, and becomes the Djinn">Start the Djinn on Codex<\/button><\/div>/,
+  );
+  // The same agent as the recorded session's, no session recorded, or the lead driven: nothing to start.
+  for (const markup of [
+    circle(s.Provider.CLAUDE, recordedClaude),
+    circle(s.Provider.CODEX, { recorded: undefined, driven: false }),
+    circle(s.Provider.CODEX, { recorded: s.Provider.CLAUDE, driven: true }),
+  ])
+    assert.doesNotMatch(markup, /summoning-lead-start|Start the Djinn/);
+
+  // A click starts the Djinn on Codex through LeadService.Resume, and shows what Djinn said.
+  const container = setupMockDom();
+  const below = (el, out = []) => {
+    for (const child of el.childNodes) {
+      out.push(child);
+      below(child, out);
+    }
+    return out;
+  };
+  const props = (el) =>
+    el[Object.keys(el).find((k) => k.startsWith("__reactProps$"))];
+  const settle = async () => {
+    for (let i = 0; i < 4; i++)
+      await s.act(() => new Promise((r) => setTimeout(r, 0)));
+  };
+  const text = (el) =>
+    el.nodeType === 3
+      ? (el.nodeValue ?? "")
+      : el.childNodes.length
+        ? el.childNodes.map(text).join("")
+        : (el.textContent ?? "");
+  const resumed = [];
+  const transport = s.createRouterTransport(({ service }) => {
+    service(s.UiService, { getEnvironment: () => environment() });
+    service(s.LeadService, {
+      accounts: () => ({ pinned: false }),
+      resume: (req) => {
+        resumed.push(req.provider);
+        return { note: "Codex leads now, from the brief." };
+      },
+    });
+  });
+  const djinn = s.createDjinn(transport, 10);
+  const root = s.createRoot(container);
+  try {
+    await s.act(async () => {
+      root.render(
+        h(
+          s.DjinnProvider,
+          { djinn },
+          h(s.SummoningCircle, {
+            initialRows: [
+              { kind: lead, provider: s.Provider.CODEX, model: "gpt-5.5" },
+            ],
+            initialModels: models,
+            initialAgents: agents,
+            initialTasks: [],
+            initialLead: recordedClaude,
+          }),
+        ),
+      );
+    });
+    const start = below(container).find(
+      (el) =>
+        el.tagName?.toLowerCase() === "button" &&
+        text(el) === "Start the Djinn on Codex",
+    );
+    assert.ok(start, "the button to start the Djinn on Codex");
+    await s.act(async () => props(start).onClick());
+    await settle();
+    assert.deepEqual(resumed, [s.Provider.CODEX]);
+    const note = below(container).find(
+      (el) => String(el.attributes?.class ?? "") === "summoning-lead-note",
+    );
+    assert.equal(note && text(note), "Codex leads now, from the brief.");
+  } finally {
+    s.act(() => root.unmount());
+    await new Promise((r) => setTimeout(r, 30));
+    for (const handle of process._getActiveHandles())
+      if (handle?.constructor?.name === "MessagePort") handle.unref();
+  }
+});
+
+test("leadReady: a session of the Djinn can start once an agent that leads is installed and signed in (W578)", () => {
+  const { MISSING, SIGNED_OUT, READY, UNKNOWN } = s.ProviderState;
+  const env = (claude, codex, antigravity) => ({
+    providers: [
+      { id: "claude", state: claude },
+      { id: "codex", state: codex },
+      { id: "antigravity", state: antigravity },
+    ],
+  });
+  assert.equal(s.leadReady(env(MISSING, SIGNED_OUT, MISSING)), false);
+  assert.equal(s.leadReady(env(READY, MISSING, MISSING)), true);
+  assert.equal(s.leadReady(env(MISSING, UNKNOWN, MISSING)), true);
+  // Antigravity leads in its terminal, not driven by Djinn.
+  assert.equal(s.leadReady(env(MISSING, SIGNED_OUT, READY)), true);
+  assert.equal(s.leadReady(env(MISSING, SIGNED_OUT, READY), true), false);
+  // No agent told yet: nothing warns.
+  assert.equal(s.leadReady({ providers: [] }), true);
+});

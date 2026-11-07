@@ -35,7 +35,6 @@ import {
   type KeptWorktree,
   type Project,
   type ProjectSync,
-  type Provider,
   type Question,
   type Task,
   TaskStatus,
@@ -162,9 +161,6 @@ import {
   WishModels,
   WishTitle,
   leadTrouble,
-  recordedAgent,
-  type PinChoice,
-  type SeatChoice,
 } from "./wish-head";
 import { LeadMessage } from "./lead-message";
 import { useEyeNeeds } from "./djinn-eye";
@@ -196,7 +192,6 @@ export function WishView({
   reaching,
   landing,
   onToast,
-  onSetupAgents,
 }: {
   wish: Wish;
   // A tilasm of the wish to show now, in its Tilasms tab.
@@ -206,8 +201,6 @@ export function WishView({
   // The wish clicked in the side panel: its first tab now.
   landing?: Landing;
   onToast: (text: string) => void;
-  // Opens the setup of the agents, from the lead's menu.
-  onSetupAgents?: () => void;
 }) {
   const djinn = useDjinn();
   const store = djinn?.store;
@@ -984,45 +977,19 @@ export function WishView({
     [quiet, act, clients.questions, clients.tasks],
   );
 
-  // lead resumes the lead, focusing on this wish, or starts one of another agent; what Djinn says of it shows as a toast: a terminal
+  // lead resumes the lead, focusing on this wish; what Djinn says of it shows as a toast: a terminal
   // that runs a program already, a session Djinn does not know.
-  const resumeLead = (provider?: Provider) => {
+  const resumeLead = () => {
     let note = "";
     return act(
       async () => {
-        ({ note } = await clients.lead.resume({
-          wishId: wish.id,
-          provider,
-        }));
+        ({ note } = await clients.lead.resume({ wishId: wish.id }));
       },
       [Change.WISH],
       () => note,
     );
   };
-  const lead = (provider?: Provider) => quiet(resumeLead(provider));
-  // moveLead moves the lead Djinn drives to another seat; what Djinn says of it shows as a toast.
-  const moveLead = (seat: SeatChoice) => {
-    let note = "";
-    return act(
-      async () => {
-        ({ note } = await clients.lead.move(seat));
-      },
-      [Change.WISH],
-      () => note,
-    );
-  };
-  // pinLead pins the lead Djinn drives on a sign-in of its agent, or lets it follow the order of the accounts again;
-  // what Djinn says of it shows as a toast.
-  const pinLead = (pin: PinChoice) => {
-    let note = "";
-    return act(
-      async () => {
-        ({ note } = await clients.lead.pin(pin));
-      },
-      [Change.WISH],
-      () => note,
-    );
-  };
+  const lead = () => quiet(resumeLead());
   const attention = attentionOf(
     [...open, ...waitingLead],
     waiting,
@@ -1106,17 +1073,9 @@ export function WishView({
               </TooltipButton>
             )}
             <LeadButton
-              recorded={recordedAgent(leadRecord)}
               trouble={leadTrouble(leadExit, leadStartError)}
-              loadAgents={async () =>
-                (await clients.ui.getEnvironment({})).providers
-              }
               onLead={() => lead()}
-              onPick={(provider) => lead(provider)}
-              onSetup={onSetupAgents}
               drive={leadDrive}
-              onMove={(seat) => quiet(moveLead(seat))}
-              onPin={(pin) => quiet(pinLead(pin))}
             />
             <PageHeaderAction
               label={t("app.share")}

@@ -65,8 +65,7 @@ agent and the label; djinn lead accounts lists the accounts.
   limited or auto.
 - **The Djinn follows the same rule.** Unless you pin it, each batch of the Djinn starts on the sign-in of its agent
   that the mode picks for a new task. **The Djinn's account**, above the list, pins it on one sign-in whatever the order, or, with Follows
-  the order, takes the pin off; the menu of the Djinn's chip offers the same, and djinn lead pin work, then djinn lead
-  pin --unpin, do it from the command line. A crown marks where the Djinn runs.
+  the order, takes the pin off; djinn lead pin work, then djinn lead pin --unpin, do it from the command line. A crown marks where the Djinn runs.
 - **When every sign-in is full, Djinn overflows.** It starts the task on the first sign-in that may spend extra
   credits, if Claude Code told it, and that line reads In overflow while a session runs there past its limits. If the
   account refuses, the task waits for the reset.

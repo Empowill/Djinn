@@ -112,6 +112,7 @@ export function WishSidebar({
   grimoireSelected = false,
   onSelectGrimoire,
   summoningSelected = false,
+  summoningAlert = false,
   onOpenSummoningCircle,
   selectedWishId,
   selectedProjectId,
@@ -143,6 +144,8 @@ export function WishSidebar({
   onSelectGrimoire?: () => void;
   // Shows the Summoning Circle page, marked while shown: the agents, their accounts in order, a model per kind of worker.
   summoningSelected?: boolean;
+  // No agent can lead yet (leadReady): a yellow dot on the Circle's entry, where the agents are set up, until one can.
+  summoningAlert?: boolean;
   onOpenSummoningCircle?: () => void;
   selectedWishId: string;
   selectedProjectId: string;
@@ -756,11 +759,22 @@ export function WishSidebar({
               : "nav-item summoning-nav"
           }
           onClick={onOpenSummoningCircle}
-          title={t("summoning.subtitle")}
-          aria-label={t("sidebar.summoning_circle")}
+          title={
+            summoningAlert
+              ? t("sidebar.summoning_no_lead")
+              : t("summoning.subtitle")
+          }
+          aria-label={
+            summoningAlert
+              ? `${t("sidebar.summoning_circle")}: ${t("sidebar.summoning_no_lead")}`
+              : t("sidebar.summoning_circle")
+          }
         >
           <Compass size={15} />
           {!collapsed && <span>{t("sidebar.summoning_circle")}</span>}
+          {summoningAlert && (
+            <span className="summoning-alert" aria-hidden="true" />
+          )}
         </button>
       )}
     </>

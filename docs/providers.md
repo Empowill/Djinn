@@ -1007,9 +1007,10 @@ The lead Djinn drives runs on a **seat**: an agent, a model and an account, chos
 `settings.json` (`ui.v1.Settings.lead`) until changed (W132, decision Q31). Each batch reads it as it starts, so a move
 takes effect at the next batch, which carries the lead's journal like any other; the batch records its agent, model and
 account. The moves: `djinn lead move --provider codex --model <model> --account <name>` (the whole seat: an empty model
-is the agent's default, an empty account its own sign-in; without `--provider`, the current agent), or the lead's menu
-in the window (the chip of the lead's seat, at the top of a wish or of the flying carpet), which lists each agent on its own sign-in then on each account,
-and the model.
+is the agent's default, an empty account its own sign-in; without `--provider`, the current agent), or the Summoning
+Circle in the window (W578: the top of a wish or of the flying carpet has no selector): its Djinn row sets the agent and
+model (`LeadService.SetCircle`), **The Djinn's account** pins it on a sign-in of its agent or lets it follow the order
+(`LeadService.Pin`).
 
 **The lead follows the order of the accounts (L2, decision of 06/11/2026 that revised Q31).** Unless it is pinned,
 each batch starts on the sign-in of its agent that the account policy picks for a new worker (`FirstInOrder`, below):

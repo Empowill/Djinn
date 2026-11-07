@@ -46,6 +46,7 @@ export {
 } from "@/src/wish-task.tsx";
 export {
   AgentSetupPanel,
+  leadReady,
   accountNamePattern,
   accountNameValid,
   timeLeft,
@@ -138,7 +139,6 @@ export {
   LeadBatchStatus,
   LeadButton,
   LeadJournal,
-  LeadMenu,
   MainMerges,
   PushStrategySelector,
   WhereWorkLands,
@@ -149,7 +149,6 @@ export {
   batchCost,
   leadTrouble,
   recordedAgent,
-  seatLabel,
   seatName,
 } from "@/src/wish-head.tsx";
 export { UpdateBannerView, readyKey } from "@/src/update-banner.tsx";
@@ -161,7 +160,7 @@ export {
   pageShortcut,
 } from "@/src/page-keys.ts";
 export { PageHeaderAction } from "@/src/page-header.tsx";
-export { InstallStep, UiService } from "@/gen/ts/ui/v1/ui_pb.ts";
+export { InstallStep, ProviderState, UiService } from "@/gen/ts/ui/v1/ui_pb.ts";
 export {
   memory,
   resourcesDetail,

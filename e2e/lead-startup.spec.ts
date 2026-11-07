@@ -87,7 +87,7 @@ test("an ended lead retains output and retries explicitly", async ({
   const id = await openWish(page, "Show a lead that ended");
   try {
     const lead = page
-      .locator(".split-button")
+      .locator(".topbar-actions")
       .getByRole("button", { name: "Talk to the Djinn", exact: true });
     const dot = lead.locator(".lead-dot");
     await expect(dot).toHaveCount(0);
@@ -135,7 +135,7 @@ test("a lead that could not start shows why on Lead until it starts", async ({
   const id = await openWish(page, "Show a lead that could not start");
   try {
     const lead = page
-      .locator(".split-button")
+      .locator(".topbar-actions")
       .getByRole("button", { name: "Talk to the Djinn", exact: true });
     await lead.click();
     await expect(lead.locator(".lead-dot")).toHaveClass(/failed/);

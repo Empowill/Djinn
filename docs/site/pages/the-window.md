@@ -27,7 +27,8 @@ From top to bottom:
   with a small flame while the project has something for you to fix, and its tooltip counts them; folded to the rail,
   the flame sits on the project's folder.
 - **Import a wish**, **Hourglass** (Ctrl+2), **Grimoire**, this documentation, **Summoning Circle**, and your profile,
-  **Connections & preferences**. The Grimoire is a page of the window, like the Hourglass, never a dialog over it: its
+  **Connections & preferences**. A yellow dot on the Summoning Circle says that no session of the Djinn can start yet:
+  no agent that leads is installed and signed in. It goes once one is. The Grimoire is a page of the window, like the Hourglass, never a dialog over it: its
   navigation shows beside its splash page from the first view, each page is read when you open it, and back and forward
   move between the pages you read.
 
@@ -84,7 +85,9 @@ corners, and back. On the rail, never on a background:
 ### The Summoning Circle
 
 The **Summoning Circle**, below the Grimoire in the side panel, is a page of the window, like the Grimoire: who works,
-on which account, with which model. At the top, the agents: each one's version, where it stands, and the button that
+on which account, with which model. It is the one place where the Djinn's agent, model and account are chosen: the top
+of a wish or of the flying carpet has no selector of its own. It is also the first step of the onboarding: a window that
+opens with no agent able to lead opens on it, its entry marked with a yellow dot until one is set up. At the top, the agents: each one's version, where it stands, and the button that
 installs it or signs it in, its terminal opening below its line; **Check again** runs their status commands again.
 Then **Accounts · order of priority**: every sign-in of every agent in one list, with the switch between **Dynamic**
 (the week that ends soonest first, unlimited sign-ins last) and **Manual order** at the right of its title,
@@ -97,6 +100,9 @@ and signed in on this machine (unsigned providers appear greyed out with their s
 models from the agent itself and Claude and Codex models from Djinn's shared price table, shown once by human-readable
 label (such as **Gemini 4 Argon (High)**) while storing and sending the canonical model identifier. The lead row offers
 Antigravity when the lead runs in a terminal, and shows it greyed out with a tooltip when a driven lead cannot run it.
+Changing the lead row moves the driven Djinn there for its next batch. A Djinn in its terminal keeps its recorded
+session: when the lead row names another agent, the row says which session **Talk to the Djinn** resumes, and
+**Start the Djinn on** that agent starts a new session there from the brief, which becomes the Djinn.
 Every row except the lead offers **Same as lead** by default, following the lead's choice when it changes. Below the rows,
 the bulk model switcher (also in each wish's header, and on the command line with the task command update-models)
 previews and switches every open work, investigation, correction, review, and question worker task—plus defaults for
@@ -111,9 +117,9 @@ once; Large grows it. The documentation opens in the window's theme and text siz
 
 ## The flying carpet
 
-The flying carpet shows every active wish at a glance. Its head holds the load gauge and the Djinn's own control: the
-chip of its seat ("Claude Code · opus 5.5", its menu moving it) while Djinn drives it, **Talk to the Djinn** when it runs
-in its terminal. Below:
+The flying carpet shows every active wish at a glance. Its head holds the load gauge and the Djinn's own control: its
+running batch and its journal while Djinn drives it, **Talk to the Djinn** when it runs in its terminal. Where the Djinn
+runs is chosen in the Summoning Circle. Below:
 
 - **What waits for you**, the bar at the top, while something does: what keeps a wish from moving forward, the most
   blocking first. A click takes you to it. See [Question and move](#question-and-move).

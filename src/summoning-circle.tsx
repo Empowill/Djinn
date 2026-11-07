@@ -2,7 +2,9 @@
 // account, with which model (tilasm L49 v2 mockup A). First the agents, each with its next step (agent-setup.tsx);
 // then every sign-in of every agent in the order of priority, ranked by drag and drop or Alt+Arrow, each with its
 // gauges, its state, the workers and the tasks waiting there, and where the Djinn runs; then one row per kind of
-// worker, global to Djinn (every project); last, the change of the open tasks' models at once.
+// worker, global to Djinn (every project); last, the change of the open tasks' models at once. The one place where the
+// Djinn's agent, model and account are chosen: the window's top has no selector of its own (W578). The lead in its
+// terminal keeps its recorded session; when the Djinn's row names another agent, its line starts the Djinn there.
 // Models come from the server (live agent discovery + shared internal/usage/prices.yaml table), never a hand-written UI list.
 // Providers not signed in on this machine are never offered as choices: their rows say how to sign them in.
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -17,6 +19,7 @@ import {
   WorkerKind,
   type WorkerSeat,
 } from "../gen/ts/plan/v1/plan_pb";
+import type { UiServiceGetEnvironmentResponse } from "../gen/ts/ui/v1/ui_pb";
 import {
   AgentSetupPanel,
   type Agents,
@@ -30,6 +33,7 @@ import { catalogFromPriceTable } from "./data/prices";
 import { type TextKey, t } from "./i18n";
 import { OperatingLoad } from "./operating-load";
 import { PageHeader } from "./page-header";
+import { recordedAgent } from "./wish-head";
 import "./project-panel.css";
 
 export interface CircleModel {
@@ -246,7 +250,9 @@ export function SummoningCircle({
   initialProviders,
   initialAgents,
   initialTasks,
+  initialLead,
   onChoose,
+  onAgents,
 }: {
   initialRows?: WorkerSeat[];
   initialModels?: readonly CircleModel[];
@@ -259,10 +265,26 @@ export function SummoningCircle({
   // The agents and their sign-ins, and the tasks, as a test gives them; else read from Djinn.
   initialAgents?: Agents;
   initialTasks?: readonly Task[];
+  // The agent of the lead's recorded session, and whether Djinn drives the lead, as a test gives them; else the store's.
+  initialLead?: { recorded?: Provider; driven: boolean };
+  // The agents as the Circle reads them, at each check: the window's side panel follows them (its yellow dot, W578).
+  onAgents?: (env: UiServiceGetEnvironmentResponse) => void;
 }) {
   const djinn = useDjinn();
   const liveAgents = useAgents();
   const agents = initialAgents ?? liveAgents;
+  useEffect(() => {
+    if (agents.env) onAgents?.(agents.env);
+  }, [agents.env, onAgents]);
+  const storeRecorded = useOptionalData(
+    (s) => recordedAgent(s.lead),
+    undefined,
+  );
+  const storeDriven = useOptionalData((s) => s.leadDrive !== undefined, false);
+  const recorded = initialLead ? initialLead.recorded : storeRecorded;
+  const driven = initialLead ? initialLead.driven : storeDriven;
+  // What Djinn said of the last start of the Djinn on another agent, from the Djinn's row.
+  const [leadNote, setLeadNote] = useState("");
   // The tasks of the active wishes, which the window reads while it is open (wish-app.tsx).
   const details = useOptionalData((s) => s.details, undefined);
   const load = useMemo(
@@ -357,6 +379,23 @@ export function SummoningCircle({
       .finally(() => setBusy(false));
   };
 
+  // startLead starts the lead in its terminal on another agent than its recorded session's, from the brief: it becomes
+  // the Djinn (LeadService.Resume with a provider), as the window's top offered before W578.
+  const startLead = (provider: Provider) => {
+    if (!djinn) return;
+    setBusy(true);
+    setError("");
+    setLeadNote("");
+    djinn.clients.lead
+      .resume({ provider })
+      .then((res) => {
+        setLeadNote(res.note);
+        void djinn.store.changed("", [Change.WISH]);
+      })
+      .catch((err) => setError(message(err)))
+      .finally(() => setBusy(false));
+  };
+
   return (
     <div className="wish-view summoning-page">
       <PageHeader middle={<OperatingLoad />}>
@@ -409,6 +448,21 @@ export function SummoningCircle({
                 : [];
               const label = t(spec.labelKey);
               const detail = t(spec.detailKey);
+              // In its terminal, the lead resumes its recorded session: when this row names another agent, it starts
+              // there only on demand.
+              const leadAgent = isLead
+                ? (options.find((m) => m.id === value)?.provider ??
+                  seat?.provider)
+                : undefined;
+              const otherLead =
+                isLead &&
+                !driven &&
+                recorded !== undefined &&
+                leadAgent !== undefined &&
+                leadAgent !== Provider.UNSPECIFIED &&
+                leadAgent !== recorded
+                  ? leadAgent
+                  : undefined;
               return (
                 <div className="setting-row summoning-row" key={spec.key}>
                   <div>
@@ -426,6 +480,31 @@ export function SummoningCircle({
                           </span>
                         ))}
                       </div>
+                    )}
+                    {otherLead !== undefined && (
+                      <div className="summoning-lead-start">
+                        <p>
+                          {t("summoning.lead_recorded", {
+                            agent: providerName(recorded!),
+                          })}
+                        </p>
+                        <button
+                          type="button"
+                          className="button secondary small"
+                          title={t("summoning.lead_start_detail")}
+                          disabled={busy}
+                          onClick={() => startLead(otherLead)}
+                        >
+                          {t("summoning.lead_start", {
+                            agent: providerName(otherLead),
+                          })}
+                        </button>
+                      </div>
+                    )}
+                    {isLead && leadNote && (
+                      <p className="summoning-lead-note" role="status">
+                        {leadNote}
+                      </p>
                     )}
                   </div>
                   <select
