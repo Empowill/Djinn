@@ -1297,6 +1297,55 @@ func TestAzimaPRPass(t *testing.T) {
 		}
 	})
 
+	// W608: the forges' real answers, as their commands print them (stdout and stderr mixed): glab's for a branch with
+	// no merge request (seen by W607 on a GitLab project) and gh's for one with no pull request are "no request", told
+	// apart from a forge that did not answer; glab's view of an open merge request reads it open.
+	t.Run("forge answers", func(t *testing.T) {
+		t.Parallel()
+		const branch = "djinn/T14-will-prepare-une-campagne-d-entretiens"
+		const mrURL = "https://gitlab.example.com/acme/project/-/merge_requests/3017"
+		cases := []struct {
+			name     string
+			forge    string
+			out      string
+			code     int
+			open     bool
+			answered bool
+		}{
+			{"glab no request", "glab", "   ERROR\n\n  No open merge request available for \"" + branch + "\".\n", 1, false, true},
+			{"glab open", "glab", `{"iid":3017,"state":"opened","target_branch":"main","web_url":"` + mrURL +
+				`","detailed_merge_status":"not_approved","head_pipeline":{"id":7,"status":"success"}}`, 0, true, true},
+			{"glab unauthorized", "glab", "   ERROR\n\n  401 Unauthorized\n", 1, false, false},
+			{"gh no request", "gh", "no pull requests found for branch \"" + branch + "\"\n", 1, false, true},
+			{"gh not logged in", "gh", "To get started with GitHub CLI, please run:  gh auth login\n", 4, false, false},
+		}
+		for _, c := range cases {
+			var asked []string
+			h := &Harness{commands: func(_ context.Context, _ string, args []string) (string, int, error) {
+				asked = append(asked, strings.Join(args, " "))
+				return c.out, c.code, nil
+			}}
+			query := h.queryGhPR
+			if c.forge == "glab" {
+				query = h.queryGlabMR
+			}
+			pr, answered := query(t.Context(), t.TempDir(), branch)
+			if want := c.forge; len(asked) != 1 || !strings.HasPrefix(asked[0], want+" ") ||
+				!strings.Contains(asked[0], " view "+branch) {
+				t.Errorf("%s: asked %q, want one %s view of %s", c.name, asked, want, branch)
+			}
+			if answered != c.answered || (pr != nil) != c.open {
+				t.Errorf("%s: request %+v, answered %v; want open %v, answered %v", c.name, pr, answered, c.open, c.answered)
+			}
+			if c.open {
+				want := forgePR{Number: 3017, State: "OPEN", Base: "main", URL: mrURL, Mergeable: false, Green: true}
+				if *pr != want {
+					t.Errorf("%s: request %+v, want %+v", c.name, *pr, want)
+				}
+			}
+		}
+	})
+
 	// W593: an azima's branch pushed, ahead of main, with no request on the forge, is its request proposed from the
 	// first push, its parts not all done: the lead hears it once, until the request opens. One open is recorded open;
 	// an azima done asks the forge nothing.
