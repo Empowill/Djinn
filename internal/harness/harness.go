@@ -178,6 +178,8 @@ type Harness struct {
 	ifritWarned  func(*planv1.Task)           // shows that an ifrit goes out soon (WarnIfrits), guarded by mu; nil: nothing shows
 	maxTurns     int                          // ceiling on model turns budget per task (lamplighter.go)
 	version      string                       // version of the running binary (WithVersion)
+	resumeHeld   string                       // why this start resumes no worker (WithResumeHeld); "" resumes them
+	heldTasks    []string                     // the tasks interrupted Recover held, by their codes, guarded by mu
 	builtFrom    map[string]string            // by project id: the branch the running binary was built from (compare.go)
 	runs         map[string]*run              // by task id
 	changed      chan struct{}                // closed at the next change of a task without worker (notifyLocked)
@@ -443,7 +445,7 @@ func (h *Harness) Recover(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	var interrupted, out []string
+	var interrupted, heldWatchers, out []string
 	for _, t := range tasks {
 		switch t.GetStatus() {
 		case planv1.TaskStatus_TASK_STATUS_PENDING, planv1.TaskStatus_TASK_STATUS_RUNNING, planv1.TaskStatus_TASK_STATUS_PAUSED:
@@ -456,8 +458,12 @@ func (h *Harness) Recover(ctx context.Context) error {
 				continue
 			}
 			// Stopped as the last djinn up ended (end): its worker ran, resumed by Djinn or not.
-			if !lastStart.IsZero() && t.GetEndTime().AsTime().After(lastStart) && !watching(t) {
-				interrupted = append(interrupted, t.GetCode())
+			if !lastStart.IsZero() && t.GetEndTime().AsTime().After(lastStart) {
+				if !watching(t) {
+					interrupted = append(interrupted, t.GetCode())
+				} else if h.resumeHeld != "" {
+					heldWatchers = append(heldWatchers, t.GetCode())
+				}
 			}
 			continue
 		default:
@@ -476,6 +482,8 @@ func (h *Harness) Recover(ctx context.Context) error {
 		}
 		if !watching(t) { // A watcher is no worker: the restart line counts it apart.
 			interrupted = append(interrupted, t.GetCode())
+		} else if h.resumeHeld != "" {
+			heldWatchers = append(heldWatchers, t.GetCode())
 		}
 		nowPb := timestamppb.New(h.now())
 		t.Status, t.Error, t.EndTime = planv1.TaskStatus_TASK_STATUS_INTERRUPTED, "djinn up ended while the worker ran", nowPb
@@ -499,14 +507,22 @@ func (h *Harness) Recover(ctx context.Context) error {
 			return fmt.Errorf("recover task %s: %w", t.GetCode(), err)
 		}
 	}
-	resumed, watchers, err := h.queueInterrupted(ctx, tasks)
-	if err != nil {
-		return err
+	var resumed, watchers []string
+	if h.resumeHeld == "" {
+		if resumed, watchers, err = h.queueInterrupted(ctx, tasks); err != nil {
+			return err
+		}
+	} else {
+		// Held (held.go): every task cut short stays interrupted, the move the lead's.
+		h.mu.Lock()
+		h.heldTasks = append(slices.Clone(interrupted), heldWatchers...)
+		h.mu.Unlock()
+		logx.L().Warn("djinn up resumes no worker", "why", h.resumeHeld, "held", strings.Join(h.Held(), ","))
 	}
 	// The lead hears of the restart from its queue, whether its watch died with the last djinn up or not.
 	restart := &planv1.LeadEvent{Kind: planv1.LeadEventKind_LEAD_EVENT_KIND_RESTART,
-		Text: restartLine(h.version, interrupted, resumed, watchers, out, orphans, cutPart(cut, integrating),
-			lockedPart(locked))}
+		Text: restartLine(h.version, h.resumeHeld, interrupted, resumed, watchers, heldWatchers, out, orphans,
+			cutPart(cut, integrating), lockedPart(locked))}
 	if err := plan.QueueLeadEvent(ctx, h.store, restart, h.now()); err != nil {
 		return fmt.Errorf("tell the lead of the restart: %w", err)
 	}
@@ -561,22 +577,26 @@ func (h *Harness) lastStart(ctx context.Context) (time.Time, error) {
 	return last, nil
 }
 
-// restartLine is what the lead's restart event says: the version Djinn started on, the workers the last djinn up
-// left running and Djinn interrupted (or that it stopped, and Djinn resumes), those of them it resumes by itself,
-// apart the watchers it resumes: a watcher is no worker, the ifrits it left lit, which come back out (putOut), the
-// processes the last djinn up left running that Djinn stopped, by their labels (orphansPart), and the parts more,
-// each "" for none: what the stop cut (cutPart), what it left in the person's checkouts (lockedPart).
-func restartLine(version string, interrupted, resumed, watchers, out, orphans []string, more ...string) string {
+// restartLine is what the lead's restart event says: the version Djinn started on, why it resumes no worker by
+// itself when held is not "" (held.go), the workers the last djinn up left running and Djinn interrupted (or that it
+// stopped, and Djinn resumes), those of them it resumes by itself, apart the watchers it resumes: a watcher is no
+// worker, and those it held, the ifrits it left lit, which come back out (putOut), the processes the last djinn up
+// left running that Djinn stopped, by their labels (orphansPart), and the parts more, each "" for none: what the stop
+// cut (cutPart), what it left in the person's checkouts (lockedPart).
+func restartLine(version, held string, interrupted, resumed, watchers, heldWatchers, out, orphans []string, more ...string) string {
 	if version == "" {
 		version = "unknown"
 	}
 	line := "Djinn: restarted on version " + version
+	var parts []string
+	if held != "" {
+		parts = append(parts, "it resumes no worker by itself, as "+held)
+	}
 	for _, c := range resumed {
 		if !slices.Contains(interrupted, c) {
 			interrupted = append(interrupted, c) // Stopped with the last djinn up: interrupted all the same.
 		}
 	}
-	var parts []string
 	if len(interrupted) > 0 {
 		part := fmt.Sprintf("%d %s interrupted (%s)", len(interrupted), plural(len(interrupted), "worker"),
 			strings.Join(interrupted, ", "))
@@ -597,6 +617,10 @@ func restartLine(version string, interrupted, resumed, watchers, out, orphans []
 	if len(watchers) > 0 {
 		parts = append(parts, fmt.Sprintf("%d %s resumed: %s", len(watchers), plural(len(watchers), "watcher"),
 			strings.Join(watchers, ", ")))
+	}
+	if len(heldWatchers) > 0 {
+		parts = append(parts, fmt.Sprintf("%d %s not resumed, the move is yours: %s", len(heldWatchers),
+			plural(len(heldWatchers), "watcher"), strings.Join(heldWatchers, ", ")))
 	}
 	switch len(out) {
 	case 0:

@@ -48,6 +48,8 @@ test("a newer Djinn is offered, and restarts only on update()", async () => {
   // A part of the page that subscribes later gets the offer at once.
   const late = await new Promise((resolve) => djinnUpdate.subscribe(resolve));
   assert.equal(late.ready, "v2");
+  // A start that resumed its workers holds none.
+  assert.equal(late.held, undefined);
   assert.equal(late.notesUrl, "https://example.com/v2");
   assert.deepEqual(await djinnUpdate.update(), {
     version: "v2",
@@ -92,6 +94,9 @@ test("a build committed is proposed, and installs only on update(sha)", async ()
           ],
           readyBuild: { branch: "feat/clement-port", sha: "e60" },
           installed: true,
+          heldStart: 3,
+          heldMemoryPercent: 95,
+          heldTasks: ["W1"],
           installing: {
             sha: "abc",
             step: 5,
@@ -147,6 +152,8 @@ test("a build committed is proposed, and installs only on update(sha)", async ()
   );
   assert.equal(state.readyBuild.sha, "e60");
   assert.equal(state.readyBuild.running, false);
+  // The start resumed no worker, the memory near full: why, the reading, and the task it held.
+  assert.deepEqual(state.held, { why: 3, memoryPercent: 95, tasks: ["W1"] });
   assert.deepEqual(asked, []);
   assert.deepEqual(await djinnUpdate.update("abc"), {
     version: "",
