@@ -6,10 +6,12 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
@@ -257,4 +259,88 @@ func TestLeadCallsContextFile(t *testing.T) {
 	}
 	l.refused(t, []string{"question", "ask", "Push now?", l.dew, "--context", "x", "--context-file", file},
 		"give context or context_file, not both")
+}
+
+// TestLeadCallsGates (W592): the calls the leads of 07/11 00:28 and 00:29 typed seven times in a wish of three
+// projects, on a binary without W474: each passes, or its refusal gives the command that passes, which does.
+func TestLeadCallsGates(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	l := newLeadCalls(t)
+	gates, err := l.project.Add(t.Context(), connect.NewRequest(&planv1.ProjectServiceAddRequest{
+		Directory: gitRepo(t), Name: "dolmen-git",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	gitID := gates.Msg.GetProject().GetId()
+	w, err := l.wishes.Make(t.Context(), connect.NewRequest(&planv1.WishServiceMakeRequest{
+		Title: "Djinn gates", ProjectIds: []string{gitID, l.projects["terraform"], l.projects["djinn"]},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wish := w.Msg.GetWish().GetId()
+
+	// 00:29: "--project-id: must be a valid UUID".
+	l.passes(t, "task", "spawn", wish, "--kind", "azima", "--title", "Remote branches have a PR", "--project-id", "djinn")
+	if got := l.task(t, wish, "T1").GetProjectId(); got != l.projects["djinn"] {
+		t.Errorf("T1 works in %s, want djinn", got)
+	}
+	// 00:29: "the wish has 3 projects: name one with --project-id", with nothing to run.
+	l.refused(t, []string{"task", "spawn", wish, "--kind", "azima", "--title", "Remote branches have a PR"},
+		"the wish has 3 projects: name one with --project-id (dolmen-git, terraform or djinn)",
+		"djinn task spawn "+wish+" --title 'Remote branches have a PR' --project-id djinn --kind azima")
+
+	// W588's state at 00:29: done, merged into its azima's branch, which removed its worktree.
+	l.passes(t, "task", "spawn", wish, "--kind", "azima", "--title", "The job boarder has time", "--project-id", "dolmen-git")
+	t2 := l.task(t, wish, "T2")
+	done := &planv1.Task{
+		Id: store.NewID(), WishId: wish, Code: "W1", Title: "!3014: drop the test that pins no local timeout",
+		ProjectId: gitID, PartOf: t2.GetId(), Provider: planv1.Provider_PROVIDER_FAKE, Status: planv1.TaskStatus_TASK_STATUS_DONE,
+		SessionId: "s", Scheduled: true, WriteScopes: []string{"go/agentci"}, CreateTime: timestamppb.Now(),
+		StartTime: timestamppb.Now(), EndTime: timestamppb.Now(), Branch: "w1-3014",
+		Integration: &planv1.TaskIntegration{State: planv1.IntegrationState_INTEGRATION_STATE_COMMITTED,
+			Branch: "djinn/T2-the-job-boarder-has-time"},
+	}
+	putTask(t, l.db, done, "text dropped")
+
+	// 00:28: "the wish has 3 projects: name one with --project-id"; the part works in its azima's project.
+	l.passes(t, "task", "spawn", wish, "--title", "!3014: answer the thread", "--part-of", "T2", "--after", "W1",
+		"--write-scopes", "gitlab-mr-3014-discussions", "--prompt", "text answered", "--later")
+	if got := l.task(t, wish, "W2").GetProjectId(); got != gitID {
+		t.Errorf("a part of T2 works in %s, want T2's dolmen-git (%s)", got, gitID)
+	}
+	// An azima part of another one takes its project too.
+	l.passes(t, "task", "spawn", wish, "--kind", "azima", "--title", "The review threads", "--part-of", "T2")
+	if got := l.task(t, wish, "T3").GetProjectId(); got != gitID {
+		t.Errorf("an azima part of T2 works in %s, want T2's dolmen-git (%s)", got, gitID)
+	}
+
+	// 00:28: "unknown flag --wish-id", "<task-id>: must be a valid UUID", then "has no worktree any more" with a
+	// --fork alone, which names no project in a wish of three. Each says why, and the spawn that goes on.
+	prompt := "Djinn pushed your branch: answer the thread, resolve it."
+	fork := "djinn task spawn " + wish + " --title '!3014: drop the test that pins no local timeout' --part-of T2 " +
+		"--fork W1 --after W1 --write-scopes go/agentci --prompt 'Djinn pushed your branch: answer the thread, resolve it.'"
+	for _, args := range [][]string{
+		{"task", "continue", "W1", "--wish-id", wish, "--prompt", prompt},
+		{"task", "continue", "W1", "--wish", "Djinn gates", "--prompt", prompt},
+		{"task", "continue", done.GetId(), "--prompt", prompt},
+	} {
+		l.refused(t, args, "task W1 has no worktree any more: its work merged into djinn/T2-the-job-boarder-has-time, "+
+			"which removed it. djinn task continue resumes a task in its own worktree only", fork)
+	}
+	// A prompt of several lines goes through a file.
+	l.refused(t, []string{"task", "continue", "W1", "--wish-id", wish, "--prompt", "Answer.\n\nResolve."},
+		"--fork W1 --after W1 --write-scopes go/agentci --prompt-file <file>",
+		"<file> holds your prompt: write it with your Write tool first.")
+
+	// The command given passes, as the shell reads it: a part of T2, forked from W1's session, after it.
+	l.passes(t, "task", "spawn", wish, "--title", "!3014: drop the test that pins no local timeout", "--part-of", "T2",
+		"--fork", "W1", "--after", "W1", "--write-scopes", "go/agentci", "--prompt", prompt, "--later")
+	got := l.task(t, wish, "W3")
+	if got.GetPartOf() != t2.GetId() || got.GetProjectId() != gitID || got.GetForkOf() != "W1" ||
+		!slices.Equal(got.GetDependsOn(), []string{done.GetId()}) {
+		t.Errorf("the fork W3: %v", got)
+	}
 }

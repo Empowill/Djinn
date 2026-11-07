@@ -44,7 +44,7 @@ func (h *Harness) Continue(ctx context.Context, procedure string, req *planv1.Ta
 		return nil, err
 	}
 	if err := h.continuable(ctx, task, running); err != nil {
-		return nil, err
+		return nil, h.forkInstead(ctx, err, task, req.GetPrompt())
 	}
 	tasks, err := store.List[*planv1.Task](ctx, h.store, nil)
 	if err != nil {
@@ -181,14 +181,74 @@ func (h *Harness) continuable(ctx context.Context, t *planv1.Task, running bool)
 	}
 	if project.GetGit() && !questionWorker(t) { // A question worker reads in the project's folder.
 		if t.GetWorktree() == "" {
-			return refuse("has no worktree any more: fork it to start from its context (djinn task spawn --fork %s)", t.GetCode())
+			return connect.NewError(connect.CodeFailedPrecondition, &worktreeGoneError{task: t, why: "has no worktree any more"})
 		}
 		if _, err := os.Stat(t.GetWorktree()); err != nil {
-			return refuse("has lost its worktree %s: fork it to start from its context (djinn task spawn --fork %s)",
-				t.GetWorktree(), t.GetCode())
+			return connect.NewError(connect.CodeFailedPrecondition,
+				&worktreeGoneError{task: t, why: "has lost its worktree " + t.GetWorktree()})
 		}
 	}
 	return nil
+}
+
+// worktreeGoneError is the refusal to continue a Git task whose worktree is gone: removed once its work merged, or lost.
+type worktreeGoneError struct {
+	task *planv1.Task
+	why  string // "has no worktree any more"
+}
+
+func (w *worktreeGoneError) Error() string {
+	return fmt.Sprintf("task %s %s: fork it to start from its context (djinn task spawn --fork %s)",
+		w.task.GetCode(), w.why, w.task.GetCode())
+}
+
+// forkPromptMax is the longest prompt forkInstead writes in the command it gives; a longer one, or one of several
+// lines, goes through --prompt-file (a # line inside --prompt is refused by Claude Code's shell guard).
+const forkPromptMax = 2000
+
+// forkInstead is err, the refusal of continuable, told in full when the task's worktree is gone (W592): why (its work
+// merged into its azima's branch, which removed it), what continue does, and the spawn that goes on from its session
+// instead, in its azima, after it when it is done, with its write scopes and the prompt given, ready to run.
+func (h *Harness) forkInstead(ctx context.Context, err error, t *planv1.Task, prompt string) error {
+	var gone *worktreeGoneError
+	if !errors.As(err, &gone) {
+		return err
+	}
+	why := "Djinn removed it or it was deleted"
+	if in := t.GetIntegration(); in.GetState() == planv1.IntegrationState_INTEGRATION_STATE_COMMITTED && in.GetBranch() != "" {
+		why = fmt.Sprintf("its work merged into %s, which removed it", in.GetBranch())
+	}
+	words := []string{"djinn", "task", "spawn", t.GetWishId(), "--title", shellQuote(t.GetTitle())}
+	part := ""
+	if azima, _ := h.azimaOf(ctx, t); azima != "" {
+		if a, err := store.Get[*planv1.Task](ctx, h.store, azima); err == nil {
+			part = a.GetCode()
+		}
+	}
+	if part != "" { // The part works in its azima's project (pickProject).
+		words = append(words, "--part-of", part)
+	} else if p, err := store.Get[*planv1.Project](ctx, h.store, t.GetProjectId()); err == nil {
+		words = append(words, "--project-id", shellQuote(p.GetName()))
+	}
+	words = append(words, "--fork", t.GetCode())
+	if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE {
+		words = append(words, "--after", t.GetCode())
+	}
+	for _, s := range t.GetWriteScopes() {
+		words = append(words, "--write-scopes", shellQuote(s))
+	}
+	file := ""
+	switch {
+	case prompt == "":
+	case strings.ContainsAny(prompt, "\r\n") || len([]rune(prompt)) > forkPromptMax:
+		words, file = append(words, "--prompt-file", "<file>"), "\n<file> holds your prompt: write it with your Write tool first."
+	default:
+		words = append(words, "--prompt", shellQuote(prompt))
+	}
+	return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
+		"task %s %s: %s. djinn task continue resumes a task in its own worktree only; "+
+			"fork it instead, a new task that starts from %s's session:\n%s%s",
+		t.GetCode(), gone.why, why, t.GetCode(), strings.Join(words, " "), file))
 }
 
 // replaced is tasks with t in place of the task of its identifier.

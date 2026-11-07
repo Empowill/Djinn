@@ -45,7 +45,7 @@ func (h *Harness) spawnAzima(ctx context.Context, procedure string, req *planv1.
 	if err != nil {
 		return nil, plan.Status(err)
 	}
-	project, err := pickProject(ctx, h.store, wish, req.GetProjectId(), "")
+	project, err := pickProject(ctx, h.store, wish, req.GetProjectId(), req.GetPartOf())
 	if err != nil {
 		return nil, plan.Status(err)
 	}
