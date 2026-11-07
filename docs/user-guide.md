@@ -564,7 +564,9 @@ grants one itself. How to write one: [wish templates](wish-templates.md).
 When a task opens a pull or merge request (`gh pr create`, `glab mr create`), Djinn watches it at once, in the same
 wish: once the task ends, a watcher task starts on it, part of the task's azima, and the Djinn hears `W5 opened MR
 !123: W7 babysits it`. Each change the watcher prints (a failed pipeline, a comment, a conflict) wakes the Djinn, which
-follows the project's babysit skill; the watcher ends when the request is merged. A request already babysat is not
+follows the project's babysit skill; the watcher ends when the request is merged. A conflict gets a resolution task in
+the same pass, part of the request's azima: it merges the target branch in (never a rebase), after the worker already
+running on that branch if one is, and before the azima's planned tasks (lead note `babysit-conflict`). A request already babysat is not
 watched twice, even by a watcher the Djinn spawned by hand on the project's babysit command: it hears
 `W2 already babysits it`. The project names its watcher in one of its skills (`metadata.djinn.babysit`); without one, nothing
 starts. `babysit: false` in the project's settings turns it off. The Djinn can start one by hand: `djinn task spawn

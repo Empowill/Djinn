@@ -65,7 +65,11 @@ the wish's branch.
 Each change the watcher reports wakes the Djinn. What it reports is the project's skill's to say: a failed check, each
 new comment (of the conversation, a review, or on a line of the diff), changes requested, a conflict, the merge. The
 Djinn then does what that skill says: typically, spawn a task to fix the failed check, to make the change a reviewer
-asked for, or to settle the conflict, whose work Djinn merges and pushes, which updates the request. The Djinn answers
+asked for, or to settle the conflict, whose work Djinn merges and pushes, which updates the request. A conflict always
+gets its task at once, even when the same report also carries comments: part of the request's azima, it merges the
+request's target branch into its branch and resolves, never rebasing, one at a time per request. When a worker already
+runs on that branch, the resolution comes after it, and the azima's tasks not started yet wait for the resolution. The
+watcher says a conflict only once, until the request is mergeable again. The Djinn answers
 a reviewer's thread citing the commit that fixes it. On GitHub as on GitLab, it never resolves someone else's thread (a
 reviewer's, a review bot's): that is theirs to resolve. A thread that is its own to resolve, it resolves only once the
 request holds that commit: an auto-merge never takes a request whose threads are resolved but whose fixes are not there
