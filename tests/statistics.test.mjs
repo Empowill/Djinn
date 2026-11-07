@@ -15,15 +15,22 @@ export { renderToStaticMarkup } from "react-dom/server";
 export { createRouterTransport } from "@connectrpc/connect";
 export { createDjinn, DjinnProvider } from "@/src/data/djinn.tsx";
 export { readTable } from "@/src/data/query.ts";
-export { Collection, QueryService } from "@/gen/ts/query/v1/query_pb.ts";
+export {
+  Collection,
+  CompareOp,
+  FilterGroupOp,
+  MeasureFn,
+  Period,
+  QueryService,
+} from "@/gen/ts/query/v1/query_pb.ts";
 export { MachineService, GateService, CommandService } from "@/gen/ts/machine/v1/machine_pb.ts";
 export {
   Statistics,
   StatisticsFigures,
   binText,
   cardQueries,
+  firstDay,
   frameOf,
-  since,
   typeText,
 } from "@/src/statistics.tsx";
 export { Hourglass } from "@/src/hourglass.tsx";
@@ -69,8 +76,64 @@ const count = (values) => [
 const SECOND = 1000;
 const MINUTE = 60 * SECOND;
 
+// The typed messages of a card's query, written back in the texts the command line types (status=done,
+// create_time::day, running::median, -count): what each test reads, beside what the window sends.
+const pad = (n) => String(n).padStart(2, "0");
+const dayText = (d) =>
+  `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const ms = (d) => Number(d.seconds) * 1000 + Math.round(d.nanos / 1e6);
+function durationText(n) {
+  for (const [unit, size] of [
+    ["h", 60 * MINUTE],
+    ["m", MINUTE],
+    ["s", SECOND],
+  ])
+    if (n >= size && n % size === 0) return `${n / size}${unit}`;
+  return `${n / SECOND}s`;
+}
+function filterText(f) {
+  const { case: kind, value: v } = f.where;
+  if (kind === "group" && v.op === s.FilterGroupOp.NOT)
+    return filterText(v.filters[0]).replace("=", "!=");
+  if (kind === "stringIn") return `${v.ref}=${v.values.join("|")}`;
+  if (kind === "null") return `${v.ref}=null`;
+  if (kind === "time" && v.op === s.CompareOp.GREATER_THAN_EQUAL)
+    return `${v.ref}>=${dayText(new Date(ms(v.value)))}`;
+  throw new Error(`no text for ${JSON.stringify(f)}`);
+}
+function groupText(g) {
+  const { case: kind, value: v } = g.bucket ?? {};
+  if (!kind) return g.ref;
+  if (kind === "period")
+    return `${g.ref}::${v === s.Period.WEEK ? "week" : "day"}`;
+  if (kind === "durationBins")
+    return `${g.ref}::bins(${v.bounds.map((d) => durationText(ms(d))).join(",")})`;
+  return `${g.ref}::bins(${v.bounds.join(",")})`;
+}
+function measureText(m) {
+  const fn = s.MeasureFn[m.fn ?? s.MeasureFn.COUNT].toLowerCase();
+  const body = m.ref ? `${m.ref}::${fn}` : fn;
+  return m.name ? `${m.name}=${body}` : body;
+}
+const orderText = (o) => (o.desc ? `-${o.ref}` : o.ref);
+// texts is a card's query in texts.
+function texts(request) {
+  return {
+    ...request,
+    filter: (request.filter ?? []).map(filterText),
+    groupBy: (request.groupBy ?? []).map(groupText),
+    measure: (request.measure ?? []).map(measureText),
+    sort: (request.sort ?? []).map(orderText),
+  };
+}
+// cardTexts are every card's query in texts.
+const cardTexts = (f) =>
+  Object.fromEntries(
+    Object.entries(s.cardQueries(f)).map(([k, v]) => [k, texts(v)]),
+  );
+
 test("each card asks the server for its own aggregate: the window computes nothing", () => {
-  const q = s.cardQueries(all);
+  const q = cardTexts(all);
   assert.deepEqual(Object.keys(q), [
     "done",
     "azimas",
@@ -102,7 +165,7 @@ test("each card asks the server for its own aggregate: the window computes nothi
   assert.deepEqual(q.work.measure, ["running::median", "running::p90"]);
   assert.deepEqual(q.created.groupBy, ["create_time::day", "type"]);
   assert.deepEqual(q.created.filter, ["type!=azima"]);
-  assert.deepEqual(s.cardQueries({ ...all, grain: "week" }).created.groupBy, [
+  assert.deepEqual(cardTexts({ ...all, grain: "week" }).created.groupBy, [
     "create_time::week",
     "type",
   ]);
@@ -117,11 +180,12 @@ test("each card asks the server for its own aggregate: the window computes nothi
 
 test("the filters: a period from its first day, a project, the questions by their wish's projects", () => {
   const now = new Date(2026, 10, 7, 1, 30);
-  assert.equal(s.since("7d", now), "2026-11-01");
-  assert.equal(s.since("30d", now), "2026-10-09");
-  assert.equal(s.since("all", now), undefined);
-  const q = s.cardQueries({ project: P, period: "7d", grain: "day" });
-  const day = s.since("7d");
+  assert.equal(dayText(s.firstDay("7d", now)), "2026-11-01");
+  assert.equal(dayText(s.firstDay("30d", now)), "2026-10-09");
+  assert.equal(s.firstDay("30d", now).getHours(), 0);
+  assert.equal(s.firstDay("all", now), undefined);
+  const q = cardTexts({ project: P, period: "7d", grain: "day" });
+  const day = dayText(s.firstDay("7d"));
   assert.deepEqual(q.cost.filter, [`create_time>=${day}`, `project_id=${P}`]);
   assert.deepEqual(q.answer.filter, [
     `create_time>=${day}`,
@@ -135,7 +199,7 @@ test("the filters: a period from its first day, a project, the questions by thei
     `project_id=${P}`,
   ]);
   // No filter at all, all projects and all time.
-  assert.deepEqual(s.cardQueries(all).cost.filter, []);
+  assert.deepEqual(cardTexts(all).cost.filter, []);
 });
 
 test("a bin is named by its range, a type by its name; every value stays the server's", async () => {
@@ -201,7 +265,8 @@ test("a bin is named by its range, a type by its name; every value stays the ser
 });
 
 // answers is what a QueryService answers each card's query in the figures' test.
-function answers(request) {
+function answers(typed) {
+  const request = texts(typed);
   const measures = request.measure.join(" ");
   if (request.groupBy[0] === "status")
     return ipc([
@@ -244,7 +309,7 @@ function statisticsDjinn() {
     service(s.QueryService, {
       query(request) {
         asked.push(request);
-        return { arrow: answers(request), total: 1n };
+        return { table: answers(request), total: 1n };
       },
     });
   });

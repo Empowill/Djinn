@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"sync"
@@ -74,42 +75,160 @@ func collection(c queryv1.Collection) string {
 	return strings.TrimPrefix(c.String(), "COLLECTION_")
 }
 
-// Request turns a QueryService request into a Query: its texts read by ParseFilter, ParseSort, ParseGroup and
-// ParseMeasure. Its errors wrap ErrInvalid.
+// Request turns a QueryService request into a Query. A filter, a sort, a group or a measure is read from its
+// message, or from its text when set, as ParseFilter, ParseSort, ParseGroup and ParseMeasure read it. Its errors wrap
+// ErrInvalid.
 func Request(req *queryv1.QueryServiceQueryRequest) (Query, error) {
 	q := Query{Collection: collection(req.GetCollection()), Selects: req.GetSelect(), Limit: int(req.GetLimit())}
-	for _, s := range req.GetFilter() {
-		f, err := ParseFilter(s)
+	for _, f := range req.GetFilter() {
+		filter, err := filterOf(f)
 		if err != nil {
 			return Query{}, err
 		}
-		q.Filters = append(q.Filters, f)
+		q.Filters = append(q.Filters, filter)
 	}
-	for _, s := range req.GetSort() {
-		srt, err := ParseSort(s)
-		if err != nil {
-			return Query{}, err
+	for _, o := range req.GetSort() {
+		srt := Sort{Ref: o.GetRef(), Desc: o.GetDesc()}
+		if o.GetText() != "" {
+			var err error
+			if srt, err = ParseSort(o.GetText()); err != nil {
+				return Query{}, err
+			}
+		}
+		if srt.Ref == "" {
+			return Query{}, fmt.Errorf("%w: a sort without ref", ErrInvalid)
 		}
 		q.Sorts = append(q.Sorts, srt)
 	}
 	if len(req.GetGroupBy()) > 0 || len(req.GetMeasure()) > 0 {
 		q.Aggregation = &Aggregation{}
-		for _, s := range req.GetGroupBy() {
-			g, err := ParseGroup(s)
+		for _, g := range req.GetGroupBy() {
+			by, err := groupOf(g)
 			if err != nil {
 				return Query{}, err
 			}
-			q.Aggregation.By = append(q.Aggregation.By, g)
+			q.Aggregation.By = append(q.Aggregation.By, by)
 		}
-		for _, s := range req.GetMeasure() {
-			m, err := ParseMeasure(s)
+		for _, m := range req.GetMeasure() {
+			measure, err := measureOf(m)
 			if err != nil {
 				return Query{}, err
 			}
-			q.Aggregation.Measures = append(q.Aggregation.Measures, m)
+			q.Aggregation.Measures = append(q.Aggregation.Measures, measure)
 		}
 	}
 	return q, nil
+}
+
+// filterOf is the Filter f says, each comparison bound to the types of ref it may read.
+func filterOf(f *queryv1.Filter) (Filter, error) {
+	switch w := f.GetWhere().(type) {
+	case *queryv1.Filter_Text:
+		return ParseFilter(w.Text)
+	case *queryv1.Filter_Group:
+		g := Group{Op: And}
+		switch w.Group.GetOp() {
+		case queryv1.FilterGroupOp_FILTER_GROUP_OP_OR:
+			g.Op = Or
+		case queryv1.FilterGroupOp_FILTER_GROUP_OP_NOT:
+			g.Op = Not
+		}
+		for _, sub := range w.Group.GetFilters() {
+			filter, err := filterOf(sub)
+			if err != nil {
+				return nil, err
+			}
+			g.Filters = append(g.Filters, filter)
+		}
+		return g, nil
+	case *queryv1.Filter_Null:
+		return IsNull{Ref: w.Null.GetRef()}, nil
+	case *queryv1.Filter_Bool:
+		return bind(w.Bool.GetRef(), "bool", Equal{Ref: w.Bool.GetRef(), Value: w.Bool.GetValue()}, TypeBool), nil
+	case *queryv1.Filter_String_:
+		s := w.String_
+		var filter Filter = Equal{Ref: s.GetRef(), Value: s.GetValue()}
+		switch s.GetOp() {
+		case queryv1.StringOp_STRING_OP_CONTAINS:
+			filter = Text{Ref: s.GetRef(), Contains: s.GetValue()}
+		case queryv1.StringOp_STRING_OP_BEGINS_WITH:
+			filter = Text{Ref: s.GetRef(), BeginsWith: s.GetValue()}
+		}
+		return bind(s.GetRef(), "string", filter, TypeString, TypeEnum), nil
+	case *queryv1.Filter_StringIn:
+		s := w.StringIn
+		in := In{Ref: s.GetRef(), IncludeNull: s.GetIncludeNull()}
+		for _, v := range s.GetValues() {
+			in.Values = append(in.Values, v)
+		}
+		if len(in.Values) == 0 && !in.IncludeNull {
+			return nil, fmt.Errorf("%w: string_in on %s: no value", ErrInvalid, s.GetRef())
+		}
+		return bind(s.GetRef(), "string_in", in, TypeString, TypeEnum), nil
+	case *queryv1.Filter_Number:
+		n := w.Number
+		return bind(n.GetRef(), "number", comparison(n.GetRef(), n.GetOp(), n.GetValue()), TypeInt, TypeFloat), nil
+	case *queryv1.Filter_Time:
+		t := w.Time
+		return bind(t.GetRef(), "time", comparison(t.GetRef(), t.GetOp(), t.GetValue().AsTime()), TypeTime), nil
+	case *queryv1.Filter_Duration:
+		d := w.Duration
+		return bind(d.GetRef(), "duration", comparison(d.GetRef(), d.GetOp(), d.GetValue().AsDuration()), TypeDuration), nil
+	}
+	return nil, fmt.Errorf("%w: an empty filter", ErrInvalid)
+}
+
+// comparison is the filter of a number, a time or a duration comparison.
+func comparison(ref string, op queryv1.CompareOp, v any) Filter {
+	switch op {
+	case queryv1.CompareOp_COMPARE_OP_GREATER_THAN:
+		return Range{Ref: ref, Gt: v}
+	case queryv1.CompareOp_COMPARE_OP_GREATER_THAN_EQUAL:
+		return Range{Ref: ref, Gte: v}
+	case queryv1.CompareOp_COMPARE_OP_LESS_THAN:
+		return Range{Ref: ref, Lt: v}
+	case queryv1.CompareOp_COMPARE_OP_LESS_THAN_EQUAL:
+		return Range{Ref: ref, Lte: v}
+	}
+	return Equal{Ref: ref, Value: v}
+}
+
+// groupOf is the GroupBy g says.
+func groupOf(g *queryv1.GroupBy) (GroupBy, error) {
+	if g.GetText() != "" {
+		return ParseGroup(g.GetText())
+	}
+	by := GroupBy{Ref: g.GetRef()}
+	if by.Ref == "" {
+		return GroupBy{}, fmt.Errorf("%w: a group without ref", ErrInvalid)
+	}
+	switch b := g.GetBucket().(type) {
+	case *queryv1.GroupBy_Period:
+		by.Granularity = map[queryv1.Period]Granularity{
+			queryv1.Period_PERIOD_DAY: Day, queryv1.Period_PERIOD_WEEK: Week, queryv1.Period_PERIOD_MONTH: Month,
+		}[b.Period]
+	case *queryv1.GroupBy_NumberBins:
+		for _, v := range b.NumberBins.GetBounds() {
+			by.Bounds = append(by.Bounds, v)
+		}
+	case *queryv1.GroupBy_DurationBins:
+		for _, v := range b.DurationBins.GetBounds() {
+			by.Bounds = append(by.Bounds, v.AsDuration())
+		}
+	}
+	return by, nil
+}
+
+// measureOf is the Measure m says.
+func measureOf(m *queryv1.Measure) (Measure, error) {
+	if m.GetText() != "" {
+		return ParseMeasure(m.GetText())
+	}
+	measure := Measure{Ref: m.GetRef(), Fn: Count, Alias: m.GetName()}
+	if fn := m.GetFn(); fn != queryv1.MeasureFn_MEASURE_FN_UNSPECIFIED {
+		measure.Fn = Fn(fn) // MeasureFn numbers its functions as Fn does.
+	}
+	return measure, nil
 }
 
 // status is the Connect error of err: InvalidArgument for a query that cannot run as written.
@@ -134,17 +253,18 @@ func (s *service) Query(
 	res := &queryv1.QueryServiceQueryResponse{Total: int64(t.Total)}
 	var b bytes.Buffer
 	switch req.Msg.GetFormat() {
-	case queryv1.Format_FORMAT_ARROW:
-		res.Arrow, err = t.Arrow()
 	case queryv1.Format_FORMAT_CSV:
 		err = t.WriteCSV(&b)
-	default:
+		res.Table = b.Bytes()
+	case queryv1.Format_FORMAT_TEXT:
 		err = t.WriteText(&b)
+		res.Table = b.Bytes()
+	default:
+		res.Table, err = t.Arrow()
 	}
 	if err != nil {
 		return nil, status(err)
 	}
-	res.Text = b.String()
 	return connect.NewResponse(res), nil
 }
 

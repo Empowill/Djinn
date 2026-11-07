@@ -4,7 +4,14 @@
 // mean; an absent value is a dash, never 0.
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 
-import { Collection } from "../gen/ts/query/v1/query_pb";
+import { create, fromJsonString, toJsonString } from "@bufbuild/protobuf";
+
+import {
+  Collection,
+  MeasureFn,
+  Period as QueryPeriod,
+  QueryServiceQueryRequestSchema,
+} from "../gen/ts/query/v1/query_pb";
 import { Chart } from "./charts/chart";
 import {
   type Cell,
@@ -17,10 +24,21 @@ import type { ChartSpec } from "./charts/option";
 import { useClients, useData } from "./data/djinn";
 import { secondText } from "./data/format";
 import {
+  by,
+  byDurationBins,
+  byNumberBins,
+  byPeriod,
+  type FilterInit,
+  measure,
+  not,
+  oneOf,
+  order,
+  present,
   type QueryColumn,
   type QueryRequest,
   type QueryTable,
   query,
+  since,
 } from "./data/query";
 import { t } from "./i18n";
 import "./statistics.css";
@@ -67,131 +85,144 @@ export function typeText(value: Cell | undefined): string {
 
 const TYPE_ORDER = TYPES.map((v) => t(typeKeys[v]));
 
-// The bins of the histograms: durations in Go's notation, sizes in tokens.
-const DELIVERY_BINS = "0s,10s,1m,10m,1h,24h";
-const ANSWER_BINS = "0s,1m,10m,1h,4h,24h";
-const PROMPT_BINS = "0,100,300,1000,3000,10000";
+// The bins of the histograms: durations in milliseconds, sizes in tokens.
+const S = 1000;
+const M = 60 * S;
+const H = 60 * M;
+const DELIVERY_BINS = [0, 10 * S, M, 10 * M, H, 24 * H];
+const ANSWER_BINS = [0, M, 10 * M, H, 4 * H, 24 * H];
+const PROMPT_BINS = [0, 100, 300, 1000, 3000, 10000];
 
-// since is the first day of the period, in the machine's time zone, as a query's filter reads it; none for all.
-export function since(period: Period, now = new Date()): string | undefined {
+// firstDay is the start of the period's first day, in the machine's time zone; none for all.
+export function firstDay(period: Period, now = new Date()): Date | undefined {
   if (period === "all") return undefined;
-  const d = new Date(now);
+  const d = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   d.setDate(d.getDate() - (period === "7d" ? 6 : 29));
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  return d;
 }
 
 // taskFilters are the filters every query on the tasks takes: created in the period, in the project.
-function taskFilters(f: Filters, time = "create_time"): string[] {
-  const out: string[] = [];
-  const day = since(f.period);
-  if (day) out.push(`${time}>=${day}`);
-  if (f.project) out.push(`project_id=${f.project}`);
+function taskFilters(f: Filters, time = "create_time"): FilterInit[] {
+  const out: FilterInit[] = [];
+  const day = firstDay(f.period);
+  if (day) out.push(since(time, day));
+  if (f.project) out.push(oneOf("project_id", f.project));
   return out;
 }
 
 // questionFilters: a question belongs to a wish, the wish to its projects.
-function questionFilters(f: Filters): string[] {
-  const out: string[] = [];
-  const day = since(f.period);
-  if (day) out.push(`create_time>=${day}`);
-  if (f.project) out.push(`wish_id->project_ids=${f.project}`);
+function questionFilters(f: Filters): FilterInit[] {
+  const out: FilterInit[] = [];
+  const day = firstDay(f.period);
+  if (day) out.push(since("create_time", day));
+  if (f.project) out.push(oneOf("wish_id->project_ids", f.project));
   return out;
 }
+
+const count = measure(MeasureFn.COUNT);
+const median = (ref: string) => measure(MeasureFn.MEDIAN, ref);
+const p90 = (ref: string) => measure(MeasureFn.P90, ref);
 
 // The queries of the cards, one each: what the tab asks the server.
 export function cardQueries(f: Filters): Record<string, QueryRequest> {
   const tasks = Collection.TASKS;
   const questions = Collection.QUESTIONS;
-  const grain = f.grain;
+  const period = f.grain === "week" ? QueryPeriod.WEEK : QueryPeriod.DAY;
+  // Agents' work: neither an azima, which sums its parts' times, nor a watcher, which runs a command and sleeps.
+  const agents = not(oneOf("type", "azima", "watcher"));
+  const done = oneOf("status", "done");
   return {
     done: {
       collection: tasks,
-      filter: ["type!=azima", ...taskFilters(f)],
-      groupBy: ["status"],
-      measure: ["count"],
+      filter: [not(oneOf("type", "azima")), ...taskFilters(f)],
+      groupBy: [by("status")],
+      measure: [count],
     },
     azimas: {
       collection: tasks,
-      filter: ["type=azima", ...taskFilters(f)],
-      measure: ["count", "merged=azima.merged.time::count"],
+      filter: [oneOf("type", "azima"), ...taskFilters(f)],
+      measure: [count, measure(MeasureFn.COUNT, "azima.merged.time", "merged")],
     },
     work: {
       collection: tasks,
-      filter: ["type=work", "status=done", ...taskFilters(f)],
-      measure: ["running::median", "running::p90"],
+      filter: [oneOf("type", "work"), done, ...taskFilters(f)],
+      measure: [median("running"), p90("running")],
     },
     delivery: {
       collection: tasks,
       filter: taskFilters(f),
-      measure: ["integration::delay::median", "integration::delay::p90"],
+      measure: [median("integration::delay"), p90("integration::delay")],
     },
     answer: {
       collection: questions,
       filter: questionFilters(f),
-      measure: ["answer::delay::median", "answer::delay::p90"],
+      measure: [median("answer::delay"), p90("answer::delay")],
     },
     cost: {
       collection: tasks,
       filter: taskFilters(f),
-      measure: ["usage.cost_usd::sum"],
+      measure: [measure(MeasureFn.SUM, "usage.cost_usd")],
     },
     created: {
       collection: tasks,
-      filter: ["type!=azima", ...taskFilters(f)],
-      groupBy: [`create_time::${grain}`, "type"],
-      measure: ["count"],
+      filter: [not(oneOf("type", "azima")), ...taskFilters(f)],
+      groupBy: [byPeriod("create_time", period), by("type")],
+      measure: [count],
     },
     merged: {
       collection: tasks,
       filter: [
-        "type=azima",
-        "azima.merged.time!=null",
+        oneOf("type", "azima"),
+        present("azima.merged.time"),
         ...taskFilters(f, "azima.merged.time"),
       ],
-      groupBy: [`azima.merged.time::${grain}`],
-      measure: ["count"],
+      groupBy: [byPeriod("azima.merged.time", period)],
+      measure: [count],
     },
     times: {
       collection: tasks,
-      filter: ["type!=azima|watcher", "status=done", ...taskFilters(f)],
-      groupBy: ["type"],
+      filter: [agents, done, ...taskFilters(f)],
+      groupBy: [by("type")],
       measure: [
-        "count",
-        "waiting_before_start::median",
-        "waiting_before_start::p90",
-        "running::median",
-        "running::p90",
-        "waiting_gate::median",
-        "waiting_gate::p90",
-        "paused::median",
-        "paused::p90",
+        count,
+        median("waiting_before_start"),
+        p90("waiting_before_start"),
+        median("running"),
+        p90("running"),
+        median("waiting_gate"),
+        p90("waiting_gate"),
+        median("paused"),
+        p90("paused"),
       ],
     },
     deliveries: {
       collection: tasks,
-      filter: ["integration::delay!=null", ...taskFilters(f)],
-      groupBy: [`integration::delay::bins(${DELIVERY_BINS})`],
-      measure: ["count"],
+      filter: [present("integration::delay"), ...taskFilters(f)],
+      groupBy: [byDurationBins("integration::delay", DELIVERY_BINS)],
+      measure: [count],
     },
     answers: {
       collection: questions,
-      filter: ["answer::delay!=null", ...questionFilters(f)],
-      groupBy: [`answer::delay::bins(${ANSWER_BINS})`],
-      measure: ["count"],
+      filter: [present("answer::delay"), ...questionFilters(f)],
+      groupBy: [byDurationBins("answer::delay", ANSWER_BINS)],
+      measure: [count],
     },
     prompts: {
       collection: tasks,
-      filter: ["type!=azima|watcher", "prompt::size!=null", ...taskFilters(f)],
-      groupBy: [`prompt::size::bins(${PROMPT_BINS})`],
-      measure: ["count"],
+      filter: [agents, present("prompt::size"), ...taskFilters(f)],
+      groupBy: [byNumberBins("prompt::size", PROMPT_BINS)],
+      measure: [count],
     },
     projects: {
       collection: tasks,
-      filter: ["type!=azima|watcher", ...taskFilters(f)],
-      groupBy: ["project_id->name", "project_id"],
-      measure: ["count", "usage.cost_usd::sum", "running::median"],
-      sort: ["-count"],
+      filter: [agents, ...taskFilters(f)],
+      groupBy: [by("project_id->name"), by("project_id")],
+      measure: [
+        count,
+        measure(MeasureFn.SUM, "usage.cost_usd"),
+        median("running"),
+      ],
+      sort: [order("count", true)],
     },
   };
 }
@@ -204,12 +235,20 @@ type Read =
 // useQuery reads a card's table once, and again when its request changes; a request left behind is aborted.
 function useQuery(request: QueryRequest): Read {
   const { query: client } = useClients();
-  const key = JSON.stringify(request);
+  // The request's canonical JSON: a key that changes only with what it asks, its times included.
+  const key = toJsonString(
+    QueryServiceQueryRequestSchema,
+    create(QueryServiceQueryRequestSchema, request),
+  );
   const [read, setRead] = useState<Read>({ state: "loading" });
   useEffect(() => {
     const abort = new AbortController();
     setRead({ state: "loading" });
-    query(client, JSON.parse(key) as QueryRequest, abort.signal).then(
+    query(
+      client,
+      fromJsonString(QueryServiceQueryRequestSchema, key),
+      abort.signal,
+    ).then(
       (table) => {
         if (!abort.signal.aborted) setRead({ state: "done", table });
       },

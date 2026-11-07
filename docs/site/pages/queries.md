@@ -26,10 +26,12 @@ parts', so leave the azimas out when you add up work. Every task has a type, whe
 correction, review, investigation, mockup, ifrit, watcher or azima. Measure, bin and group by these as by any ref: the
 median time running of the work done this week, the tasks created each day by type.
 
-**Filters.** Each filter names a ref, compares it and gives a value: equal, one of several values, none of them,
-greater or smaller than a number, a day or a duration, a text that contains or begins with another, ignoring case, or
-absent. All the filters of a query hold together. An equality on an identifier narrows what the store reads before
-anything is decoded.
+**Filters.** Each filter names a ref, compares it and gives a value, and its kind follows the type of the ref: a text
+or a status equal to a value, one of several, containing or beginning with another, ignoring case; a number, a time or
+a duration equal to, greater or smaller than a value; true or false; or absent. Filters join in groups, all of them,
+one of them, or none. All the filters of a query hold together. An equality on an identifier narrows what the store
+reads before anything is decoded. The window sends each filter typed; the command line writes it as a short text that
+Djinn reads with the type of its ref.
 
 **Aggregates.** A query may group its rows instead of listing them: by the value of a ref, by the day, the week or the
 month of a time, in the machine's time zone, or by bins of a number or a duration whose bounds it gives, such as below
@@ -38,6 +40,7 @@ the count, the sum, the mean, the least, the greatest, the median and the nineti
 out of every measure. A period without rows does not show; a bin without rows does, with a count of zero, so that a
 histogram keeps its shape. The window asks for the aggregate and draws it as it comes: it computes nothing itself.
 
-**Arrow.** For the window, the table comes in Apache Arrow, typed: text, the name of a status, whole numbers, decimals,
+**Arrow.** The table comes in Apache Arrow unless a query asks otherwise: the window reads it so, typed: text, the name of a status, whole numbers, decimals,
 booleans, instants and durations in milliseconds, and lists. Each column carries its ref, its label and its unit. The
-same table as text or CSV writes a status by its short name, a time in UTC, and a bin by its range.
+command line and an agent's client ask the same table as text, or as CSV, which write a status by its short name, a
+time in UTC, and a bin by its range.

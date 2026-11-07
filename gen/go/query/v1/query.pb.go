@@ -14,6 +14,8 @@ import (
 	_ "github.com/empowill/djinn/gen/go/djinn/v1"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	durationpb "google.golang.org/protobuf/types/known/durationpb"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -165,29 +167,34 @@ func (TaskType) EnumDescriptor() ([]byte, []int) {
 	return file_query_v1_query_proto_rawDescGZIP(), []int{1}
 }
 
-// Format is how a query's table comes back.
+// Format is how a query's table comes back, in the table field of the response.
 type Format int32
 
 const (
-	// Not set: a table in text, aligned, for a person or an agent to read.
+	// Not set: Arrow, as FORMAT_ARROW.
 	Format_FORMAT_UNSPECIFIED Format = 0
+	// An Arrow IPC stream, one record batch: the standard, what the window reads.
+	Format_FORMAT_ARROW Format = 1
 	// CSV, a header of refs then a line per row: an absent value is an empty cell.
-	Format_FORMAT_CSV Format = 1
-	// An Arrow IPC stream, in the arrow field: what the window reads.
-	Format_FORMAT_ARROW Format = 2
+	Format_FORMAT_CSV Format = 2
+	// A table in text, aligned, its row count last: what the command line and djinn mcp ask, for a person or an agent
+	// to read.
+	Format_FORMAT_TEXT Format = 3
 )
 
 // Enum value maps for Format.
 var (
 	Format_name = map[int32]string{
 		0: "FORMAT_UNSPECIFIED",
-		1: "FORMAT_CSV",
-		2: "FORMAT_ARROW",
+		1: "FORMAT_ARROW",
+		2: "FORMAT_CSV",
+		3: "FORMAT_TEXT",
 	}
 	Format_value = map[string]int32{
 		"FORMAT_UNSPECIFIED": 0,
-		"FORMAT_CSV":         1,
-		"FORMAT_ARROW":       2,
+		"FORMAT_ARROW":       1,
+		"FORMAT_CSV":         2,
+		"FORMAT_TEXT":        3,
 	}
 )
 
@@ -291,32 +298,335 @@ func (ColumnType) EnumDescriptor() ([]byte, []int) {
 	return file_query_v1_query_proto_rawDescGZIP(), []int{3}
 }
 
+// FilterGroupOp is how a FilterGroup joins its filters.
+type FilterGroupOp int32
+
+const (
+	// Not set: and.
+	FilterGroupOp_FILTER_GROUP_OP_UNSPECIFIED FilterGroupOp = 0
+	// Every filter holds.
+	FilterGroupOp_FILTER_GROUP_OP_AND FilterGroupOp = 1
+	// One filter holds.
+	FilterGroupOp_FILTER_GROUP_OP_OR FilterGroupOp = 2
+	// The filters, joined as and, do not hold.
+	FilterGroupOp_FILTER_GROUP_OP_NOT FilterGroupOp = 3
+)
+
+// Enum value maps for FilterGroupOp.
+var (
+	FilterGroupOp_name = map[int32]string{
+		0: "FILTER_GROUP_OP_UNSPECIFIED",
+		1: "FILTER_GROUP_OP_AND",
+		2: "FILTER_GROUP_OP_OR",
+		3: "FILTER_GROUP_OP_NOT",
+	}
+	FilterGroupOp_value = map[string]int32{
+		"FILTER_GROUP_OP_UNSPECIFIED": 0,
+		"FILTER_GROUP_OP_AND":         1,
+		"FILTER_GROUP_OP_OR":          2,
+		"FILTER_GROUP_OP_NOT":         3,
+	}
+)
+
+func (x FilterGroupOp) Enum() *FilterGroupOp {
+	p := new(FilterGroupOp)
+	*p = x
+	return p
+}
+
+func (x FilterGroupOp) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (FilterGroupOp) Descriptor() protoreflect.EnumDescriptor {
+	return file_query_v1_query_proto_enumTypes[4].Descriptor()
+}
+
+func (FilterGroupOp) Type() protoreflect.EnumType {
+	return &file_query_v1_query_proto_enumTypes[4]
+}
+
+func (x FilterGroupOp) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use FilterGroupOp.Descriptor instead.
+func (FilterGroupOp) EnumDescriptor() ([]byte, []int) {
+	return file_query_v1_query_proto_rawDescGZIP(), []int{4}
+}
+
+// StringOp is how a StringComparison compares.
+type StringOp int32
+
+const (
+	// Not set: equal.
+	StringOp_STRING_OP_UNSPECIFIED StringOp = 0
+	// Equal, ignoring case.
+	StringOp_STRING_OP_EQUAL StringOp = 1
+	// Contains value, ignoring case.
+	StringOp_STRING_OP_CONTAINS StringOp = 2
+	// Begins with value, ignoring case.
+	StringOp_STRING_OP_BEGINS_WITH StringOp = 3
+)
+
+// Enum value maps for StringOp.
+var (
+	StringOp_name = map[int32]string{
+		0: "STRING_OP_UNSPECIFIED",
+		1: "STRING_OP_EQUAL",
+		2: "STRING_OP_CONTAINS",
+		3: "STRING_OP_BEGINS_WITH",
+	}
+	StringOp_value = map[string]int32{
+		"STRING_OP_UNSPECIFIED": 0,
+		"STRING_OP_EQUAL":       1,
+		"STRING_OP_CONTAINS":    2,
+		"STRING_OP_BEGINS_WITH": 3,
+	}
+)
+
+func (x StringOp) Enum() *StringOp {
+	p := new(StringOp)
+	*p = x
+	return p
+}
+
+func (x StringOp) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (StringOp) Descriptor() protoreflect.EnumDescriptor {
+	return file_query_v1_query_proto_enumTypes[5].Descriptor()
+}
+
+func (StringOp) Type() protoreflect.EnumType {
+	return &file_query_v1_query_proto_enumTypes[5]
+}
+
+func (x StringOp) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use StringOp.Descriptor instead.
+func (StringOp) EnumDescriptor() ([]byte, []int) {
+	return file_query_v1_query_proto_rawDescGZIP(), []int{5}
+}
+
+// CompareOp is how a number, a time or a duration compares with a value: the ref on the left.
+type CompareOp int32
+
+const (
+	// Not set: equal.
+	CompareOp_COMPARE_OP_UNSPECIFIED CompareOp = 0
+	// Equal.
+	CompareOp_COMPARE_OP_EQUAL CompareOp = 1
+	// Greater than.
+	CompareOp_COMPARE_OP_GREATER_THAN CompareOp = 2
+	// Greater than or equal.
+	CompareOp_COMPARE_OP_GREATER_THAN_EQUAL CompareOp = 3
+	// Less than.
+	CompareOp_COMPARE_OP_LESS_THAN CompareOp = 4
+	// Less than or equal.
+	CompareOp_COMPARE_OP_LESS_THAN_EQUAL CompareOp = 5
+)
+
+// Enum value maps for CompareOp.
+var (
+	CompareOp_name = map[int32]string{
+		0: "COMPARE_OP_UNSPECIFIED",
+		1: "COMPARE_OP_EQUAL",
+		2: "COMPARE_OP_GREATER_THAN",
+		3: "COMPARE_OP_GREATER_THAN_EQUAL",
+		4: "COMPARE_OP_LESS_THAN",
+		5: "COMPARE_OP_LESS_THAN_EQUAL",
+	}
+	CompareOp_value = map[string]int32{
+		"COMPARE_OP_UNSPECIFIED":        0,
+		"COMPARE_OP_EQUAL":              1,
+		"COMPARE_OP_GREATER_THAN":       2,
+		"COMPARE_OP_GREATER_THAN_EQUAL": 3,
+		"COMPARE_OP_LESS_THAN":          4,
+		"COMPARE_OP_LESS_THAN_EQUAL":    5,
+	}
+)
+
+func (x CompareOp) Enum() *CompareOp {
+	p := new(CompareOp)
+	*p = x
+	return p
+}
+
+func (x CompareOp) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (CompareOp) Descriptor() protoreflect.EnumDescriptor {
+	return file_query_v1_query_proto_enumTypes[6].Descriptor()
+}
+
+func (CompareOp) Type() protoreflect.EnumType {
+	return &file_query_v1_query_proto_enumTypes[6]
+}
+
+func (x CompareOp) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use CompareOp.Descriptor instead.
+func (CompareOp) EnumDescriptor() ([]byte, []int) {
+	return file_query_v1_query_proto_rawDescGZIP(), []int{6}
+}
+
+// Period is the bucket of a time a GroupBy groups by.
+type Period int32
+
+const (
+	// Not set.
+	Period_PERIOD_UNSPECIFIED Period = 0
+	// A day.
+	Period_PERIOD_DAY Period = 1
+	// A week, from Monday.
+	Period_PERIOD_WEEK Period = 2
+	// A month.
+	Period_PERIOD_MONTH Period = 3
+)
+
+// Enum value maps for Period.
+var (
+	Period_name = map[int32]string{
+		0: "PERIOD_UNSPECIFIED",
+		1: "PERIOD_DAY",
+		2: "PERIOD_WEEK",
+		3: "PERIOD_MONTH",
+	}
+	Period_value = map[string]int32{
+		"PERIOD_UNSPECIFIED": 0,
+		"PERIOD_DAY":         1,
+		"PERIOD_WEEK":        2,
+		"PERIOD_MONTH":       3,
+	}
+)
+
+func (x Period) Enum() *Period {
+	p := new(Period)
+	*p = x
+	return p
+}
+
+func (x Period) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (Period) Descriptor() protoreflect.EnumDescriptor {
+	return file_query_v1_query_proto_enumTypes[7].Descriptor()
+}
+
+func (Period) Type() protoreflect.EnumType {
+	return &file_query_v1_query_proto_enumTypes[7]
+}
+
+func (x Period) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use Period.Descriptor instead.
+func (Period) EnumDescriptor() ([]byte, []int) {
+	return file_query_v1_query_proto_rawDescGZIP(), []int{7}
+}
+
+// MeasureFn is the function of a Measure.
+type MeasureFn int32
+
+const (
+	// Not set: count.
+	MeasureFn_MEASURE_FN_UNSPECIFIED MeasureFn = 0
+	// The rows, or the values of the ref present.
+	MeasureFn_MEASURE_FN_COUNT MeasureFn = 1
+	// The sum.
+	MeasureFn_MEASURE_FN_SUM MeasureFn = 2
+	// The mean.
+	MeasureFn_MEASURE_FN_AVG MeasureFn = 3
+	// The least.
+	MeasureFn_MEASURE_FN_MIN MeasureFn = 4
+	// The greatest.
+	MeasureFn_MEASURE_FN_MAX MeasureFn = 5
+	// The median.
+	MeasureFn_MEASURE_FN_MEDIAN MeasureFn = 6
+	// The 90th percentile.
+	MeasureFn_MEASURE_FN_P90 MeasureFn = 7
+)
+
+// Enum value maps for MeasureFn.
+var (
+	MeasureFn_name = map[int32]string{
+		0: "MEASURE_FN_UNSPECIFIED",
+		1: "MEASURE_FN_COUNT",
+		2: "MEASURE_FN_SUM",
+		3: "MEASURE_FN_AVG",
+		4: "MEASURE_FN_MIN",
+		5: "MEASURE_FN_MAX",
+		6: "MEASURE_FN_MEDIAN",
+		7: "MEASURE_FN_P90",
+	}
+	MeasureFn_value = map[string]int32{
+		"MEASURE_FN_UNSPECIFIED": 0,
+		"MEASURE_FN_COUNT":       1,
+		"MEASURE_FN_SUM":         2,
+		"MEASURE_FN_AVG":         3,
+		"MEASURE_FN_MIN":         4,
+		"MEASURE_FN_MAX":         5,
+		"MEASURE_FN_MEDIAN":      6,
+		"MEASURE_FN_P90":         7,
+	}
+)
+
+func (x MeasureFn) Enum() *MeasureFn {
+	p := new(MeasureFn)
+	*p = x
+	return p
+}
+
+func (x MeasureFn) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (MeasureFn) Descriptor() protoreflect.EnumDescriptor {
+	return file_query_v1_query_proto_enumTypes[8].Descriptor()
+}
+
+func (MeasureFn) Type() protoreflect.EnumType {
+	return &file_query_v1_query_proto_enumTypes[8]
+}
+
+func (x MeasureFn) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use MeasureFn.Descriptor instead.
+func (MeasureFn) EnumDescriptor() ([]byte, []int) {
+	return file_query_v1_query_proto_rawDescGZIP(), []int{8}
+}
+
 type QueryServiceQueryRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The collection to read: tasks, questions, wishes or projects.
 	Collection Collection `protobuf:"varint,1,opt,name=collection,proto3,enum=query.v1.Collection" json:"collection,omitempty"`
-	// A filter each row keeps must hold, all of them: ref, an operator, a value. = is equal, text ignoring case, and
-	// a|b one of; != is none of, an absent value included; > >= < <= bound a number, a time (2026-11-01, or RFC 3339)
-	// or a duration (90s); *= contains, ^= begins with, ignoring case; null is the absent value: status=null,
-	// status!=null, status=pending|null. An enum takes its value's name, prefix or not: status=running.
-	Filter []string `protobuf:"bytes,2,rep,name=filter,proto3" json:"filter,omitempty"`
-	// The order of the rows, by a ref, -ref for descending; an absent value comes last either way. When aggregated, a
-	// column of the table: create_time::day, count.
-	Sort []string `protobuf:"bytes,3,rep,name=sort,proto3" json:"sort,omitempty"`
+	// The filters each row kept must hold, all of them.
+	Filter []*Filter `protobuf:"bytes,2,rep,name=filter,proto3" json:"filter,omitempty"`
+	// The order of the rows, the first sort before the next, then the default. The default never changes, so that a
+	// test or a client may lean on it: the order the collection is stored in, by id, which is the order of creation;
+	// when aggregated, the order of the groups' values. An absent value comes last either way.
+	Sort []*Order `protobuf:"bytes,3,rep,name=sort,proto3" json:"sort,omitempty"`
 	// The refs of the columns, in order: code, usage.cost_usd, wish_id->title. Not set: the collection's usual
 	// columns.
 	Select []string `protobuf:"bytes,4,rep,name=select,proto3" json:"select,omitempty"`
-	// Aggregate: a row per group of rows holding the same value of this ref. A time groups by period with ::day, ::week
-	// or ::month (create_time::day, in the machine's time zone). A number or a duration groups by bins with
-	// ::bins(bounds), a value going to the greatest bound at or below it, the first bound's when below them all; every
-	// bin shows, empty or not: answer::delay::bins(0s,1m,10m,1h).
-	GroupBy []string `protobuf:"bytes,5,rep,name=group_by,json=groupBy,proto3" json:"group_by,omitempty"`
-	// Aggregate: a column computed over each group's rows, absent values skipped: count counts the rows, ref::fn reads
-	// a ref with count, sum, avg, min, max, median or p90 (running::median), name=ref::fn names the column.
-	Measure []string `protobuf:"bytes,6,rep,name=measure,proto3" json:"measure,omitempty"`
+	// Aggregate: a row per group of rows holding the same value of each of these refs.
+	GroupBy []*GroupBy `protobuf:"bytes,5,rep,name=group_by,json=groupBy,proto3" json:"group_by,omitempty"`
+	// Aggregate: the columns computed over each group's rows, absent values skipped.
+	Measure []*Measure `protobuf:"bytes,6,rep,name=measure,proto3" json:"measure,omitempty"`
 	// The most rows to return: the first ones, after the sorts. Not set: all of them.
 	Limit int32 `protobuf:"varint,7,opt,name=limit,proto3" json:"limit,omitempty"`
-	// How the table comes back: a text table (not set), csv, or arrow for the window.
+	// How the table comes back: arrow when not set; the command line and djinn mcp ask text unless told csv or arrow.
 	Format        Format `protobuf:"varint,8,opt,name=format,proto3,enum=query.v1.Format" json:"format,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -359,14 +669,14 @@ func (x *QueryServiceQueryRequest) GetCollection() Collection {
 	return Collection_COLLECTION_UNSPECIFIED
 }
 
-func (x *QueryServiceQueryRequest) GetFilter() []string {
+func (x *QueryServiceQueryRequest) GetFilter() []*Filter {
 	if x != nil {
 		return x.Filter
 	}
 	return nil
 }
 
-func (x *QueryServiceQueryRequest) GetSort() []string {
+func (x *QueryServiceQueryRequest) GetSort() []*Order {
 	if x != nil {
 		return x.Sort
 	}
@@ -380,14 +690,14 @@ func (x *QueryServiceQueryRequest) GetSelect() []string {
 	return nil
 }
 
-func (x *QueryServiceQueryRequest) GetGroupBy() []string {
+func (x *QueryServiceQueryRequest) GetGroupBy() []*GroupBy {
 	if x != nil {
 		return x.GroupBy
 	}
 	return nil
 }
 
-func (x *QueryServiceQueryRequest) GetMeasure() []string {
+func (x *QueryServiceQueryRequest) GetMeasure() []*Measure {
 	if x != nil {
 		return x.Measure
 	}
@@ -408,23 +718,1063 @@ func (x *QueryServiceQueryRequest) GetFormat() Format {
 	return Format_FORMAT_UNSPECIFIED
 }
 
+// Filter is one condition a row must hold: a comparison typed by the ref it reads, a group of filters, or a text the
+// command line types. A null value holds for none but Null and StringIn with include_null. On a list, a filter holds
+// when it holds for one of the list's values.
+type Filter struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Where:
+	//
+	//	*Filter_Group
+	//	*Filter_Null
+	//	*Filter_Bool
+	//	*Filter_String_
+	//	*Filter_StringIn
+	//	*Filter_Number
+	//	*Filter_Time
+	//	*Filter_Duration
+	//	*Filter_Text
+	Where         isFilter_Where `protobuf_oneof:"where"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Filter) Reset() {
+	*x = Filter{}
+	mi := &file_query_v1_query_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Filter) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Filter) ProtoMessage() {}
+
+func (x *Filter) ProtoReflect() protoreflect.Message {
+	mi := &file_query_v1_query_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Filter.ProtoReflect.Descriptor instead.
+func (*Filter) Descriptor() ([]byte, []int) {
+	return file_query_v1_query_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *Filter) GetWhere() isFilter_Where {
+	if x != nil {
+		return x.Where
+	}
+	return nil
+}
+
+func (x *Filter) GetGroup() *FilterGroup {
+	if x != nil {
+		if x, ok := x.Where.(*Filter_Group); ok {
+			return x.Group
+		}
+	}
+	return nil
+}
+
+func (x *Filter) GetNull() *NullFilter {
+	if x != nil {
+		if x, ok := x.Where.(*Filter_Null); ok {
+			return x.Null
+		}
+	}
+	return nil
+}
+
+func (x *Filter) GetBool() *BoolComparison {
+	if x != nil {
+		if x, ok := x.Where.(*Filter_Bool); ok {
+			return x.Bool
+		}
+	}
+	return nil
+}
+
+func (x *Filter) GetString_() *StringComparison {
+	if x != nil {
+		if x, ok := x.Where.(*Filter_String_); ok {
+			return x.String_
+		}
+	}
+	return nil
+}
+
+func (x *Filter) GetStringIn() *StringIn {
+	if x != nil {
+		if x, ok := x.Where.(*Filter_StringIn); ok {
+			return x.StringIn
+		}
+	}
+	return nil
+}
+
+func (x *Filter) GetNumber() *NumberComparison {
+	if x != nil {
+		if x, ok := x.Where.(*Filter_Number); ok {
+			return x.Number
+		}
+	}
+	return nil
+}
+
+func (x *Filter) GetTime() *TimeComparison {
+	if x != nil {
+		if x, ok := x.Where.(*Filter_Time); ok {
+			return x.Time
+		}
+	}
+	return nil
+}
+
+func (x *Filter) GetDuration() *DurationComparison {
+	if x != nil {
+		if x, ok := x.Where.(*Filter_Duration); ok {
+			return x.Duration
+		}
+	}
+	return nil
+}
+
+func (x *Filter) GetText() string {
+	if x != nil {
+		if x, ok := x.Where.(*Filter_Text); ok {
+			return x.Text
+		}
+	}
+	return ""
+}
+
+type isFilter_Where interface {
+	isFilter_Where()
+}
+
+type Filter_Group struct {
+	// Filters joined by an op.
+	Group *FilterGroup `protobuf:"bytes,1,opt,name=group,proto3,oneof"`
+}
+
+type Filter_Null struct {
+	// The ref's value is absent.
+	Null *NullFilter `protobuf:"bytes,2,opt,name=null,proto3,oneof"`
+}
+
+type Filter_Bool struct {
+	// A true or false ref.
+	Bool *BoolComparison `protobuf:"bytes,3,opt,name=bool,proto3,oneof"`
+}
+
+type Filter_String_ struct {
+	// A text or an enum ref, compared ignoring case.
+	String_ *StringComparison `protobuf:"bytes,4,opt,name=string,proto3,oneof"`
+}
+
+type Filter_StringIn struct {
+	// A text or an enum ref holding one of values.
+	StringIn *StringIn `protobuf:"bytes,5,opt,name=string_in,json=stringIn,proto3,oneof"`
+}
+
+type Filter_Number struct {
+	// A number ref.
+	Number *NumberComparison `protobuf:"bytes,6,opt,name=number,proto3,oneof"`
+}
+
+type Filter_Time struct {
+	// A time ref.
+	Time *TimeComparison `protobuf:"bytes,7,opt,name=time,proto3,oneof"`
+}
+
+type Filter_Duration struct {
+	// A duration ref.
+	Duration *DurationComparison `protobuf:"bytes,8,opt,name=duration,proto3,oneof"`
+}
+
+type Filter_Text struct {
+	// A filter as the command line types it, read with the type of its ref: ref, an operator, a value. = is equal,
+	// text ignoring case, and a|b one of; != is none of, an absent value included; > >= < <= bound a number, a time
+	// (2026-11-01, or RFC 3339) or a duration (90s); *= contains, ^= begins with, ignoring case; null is the absent
+	// value: status=null, status!=null, status=pending|null. An enum takes its value's name, prefix or not:
+	// status=running.
+	Text string `protobuf:"bytes,20,opt,name=text,proto3,oneof"`
+}
+
+func (*Filter_Group) isFilter_Where() {}
+
+func (*Filter_Null) isFilter_Where() {}
+
+func (*Filter_Bool) isFilter_Where() {}
+
+func (*Filter_String_) isFilter_Where() {}
+
+func (*Filter_StringIn) isFilter_Where() {}
+
+func (*Filter_Number) isFilter_Where() {}
+
+func (*Filter_Time) isFilter_Where() {}
+
+func (*Filter_Duration) isFilter_Where() {}
+
+func (*Filter_Text) isFilter_Where() {}
+
+// FilterGroup joins filters: one at least.
+type FilterGroup struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// How they join: and when not set.
+	Op FilterGroupOp `protobuf:"varint,1,opt,name=op,proto3,enum=query.v1.FilterGroupOp" json:"op,omitempty"`
+	// The filters joined.
+	Filters       []*Filter `protobuf:"bytes,2,rep,name=filters,proto3" json:"filters,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *FilterGroup) Reset() {
+	*x = FilterGroup{}
+	mi := &file_query_v1_query_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FilterGroup) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FilterGroup) ProtoMessage() {}
+
+func (x *FilterGroup) ProtoReflect() protoreflect.Message {
+	mi := &file_query_v1_query_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FilterGroup.ProtoReflect.Descriptor instead.
+func (*FilterGroup) Descriptor() ([]byte, []int) {
+	return file_query_v1_query_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *FilterGroup) GetOp() FilterGroupOp {
+	if x != nil {
+		return x.Op
+	}
+	return FilterGroupOp_FILTER_GROUP_OP_UNSPECIFIED
+}
+
+func (x *FilterGroup) GetFilters() []*Filter {
+	if x != nil {
+		return x.Filters
+	}
+	return nil
+}
+
+// NullFilter holds when the ref's value is absent.
+type NullFilter struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The ref read.
+	Ref           string `protobuf:"bytes,1,opt,name=ref,proto3" json:"ref,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *NullFilter) Reset() {
+	*x = NullFilter{}
+	mi := &file_query_v1_query_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *NullFilter) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NullFilter) ProtoMessage() {}
+
+func (x *NullFilter) ProtoReflect() protoreflect.Message {
+	mi := &file_query_v1_query_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NullFilter.ProtoReflect.Descriptor instead.
+func (*NullFilter) Descriptor() ([]byte, []int) {
+	return file_query_v1_query_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *NullFilter) GetRef() string {
+	if x != nil {
+		return x.Ref
+	}
+	return ""
+}
+
+// BoolComparison holds when the ref's value is value; an absent value is not false.
+type BoolComparison struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The ref read.
+	Ref string `protobuf:"bytes,1,opt,name=ref,proto3" json:"ref,omitempty"`
+	// The value it holds.
+	Value         bool `protobuf:"varint,2,opt,name=value,proto3" json:"value,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BoolComparison) Reset() {
+	*x = BoolComparison{}
+	mi := &file_query_v1_query_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BoolComparison) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BoolComparison) ProtoMessage() {}
+
+func (x *BoolComparison) ProtoReflect() protoreflect.Message {
+	mi := &file_query_v1_query_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BoolComparison.ProtoReflect.Descriptor instead.
+func (*BoolComparison) Descriptor() ([]byte, []int) {
+	return file_query_v1_query_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *BoolComparison) GetRef() string {
+	if x != nil {
+		return x.Ref
+	}
+	return ""
+}
+
+func (x *BoolComparison) GetValue() bool {
+	if x != nil {
+		return x.Value
+	}
+	return false
+}
+
+// StringComparison compares a text or an enum ref with value, ignoring case. An enum takes its value's name, prefix
+// or not: running.
+type StringComparison struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The ref read.
+	Ref string `protobuf:"bytes,1,opt,name=ref,proto3" json:"ref,omitempty"`
+	// How it compares: equal when not set.
+	Op StringOp `protobuf:"varint,2,opt,name=op,proto3,enum=query.v1.StringOp" json:"op,omitempty"`
+	// The value compared with.
+	Value         string `protobuf:"bytes,3,opt,name=value,proto3" json:"value,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StringComparison) Reset() {
+	*x = StringComparison{}
+	mi := &file_query_v1_query_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StringComparison) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StringComparison) ProtoMessage() {}
+
+func (x *StringComparison) ProtoReflect() protoreflect.Message {
+	mi := &file_query_v1_query_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StringComparison.ProtoReflect.Descriptor instead.
+func (*StringComparison) Descriptor() ([]byte, []int) {
+	return file_query_v1_query_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *StringComparison) GetRef() string {
+	if x != nil {
+		return x.Ref
+	}
+	return ""
+}
+
+func (x *StringComparison) GetOp() StringOp {
+	if x != nil {
+		return x.Op
+	}
+	return StringOp_STRING_OP_UNSPECIFIED
+}
+
+func (x *StringComparison) GetValue() string {
+	if x != nil {
+		return x.Value
+	}
+	return ""
+}
+
+// StringIn holds when a text or an enum ref's value is one of values, ignoring case, or absent with include_null.
+type StringIn struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The ref read.
+	Ref string `protobuf:"bytes,1,opt,name=ref,proto3" json:"ref,omitempty"`
+	// The values it may hold.
+	Values []string `protobuf:"bytes,2,rep,name=values,proto3" json:"values,omitempty"`
+	// An absent value holds too.
+	IncludeNull   bool `protobuf:"varint,3,opt,name=include_null,json=includeNull,proto3" json:"include_null,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StringIn) Reset() {
+	*x = StringIn{}
+	mi := &file_query_v1_query_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StringIn) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StringIn) ProtoMessage() {}
+
+func (x *StringIn) ProtoReflect() protoreflect.Message {
+	mi := &file_query_v1_query_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StringIn.ProtoReflect.Descriptor instead.
+func (*StringIn) Descriptor() ([]byte, []int) {
+	return file_query_v1_query_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *StringIn) GetRef() string {
+	if x != nil {
+		return x.Ref
+	}
+	return ""
+}
+
+func (x *StringIn) GetValues() []string {
+	if x != nil {
+		return x.Values
+	}
+	return nil
+}
+
+func (x *StringIn) GetIncludeNull() bool {
+	if x != nil {
+		return x.IncludeNull
+	}
+	return false
+}
+
+// NumberComparison compares a number ref with value; an absent value is not 0.
+type NumberComparison struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The ref read.
+	Ref string `protobuf:"bytes,1,opt,name=ref,proto3" json:"ref,omitempty"`
+	// How it compares: equal when not set.
+	Op CompareOp `protobuf:"varint,2,opt,name=op,proto3,enum=query.v1.CompareOp" json:"op,omitempty"`
+	// The value compared with.
+	Value         float64 `protobuf:"fixed64,3,opt,name=value,proto3" json:"value,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *NumberComparison) Reset() {
+	*x = NumberComparison{}
+	mi := &file_query_v1_query_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *NumberComparison) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NumberComparison) ProtoMessage() {}
+
+func (x *NumberComparison) ProtoReflect() protoreflect.Message {
+	mi := &file_query_v1_query_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NumberComparison.ProtoReflect.Descriptor instead.
+func (*NumberComparison) Descriptor() ([]byte, []int) {
+	return file_query_v1_query_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *NumberComparison) GetRef() string {
+	if x != nil {
+		return x.Ref
+	}
+	return ""
+}
+
+func (x *NumberComparison) GetOp() CompareOp {
+	if x != nil {
+		return x.Op
+	}
+	return CompareOp_COMPARE_OP_UNSPECIFIED
+}
+
+func (x *NumberComparison) GetValue() float64 {
+	if x != nil {
+		return x.Value
+	}
+	return 0
+}
+
+// TimeComparison compares a time ref with value.
+type TimeComparison struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The ref read.
+	Ref string `protobuf:"bytes,1,opt,name=ref,proto3" json:"ref,omitempty"`
+	// How it compares: equal when not set.
+	Op CompareOp `protobuf:"varint,2,opt,name=op,proto3,enum=query.v1.CompareOp" json:"op,omitempty"`
+	// The time compared with.
+	Value         *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=value,proto3" json:"value,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TimeComparison) Reset() {
+	*x = TimeComparison{}
+	mi := &file_query_v1_query_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TimeComparison) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TimeComparison) ProtoMessage() {}
+
+func (x *TimeComparison) ProtoReflect() protoreflect.Message {
+	mi := &file_query_v1_query_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TimeComparison.ProtoReflect.Descriptor instead.
+func (*TimeComparison) Descriptor() ([]byte, []int) {
+	return file_query_v1_query_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *TimeComparison) GetRef() string {
+	if x != nil {
+		return x.Ref
+	}
+	return ""
+}
+
+func (x *TimeComparison) GetOp() CompareOp {
+	if x != nil {
+		return x.Op
+	}
+	return CompareOp_COMPARE_OP_UNSPECIFIED
+}
+
+func (x *TimeComparison) GetValue() *timestamppb.Timestamp {
+	if x != nil {
+		return x.Value
+	}
+	return nil
+}
+
+// DurationComparison compares a duration ref with value.
+type DurationComparison struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The ref read.
+	Ref string `protobuf:"bytes,1,opt,name=ref,proto3" json:"ref,omitempty"`
+	// How it compares: equal when not set.
+	Op CompareOp `protobuf:"varint,2,opt,name=op,proto3,enum=query.v1.CompareOp" json:"op,omitempty"`
+	// The duration compared with.
+	Value         *durationpb.Duration `protobuf:"bytes,3,opt,name=value,proto3" json:"value,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DurationComparison) Reset() {
+	*x = DurationComparison{}
+	mi := &file_query_v1_query_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DurationComparison) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DurationComparison) ProtoMessage() {}
+
+func (x *DurationComparison) ProtoReflect() protoreflect.Message {
+	mi := &file_query_v1_query_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DurationComparison.ProtoReflect.Descriptor instead.
+func (*DurationComparison) Descriptor() ([]byte, []int) {
+	return file_query_v1_query_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *DurationComparison) GetRef() string {
+	if x != nil {
+		return x.Ref
+	}
+	return ""
+}
+
+func (x *DurationComparison) GetOp() CompareOp {
+	if x != nil {
+		return x.Op
+	}
+	return CompareOp_COMPARE_OP_UNSPECIFIED
+}
+
+func (x *DurationComparison) GetValue() *durationpb.Duration {
+	if x != nil {
+		return x.Value
+	}
+	return nil
+}
+
+// Order is one sort of the rows: by a ref, or when aggregated by a column of the table (create_time::day, count).
+type Order struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The ref, or the column, sorted by.
+	Ref string `protobuf:"bytes,1,opt,name=ref,proto3" json:"ref,omitempty"`
+	// Descending: ascending when not set.
+	Desc bool `protobuf:"varint,2,opt,name=desc,proto3" json:"desc,omitempty"`
+	// A sort as the command line types it, which stands for ref and desc: ref ascending, -ref descending.
+	Text          string `protobuf:"bytes,3,opt,name=text,proto3" json:"text,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Order) Reset() {
+	*x = Order{}
+	mi := &file_query_v1_query_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Order) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Order) ProtoMessage() {}
+
+func (x *Order) ProtoReflect() protoreflect.Message {
+	mi := &file_query_v1_query_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Order.ProtoReflect.Descriptor instead.
+func (*Order) Descriptor() ([]byte, []int) {
+	return file_query_v1_query_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *Order) GetRef() string {
+	if x != nil {
+		return x.Ref
+	}
+	return ""
+}
+
+func (x *Order) GetDesc() bool {
+	if x != nil {
+		return x.Desc
+	}
+	return false
+}
+
+func (x *Order) GetText() string {
+	if x != nil {
+		return x.Text
+	}
+	return ""
+}
+
+// GroupBy is one key of an aggregate: a row per value of its ref, by period for a time, by bins for a number or a
+// duration.
+type GroupBy struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The ref grouped by.
+	Ref string `protobuf:"bytes,1,opt,name=ref,proto3" json:"ref,omitempty"`
+	// How its values are bucketed: each value its own group when not set.
+	//
+	// Types that are valid to be assigned to Bucket:
+	//
+	//	*GroupBy_Period
+	//	*GroupBy_NumberBins
+	//	*GroupBy_DurationBins
+	Bucket isGroupBy_Bucket `protobuf_oneof:"bucket"`
+	// A group as the command line types it, which stands for ref and bucket: ref, ref::day, ref::week, ref::month, or
+	// ref::bins(b1,b2,…), answer::delay::bins(0s,1m,10m,1h).
+	Text          string `protobuf:"bytes,5,opt,name=text,proto3" json:"text,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GroupBy) Reset() {
+	*x = GroupBy{}
+	mi := &file_query_v1_query_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GroupBy) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GroupBy) ProtoMessage() {}
+
+func (x *GroupBy) ProtoReflect() protoreflect.Message {
+	mi := &file_query_v1_query_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GroupBy.ProtoReflect.Descriptor instead.
+func (*GroupBy) Descriptor() ([]byte, []int) {
+	return file_query_v1_query_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *GroupBy) GetRef() string {
+	if x != nil {
+		return x.Ref
+	}
+	return ""
+}
+
+func (x *GroupBy) GetBucket() isGroupBy_Bucket {
+	if x != nil {
+		return x.Bucket
+	}
+	return nil
+}
+
+func (x *GroupBy) GetPeriod() Period {
+	if x != nil {
+		if x, ok := x.Bucket.(*GroupBy_Period); ok {
+			return x.Period
+		}
+	}
+	return Period_PERIOD_UNSPECIFIED
+}
+
+func (x *GroupBy) GetNumberBins() *NumberBins {
+	if x != nil {
+		if x, ok := x.Bucket.(*GroupBy_NumberBins); ok {
+			return x.NumberBins
+		}
+	}
+	return nil
+}
+
+func (x *GroupBy) GetDurationBins() *DurationBins {
+	if x != nil {
+		if x, ok := x.Bucket.(*GroupBy_DurationBins); ok {
+			return x.DurationBins
+		}
+	}
+	return nil
+}
+
+func (x *GroupBy) GetText() string {
+	if x != nil {
+		return x.Text
+	}
+	return ""
+}
+
+type isGroupBy_Bucket interface {
+	isGroupBy_Bucket()
+}
+
+type GroupBy_Period struct {
+	// A time by period, in the machine's time zone.
+	Period Period `protobuf:"varint,2,opt,name=period,proto3,enum=query.v1.Period,oneof"`
+}
+
+type GroupBy_NumberBins struct {
+	// A number by bins.
+	NumberBins *NumberBins `protobuf:"bytes,3,opt,name=number_bins,json=numberBins,proto3,oneof"`
+}
+
+type GroupBy_DurationBins struct {
+	// A duration by bins.
+	DurationBins *DurationBins `protobuf:"bytes,4,opt,name=duration_bins,json=durationBins,proto3,oneof"`
+}
+
+func (*GroupBy_Period) isGroupBy_Bucket() {}
+
+func (*GroupBy_NumberBins) isGroupBy_Bucket() {}
+
+func (*GroupBy_DurationBins) isGroupBy_Bucket() {}
+
+// NumberBins groups a number by bins: a value goes to the greatest bound at or below it, the first bound's when below
+// them all; every bin shows, empty or not.
+type NumberBins struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The bounds, ascending.
+	Bounds        []float64 `protobuf:"fixed64,1,rep,packed,name=bounds,proto3" json:"bounds,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *NumberBins) Reset() {
+	*x = NumberBins{}
+	mi := &file_query_v1_query_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *NumberBins) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NumberBins) ProtoMessage() {}
+
+func (x *NumberBins) ProtoReflect() protoreflect.Message {
+	mi := &file_query_v1_query_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NumberBins.ProtoReflect.Descriptor instead.
+func (*NumberBins) Descriptor() ([]byte, []int) {
+	return file_query_v1_query_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *NumberBins) GetBounds() []float64 {
+	if x != nil {
+		return x.Bounds
+	}
+	return nil
+}
+
+// DurationBins groups a duration by bins, as NumberBins groups a number.
+type DurationBins struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The bounds, ascending.
+	Bounds        []*durationpb.Duration `protobuf:"bytes,1,rep,name=bounds,proto3" json:"bounds,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DurationBins) Reset() {
+	*x = DurationBins{}
+	mi := &file_query_v1_query_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DurationBins) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DurationBins) ProtoMessage() {}
+
+func (x *DurationBins) ProtoReflect() protoreflect.Message {
+	mi := &file_query_v1_query_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DurationBins.ProtoReflect.Descriptor instead.
+func (*DurationBins) Descriptor() ([]byte, []int) {
+	return file_query_v1_query_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *DurationBins) GetBounds() []*durationpb.Duration {
+	if x != nil {
+		return x.Bounds
+	}
+	return nil
+}
+
+// Measure is one column of an aggregate, computed over each group's rows, absent values skipped.
+type Measure struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The ref read: not set for a count of the rows.
+	Ref string `protobuf:"bytes,1,opt,name=ref,proto3" json:"ref,omitempty"`
+	// The function: count when not set.
+	Fn MeasureFn `protobuf:"varint,2,opt,name=fn,proto3,enum=query.v1.MeasureFn" json:"fn,omitempty"`
+	// The column's name: fn, or ref::fn, when not set.
+	Name string `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
+	// A measure as the command line types it, which stands for ref, fn and name: count, ref::fn, or name=ref::fn to
+	// name its column (running::median).
+	Text          string `protobuf:"bytes,4,opt,name=text,proto3" json:"text,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Measure) Reset() {
+	*x = Measure{}
+	mi := &file_query_v1_query_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Measure) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Measure) ProtoMessage() {}
+
+func (x *Measure) ProtoReflect() protoreflect.Message {
+	mi := &file_query_v1_query_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Measure.ProtoReflect.Descriptor instead.
+func (*Measure) Descriptor() ([]byte, []int) {
+	return file_query_v1_query_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *Measure) GetRef() string {
+	if x != nil {
+		return x.Ref
+	}
+	return ""
+}
+
+func (x *Measure) GetFn() MeasureFn {
+	if x != nil {
+		return x.Fn
+	}
+	return MeasureFn_MEASURE_FN_UNSPECIFIED
+}
+
+func (x *Measure) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *Measure) GetText() string {
+	if x != nil {
+		return x.Text
+	}
+	return ""
+}
+
 type QueryServiceQueryResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The table, as the format asks: aligned text, its row count last, or CSV.
-	Text string `protobuf:"bytes,1,opt,name=text,proto3" json:"text,omitempty"`
-	// The table as an Arrow IPC stream, one record batch, with format arrow: a column per ref, its type from the proto,
-	// an absent value null, never 0. Each field's metadata "djinn" holds a JSON object: ref, label, unit and type, and
-	// for an aggregated column of, fn, granularity or bounds.
-	Arrow []byte `protobuf:"bytes,2,opt,name=arrow,proto3" json:"arrow,omitempty"`
+	// The table, in the format asked: an Arrow IPC stream, CSV, or aligned text. In Arrow, one record batch: a column
+	// per ref, its type from the proto, an absent value null, never 0; each field's metadata "djinn" holds a JSON
+	// object: ref, label, unit and type, and for an aggregated column of, fn, granularity or bounds.
+	Table []byte `protobuf:"bytes,1,opt,name=table,proto3" json:"table,omitempty"`
 	// The rows before the limit: the groups when aggregated.
-	Total         int64 `protobuf:"varint,3,opt,name=total,proto3" json:"total,omitempty"`
+	Total         int64 `protobuf:"varint,2,opt,name=total,proto3" json:"total,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *QueryServiceQueryResponse) Reset() {
 	*x = QueryServiceQueryResponse{}
-	mi := &file_query_v1_query_proto_msgTypes[1]
+	mi := &file_query_v1_query_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -436,7 +1786,7 @@ func (x *QueryServiceQueryResponse) String() string {
 func (*QueryServiceQueryResponse) ProtoMessage() {}
 
 func (x *QueryServiceQueryResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_query_v1_query_proto_msgTypes[1]
+	mi := &file_query_v1_query_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -449,19 +1799,12 @@ func (x *QueryServiceQueryResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QueryServiceQueryResponse.ProtoReflect.Descriptor instead.
 func (*QueryServiceQueryResponse) Descriptor() ([]byte, []int) {
-	return file_query_v1_query_proto_rawDescGZIP(), []int{1}
+	return file_query_v1_query_proto_rawDescGZIP(), []int{15}
 }
 
-func (x *QueryServiceQueryResponse) GetText() string {
+func (x *QueryServiceQueryResponse) GetTable() []byte {
 	if x != nil {
-		return x.Text
-	}
-	return ""
-}
-
-func (x *QueryServiceQueryResponse) GetArrow() []byte {
-	if x != nil {
-		return x.Arrow
+		return x.Table
 	}
 	return nil
 }
@@ -483,7 +1826,7 @@ type QueryServiceSchemaRequest struct {
 
 func (x *QueryServiceSchemaRequest) Reset() {
 	*x = QueryServiceSchemaRequest{}
-	mi := &file_query_v1_query_proto_msgTypes[2]
+	mi := &file_query_v1_query_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -495,7 +1838,7 @@ func (x *QueryServiceSchemaRequest) String() string {
 func (*QueryServiceSchemaRequest) ProtoMessage() {}
 
 func (x *QueryServiceSchemaRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_query_v1_query_proto_msgTypes[2]
+	mi := &file_query_v1_query_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -508,7 +1851,7 @@ func (x *QueryServiceSchemaRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QueryServiceSchemaRequest.ProtoReflect.Descriptor instead.
 func (*QueryServiceSchemaRequest) Descriptor() ([]byte, []int) {
-	return file_query_v1_query_proto_rawDescGZIP(), []int{2}
+	return file_query_v1_query_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *QueryServiceSchemaRequest) GetCollection() Collection {
@@ -543,7 +1886,7 @@ type QueryColumn struct {
 
 func (x *QueryColumn) Reset() {
 	*x = QueryColumn{}
-	mi := &file_query_v1_query_proto_msgTypes[3]
+	mi := &file_query_v1_query_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -555,7 +1898,7 @@ func (x *QueryColumn) String() string {
 func (*QueryColumn) ProtoMessage() {}
 
 func (x *QueryColumn) ProtoReflect() protoreflect.Message {
-	mi := &file_query_v1_query_proto_msgTypes[3]
+	mi := &file_query_v1_query_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -568,7 +1911,7 @@ func (x *QueryColumn) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QueryColumn.ProtoReflect.Descriptor instead.
 func (*QueryColumn) Descriptor() ([]byte, []int) {
-	return file_query_v1_query_proto_rawDescGZIP(), []int{3}
+	return file_query_v1_query_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *QueryColumn) GetRef() string {
@@ -637,7 +1980,7 @@ type QueryServiceSchemaResponse struct {
 
 func (x *QueryServiceSchemaResponse) Reset() {
 	*x = QueryServiceSchemaResponse{}
-	mi := &file_query_v1_query_proto_msgTypes[4]
+	mi := &file_query_v1_query_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -649,7 +1992,7 @@ func (x *QueryServiceSchemaResponse) String() string {
 func (*QueryServiceSchemaResponse) ProtoMessage() {}
 
 func (x *QueryServiceSchemaResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_query_v1_query_proto_msgTypes[4]
+	mi := &file_query_v1_query_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -662,7 +2005,7 @@ func (x *QueryServiceSchemaResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QueryServiceSchemaResponse.ProtoReflect.Descriptor instead.
 func (*QueryServiceSchemaResponse) Descriptor() ([]byte, []int) {
-	return file_query_v1_query_proto_rawDescGZIP(), []int{4}
+	return file_query_v1_query_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *QueryServiceSchemaResponse) GetColumns() []*QueryColumn {
@@ -676,23 +2019,95 @@ var File_query_v1_query_proto protoreflect.FileDescriptor
 
 const file_query_v1_query_proto_rawDesc = "" +
 	"\n" +
-	"\x14query/v1/query.proto\x12\bquery.v1\x1a\x1bbuf/validate/validate.proto\x1a\x16djinn/v1/options.proto\"\x88\x03\n" +
+	"\x14query/v1/query.proto\x12\bquery.v1\x1a\x1bbuf/validate/validate.proto\x1a\x16djinn/v1/options.proto\x1a\x1egoogle/protobuf/duration.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xb5\x03\n" +
 	"\x18QueryServiceQueryRequest\x12A\n" +
 	"\n" +
 	"collection\x18\x01 \x01(\x0e2\x14.query.v1.CollectionB\v\xbaH\b\xc8\x01\x01\x82\x01\x02\x10\x01R\n" +
-	"collection\x12)\n" +
-	"\x06filter\x18\x02 \x03(\tB\x11\xbaH\x0e\x92\x01\v\x102\"\ar\x05\x10\x02\x18\xd0\x0fR\x06filter\x12%\n" +
-	"\x04sort\x18\x03 \x03(\tB\x11\xbaH\x0e\x92\x01\v\x10\n" +
-	"\"\ar\x05\x10\x01\x18\xc8\x01R\x04sort\x12)\n" +
-	"\x06select\x18\x04 \x03(\tB\x11\xbaH\x0e\x92\x01\v\x10d\"\ar\x05\x10\x01\x18\xc8\x01R\x06select\x12,\n" +
-	"\bgroup_by\x18\x05 \x03(\tB\x11\xbaH\x0e\x92\x01\v\x10\x05\"\ar\x05\x10\x01\x18\xf4\x03R\agroupBy\x12+\n" +
-	"\ameasure\x18\x06 \x03(\tB\x11\xbaH\x0e\x92\x01\v\x10\x14\"\ar\x05\x10\x01\x18\xc8\x01R\ameasure\x12\x1d\n" +
-	"\x05limit\x18\a \x01(\x05B\a\xbaH\x04\x1a\x02(\x00R\x05limit\x122\n" +
-	"\x06format\x18\b \x01(\x0e2\x10.query.v1.FormatB\b\xbaH\x05\x82\x01\x02\x10\x01R\x06format\"m\n" +
-	"\x19QueryServiceQueryResponse\x12\x18\n" +
-	"\x04text\x18\x01 \x01(\tB\x04\xb0\xf4\x18\x01R\x04text\x12\x1a\n" +
-	"\x05arrow\x18\x02 \x01(\fB\x04\x90\xf4\x18\x01R\x05arrow\x12\x1a\n" +
-	"\x05total\x18\x03 \x01(\x03B\x04\x90\xf4\x18\x01R\x05total\"^\n" +
+	"collection\x122\n" +
+	"\x06filter\x18\x02 \x03(\v2\x10.query.v1.FilterB\b\xbaH\x05\x92\x01\x02\x102R\x06filter\x12-\n" +
+	"\x04sort\x18\x03 \x03(\v2\x0f.query.v1.OrderB\b\xbaH\x05\x92\x01\x02\x10\n" +
+	"R\x04sort\x12)\n" +
+	"\x06select\x18\x04 \x03(\tB\x11\xbaH\x0e\x92\x01\v\x10d\"\ar\x05\x10\x01\x18\xc8\x01R\x06select\x126\n" +
+	"\bgroup_by\x18\x05 \x03(\v2\x11.query.v1.GroupByB\b\xbaH\x05\x92\x01\x02\x10\x05R\agroupBy\x125\n" +
+	"\ameasure\x18\x06 \x03(\v2\x11.query.v1.MeasureB\b\xbaH\x05\x92\x01\x02\x10\x14R\ameasure\x12\x1d\n" +
+	"\x05limit\x18\a \x01(\x05B\a\xbaH\x04\x1a\x02(\x00R\x05limit\x12:\n" +
+	"\x06format\x18\b \x01(\x0e2\x10.query.v1.FormatB\x10\xbaH\x05\x82\x01\x02\x10\x01\xc2\xf4\x18\x04textR\x06format\"\xd4\x03\n" +
+	"\x06Filter\x12-\n" +
+	"\x05group\x18\x01 \x01(\v2\x15.query.v1.FilterGroupH\x00R\x05group\x12*\n" +
+	"\x04null\x18\x02 \x01(\v2\x14.query.v1.NullFilterH\x00R\x04null\x12.\n" +
+	"\x04bool\x18\x03 \x01(\v2\x18.query.v1.BoolComparisonH\x00R\x04bool\x124\n" +
+	"\x06string\x18\x04 \x01(\v2\x1a.query.v1.StringComparisonH\x00R\x06string\x121\n" +
+	"\tstring_in\x18\x05 \x01(\v2\x12.query.v1.StringInH\x00R\bstringIn\x124\n" +
+	"\x06number\x18\x06 \x01(\v2\x1a.query.v1.NumberComparisonH\x00R\x06number\x12.\n" +
+	"\x04time\x18\a \x01(\v2\x18.query.v1.TimeComparisonH\x00R\x04time\x12:\n" +
+	"\bduration\x18\b \x01(\v2\x1c.query.v1.DurationComparisonH\x00R\bduration\x12$\n" +
+	"\x04text\x18\x14 \x01(\tB\x0e\xbaH\ar\x05\x10\x02\x18\xd0\x0f\xb8\xf4\x18\x01H\x00R\x04textB\x0e\n" +
+	"\x05where\x12\x05\xbaH\x02\b\x01\"x\n" +
+	"\vFilterGroup\x121\n" +
+	"\x02op\x18\x01 \x01(\x0e2\x17.query.v1.FilterGroupOpB\b\xbaH\x05\x82\x01\x02\x10\x01R\x02op\x126\n" +
+	"\afilters\x18\x02 \x03(\v2\x10.query.v1.FilterB\n" +
+	"\xbaH\a\x92\x01\x04\b\x01\x102R\afilters\"*\n" +
+	"\n" +
+	"NullFilter\x12\x1c\n" +
+	"\x03ref\x18\x01 \x01(\tB\n" +
+	"\xbaH\ar\x05\x10\x01\x18\xc8\x01R\x03ref\"D\n" +
+	"\x0eBoolComparison\x12\x1c\n" +
+	"\x03ref\x18\x01 \x01(\tB\n" +
+	"\xbaH\ar\x05\x10\x01\x18\xc8\x01R\x03ref\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\bR\x05value\"~\n" +
+	"\x10StringComparison\x12\x1c\n" +
+	"\x03ref\x18\x01 \x01(\tB\n" +
+	"\xbaH\ar\x05\x10\x01\x18\xc8\x01R\x03ref\x12,\n" +
+	"\x02op\x18\x02 \x01(\x0e2\x12.query.v1.StringOpB\b\xbaH\x05\x82\x01\x02\x10\x01R\x02op\x12\x1e\n" +
+	"\x05value\x18\x03 \x01(\tB\b\xbaH\x05r\x03\x18\xd0\x0fR\x05value\"n\n" +
+	"\bStringIn\x12\x1c\n" +
+	"\x03ref\x18\x01 \x01(\tB\n" +
+	"\xbaH\ar\x05\x10\x01\x18\xc8\x01R\x03ref\x12!\n" +
+	"\x06values\x18\x02 \x03(\tB\t\xbaH\x06\x92\x01\x03\x10\xc8\x01R\x06values\x12!\n" +
+	"\finclude_null\x18\x03 \x01(\bR\vincludeNull\"u\n" +
+	"\x10NumberComparison\x12\x1c\n" +
+	"\x03ref\x18\x01 \x01(\tB\n" +
+	"\xbaH\ar\x05\x10\x01\x18\xc8\x01R\x03ref\x12-\n" +
+	"\x02op\x18\x02 \x01(\x0e2\x13.query.v1.CompareOpB\b\xbaH\x05\x82\x01\x02\x10\x01R\x02op\x12\x14\n" +
+	"\x05value\x18\x03 \x01(\x01R\x05value\"\x97\x01\n" +
+	"\x0eTimeComparison\x12\x1c\n" +
+	"\x03ref\x18\x01 \x01(\tB\n" +
+	"\xbaH\ar\x05\x10\x01\x18\xc8\x01R\x03ref\x12-\n" +
+	"\x02op\x18\x02 \x01(\x0e2\x13.query.v1.CompareOpB\b\xbaH\x05\x82\x01\x02\x10\x01R\x02op\x128\n" +
+	"\x05value\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampB\x06\xbaH\x03\xc8\x01\x01R\x05value\"\x9a\x01\n" +
+	"\x12DurationComparison\x12\x1c\n" +
+	"\x03ref\x18\x01 \x01(\tB\n" +
+	"\xbaH\ar\x05\x10\x01\x18\xc8\x01R\x03ref\x12-\n" +
+	"\x02op\x18\x02 \x01(\x0e2\x13.query.v1.CompareOpB\b\xbaH\x05\x82\x01\x02\x10\x01R\x02op\x127\n" +
+	"\x05value\x18\x03 \x01(\v2\x19.google.protobuf.DurationB\x06\xbaH\x03\xc8\x01\x01R\x05value\"Y\n" +
+	"\x05Order\x12\x1a\n" +
+	"\x03ref\x18\x01 \x01(\tB\b\xbaH\x05r\x03\x18\xc8\x01R\x03ref\x12\x12\n" +
+	"\x04desc\x18\x02 \x01(\bR\x04desc\x12 \n" +
+	"\x04text\x18\x03 \x01(\tB\f\xbaH\x05r\x03\x18\xc8\x01\xb8\xf4\x18\x01R\x04text\"\x81\x02\n" +
+	"\aGroupBy\x12\x1a\n" +
+	"\x03ref\x18\x01 \x01(\tB\b\xbaH\x05r\x03\x18\xc8\x01R\x03ref\x126\n" +
+	"\x06period\x18\x02 \x01(\x0e2\x10.query.v1.PeriodB\n" +
+	"\xbaH\a\x82\x01\x04\x10\x01 \x00H\x00R\x06period\x127\n" +
+	"\vnumber_bins\x18\x03 \x01(\v2\x14.query.v1.NumberBinsH\x00R\n" +
+	"numberBins\x12=\n" +
+	"\rduration_bins\x18\x04 \x01(\v2\x16.query.v1.DurationBinsH\x00R\fdurationBins\x12 \n" +
+	"\x04text\x18\x05 \x01(\tB\f\xbaH\x05r\x03\x18\xf4\x03\xb8\xf4\x18\x01R\x04textB\b\n" +
+	"\x06bucket\"0\n" +
+	"\n" +
+	"NumberBins\x12\"\n" +
+	"\x06bounds\x18\x01 \x03(\x01B\n" +
+	"\xbaH\a\x92\x01\x04\b\x01\x10dR\x06bounds\"M\n" +
+	"\fDurationBins\x12=\n" +
+	"\x06bounds\x18\x01 \x03(\v2\x19.google.protobuf.DurationB\n" +
+	"\xbaH\a\x92\x01\x04\b\x01\x10dR\x06bounds\"\x93\x01\n" +
+	"\aMeasure\x12\x1a\n" +
+	"\x03ref\x18\x01 \x01(\tB\b\xbaH\x05r\x03\x18\xc8\x01R\x03ref\x12-\n" +
+	"\x02fn\x18\x02 \x01(\x0e2\x13.query.v1.MeasureFnB\b\xbaH\x05\x82\x01\x02\x10\x01R\x02fn\x12\x1b\n" +
+	"\x04name\x18\x03 \x01(\tB\a\xbaH\x04r\x02\x18dR\x04name\x12 \n" +
+	"\x04text\x18\x04 \x01(\tB\f\xbaH\x05r\x03\x18\xc8\x01\xb8\xf4\x18\x01R\x04text\"S\n" +
+	"\x19QueryServiceQueryResponse\x12\x1a\n" +
+	"\x05table\x18\x01 \x01(\fB\x04\xb0\xf4\x18\x01R\x05table\x12\x1a\n" +
+	"\x05total\x18\x02 \x01(\x03B\x04\x90\xf4\x18\x01R\x05total\"^\n" +
 	"\x19QueryServiceSchemaRequest\x12A\n" +
 	"\n" +
 	"collection\x18\x01 \x01(\x0e2\x14.query.v1.CollectionB\v\xbaH\b\xc8\x01\x01\x82\x01\x02\x10\x01R\n" +
@@ -724,12 +2139,13 @@ const file_query_v1_query_proto_rawDesc = "" +
 	"\x10TASK_TYPE_MOCKUP\x10\x05\x12\x13\n" +
 	"\x0fTASK_TYPE_IFRIT\x10\x06\x12\x15\n" +
 	"\x11TASK_TYPE_WATCHER\x10\a\x12\x13\n" +
-	"\x0fTASK_TYPE_AZIMA\x10\b*B\n" +
+	"\x0fTASK_TYPE_AZIMA\x10\b*S\n" +
 	"\x06Format\x12\x16\n" +
-	"\x12FORMAT_UNSPECIFIED\x10\x00\x12\x0e\n" +
+	"\x12FORMAT_UNSPECIFIED\x10\x00\x12\x10\n" +
+	"\fFORMAT_ARROW\x10\x01\x12\x0e\n" +
 	"\n" +
-	"FORMAT_CSV\x10\x01\x12\x10\n" +
-	"\fFORMAT_ARROW\x10\x02*\xc9\x01\n" +
+	"FORMAT_CSV\x10\x02\x12\x0f\n" +
+	"\vFORMAT_TEXT\x10\x03*\xc9\x01\n" +
 	"\n" +
 	"ColumnType\x12\x1b\n" +
 	"\x17COLUMN_TYPE_UNSPECIFIED\x10\x00\x12\x16\n" +
@@ -739,7 +2155,39 @@ const file_query_v1_query_proto_rawDesc = "" +
 	"\x11COLUMN_TYPE_FLOAT\x10\x04\x12\x14\n" +
 	"\x10COLUMN_TYPE_BOOL\x10\x05\x12\x14\n" +
 	"\x10COLUMN_TYPE_TIME\x10\x06\x12\x18\n" +
-	"\x14COLUMN_TYPE_DURATION\x10\a2\xc7\x01\n" +
+	"\x14COLUMN_TYPE_DURATION\x10\a*z\n" +
+	"\rFilterGroupOp\x12\x1f\n" +
+	"\x1bFILTER_GROUP_OP_UNSPECIFIED\x10\x00\x12\x17\n" +
+	"\x13FILTER_GROUP_OP_AND\x10\x01\x12\x16\n" +
+	"\x12FILTER_GROUP_OP_OR\x10\x02\x12\x17\n" +
+	"\x13FILTER_GROUP_OP_NOT\x10\x03*m\n" +
+	"\bStringOp\x12\x19\n" +
+	"\x15STRING_OP_UNSPECIFIED\x10\x00\x12\x13\n" +
+	"\x0fSTRING_OP_EQUAL\x10\x01\x12\x16\n" +
+	"\x12STRING_OP_CONTAINS\x10\x02\x12\x19\n" +
+	"\x15STRING_OP_BEGINS_WITH\x10\x03*\xb7\x01\n" +
+	"\tCompareOp\x12\x1a\n" +
+	"\x16COMPARE_OP_UNSPECIFIED\x10\x00\x12\x14\n" +
+	"\x10COMPARE_OP_EQUAL\x10\x01\x12\x1b\n" +
+	"\x17COMPARE_OP_GREATER_THAN\x10\x02\x12!\n" +
+	"\x1dCOMPARE_OP_GREATER_THAN_EQUAL\x10\x03\x12\x18\n" +
+	"\x14COMPARE_OP_LESS_THAN\x10\x04\x12\x1e\n" +
+	"\x1aCOMPARE_OP_LESS_THAN_EQUAL\x10\x05*S\n" +
+	"\x06Period\x12\x16\n" +
+	"\x12PERIOD_UNSPECIFIED\x10\x00\x12\x0e\n" +
+	"\n" +
+	"PERIOD_DAY\x10\x01\x12\x0f\n" +
+	"\vPERIOD_WEEK\x10\x02\x12\x10\n" +
+	"\fPERIOD_MONTH\x10\x03*\xb8\x01\n" +
+	"\tMeasureFn\x12\x1a\n" +
+	"\x16MEASURE_FN_UNSPECIFIED\x10\x00\x12\x14\n" +
+	"\x10MEASURE_FN_COUNT\x10\x01\x12\x12\n" +
+	"\x0eMEASURE_FN_SUM\x10\x02\x12\x12\n" +
+	"\x0eMEASURE_FN_AVG\x10\x03\x12\x12\n" +
+	"\x0eMEASURE_FN_MIN\x10\x04\x12\x12\n" +
+	"\x0eMEASURE_FN_MAX\x10\x05\x12\x15\n" +
+	"\x11MEASURE_FN_MEDIAN\x10\x06\x12\x12\n" +
+	"\x0eMEASURE_FN_P90\x10\a2\xc7\x01\n" +
 	"\fQueryService\x12Y\n" +
 	"\x05Query\x12\".query.v1.QueryServiceQueryRequest\x1a#.query.v1.QueryServiceQueryResponse\"\a\xc8\xf3\x18\x01\x90\x02\x01\x12\\\n" +
 	"\x06Schema\x12#.query.v1.QueryServiceSchemaRequest\x1a$.query.v1.QueryServiceSchemaResponse\"\a\xc8\xf3\x18\x01\x90\x02\x01B\x8e\x01\n" +
@@ -758,35 +2206,81 @@ func file_query_v1_query_proto_rawDescGZIP() []byte {
 	return file_query_v1_query_proto_rawDescData
 }
 
-var file_query_v1_query_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
-var file_query_v1_query_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_query_v1_query_proto_enumTypes = make([]protoimpl.EnumInfo, 9)
+var file_query_v1_query_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
 var file_query_v1_query_proto_goTypes = []any{
 	(Collection)(0),                    // 0: query.v1.Collection
 	(TaskType)(0),                      // 1: query.v1.TaskType
 	(Format)(0),                        // 2: query.v1.Format
 	(ColumnType)(0),                    // 3: query.v1.ColumnType
-	(*QueryServiceQueryRequest)(nil),   // 4: query.v1.QueryServiceQueryRequest
-	(*QueryServiceQueryResponse)(nil),  // 5: query.v1.QueryServiceQueryResponse
-	(*QueryServiceSchemaRequest)(nil),  // 6: query.v1.QueryServiceSchemaRequest
-	(*QueryColumn)(nil),                // 7: query.v1.QueryColumn
-	(*QueryServiceSchemaResponse)(nil), // 8: query.v1.QueryServiceSchemaResponse
+	(FilterGroupOp)(0),                 // 4: query.v1.FilterGroupOp
+	(StringOp)(0),                      // 5: query.v1.StringOp
+	(CompareOp)(0),                     // 6: query.v1.CompareOp
+	(Period)(0),                        // 7: query.v1.Period
+	(MeasureFn)(0),                     // 8: query.v1.MeasureFn
+	(*QueryServiceQueryRequest)(nil),   // 9: query.v1.QueryServiceQueryRequest
+	(*Filter)(nil),                     // 10: query.v1.Filter
+	(*FilterGroup)(nil),                // 11: query.v1.FilterGroup
+	(*NullFilter)(nil),                 // 12: query.v1.NullFilter
+	(*BoolComparison)(nil),             // 13: query.v1.BoolComparison
+	(*StringComparison)(nil),           // 14: query.v1.StringComparison
+	(*StringIn)(nil),                   // 15: query.v1.StringIn
+	(*NumberComparison)(nil),           // 16: query.v1.NumberComparison
+	(*TimeComparison)(nil),             // 17: query.v1.TimeComparison
+	(*DurationComparison)(nil),         // 18: query.v1.DurationComparison
+	(*Order)(nil),                      // 19: query.v1.Order
+	(*GroupBy)(nil),                    // 20: query.v1.GroupBy
+	(*NumberBins)(nil),                 // 21: query.v1.NumberBins
+	(*DurationBins)(nil),               // 22: query.v1.DurationBins
+	(*Measure)(nil),                    // 23: query.v1.Measure
+	(*QueryServiceQueryResponse)(nil),  // 24: query.v1.QueryServiceQueryResponse
+	(*QueryServiceSchemaRequest)(nil),  // 25: query.v1.QueryServiceSchemaRequest
+	(*QueryColumn)(nil),                // 26: query.v1.QueryColumn
+	(*QueryServiceSchemaResponse)(nil), // 27: query.v1.QueryServiceSchemaResponse
+	(*timestamppb.Timestamp)(nil),      // 28: google.protobuf.Timestamp
+	(*durationpb.Duration)(nil),        // 29: google.protobuf.Duration
 }
 var file_query_v1_query_proto_depIdxs = []int32{
-	0, // 0: query.v1.QueryServiceQueryRequest.collection:type_name -> query.v1.Collection
-	2, // 1: query.v1.QueryServiceQueryRequest.format:type_name -> query.v1.Format
-	0, // 2: query.v1.QueryServiceSchemaRequest.collection:type_name -> query.v1.Collection
-	3, // 3: query.v1.QueryColumn.type:type_name -> query.v1.ColumnType
-	0, // 4: query.v1.QueryColumn.jump:type_name -> query.v1.Collection
-	7, // 5: query.v1.QueryServiceSchemaResponse.columns:type_name -> query.v1.QueryColumn
-	4, // 6: query.v1.QueryService.Query:input_type -> query.v1.QueryServiceQueryRequest
-	6, // 7: query.v1.QueryService.Schema:input_type -> query.v1.QueryServiceSchemaRequest
-	5, // 8: query.v1.QueryService.Query:output_type -> query.v1.QueryServiceQueryResponse
-	8, // 9: query.v1.QueryService.Schema:output_type -> query.v1.QueryServiceSchemaResponse
-	8, // [8:10] is the sub-list for method output_type
-	6, // [6:8] is the sub-list for method input_type
-	6, // [6:6] is the sub-list for extension type_name
-	6, // [6:6] is the sub-list for extension extendee
-	0, // [0:6] is the sub-list for field type_name
+	0,  // 0: query.v1.QueryServiceQueryRequest.collection:type_name -> query.v1.Collection
+	10, // 1: query.v1.QueryServiceQueryRequest.filter:type_name -> query.v1.Filter
+	19, // 2: query.v1.QueryServiceQueryRequest.sort:type_name -> query.v1.Order
+	20, // 3: query.v1.QueryServiceQueryRequest.group_by:type_name -> query.v1.GroupBy
+	23, // 4: query.v1.QueryServiceQueryRequest.measure:type_name -> query.v1.Measure
+	2,  // 5: query.v1.QueryServiceQueryRequest.format:type_name -> query.v1.Format
+	11, // 6: query.v1.Filter.group:type_name -> query.v1.FilterGroup
+	12, // 7: query.v1.Filter.null:type_name -> query.v1.NullFilter
+	13, // 8: query.v1.Filter.bool:type_name -> query.v1.BoolComparison
+	14, // 9: query.v1.Filter.string:type_name -> query.v1.StringComparison
+	15, // 10: query.v1.Filter.string_in:type_name -> query.v1.StringIn
+	16, // 11: query.v1.Filter.number:type_name -> query.v1.NumberComparison
+	17, // 12: query.v1.Filter.time:type_name -> query.v1.TimeComparison
+	18, // 13: query.v1.Filter.duration:type_name -> query.v1.DurationComparison
+	4,  // 14: query.v1.FilterGroup.op:type_name -> query.v1.FilterGroupOp
+	10, // 15: query.v1.FilterGroup.filters:type_name -> query.v1.Filter
+	5,  // 16: query.v1.StringComparison.op:type_name -> query.v1.StringOp
+	6,  // 17: query.v1.NumberComparison.op:type_name -> query.v1.CompareOp
+	6,  // 18: query.v1.TimeComparison.op:type_name -> query.v1.CompareOp
+	28, // 19: query.v1.TimeComparison.value:type_name -> google.protobuf.Timestamp
+	6,  // 20: query.v1.DurationComparison.op:type_name -> query.v1.CompareOp
+	29, // 21: query.v1.DurationComparison.value:type_name -> google.protobuf.Duration
+	7,  // 22: query.v1.GroupBy.period:type_name -> query.v1.Period
+	21, // 23: query.v1.GroupBy.number_bins:type_name -> query.v1.NumberBins
+	22, // 24: query.v1.GroupBy.duration_bins:type_name -> query.v1.DurationBins
+	29, // 25: query.v1.DurationBins.bounds:type_name -> google.protobuf.Duration
+	8,  // 26: query.v1.Measure.fn:type_name -> query.v1.MeasureFn
+	0,  // 27: query.v1.QueryServiceSchemaRequest.collection:type_name -> query.v1.Collection
+	3,  // 28: query.v1.QueryColumn.type:type_name -> query.v1.ColumnType
+	0,  // 29: query.v1.QueryColumn.jump:type_name -> query.v1.Collection
+	26, // 30: query.v1.QueryServiceSchemaResponse.columns:type_name -> query.v1.QueryColumn
+	9,  // 31: query.v1.QueryService.Query:input_type -> query.v1.QueryServiceQueryRequest
+	25, // 32: query.v1.QueryService.Schema:input_type -> query.v1.QueryServiceSchemaRequest
+	24, // 33: query.v1.QueryService.Query:output_type -> query.v1.QueryServiceQueryResponse
+	27, // 34: query.v1.QueryService.Schema:output_type -> query.v1.QueryServiceSchemaResponse
+	33, // [33:35] is the sub-list for method output_type
+	31, // [31:33] is the sub-list for method input_type
+	31, // [31:31] is the sub-list for extension type_name
+	31, // [31:31] is the sub-list for extension extendee
+	0,  // [0:31] is the sub-list for field type_name
 }
 
 func init() { file_query_v1_query_proto_init() }
@@ -794,13 +2288,29 @@ func file_query_v1_query_proto_init() {
 	if File_query_v1_query_proto != nil {
 		return
 	}
+	file_query_v1_query_proto_msgTypes[1].OneofWrappers = []any{
+		(*Filter_Group)(nil),
+		(*Filter_Null)(nil),
+		(*Filter_Bool)(nil),
+		(*Filter_String_)(nil),
+		(*Filter_StringIn)(nil),
+		(*Filter_Number)(nil),
+		(*Filter_Time)(nil),
+		(*Filter_Duration)(nil),
+		(*Filter_Text)(nil),
+	}
+	file_query_v1_query_proto_msgTypes[11].OneofWrappers = []any{
+		(*GroupBy_Period)(nil),
+		(*GroupBy_NumberBins)(nil),
+		(*GroupBy_DurationBins)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_query_v1_query_proto_rawDesc), len(file_query_v1_query_proto_rawDesc)),
-			NumEnums:      4,
-			NumMessages:   5,
+			NumEnums:      9,
+			NumMessages:   19,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

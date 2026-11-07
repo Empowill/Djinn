@@ -266,9 +266,14 @@ djinn query query tasks --filter type=work --filter status=done --group-by "runn
   `ref::bins(b1,b2,...)` for a number or a duration: a value goes to the greatest bound at or below it, the first
   bound's when below them all. `--measure count`, `ref::count|sum|avg|min|max|median|p90`, `name=ref::fn` to name a
   column. Absent values are skipped; an empty period never shows, an empty bin does.
-- **Formats**: an aligned table with its row count (not set), `--format csv`, or `--format arrow` (the window's: an
-  Arrow IPC stream in the `arrow` field of `--json`, each column typed from the proto with its ref, label and unit in
-  its `djinn` metadata). An absent value is empty in text, null in Arrow, never 0.
+- **Formats**: an aligned table with its row count (the command line's and MCP's default, `--format text`),
+  `--format csv`, or `--format arrow` (the API's default and the window's: an Arrow IPC stream in the `table` field of
+  `--json`, each column typed from the proto with its ref, label and unit in its `djinn` metadata). An absent value is
+  empty in text, null in Arrow, never 0.
+- **Typed requests**: over the API, a filter is a message typed by its ref (`string`, `string_in`, `number`, `time`,
+  `duration`, `bool`, `null`, or a `group` joined by and, or, not), a sort an `Order` (ref, desc), a group a `GroupBy`
+  (ref, and a period or bins), a measure a `Measure` (ref, function, name). The texts above fill each message's `text`
+  field, which Djinn reads with the type of its ref.
 
 The questions keep their short word: q is an alias of the question command, beside query.
 

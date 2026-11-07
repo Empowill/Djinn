@@ -2,6 +2,7 @@ package query
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"google.golang.org/protobuf/reflect/protoreflect"
@@ -63,6 +64,30 @@ type Text struct {
 // IsNull holds when Ref's value is absent.
 type IsNull struct {
 	Ref string
+}
+
+// typed is a filter a typed comparison of QueryService gives: its ref must be of one of types.
+type typed struct {
+	Filter
+	ref   string
+	kind  string
+	types []Type
+}
+
+// bind is f, which may only read ref of one of types: a kind filter of QueryService.
+func bind(ref, kind string, f Filter, types ...Type) Filter {
+	return typed{Filter: f, ref: ref, kind: kind, types: types}
+}
+
+func (f typed) compile(c *compiler, md protoreflect.MessageDescriptor) (pred, error) {
+	r, err := c.ref(md, f.ref)
+	if err != nil {
+		return nil, err
+	}
+	if !slices.Contains(f.types, r.col.Type) {
+		return nil, fmt.Errorf("%w: a %s filter on %s, a %s", ErrInvalid, f.kind, f.ref, r.col.Type)
+	}
+	return f.Filter.compile(c, md)
 }
 
 func (g Group) compile(c *compiler, md protoreflect.MessageDescriptor) (pred, error) {

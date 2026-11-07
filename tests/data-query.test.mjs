@@ -8,9 +8,31 @@ import { bundle } from "./bundle.mjs";
 
 const q = await bundle(
   "query",
-  `export { frameOf, query, readTable } from "@/src/data/query.ts";
+  `export {
+  by,
+  byDurationBins,
+  byNumberBins,
+  byPeriod,
+  frameOf,
+  measure,
+  not,
+  oneOf,
+  order,
+  present,
+  query,
+  readTable,
+  since,
+} from "@/src/data/query.ts";
 export { createRouterTransport, createClient } from "@connectrpc/connect";
-export { Collection, Format, QueryService } from "@/gen/ts/query/v1/query_pb.ts";
+export {
+  Collection,
+  CompareOp,
+  FilterGroupOp,
+  Format,
+  MeasureFn,
+  Period,
+  QueryService,
+} from "@/gen/ts/query/v1/query_pb.ts";
 export * as A from "apache-arrow";`,
 );
 const { A } = q;
@@ -227,29 +249,37 @@ test("a field without metadata is named by its ref", async () => {
   ]);
 });
 
-test("query asks QueryService for Arrow and reads its table", async () => {
+test("query asks QueryService for Arrow, in typed messages, and reads its table", async () => {
   const asked = [];
   const transport = q.createRouterTransport(({ service }) => {
     service(q.QueryService, {
       query(request) {
         asked.push(request);
-        return { arrow: tasks(), total: 40n };
+        return { table: tasks(), total: 40n };
       },
     });
   });
   const client = q.createClient(q.QueryService, transport);
   const table = await q.query(client, {
     collection: q.Collection.TASKS,
-    filter: ["status=done|null"],
-    sort: ["-create_time"],
+    filter: [q.oneOf("status", "done"), q.present("end_time")],
+    sort: [q.order("create_time", true)],
     select: ["code", "status"],
     limit: 2,
   });
   assert.equal(asked.length, 1);
   assert.equal(asked[0].format, q.Format.ARROW);
   assert.equal(asked[0].collection, q.Collection.TASKS);
-  assert.deepEqual(asked[0].filter, ["status=done|null"]);
-  assert.deepEqual(asked[0].sort, ["-create_time"]);
+  const [done, ended] = asked[0].filter;
+  assert.equal(done.where.case, "stringIn");
+  assert.equal(done.where.value.ref, "status");
+  assert.deepEqual(done.where.value.values, ["done"]);
+  // present is not null: a group that negates.
+  assert.equal(ended.where.case, "group");
+  assert.equal(ended.where.value.op, q.FilterGroupOp.NOT);
+  assert.equal(ended.where.value.filters[0].where.case, "null");
+  assert.equal(asked[0].sort[0].ref, "create_time");
+  assert.equal(asked[0].sort[0].desc, true);
   assert.deepEqual(asked[0].select, ["code", "status"]);
   assert.equal(asked[0].limit, 2);
   assert.equal(table.total, 40);
@@ -267,4 +297,35 @@ test("frameOf leaves out the list columns a chart never draws", async () => {
   // A table without lists is the frame as it is.
   const flat = await q.readTable(ipc([[field("code", new A.Utf8()), ["W1"]]]));
   assert.equal(q.frameOf(flat), flat);
+});
+
+test("the builders write QueryService's typed messages: times, bins, periods, measures", () => {
+  const at = new Date(Date.UTC(2026, 10, 1, 9, 30));
+  const f = q.since("create_time", at).where;
+  assert.equal(f.case, "time");
+  assert.equal(f.value.op, q.CompareOp.GREATER_THAN_EQUAL);
+  assert.equal(Number(f.value.value.seconds) * 1000, at.getTime());
+  const bins = q.byDurationBins("answer::delay", [0, 90_000]).bucket;
+  assert.equal(bins.case, "durationBins");
+  assert.deepEqual(
+    bins.value.bounds.map((d) => Number(d.seconds)),
+    [0, 90],
+  );
+  assert.deepEqual(q.byNumberBins("prompt::size", [0, 100]).bucket.value, {
+    bounds: [0, 100],
+  });
+  assert.deepEqual(q.byPeriod("create_time", q.Period.WEEK).bucket, {
+    case: "period",
+    value: q.Period.WEEK,
+  });
+  assert.deepEqual(q.by("type"), { ref: "type" });
+  assert.deepEqual(q.measure(q.MeasureFn.SUM, "usage.cost_usd", "cost"), {
+    ref: "usage.cost_usd",
+    fn: q.MeasureFn.SUM,
+    name: "cost",
+  });
+  assert.equal(
+    q.not(q.oneOf("type", "azima")).where.value.op,
+    q.FilterGroupOp.NOT,
+  );
 });

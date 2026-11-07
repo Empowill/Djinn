@@ -145,7 +145,7 @@ func param(fd protoreflect.FieldDescriptor) Param {
 // kindName is the type of a field, as the command line reads it.
 func kindName(fd protoreflect.FieldDescriptor) string {
 	switch {
-	case ref(fd) != nil:
+	case ref(fd) != nil, textField(fd) != nil:
 		return "string"
 	case isPair(fd):
 		return "pair"

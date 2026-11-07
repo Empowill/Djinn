@@ -2,13 +2,23 @@
 // column's type comes from the Arrow schema, never from its values: a whole number or a duration is a number (Arrow's
 // bigint read once), an instant a Date, an absent value null, never 0 (Q111 A). Each field's "djinn" metadata gives the
 // column its ref, label and unit, and an aggregated column what it reads. apache-arrow is loaded on demand.
+import type { MessageInitShape } from "@bufbuild/protobuf";
+import { durationFromMs, timestampFromDate } from "@bufbuild/protobuf/wkt";
 import type { Client } from "@connectrpc/connect";
 import type { Data, DataType, Field, Vector } from "apache-arrow";
 
 import {
-  type Collection,
+  CompareOp,
+  type FilterSchema,
+  FilterGroupOp,
   Format,
+  type GroupBySchema,
+  type MeasureFn,
+  type MeasureSchema,
+  type OrderSchema,
+  type Period,
   type QueryService,
+  type QueryServiceQueryRequestSchema,
 } from "../../gen/ts/query/v1/query_pb";
 import type { Cell, Column, ColumnType, Frame } from "../charts/frame";
 
@@ -36,16 +46,101 @@ export interface QueryTable {
   total: number;
 }
 
-// QueryRequest is what a query asks, in QueryService's texts: filter status=running, sort -create_time, group by
-// create_time::week, measure cost=usage.cost_usd::sum. The table always comes in Arrow.
-export interface QueryRequest {
-  collection: Collection;
-  filter?: string[];
-  sort?: string[];
-  select?: string[];
-  groupBy?: string[];
-  measure?: string[];
-  limit?: number;
+// QueryRequest is what a query asks, in QueryService's typed messages: the builders below write them. The table
+// always comes in Arrow, QueryService's standard.
+export type QueryRequest = Omit<
+  MessageInitShape<typeof QueryServiceQueryRequestSchema>,
+  "$typeName" | "format"
+>;
+
+export type FilterInit = MessageInitShape<typeof FilterSchema>;
+
+// not holds when filter does not: for In, an absent value included.
+export function not(filter: FilterInit): FilterInit {
+  return {
+    where: {
+      case: "group",
+      value: { op: FilterGroupOp.NOT, filters: [filter] },
+    },
+  };
+}
+
+// oneOf holds when ref, a text or an enum, is one of values, ignoring case: an enum by its value's name, prefix or
+// not (oneOf("type", "work")).
+export function oneOf(ref: string, ...values: string[]): FilterInit {
+  return { where: { case: "stringIn", value: { ref, values } } };
+}
+
+// present holds when ref has a value.
+export function present(ref: string): FilterInit {
+  return not({ where: { case: "null", value: { ref } } });
+}
+
+// since holds when the time ref is at or after at.
+export function since(ref: string, at: Date): FilterInit {
+  return {
+    where: {
+      case: "time",
+      value: {
+        ref,
+        op: CompareOp.GREATER_THAN_EQUAL,
+        value: timestampFromDate(at),
+      },
+    },
+  };
+}
+
+// by groups by each value of ref; byPeriod a time by period, in the machine's time zone.
+export function by(ref: string): MessageInitShape<typeof GroupBySchema> {
+  return { ref };
+}
+
+export function byPeriod(
+  ref: string,
+  period: Period,
+): MessageInitShape<typeof GroupBySchema> {
+  return { ref, bucket: { case: "period", value: period } };
+}
+
+// byDurationBins groups a duration by bins, their bounds in milliseconds; byNumberBins a number.
+export function byDurationBins(
+  ref: string,
+  boundsMs: readonly number[],
+): MessageInitShape<typeof GroupBySchema> {
+  return {
+    ref,
+    bucket: {
+      case: "durationBins",
+      value: { bounds: boundsMs.map((ms) => durationFromMs(ms)) },
+    },
+  };
+}
+
+export function byNumberBins(
+  ref: string,
+  bounds: readonly number[],
+): MessageInitShape<typeof GroupBySchema> {
+  return {
+    ref,
+    bucket: { case: "numberBins", value: { bounds: [...bounds] } },
+  };
+}
+
+// measure computes fn over ref in each group, its column named name, or ref::fn; without ref, it counts the rows.
+export function measure(
+  fn: MeasureFn,
+  ref = "",
+  name = "",
+): MessageInitShape<typeof MeasureSchema> {
+  return { ref, fn, name };
+}
+
+// order sorts by ref, or by a column of an aggregate.
+export function order(
+  ref: string,
+  desc = false,
+): MessageInitShape<typeof OrderSchema> {
+  return { ref, desc };
 }
 
 type Arrow = typeof import("./arrow");
@@ -71,7 +166,7 @@ export async function query(
     client.query({ ...request, format: Format.ARROW }, { signal }),
     loadArrow(),
   ]);
-  return readTable(response.arrow, Number(response.total));
+  return readTable(response.table, Number(response.total));
 }
 
 // readTable reads an Arrow IPC stream of QueryService into typed rows. total defaults to the rows read.

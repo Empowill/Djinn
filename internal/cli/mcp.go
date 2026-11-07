@@ -140,7 +140,7 @@ func fieldSchema(fd protoreflect.FieldDescriptor) map[string]any {
 // Schema ECMAScript.
 func valueSchema(fd protoreflect.FieldDescriptor) map[string]any {
 	switch {
-	case ref(fd) != nil, isPair(fd):
+	case ref(fd) != nil, isPair(fd), textField(fd) != nil:
 		return map[string]any{"type": "string"}
 	case fd.Kind() == protoreflect.MessageKind:
 		return map[string]any{"type": "string", "format": "date-time"}
@@ -358,6 +358,9 @@ func (s *mcpServer) call(ctx context.Context, md protoreflect.MethodDescriptor, 
 	res, err := call(ctx, cfg, md, req)
 	if err != nil {
 		return "", err
+	}
+	if t, ok := rawText(res); ok {
+		return t, nil
 	}
 	return indentedJSON(res)
 }
