@@ -1,8 +1,9 @@
 // The resources panel of the Hourglass (W542; under the flying carpet before) against the real djinn up --browser (see
 // global-setup.ts), its series and commands replaced by fixtures (W502): the charts say the value under the pointer and
 // at the arrow keys, grow as new samples come without losing the point shown, and a worker's eye opens its task in its
-// wish, on the Tasks tab. The commands of a project no active wish works on do not show.
-// Screenshots, dark and light, go to test-results/e2e/resources-*.png.
+// wish, on the Tasks tab. The Gates tab of the Hourglass lists every project's commands, the most total time first,
+// and the gate a worker holds links one tab to the other. Screenshots, dark and light, go to
+// test-results/e2e/resources-*.png and hourglass-*.png.
 import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 import { timestampFromMs } from "@bufbuild/protobuf/wkt";
 import { type Page, expect, test } from "./test";
@@ -14,6 +15,7 @@ import path from "node:path";
 
 import {
   CommandServiceListResponseSchema,
+  GateServiceListResponseSchema,
   MachineServiceSeriesRequestSchema,
   MachineServiceSeriesResponseSchema,
 } from "../gen/ts/machine/v1/machine_pb";
@@ -102,9 +104,23 @@ function series(taskId: string, wishId: string, title: string, end: number) {
           cpuPercent: 40,
           memoryBytes: 300n * MIB,
         })),
+        gates: [lint(taskId, times[4], times[8])],
       },
     ],
+    gates: [lint(taskId, times[4], times[8])],
   });
+}
+
+// W1 asked for lint at asked, and holds it since granted.
+function lint(taskId: string, asked: number, granted: number) {
+  return {
+    gate: "lint",
+    command: "go tool task lint",
+    taskId,
+    project: "oil",
+    askedTime: timestampFromMs(asked),
+    grantTime: timestampFromMs(granted),
+  };
 }
 
 // What came since: one sample of each.
@@ -171,7 +187,30 @@ async function routeResources(
       body: Buffer.from(toBinary(MachineServiceSeriesResponseSchema, message)),
     });
   });
-  // The commands of a project no active wish works on: none shows.
+  // The gates now: W1 holds lint, a holder outside any task waits for it.
+  await page.route("**/machine.v1.GateService/List", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/proto",
+      body: Buffer.from(
+        toBinary(
+          GateServiceListResponseSchema,
+          create(GateServiceListResponseSchema, {
+            gates: [
+              {
+                name: "lint",
+                holder: "W1: go tool task lint",
+                holderTaskId: taskId,
+                since: timestampFromMs(start - 60_000),
+                waiting: ["a holder outside any task: go tool task lint"],
+              },
+            ],
+          }),
+        ),
+      ),
+    }),
+  );
+  // The commands of every project, one at rest among them.
   await page.route("**/machine.v1.CommandService/List", (route) =>
     route.fulfill({
       status: 200,
@@ -340,35 +379,88 @@ test("the resources panel: values on hover and keys, live samples, and a worker'
     });
   }
 
-  // The Gates tab: machine CPU and RAM stacked above the gates and commands.
-  await panel.getByRole("tab", { name: "Gates" }).click();
-  // The commands of the wish's project, grouped under their gates, the most time first; none of a project at rest.
-  const commands = panel.locator(".resource-commands");
-  await expect(commands.locator(".resource-project-name")).toHaveText([
-    new RegExp(`^Project oil-${tag}`),
-  ]);
-  await expect(panel).not.toContainText("a project at rest");
-  await expect(commands.locator(".resource-project-top")).toHaveText(
-    "Most of its time: go tool task e2e (gate e2e), 47% of it.",
+  // W11: at 1280 px, the machine's CPU and memory charts and each worker's fit their card, the axis whole.
+  await page.setViewportSize({ width: 1280, height: 1400 });
+  // The widest overflow of a chart past its card, in px, once the charts have measured their new width.
+  const overflow = () =>
+    panel.evaluate((el) =>
+      Math.max(
+        ...[...el.querySelectorAll(".resource-chart")].map((chart) => {
+          const svg = chart.querySelector("svg.resource-chart-svg")!;
+          return Math.max(
+            svg.getBoundingClientRect().width -
+              chart.getBoundingClientRect().width,
+            chart.scrollWidth - chart.clientWidth,
+          );
+        }),
+      ),
+    );
+  await expect.poll(overflow).toBeLessThanOrEqual(1);
+  await page.setViewportSize({ width: 1440, height: 1400 });
+
+  // Machine has two tabs: the gates have their own tab in the Hourglass.
+  await expect(panel.getByRole("tab")).toHaveText(["Resources", "Disk"]);
+  // The gate W1 holds leads there, on the gate's card.
+  await worker.locator(".resource-worker-gate").click();
+  await expect(page.locator("#hourglass-tab-gates")).toHaveAttribute(
+    "aria-selected",
+    "true",
   );
-  await expect(commands.locator(".resource-gate-row th")).toHaveText([
-    "gate e2e",
-    "gate lint",
-    "gate test",
-  ]);
-  await expect(commands.locator(".resource-command-name code")).toHaveText([
+  const gates = page.locator(".gates-tab");
+  await expect(gates.locator("#gate-lint")).toBeInViewport();
+  await expect(gates.locator("#gate-lint")).toContainText(
+    "W1: go tool task lint, for",
+  );
+  await expect(gates.locator("#gate-lint")).toContainText(
+    "a holder outside any task",
+  );
+  // The last hour: W1's band on lint.
+  await expect(gates.locator(".gates-band")).toHaveCount(1);
+  // The commands of every project, the most total time first; the top one marked.
+  await expect(gates.locator(".gates-command-name code")).toHaveText([
     "go tool task e2e",
-    "go tool task e2e …",
+    "go tool task e2e",
     "go tool task lint",
-    "go test …",
+    "go tool task e2e -- e2e/wish-render.spec.ts",
+    "go tool task e2e -- e2e/resources.spec.ts",
+    "go test -tags headless ./internal/machine/",
+    "go test ./internal/store/",
   ]);
-  await expect(commands.locator(".resource-command-args").first()).toHaveText(
-    "2 sets of arguments: -- e2e/wish-render.spec.ts, -- e2e/resources.spec.ts",
+  await expect(gates.locator(".gates-command.is-top")).toContainText(
+    "a project at rest",
   );
+  // A line opens on its runs.
+  await gates.locator(".gates-command-open").nth(2).click();
+  await expect(gates.locator(".gates-runs tbody tr")).toHaveCount(1);
+  // The waits by gate, the most held first.
+  await expect(gates.locator(".gates-wait-row th")).toHaveText([
+    "e2e",
+    "test",
+    "lint",
+  ]);
   if (process.env.RESOURCE_SHOTS)
-    await commands.screenshot({
-      path: path.join(shots, "resources-commands-dark.png"),
-    });
+    for (const width of [1280, 760]) {
+      await page.setViewportSize({ width, height: 1400 });
+      await page.mouse.move(0, 0);
+      await page.evaluate(() => {
+        document.querySelector(".mission-scroll")!.scrollTop = 0;
+      });
+      await page.screenshot({
+        path: path.join(shots, `hourglass-gates-tab-${width}-dark.png`),
+        fullPage: true,
+      });
+    }
+  await page.setViewportSize({ width: 1440, height: 1400 });
+  // The holder's code leads back to its row on Machine.
+  await gates
+    .locator("#gate-lint")
+    .getByRole("button", { name: "W1", exact: true })
+    .click();
+  await expect(page.locator("#hourglass-tab-machine")).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await expect(worker).toBeInViewport();
 
   // Djinn apart from what it started, both named.
   await expect(panel.locator(".resource-legend li")).toHaveText([
@@ -428,13 +520,13 @@ test("the resources panel: values on hover and keys, live samples, and a worker'
     await plot.evaluate((el: SVGElement) => el.blur());
     await panel.locator(".consumption-panel-heading").scrollIntoViewIfNeeded();
     await panel.screenshot({
-      path: path.join(shots, "hourglass-gates-dark.png"),
+      path: path.join(shots, "hourglass-machine-dark.png"),
     });
     await panel.getByRole("tab", { name: "Disk" }).click();
     await panel.screenshot({
       path: path.join(shots, "hourglass-disk-dark.png"),
     });
-    // The light theme across all three tabs.
+    // The light theme across both tabs, and the Gates tab of the Hourglass.
     await page.evaluate(async () => {
       document.documentElement.dataset.theme = "light";
       await Promise.all(
@@ -448,10 +540,12 @@ test("the resources panel: values on hover and keys, live samples, and a worker'
     await panel.screenshot({
       path: path.join(shots, "hourglass-disk-light.png"),
     });
-    await panel.getByRole("tab", { name: "Gates" }).click();
-    await panel.screenshot({
-      path: path.join(shots, "hourglass-gates-light.png"),
+    await page.locator("#hourglass-tab-gates").click();
+    await page.screenshot({
+      path: path.join(shots, "hourglass-gates-tab-light.png"),
+      fullPage: true,
     });
+    await page.locator("#hourglass-tab-machine").click();
     await panel.getByRole("tab", { name: "Resources" }).click();
     await panel.screenshot({
       path: path.join(shots, "hourglass-resources-light.png"),

@@ -250,18 +250,17 @@ window reads them about once a minute, and catches up as it shows.
 
 ## The Hourglass
 
-**Hourglass**, Ctrl+2, has two tabs under its title: **Machine**, the live metrics, as time goes by, and
+**Hourglass**, Ctrl+2, has three large tabs under its title, each with its icon drawn as a wish's: **Machine**, the
+live metrics, as time goes by; **Gates**, what the gates do now and what the commands under them cost; and
 **Statistics**, what the work has been. It opens on the tab you left.
 
-**Machine.** The machine total stays at the top, with the time range from 10 minutes to 7 days, above three tabs.
+**Machine.** The machine total stays at the top, with the time range from 10 minutes to 7 days, above two tabs.
 
-- **Resources.** The CPU and memory of the whole machine (as in **Gates**), then CPU and memory heatmaps side by side
-  (one cell per running worker, its code on hover, stacked in a narrow page) and the running workers grouped by wish,
-  watchers last in each group: each worker's project, model, time, turns, cost, gate, and its own CPU and memory
-  graphs. Its eye opens the task in its wish.
-- **Gates.** The CPU and memory of the whole machine (one under the other: the whole machine, Djinn with everything it
-  started, and Djinn alone, with the load limit), then the gates held over time and the commands grouped by project and
-  by gate.
+- **Resources.** The CPU and memory of the whole machine (one under the other: the whole machine, Djinn with everything
+  it started, and Djinn alone, with the load limit), then CPU and memory heatmaps side by side (one cell per running
+  worker, its code on hover, stacked in a narrow page) and the running workers grouped by wish, watchers last in each
+  group: each worker's project, model, time, turns, cost, gate, and its own CPU and memory graphs. Its eye opens the
+  task in its wish; the gate it holds, or held, opens the **Gates** tab on that gate.
 - **Disk.** A bar of the whole disk (Go, Docker, Djinn worktrees, other caches, unmeasured and free space, with the
   30 GB and 10 GB disk-guard marks), above two tabs: **Djinn and its workers** (worktrees per project, Playwright,
   tilasms, scratch, logs, and any isolated Go build caches) and **Machine** (Go build cache and module cache, Docker
@@ -271,6 +270,21 @@ window reads them about once a minute, and catches up as it shows.
 
 A running task's card links to its row, **Live in the Hourglass**, on the Machine tab. The page reads its figures
 only while it shows: leave it, or fold its panel, and the reads stop. See [Machine and load](#machine-and-load).
+
+**Gates.** What the [gates](#gates) do, for every project of the machine.
+
+- **Four figures**: the gate requests and how many ran to their end, the wait for a gate (median and 90th percentile),
+  the waits over 5 seconds, and the highest peak memory of a command.
+- **Now**, read live while the tab shows: each gate held or waited for, who holds it and since when, what its holder
+  uses, who waits, the next one first. A holder's or a waiter's code opens its row on the Machine tab. A free gate says
+  its last hold.
+- **The last hour**: the gates held, hatched while a command waits, now on the right. Click a band to open its command
+  below. Djinn keeps these in memory: a restart forgets them.
+- **Commands admitted under a gate**: one line per command of a project, the most total time first (runs times mean
+  duration), the top one marked as the one worth making faster, with its gate, peak memory, CPU time and wait. A line
+  opens on its recent runs: when, which worker, duration, peak, CPU time, wait and exit code.
+- **Waits by gate**: per gate, its holds, the median and 90th percentile of the wait, the longest, and those over 5
+  seconds, over the last 200 runs Djinn keeps of each command.
 
 **Statistics.** The tasks of every wish, granted ones included, read as [queries](#queries): each figure and each card
 asks Djinn for its own total, computed by Djinn, and the window draws it as it comes; the cards asked together share
