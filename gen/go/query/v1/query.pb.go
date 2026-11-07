@@ -87,6 +87,84 @@ func (Collection) EnumDescriptor() ([]byte, []int) {
 	return file_query_v1_query_proto_rawDescGZIP(), []int{0}
 }
 
+// TaskType is what a task is, as the ref type of the tasks reads it: every task has one, where kind is set on a few.
+// The first that fits wins, in the order of the values from azima down.
+type TaskType int32
+
+const (
+	// Not set: never served, a task always has a type.
+	TaskType_TASK_TYPE_UNSPECIFIED TaskType = 0
+	// Work a worker does, of no other type: what the lead or the developer spawns, and the question workers.
+	TaskType_TASK_TYPE_WORK TaskType = 1
+	// A correction worker, which Djinn starts when a merge conflicts or its tests fail (Task.correction).
+	TaskType_TASK_TYPE_CORRECTION TaskType = 2
+	// A review worker, which Djinn starts on a worktree left with changes not committed (Task.review).
+	TaskType_TASK_TYPE_REVIEW TaskType = 3
+	// An investigation: a short study that ends in a tilasm and a question (TASK_KIND_INVESTIGATION).
+	TaskType_TASK_TYPE_INVESTIGATION TaskType = 4
+	// A mockup, whose work is a tilasm (TASK_KIND_MOCKUP).
+	TaskType_TASK_TYPE_MOCKUP TaskType = 5
+	// An ifrit, a worker that stays lit while the developer is there (TASK_KIND_IFRIT).
+	TaskType_TASK_TYPE_IFRIT TaskType = 6
+	// A watcher: a command Djinn runs, no agent (PROVIDER_WATCH).
+	TaskType_TASK_TYPE_WATCHER TaskType = 7
+	// An azima, a part of the plan no worker runs (TASK_KIND_AZIMA): its times sum its parts'.
+	TaskType_TASK_TYPE_AZIMA TaskType = 8
+)
+
+// Enum value maps for TaskType.
+var (
+	TaskType_name = map[int32]string{
+		0: "TASK_TYPE_UNSPECIFIED",
+		1: "TASK_TYPE_WORK",
+		2: "TASK_TYPE_CORRECTION",
+		3: "TASK_TYPE_REVIEW",
+		4: "TASK_TYPE_INVESTIGATION",
+		5: "TASK_TYPE_MOCKUP",
+		6: "TASK_TYPE_IFRIT",
+		7: "TASK_TYPE_WATCHER",
+		8: "TASK_TYPE_AZIMA",
+	}
+	TaskType_value = map[string]int32{
+		"TASK_TYPE_UNSPECIFIED":   0,
+		"TASK_TYPE_WORK":          1,
+		"TASK_TYPE_CORRECTION":    2,
+		"TASK_TYPE_REVIEW":        3,
+		"TASK_TYPE_INVESTIGATION": 4,
+		"TASK_TYPE_MOCKUP":        5,
+		"TASK_TYPE_IFRIT":         6,
+		"TASK_TYPE_WATCHER":       7,
+		"TASK_TYPE_AZIMA":         8,
+	}
+)
+
+func (x TaskType) Enum() *TaskType {
+	p := new(TaskType)
+	*p = x
+	return p
+}
+
+func (x TaskType) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (TaskType) Descriptor() protoreflect.EnumDescriptor {
+	return file_query_v1_query_proto_enumTypes[1].Descriptor()
+}
+
+func (TaskType) Type() protoreflect.EnumType {
+	return &file_query_v1_query_proto_enumTypes[1]
+}
+
+func (x TaskType) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use TaskType.Descriptor instead.
+func (TaskType) EnumDescriptor() ([]byte, []int) {
+	return file_query_v1_query_proto_rawDescGZIP(), []int{1}
+}
+
 // Format is how a query's table comes back.
 type Format int32
 
@@ -124,11 +202,11 @@ func (x Format) String() string {
 }
 
 func (Format) Descriptor() protoreflect.EnumDescriptor {
-	return file_query_v1_query_proto_enumTypes[1].Descriptor()
+	return file_query_v1_query_proto_enumTypes[2].Descriptor()
 }
 
 func (Format) Type() protoreflect.EnumType {
-	return &file_query_v1_query_proto_enumTypes[1]
+	return &file_query_v1_query_proto_enumTypes[2]
 }
 
 func (x Format) Number() protoreflect.EnumNumber {
@@ -137,7 +215,7 @@ func (x Format) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use Format.Descriptor instead.
 func (Format) EnumDescriptor() ([]byte, []int) {
-	return file_query_v1_query_proto_rawDescGZIP(), []int{1}
+	return file_query_v1_query_proto_rawDescGZIP(), []int{2}
 }
 
 // ColumnType is the type of a column, taken from the proto, never from the values a row holds.
@@ -197,11 +275,11 @@ func (x ColumnType) String() string {
 }
 
 func (ColumnType) Descriptor() protoreflect.EnumDescriptor {
-	return file_query_v1_query_proto_enumTypes[2].Descriptor()
+	return file_query_v1_query_proto_enumTypes[3].Descriptor()
 }
 
 func (ColumnType) Type() protoreflect.EnumType {
-	return &file_query_v1_query_proto_enumTypes[2]
+	return &file_query_v1_query_proto_enumTypes[3]
 }
 
 func (x ColumnType) Number() protoreflect.EnumNumber {
@@ -210,7 +288,7 @@ func (x ColumnType) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ColumnType.Descriptor instead.
 func (ColumnType) EnumDescriptor() ([]byte, []int) {
-	return file_query_v1_query_proto_rawDescGZIP(), []int{2}
+	return file_query_v1_query_proto_rawDescGZIP(), []int{3}
 }
 
 type QueryServiceQueryRequest struct {
@@ -636,7 +714,17 @@ const file_query_v1_query_proto_rawDesc = "" +
 	"\x10COLLECTION_TASKS\x10\x01\x12\x18\n" +
 	"\x14COLLECTION_QUESTIONS\x10\x02\x12\x15\n" +
 	"\x11COLLECTION_WISHES\x10\x03\x12\x17\n" +
-	"\x13COLLECTION_PROJECTS\x10\x04*B\n" +
+	"\x13COLLECTION_PROJECTS\x10\x04*\xdd\x01\n" +
+	"\bTaskType\x12\x19\n" +
+	"\x15TASK_TYPE_UNSPECIFIED\x10\x00\x12\x12\n" +
+	"\x0eTASK_TYPE_WORK\x10\x01\x12\x18\n" +
+	"\x14TASK_TYPE_CORRECTION\x10\x02\x12\x14\n" +
+	"\x10TASK_TYPE_REVIEW\x10\x03\x12\x1b\n" +
+	"\x17TASK_TYPE_INVESTIGATION\x10\x04\x12\x14\n" +
+	"\x10TASK_TYPE_MOCKUP\x10\x05\x12\x13\n" +
+	"\x0fTASK_TYPE_IFRIT\x10\x06\x12\x15\n" +
+	"\x11TASK_TYPE_WATCHER\x10\a\x12\x13\n" +
+	"\x0fTASK_TYPE_AZIMA\x10\b*B\n" +
 	"\x06Format\x12\x16\n" +
 	"\x12FORMAT_UNSPECIFIED\x10\x00\x12\x0e\n" +
 	"\n" +
@@ -670,29 +758,30 @@ func file_query_v1_query_proto_rawDescGZIP() []byte {
 	return file_query_v1_query_proto_rawDescData
 }
 
-var file_query_v1_query_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
+var file_query_v1_query_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
 var file_query_v1_query_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_query_v1_query_proto_goTypes = []any{
 	(Collection)(0),                    // 0: query.v1.Collection
-	(Format)(0),                        // 1: query.v1.Format
-	(ColumnType)(0),                    // 2: query.v1.ColumnType
-	(*QueryServiceQueryRequest)(nil),   // 3: query.v1.QueryServiceQueryRequest
-	(*QueryServiceQueryResponse)(nil),  // 4: query.v1.QueryServiceQueryResponse
-	(*QueryServiceSchemaRequest)(nil),  // 5: query.v1.QueryServiceSchemaRequest
-	(*QueryColumn)(nil),                // 6: query.v1.QueryColumn
-	(*QueryServiceSchemaResponse)(nil), // 7: query.v1.QueryServiceSchemaResponse
+	(TaskType)(0),                      // 1: query.v1.TaskType
+	(Format)(0),                        // 2: query.v1.Format
+	(ColumnType)(0),                    // 3: query.v1.ColumnType
+	(*QueryServiceQueryRequest)(nil),   // 4: query.v1.QueryServiceQueryRequest
+	(*QueryServiceQueryResponse)(nil),  // 5: query.v1.QueryServiceQueryResponse
+	(*QueryServiceSchemaRequest)(nil),  // 6: query.v1.QueryServiceSchemaRequest
+	(*QueryColumn)(nil),                // 7: query.v1.QueryColumn
+	(*QueryServiceSchemaResponse)(nil), // 8: query.v1.QueryServiceSchemaResponse
 }
 var file_query_v1_query_proto_depIdxs = []int32{
 	0, // 0: query.v1.QueryServiceQueryRequest.collection:type_name -> query.v1.Collection
-	1, // 1: query.v1.QueryServiceQueryRequest.format:type_name -> query.v1.Format
+	2, // 1: query.v1.QueryServiceQueryRequest.format:type_name -> query.v1.Format
 	0, // 2: query.v1.QueryServiceSchemaRequest.collection:type_name -> query.v1.Collection
-	2, // 3: query.v1.QueryColumn.type:type_name -> query.v1.ColumnType
+	3, // 3: query.v1.QueryColumn.type:type_name -> query.v1.ColumnType
 	0, // 4: query.v1.QueryColumn.jump:type_name -> query.v1.Collection
-	6, // 5: query.v1.QueryServiceSchemaResponse.columns:type_name -> query.v1.QueryColumn
-	3, // 6: query.v1.QueryService.Query:input_type -> query.v1.QueryServiceQueryRequest
-	5, // 7: query.v1.QueryService.Schema:input_type -> query.v1.QueryServiceSchemaRequest
-	4, // 8: query.v1.QueryService.Query:output_type -> query.v1.QueryServiceQueryResponse
-	7, // 9: query.v1.QueryService.Schema:output_type -> query.v1.QueryServiceSchemaResponse
+	7, // 5: query.v1.QueryServiceSchemaResponse.columns:type_name -> query.v1.QueryColumn
+	4, // 6: query.v1.QueryService.Query:input_type -> query.v1.QueryServiceQueryRequest
+	6, // 7: query.v1.QueryService.Schema:input_type -> query.v1.QueryServiceSchemaRequest
+	5, // 8: query.v1.QueryService.Query:output_type -> query.v1.QueryServiceQueryResponse
+	8, // 9: query.v1.QueryService.Schema:output_type -> query.v1.QueryServiceSchemaResponse
 	8, // [8:10] is the sub-list for method output_type
 	6, // [6:8] is the sub-list for method input_type
 	6, // [6:6] is the sub-list for extension type_name
@@ -710,7 +799,7 @@ func file_query_v1_query_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_query_v1_query_proto_rawDesc), len(file_query_v1_query_proto_rawDesc)),
-			NumEnums:      3,
+			NumEnums:      4,
 			NumMessages:   5,
 			NumExtensions: 0,
 			NumServices:   1,

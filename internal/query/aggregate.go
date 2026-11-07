@@ -213,7 +213,7 @@ func (c *compiler) aggregation(md protoreflect.MessageDescriptor, a Aggregation)
 				return nil, err
 			}
 			m.ref = &r
-			col.Field, col.Doc = r.col.Field, r.col.Doc
+			col.Field, col.Enum, col.Doc = r.col.Field, r.col.Enum, r.col.Doc
 			if ms.Fn != Count {
 				col.Unit = r.col.Unit
 			}

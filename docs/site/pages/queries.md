@@ -18,6 +18,14 @@ collection it leads to.
 to hold: a duration stays a duration even when the first row has none. An absent value stays absent, never a zero: a
 task without usage has no cost, which is not a cost of nothing.
 
+**Times and types of tasks.** The store does not keep how long a task worked: a query computes it from the task's
+runs and gate waits, as the task list does, as of the moment it runs. A task reads its time running, pauses and gates
+excluded, its time waiting for a gate, its time paused or interrupted between its first start and its end, and its
+wait before its first start. A task that never started has none of them but that wait. An azima's times sum its
+parts', so leave the azimas out when you add up work. Every task has a type, where only a few name their kind: work,
+correction, review, investigation, mockup, ifrit, watcher or azima. Measure, bin and group by these as by any ref: the
+median time running of the work done this week, the tasks created each day by type.
+
 **Filters.** Each filter names a ref, compares it and gives a value: equal, one of several values, none of them,
 greater or smaller than a number, a day or a duration, a text that contains or begins with another, ignoring case, or
 absent. All the filters of a query hold together. An equality on an identifier narrows what the store reads before

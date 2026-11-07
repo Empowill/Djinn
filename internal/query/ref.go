@@ -93,7 +93,7 @@ func path(md protoreflect.MessageDescriptor, p string, ahead bool) (Column, gett
 			if !ok {
 				return Column{}, nil, fmt.Errorf("%s.%s is a message: name one of its fields", md.FullName(), name)
 			}
-			col := Column{Ref: p, Type: typ, List: fd.IsList(), Field: fd, Jump: jump(fd), Unit: unit(fd)}
+			col := fieldColumn(p, fd, typ)
 			if ahead && col.Jump == "" {
 				return Column{}, nil, fmt.Errorf("%s.%s names no other collection", md.FullName(), name)
 			}
@@ -200,16 +200,16 @@ func coerce(col Column, v any) (any, error) {
 		}
 		return s, nil
 	case TypeEnum:
-		values := col.Field.Enum().Values()
+		values := col.Enum.Values()
 		if isText {
-			prefix := enumPrefix(col.Field.Enum())
+			prefix := enumPrefix(col.Enum)
 			for i := range values.Len() {
 				name := string(values.Get(i).Name())
 				if strings.EqualFold(s, name) || strings.EqualFold(prefix+s, name) {
 					return name, nil
 				}
 			}
-			return nil, fmt.Errorf("%s: %s is not a value of %s", col.Ref, s, col.Field.Enum().FullName())
+			return nil, fmt.Errorf("%s: %s is not a value of %s", col.Ref, s, col.Enum.FullName())
 		}
 		if n, ok := integer(v); ok {
 			if ev := values.ByNumber(protoreflect.EnumNumber(n)); ev != nil {
@@ -313,7 +313,7 @@ func compare(col Column, a, b any) int {
 		}
 		return strings.Compare(x, y)
 	case TypeEnum:
-		values := col.Field.Enum().Values()
+		values := col.Enum.Values()
 		number := func(v any) protoreflect.EnumNumber {
 			if ev := values.ByName(protoreflect.Name(v.(string))); ev != nil {
 				return ev.Number()

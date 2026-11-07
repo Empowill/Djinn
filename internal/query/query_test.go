@@ -280,7 +280,7 @@ func TestFromStore(t *testing.T) {
 	if err != nil || len(msgs) != 1 || msgs[0].(*planv1.Question).GetCode() != "Q1" {
 		t.Errorf("Load where wish Stats = %v, %v; want Q1", msgs, err)
 	}
-	if _, err := FromStore(s, &planv1.Block{}); err == nil {
+	if _, err := FromStore(s, &planv1.Answer{}); err == nil {
 		t.Error("FromStore of a type the store does not hold: no error")
 	}
 }

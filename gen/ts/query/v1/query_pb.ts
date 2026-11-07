@@ -15,7 +15,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file query/v1/query.proto.
  */
 export const file_query_v1_query: GenFile = /*@__PURE__*/
-  fileDesc("ChRxdWVyeS92MS9xdWVyeS5wcm90bxIIcXVlcnkudjEixQIKGFF1ZXJ5U2VydmljZVF1ZXJ5UmVxdWVzdBI1Cgpjb2xsZWN0aW9uGAEgASgOMhQucXVlcnkudjEuQ29sbGVjdGlvbkILukgIyAEBggECEAESIQoGZmlsdGVyGAIgAygJQhG6SA6SAQsQMiIHcgUQAhjQDxIfCgRzb3J0GAMgAygJQhG6SA6SAQsQCiIHcgUQARjIARIhCgZzZWxlY3QYBCADKAlCEbpIDpIBCxBkIgdyBRABGMgBEiMKCGdyb3VwX2J5GAUgAygJQhG6SA6SAQsQBSIHcgUQARj0AxIiCgdtZWFzdXJlGAYgAygJQhG6SA6SAQsQFCIHcgUQARjIARIWCgVsaW1pdBgHIAEoBUIHukgEGgIoABIqCgZmb3JtYXQYCCABKA4yEC5xdWVyeS52MS5Gb3JtYXRCCLpIBYIBAhABIlkKGVF1ZXJ5U2VydmljZVF1ZXJ5UmVzcG9uc2USEgoEdGV4dBgBIAEoCUIEsPQYARITCgVhcnJvdxgCIAEoDEIEkPQYARITCgV0b3RhbBgDIAEoA0IEkPQYASJSChlRdWVyeVNlcnZpY2VTY2hlbWFSZXF1ZXN0EjUKCmNvbGxlY3Rpb24YASABKA4yFC5xdWVyeS52MS5Db2xsZWN0aW9uQgu6SAjIAQGCAQIQASKqAQoLUXVlcnlDb2x1bW4SCwoDcmVmGAEgASgJEg0KBWxhYmVsGAIgASgJEiIKBHR5cGUYAyABKA4yFC5xdWVyeS52MS5Db2x1bW5UeXBlEgwKBGxpc3QYBCABKAgSDAoEdW5pdBgFIAEoCRILCgNkb2MYBiABKAkSIgoEanVtcBgHIAEoDjIULnF1ZXJ5LnYxLkNvbGxlY3Rpb24SDgoGdmFsdWVzGAggAygJIkQKGlF1ZXJ5U2VydmljZVNjaGVtYVJlc3BvbnNlEiYKB2NvbHVtbnMYASADKAsyFS5xdWVyeS52MS5RdWVyeUNvbHVtbiqIAQoKQ29sbGVjdGlvbhIaChZDT0xMRUNUSU9OX1VOU1BFQ0lGSUVEEAASFAoQQ09MTEVDVElPTl9UQVNLUxABEhgKFENPTExFQ1RJT05fUVVFU1RJT05TEAISFQoRQ09MTEVDVElPTl9XSVNIRVMQAxIXChNDT0xMRUNUSU9OX1BST0pFQ1RTEAQqQgoGRm9ybWF0EhYKEkZPUk1BVF9VTlNQRUNJRklFRBAAEg4KCkZPUk1BVF9DU1YQARIQCgxGT1JNQVRfQVJST1cQAirJAQoKQ29sdW1uVHlwZRIbChdDT0xVTU5fVFlQRV9VTlNQRUNJRklFRBAAEhYKEkNPTFVNTl9UWVBFX1NUUklORxABEhQKEENPTFVNTl9UWVBFX0VOVU0QAhITCg9DT0xVTU5fVFlQRV9JTlQQAxIVChFDT0xVTU5fVFlQRV9GTE9BVBAEEhQKEENPTFVNTl9UWVBFX0JPT0wQBRIUChBDT0xVTU5fVFlQRV9USU1FEAYSGAoUQ09MVU1OX1RZUEVfRFVSQVRJT04QBzLHAQoMUXVlcnlTZXJ2aWNlElkKBVF1ZXJ5EiIucXVlcnkudjEuUXVlcnlTZXJ2aWNlUXVlcnlSZXF1ZXN0GiMucXVlcnkudjEuUXVlcnlTZXJ2aWNlUXVlcnlSZXNwb25zZSIHkAIByPMYARJcCgZTY2hlbWESIy5xdWVyeS52MS5RdWVyeVNlcnZpY2VTY2hlbWFSZXF1ZXN0GiQucXVlcnkudjEuUXVlcnlTZXJ2aWNlU2NoZW1hUmVzcG9uc2UiB5ACAcjzGAFCjgEKDGNvbS5xdWVyeS52MUIKUXVlcnlQcm90b1ABWjFnaXRodWIuY29tL2VtcG93aWxsL2RqaW5uL2dlbi9nby9xdWVyeS92MTtxdWVyeXYxogIDUVhYqgIIUXVlcnkuVjHKAghRdWVyeVxWMeICFFF1ZXJ5XFYxXEdQQk1ldGFkYXRh6gIJUXVlcnk6OlYxYgZwcm90bzM", [file_buf_validate_validate, file_djinn_v1_options]);
+  fileDesc("ChRxdWVyeS92MS9xdWVyeS5wcm90bxIIcXVlcnkudjEixQIKGFF1ZXJ5U2VydmljZVF1ZXJ5UmVxdWVzdBI1Cgpjb2xsZWN0aW9uGAEgASgOMhQucXVlcnkudjEuQ29sbGVjdGlvbkILukgIyAEBggECEAESIQoGZmlsdGVyGAIgAygJQhG6SA6SAQsQMiIHcgUQAhjQDxIfCgRzb3J0GAMgAygJQhG6SA6SAQsQCiIHcgUQARjIARIhCgZzZWxlY3QYBCADKAlCEbpIDpIBCxBkIgdyBRABGMgBEiMKCGdyb3VwX2J5GAUgAygJQhG6SA6SAQsQBSIHcgUQARj0AxIiCgdtZWFzdXJlGAYgAygJQhG6SA6SAQsQFCIHcgUQARjIARIWCgVsaW1pdBgHIAEoBUIHukgEGgIoABIqCgZmb3JtYXQYCCABKA4yEC5xdWVyeS52MS5Gb3JtYXRCCLpIBYIBAhABIlkKGVF1ZXJ5U2VydmljZVF1ZXJ5UmVzcG9uc2USEgoEdGV4dBgBIAEoCUIEsPQYARITCgVhcnJvdxgCIAEoDEIEkPQYARITCgV0b3RhbBgDIAEoA0IEkPQYASJSChlRdWVyeVNlcnZpY2VTY2hlbWFSZXF1ZXN0EjUKCmNvbGxlY3Rpb24YASABKA4yFC5xdWVyeS52MS5Db2xsZWN0aW9uQgu6SAjIAQGCAQIQASKqAQoLUXVlcnlDb2x1bW4SCwoDcmVmGAEgASgJEg0KBWxhYmVsGAIgASgJEiIKBHR5cGUYAyABKA4yFC5xdWVyeS52MS5Db2x1bW5UeXBlEgwKBGxpc3QYBCABKAgSDAoEdW5pdBgFIAEoCRILCgNkb2MYBiABKAkSIgoEanVtcBgHIAEoDjIULnF1ZXJ5LnYxLkNvbGxlY3Rpb24SDgoGdmFsdWVzGAggAygJIkQKGlF1ZXJ5U2VydmljZVNjaGVtYVJlc3BvbnNlEiYKB2NvbHVtbnMYASADKAsyFS5xdWVyeS52MS5RdWVyeUNvbHVtbiqIAQoKQ29sbGVjdGlvbhIaChZDT0xMRUNUSU9OX1VOU1BFQ0lGSUVEEAASFAoQQ09MTEVDVElPTl9UQVNLUxABEhgKFENPTExFQ1RJT05fUVVFU1RJT05TEAISFQoRQ09MTEVDVElPTl9XSVNIRVMQAxIXChNDT0xMRUNUSU9OX1BST0pFQ1RTEAQq3QEKCFRhc2tUeXBlEhkKFVRBU0tfVFlQRV9VTlNQRUNJRklFRBAAEhIKDlRBU0tfVFlQRV9XT1JLEAESGAoUVEFTS19UWVBFX0NPUlJFQ1RJT04QAhIUChBUQVNLX1RZUEVfUkVWSUVXEAMSGwoXVEFTS19UWVBFX0lOVkVTVElHQVRJT04QBBIUChBUQVNLX1RZUEVfTU9DS1VQEAUSEwoPVEFTS19UWVBFX0lGUklUEAYSFQoRVEFTS19UWVBFX1dBVENIRVIQBxITCg9UQVNLX1RZUEVfQVpJTUEQCCpCCgZGb3JtYXQSFgoSRk9STUFUX1VOU1BFQ0lGSUVEEAASDgoKRk9STUFUX0NTVhABEhAKDEZPUk1BVF9BUlJPVxACKskBCgpDb2x1bW5UeXBlEhsKF0NPTFVNTl9UWVBFX1VOU1BFQ0lGSUVEEAASFgoSQ09MVU1OX1RZUEVfU1RSSU5HEAESFAoQQ09MVU1OX1RZUEVfRU5VTRACEhMKD0NPTFVNTl9UWVBFX0lOVBADEhUKEUNPTFVNTl9UWVBFX0ZMT0FUEAQSFAoQQ09MVU1OX1RZUEVfQk9PTBAFEhQKEENPTFVNTl9UWVBFX1RJTUUQBhIYChRDT0xVTU5fVFlQRV9EVVJBVElPThAHMscBCgxRdWVyeVNlcnZpY2USWQoFUXVlcnkSIi5xdWVyeS52MS5RdWVyeVNlcnZpY2VRdWVyeVJlcXVlc3QaIy5xdWVyeS52MS5RdWVyeVNlcnZpY2VRdWVyeVJlc3BvbnNlIgeQAgHI8xgBElwKBlNjaGVtYRIjLnF1ZXJ5LnYxLlF1ZXJ5U2VydmljZVNjaGVtYVJlcXVlc3QaJC5xdWVyeS52MS5RdWVyeVNlcnZpY2VTY2hlbWFSZXNwb25zZSIHkAIByPMYAUKOAQoMY29tLnF1ZXJ5LnYxQgpRdWVyeVByb3RvUAFaMWdpdGh1Yi5jb20vZW1wb3dpbGwvZGppbm4vZ2VuL2dvL3F1ZXJ5L3YxO3F1ZXJ5djGiAgNRWFiqAghRdWVyeS5WMcoCCFF1ZXJ5XFYx4gIUUXVlcnlcVjFcR1BCTWV0YWRhdGHqAglRdWVyeTo6VjFiBnByb3RvMw", [file_buf_validate_validate, file_djinn_v1_options]);
 
 /**
  * @generated from message query.v1.QueryServiceQueryRequest
@@ -286,6 +286,83 @@ export const CollectionSchema: GenEnum<Collection> = /*@__PURE__*/
   enumDesc(file_query_v1_query, 0);
 
 /**
+ * TaskType is what a task is, as the ref type of the tasks reads it: every task has one, where kind is set on a few.
+ * The first that fits wins, in the order of the values from azima down.
+ *
+ * @generated from enum query.v1.TaskType
+ */
+export enum TaskType {
+  /**
+   * Not set: never served, a task always has a type.
+   *
+   * @generated from enum value: TASK_TYPE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * Work a worker does, of no other type: what the lead or the developer spawns, and the question workers.
+   *
+   * @generated from enum value: TASK_TYPE_WORK = 1;
+   */
+  WORK = 1,
+
+  /**
+   * A correction worker, which Djinn starts when a merge conflicts or its tests fail (Task.correction).
+   *
+   * @generated from enum value: TASK_TYPE_CORRECTION = 2;
+   */
+  CORRECTION = 2,
+
+  /**
+   * A review worker, which Djinn starts on a worktree left with changes not committed (Task.review).
+   *
+   * @generated from enum value: TASK_TYPE_REVIEW = 3;
+   */
+  REVIEW = 3,
+
+  /**
+   * An investigation: a short study that ends in a tilasm and a question (TASK_KIND_INVESTIGATION).
+   *
+   * @generated from enum value: TASK_TYPE_INVESTIGATION = 4;
+   */
+  INVESTIGATION = 4,
+
+  /**
+   * A mockup, whose work is a tilasm (TASK_KIND_MOCKUP).
+   *
+   * @generated from enum value: TASK_TYPE_MOCKUP = 5;
+   */
+  MOCKUP = 5,
+
+  /**
+   * An ifrit, a worker that stays lit while the developer is there (TASK_KIND_IFRIT).
+   *
+   * @generated from enum value: TASK_TYPE_IFRIT = 6;
+   */
+  IFRIT = 6,
+
+  /**
+   * A watcher: a command Djinn runs, no agent (PROVIDER_WATCH).
+   *
+   * @generated from enum value: TASK_TYPE_WATCHER = 7;
+   */
+  WATCHER = 7,
+
+  /**
+   * An azima, a part of the plan no worker runs (TASK_KIND_AZIMA): its times sum its parts'.
+   *
+   * @generated from enum value: TASK_TYPE_AZIMA = 8;
+   */
+  AZIMA = 8,
+}
+
+/**
+ * Describes the enum query.v1.TaskType.
+ */
+export const TaskTypeSchema: GenEnum<TaskType> = /*@__PURE__*/
+  enumDesc(file_query_v1_query, 1);
+
+/**
  * Format is how a query's table comes back.
  *
  * @generated from enum query.v1.Format
@@ -317,7 +394,7 @@ export enum Format {
  * Describes the enum query.v1.Format.
  */
 export const FormatSchema: GenEnum<Format> = /*@__PURE__*/
-  enumDesc(file_query_v1_query, 1);
+  enumDesc(file_query_v1_query, 2);
 
 /**
  * ColumnType is the type of a column, taken from the proto, never from the values a row holds.
@@ -386,7 +463,7 @@ export enum ColumnType {
  * Describes the enum query.v1.ColumnType.
  */
 export const ColumnTypeSchema: GenEnum<ColumnType> = /*@__PURE__*/
-  enumDesc(file_query_v1_query, 2);
+  enumDesc(file_query_v1_query, 3);
 
 /**
  * QueryService reads a collection of Djinn's data as a table. A ref names a column: a field by its path (code,
