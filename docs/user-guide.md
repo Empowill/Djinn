@@ -799,6 +799,42 @@ worker's own gate is in its slot. An admission takes none, unless its command is
 worker waits (`5 workers run, 1 slot is kept for merges and pushes, the most this machine holds`), and a merge's gate
 takes that slot. On a machine of one slot, none is kept: only the order above applies.
 
+### The memory brake
+
+The gates share the machine; what escapes them can still fill its memory: a process a command left running, a command
+run through an absolute path, an agent without a hook, or simply the sum of the workers. The kernel's ceilings stop a
+runaway (a worker's scope and containers); the memory brake catches a slower growth, which no ceiling sees. It never
+cuts a command the gates admitted.
+
+- **When.** Under 10 % of the machine's memory available, or a PSI full of 20 (every task waited for memory a fifth of
+  the last 10 s), two readings in a row, a second apart. `djinn up --brake-memory` (or `DJINN_BRAKE_MEMORY`) sets the
+  percent; 0 turns the brake off. The PSI threshold is fixed.
+- **Whom.** Among the running workers, the one whose memory grew most over the last minute (256 MiB at least) while
+  holding no gate nor admission: its scope's anonymous memory and its task's containers', not the page cache. Never
+  Djinn, its merges, pushes and checks, the lead, a watcher, a question worker or an ifrit; a worker a `git` runs in
+  waits for the next reading, so that no repository lock stays frozen.
+- **How.** It freezes the worker where it is (its scope's `cgroup.freeze`, as a pause) and its containers (`docker
+  pause`); the task shows paused, `memory brake: 6% of memory available (1.9 GiB); it grew 1 GiB in 1 min outside the
+  gates`, and its slot stays its own. One freeze every 10 s at most.
+- **Then.** Still frozen after 30 s with the memory short, it is interrupted: its task resumes later in its session,
+  once the machine allows (`resuming: memory brake: frozen 30 s, the memory stayed short…`), its containers removed.
+  An agent that cannot resume its session (Antigravity) stays frozen until calm instead.
+- **Admitted commands.** A worker whose command a gate admitted is never interrupted, nor frozen while anything else
+  grows, nor while a worker frozen for a growth outside the gates waits for its interruption. Only when admitted
+  workers alone grow does the brake freeze the last one admitted, and that one only thaws: its command lives on, its
+  admission is not taken back, and the gates keep the peak it reached as its command's cost, which its next run waits
+  for. It may hold a named gate meanwhile: under such pressure the gates grant nothing to anyone.
+- **Calm.** Above the percent plus 5 and a PSI full under 5 for a minute, the last frozen worker thaws, its containers
+  first, then the one before after another minute.
+- **Told.** The lead of each worker's wish hears every freeze, interruption and thaw (`W12 thawed: the memory is calm
+  again (40% available). Frozen 3 min at 6 GiB, its command's peak kept by the gates, left out of its budget.`).
+  Resumed by hand (**Resume**, `djinn task resume`), a frozen worker thaws with its containers, and the brake forgets
+  it.
+- **Budget.** A frozen worker's time is left out of its 2 hours, as a pause's is, and a worker just thawed is judged
+  neither silent nor stalled for its frozen time.
+
+On Windows, where a worker cannot pause, there is no brake.
+
 ## When Djinn stops and starts again
 
 Nothing is lost. Stopping Djinn interrupts the workers; the next `djinn up` resumes each one by itself, in the same

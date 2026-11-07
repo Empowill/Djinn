@@ -22,6 +22,9 @@ type Containers struct {
 	Read func(taskID string) (machine.Group, error)
 	// Remove removes the containers that carry every label given (key=value); nil: none removed.
 	Remove func(ctx context.Context, labels ...string)
+	// Pause freezes the running containers that carry every label given, or thaws the paused ones, and says how many
+	// (wrap.Pause): the memory brake's (brake.go); nil: none frozen.
+	Pause func(ctx context.Context, pause bool, labels ...string) int
 }
 
 // WithContainers has Djinn count each worker's containers in its task's series, and remove them once it ends.
