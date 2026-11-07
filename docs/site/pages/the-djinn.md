@@ -35,7 +35,8 @@ from its branch changes, write scopes, or the paths, packages and specs named in
 ## Talking with the Djinn
 
 The Djinn talks to you only in the window: by [questions](#question-and-move) when a choice or a move is yours, and in the
-bubble held to **Write to the Djinn** when it answers your words or tells a decision it took alone. No terminal needs
+bubble held to **Write to the Djinn**, in one sentence that fades after 2 minutes, when it acknowledges your words or
+tells a decision it took alone. No terminal needs
 to run it: Djinn drives it by default, one batch of events at a time.
 
 You have three ways to reach it:

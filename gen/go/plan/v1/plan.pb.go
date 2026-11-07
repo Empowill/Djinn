@@ -19894,8 +19894,7 @@ type LeadServiceSayRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The wish the reply or decision is about.
 	WishId string `protobuf:"bytes,1,opt,name=wish_id,json=wishId,proto3" json:"wish_id,omitempty"`
-	// What to show in the window's bubble, at most 600 characters; for a longer answer, write a report block and name it
-	// here.
+	// What to show in the window's bubble: one sentence, at most 160 characters on one line.
 	Text string `protobuf:"bytes,2,opt,name=text,proto3" json:"text,omitempty"`
 	// Mark this as a decision the lead took alone, instead of a reply to a message from the window.
 	Decided       bool `protobuf:"varint,3,opt,name=decided,proto3" json:"decided,omitempty"`

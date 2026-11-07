@@ -538,7 +538,7 @@ func TestOneAnswerReachesTheLeadOnce(t *testing.T) {
 }
 
 // TestLeadSay (Q78): LeadService.Say puts a block of kind "reply" (or "decided" with --decided) from the lead on the
-// wish, refuses empty text or more than 600 runes, and refuses a worker.
+// wish, refuses empty text or more than one sentence (MaxLeadSayRunes, one line), and refuses a worker.
 func TestLeadSay(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
@@ -592,18 +592,26 @@ func TestLeadSay(t *testing.T) {
 		t.Errorf("empty text err = %v, want InvalidArgument", err)
 	}
 
-	// Exactly 600 multi-byte runes passes; 601 runes is refused with guidance to write a report block.
+	// One sentence fits the bubble (T70): exactly MaxLeadSayRunes multi-byte runes pass, one more is refused, and so is
+	// a second line, with --decided too; the refusal points to a question or a report block.
 	if _, err := c.lead.Say(ctx, connect.NewRequest(&planv1.LeadServiceSayRequest{
 		WishId: wishID,
 		Text:   strings.Repeat("★", MaxLeadSayRunes),
 	})); err != nil {
-		t.Errorf("600 runes err = %v", err)
+		t.Errorf("%d runes err = %v", MaxLeadSayRunes, err)
 	}
-	if _, err := c.lead.Say(ctx, connect.NewRequest(&planv1.LeadServiceSayRequest{
-		WishId: wishID,
-		Text:   strings.Repeat("★", MaxLeadSayRunes+1),
-	})); connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "--kind report") {
-		t.Errorf("601 runes err = %v, want InvalidArgument naming --kind report", err)
+	for _, refused := range []*planv1.LeadServiceSayRequest{
+		{WishId: wishID, Text: strings.Repeat("★", MaxLeadSayRunes+1)},
+		{WishId: wishID, Text: strings.Repeat("★", MaxLeadSayRunes+1), Decided: true},
+		{WishId: wishID, Text: "Done.\nW12 merged."},
+		{WishId: wishID, Text: "Done.\r\nW12 merged.", Decided: true},
+	} {
+		_, err := c.lead.Say(ctx, connect.NewRequest(refused))
+		if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "one sentence") ||
+			!strings.Contains(err.Error(), "djinn question ask") || !strings.Contains(err.Error(), "--kind report") {
+			t.Errorf("Say(%q, decided %v) err = %v, want InvalidArgument naming one sentence, a question and a report",
+				refused.Text, refused.Decided, err)
+		}
 	}
 
 	// Unknown wish refused.

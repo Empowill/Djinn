@@ -184,7 +184,9 @@ When the Djinn answers a message you sent from **Write to the Djinn** or tells a
 the porthole on **Write to the Djinn**, blinks once, and holds a speech bubble to the left of the pill (or above the box
 when open or in a narrow window). At rest, the bubble shows two lines and a count when several messages wait; hovering
 over it unfolds the full text and, for a reply, the line you sent; clicking it marks the message seen and shows the next
-one in line, or closes the bubble. Unseen messages from the last twenty-four hours come back after a reload.
+one in line, or closes the bubble. Each message is one sentence, an acknowledgement; it fades on its own 2 minutes
+after it shows, held while the pointer rests on it, and a faded message counts as seen. Unseen messages from the last
+twenty-four hours come back after a reload.
 
 From one place to the next it flies on a curve, slowly enough to be followed, and lands in the margin: at rest, it
 covers nothing and scrolls with what it watches. It flies under Write to the Djinn, never over it: there its porthole
