@@ -659,7 +659,7 @@ test("a tilasm opened from a question's link is commented over the view, as in t
     .locator(".question-card")
     .filter({ hasText: question })
     .locator(".question-context")
-    .getByRole("link", { name: href });
+    .getByRole("link", { name: "Notices of the lead" });
   await link.evaluate((el) => el.scrollIntoView({ block: "center" }));
   await link.click();
   const over = page.locator(".main-shell > .tilasm-view.over");

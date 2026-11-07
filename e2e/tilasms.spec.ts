@@ -299,7 +299,7 @@ test("a tilasm a question links to opens full size over the wish's page and the 
       const card = view.locator(".question-card").filter({ hasText: question });
       const link = card
         .locator(".question-context")
-        .getByRole("link", { name: href });
+        .getByRole("link", { name: "The lamp's anatomy" });
       const hemp = card.getByRole("button", { name: /Hemp/ });
       await hemp.click();
       await expect(hemp).toHaveAttribute("aria-pressed", "true");

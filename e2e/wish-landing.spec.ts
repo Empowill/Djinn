@@ -141,7 +141,7 @@ test("a click on a wish in the side panel brings back its questions", async ({
     const link = rows
       .filter({ hasText: wick })
       .locator(".question-context")
-      .getByRole("link", { name: href });
+      .getByRole("link", { name: "The lamp's anatomy" });
     // In the middle of the view: at its top, the bar of what waits for you would take the click.
     await link.evaluate((el) => el.scrollIntoView({ block: "center" }));
     await link.click();
