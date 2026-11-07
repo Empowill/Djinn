@@ -1268,6 +1268,7 @@ func (q *Questions) Ask(
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New(
 			"--wait is for a worker, about its own task: a question of the lead or the developer blocks no worker"))
 	}
+	var linkWarnings []string // A tilasm link that names no tilasm, left as written.
 	err := write(ctx, q.Store, req.Spec(), m, func(tx *store.Tx) error {
 		if _, err := store.Get[*planv1.Wish](ctx, tx, question.GetWishId()); err != nil {
 			return err
@@ -1299,6 +1300,9 @@ func (q *Questions) Ask(
 				return err
 			}
 		}
+		if linkWarnings, err = linkTilasms(ctx, tx, question); err != nil {
+			return err
+		}
 		return Ask(ctx, tx, question)
 	})
 	if err != nil {
@@ -1308,7 +1312,7 @@ func (q *Questions) Ask(
 		f(ctx, proto.CloneOf(question))
 	}
 	return connect.NewResponse(&planv1.QuestionServiceAskResponse{
-		Question: question, Warnings: ContextWarnings(question.GetContext()),
+		Question: question, Warnings: append(ContextWarnings(question.GetContext()), linkWarnings...),
 	}), nil
 }
 
