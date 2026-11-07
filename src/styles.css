@@ -354,6 +354,24 @@ html[data-theme="light"] .wordmark-period {
 .nav-item:hover {
   color: var(--n-e7);
 }
+/* No agent can lead yet: a yellow dot on the Summoning Circle's entry, at the end of its line, or on its compass
+   folded (W578). */
+.summoning-nav {
+  position: relative;
+}
+.summoning-alert {
+  flex-shrink: 0;
+  width: 0.5rem;
+  height: 0.5rem;
+  margin-left: auto;
+  border-radius: 50%;
+  background: var(--st-waiting);
+}
+.sidebar-collapsed .summoning-alert {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.75rem;
+}
 .nav-item.active {
   background: var(--n-28);
   color: var(--n-e7);
@@ -1279,6 +1297,24 @@ html[data-theme="light"] .wordmark-period {
   color: var(--n-b6);
 }
 
+/* A sign-in's line wraps rather than squeezing its name: the name keeps its width (W578: at 900 px, or in a narrow
+   column, the badges and Pause ran over it), what does not fit goes to a second row; its state, switch and buttons
+   go together, on the right. */
+.sign-in-line {
+  flex-wrap: wrap;
+  row-gap: 0.5rem;
+}
+.sign-in-line > div {
+  flex: 1 1 auto;
+}
+.sign-in-controls {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.75rem;
+  margin-left: auto;
+}
+
 /* A sign-in's usage, under its line (agent-setup.tsx SignInUsage): aligned with its name, one block with it. */
 .provider-setting:has(+ .sign-in-usage) {
   border-bottom: 0;
@@ -1919,6 +1955,12 @@ html[data-still] .operating-load * {
   .mission-nav,
   .profile {
     justify-content: center;
+  }
+  .sidebar .nav-item > .summoning-alert {
+    display: block;
+    position: absolute;
+    top: 0.5rem;
+    right: 0.75rem;
   }
   .mission-list {
     margin-top: 0.9375rem;

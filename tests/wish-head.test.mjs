@@ -3,21 +3,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { screens, setupMockDom } from "./screens.mjs";
+import { screens } from "./screens.mjs";
 
 const { s, h, live } = await screens();
 
-test("Lead is split: the button resumes the one lead, focused on the wish, the arrow lists this machine's agents", () => {
-  const agents = [
-    { id: "codex", name: "Codex", available: false, command: "codex" },
-    { id: "claude", name: "Claude", available: true, command: "/bin/claude" },
-    {
-      id: "antigravity",
-      name: "Antigravity",
-      available: true,
-      command: "/bin/agy",
-    },
-  ];
+test("Lead is one button: Talk to the Djinn resumes the one lead, focused on the wish; no agent selector beside it (W578)", () => {
   const recorded = s.recordedAgent({
     provider: s.Provider.UNSPECIFIED,
     sessionId: "s1",
@@ -32,62 +22,25 @@ test("Lead is split: the button resumes the one lead, focused on the wish, the a
     s.recordedAgent({ provider: s.Provider.ANTIGRAVITY, sessionId: "" }),
     s.Provider.ANTIGRAVITY,
   );
-  const props = {
-    recorded,
-    agents,
-    loadAgents: async () => agents,
-    onLead() {},
-    onPick() {},
-  };
+  const props = { onLead() {} };
 
-  // Closed: Lead, then the arrow, which says it opens a menu.
+  // Talk to the Djinn alone: the agents, the models and the accounts are chosen in the Summoning Circle.
   const closed = s.renderToStaticMarkup(h(s.LeadButton, props));
-  assert.match(closed, /<span>Talk to the Djinn<\/span><\/button>/);
-  assert.match(
+  assert.equal(
+    closed.replace(/<svg[^]*?<\/svg>/, "<svg/>"),
+    '<button class="button secondary small" title="Opens the Djinn&#x27;s terminal, focused on this wish"><svg/><span>Talk to the Djinn</span></button>',
+  );
+  assert.doesNotMatch(
     closed,
-    /aria-label="Choose the agent"[^>]*aria-haspopup="menu" aria-expanded="false"/,
+    /Choose the agent|aria-haspopup|role="menu"|Set up the agents/,
   );
-  assert.doesNotMatch(closed, /role="menu"/);
-
-  // Open: claude, codex, antigravity in that order; the recorded one marked, the missing one disabled with why.
-  const open = s.renderToStaticMarkup(
-    h(s.LeadButton, { ...props, open: true }),
-  );
-  assert.match(open, /aria-expanded="true"/);
-  assert.match(
-    open,
-    /<div class="lead-menu" role="menu" aria-label="Choose the agent">/,
-  );
-  const order = ["Claude", "Codex", "Antigravity"].map((name) =>
-    open.indexOf(`<span class="lead-agent-name">${name}`),
-  );
-  assert.ok(
-    order[0] > 0 && order[0] < order[1] && order[1] < order[2],
-    order.join(),
-  );
-  assert.match(
-    open,
-    /<button role="menuitem" class="lead-agent current" aria-current="true"><span class="lead-agent-name">Claude<svg[^]*?The Djinn&#x27;s agent: resumes it, focused on this wish/,
-  );
-  assert.match(
-    open,
-    /<button role="menuitem" class="lead-agent" disabled=""><span class="lead-agent-name">Codex<\/span><span class="lead-agent-detail">codex is not installed on this machine<\/span>/,
-  );
-  assert.match(
-    open,
-    /<button role="menuitem" class="lead-agent"><span class="lead-agent-name">Antigravity<\/span><span class="lead-agent-detail">Starts the Djinn anew on this agent, from the brief<\/span>/,
-  );
-  // On the flying carpet, on no wish: neither the button nor the menu speaks of a wish.
+  // On the flying carpet, on no wish: the button does not speak of a wish.
   const carpet = s.renderToStaticMarkup(
-    h(s.LeadButton, { ...props, focused: false, open: true }),
+    h(s.LeadButton, { ...props, focused: false }),
   );
   assert.match(
     carpet,
     /<button class="button secondary small" title="Opens the Djinn&#x27;s terminal">/,
-  );
-  assert.match(
-    carpet,
-    /<span class="lead-agent-name">Claude<svg[^]*?<span class="lead-agent-detail">The Djinn&#x27;s agent: resumes it<\/span>/,
   );
   assert.doesNotMatch(carpet, /this wish/);
   // The lead could not start, or ended: a dot on Lead, its tooltip saying why, until Lead starts it again.
@@ -114,21 +67,6 @@ test("Lead is split: the button resumes the one lead, focused on the wish, the a
     h(s.LeadButton, { ...props, trouble: s.leadTrouble({ code: 0 }, "") }),
   );
   assert.match(quit, /<span class="lead-dot" aria-hidden="true">/);
-
-  // The agents not yet known: the menu says it loads.
-  const loading = s.renderToStaticMarkup(
-    h(s.LeadMenu, { recorded, onPick() {} }),
-  );
-  assert.match(loading, /Loading…/);
-  // Last, the way to set the agents up, when the window offers it.
-  assert.doesNotMatch(open, /Set up the agents/);
-  const setup = s.renderToStaticMarkup(
-    h(s.LeadButton, { ...props, open: true, onSetup() {} }),
-  );
-  assert.match(
-    setup,
-    /Antigravity<\/span>[^]*<button role="menuitem" class="lead-agent"><span class="lead-agent-name"><svg[^]*?<\/svg>Set up the agents<\/span><\/button><\/div>/,
-  );
 });
 
 test("the wish's description shows under its title, the title until one is written, and edits in place", () => {
@@ -438,12 +376,7 @@ test("the wish's head says where its work lands, and a click changes the branch"
   );
 });
 
-test("while Djinn drives the lead, its menu moves it to another agent, account or model in one click", () => {
-  const agents = [
-    { id: "claude", name: "Claude", available: true, command: "claude" },
-    { id: "codex", name: "Codex", available: true, command: "codex" },
-    { id: "antigravity", name: "Antigravity", available: true, command: "agy" },
-  ];
+test("seatName names a seat as the attention bar says it: the agent, then its account's label", () => {
   const accounts = [
     {
       name: "work",
@@ -458,52 +391,6 @@ test("while Djinn drives the lead, its menu moves it to another agent, account o
       configDirectory: "/home/d/.codex-gpt",
     },
   ];
-  const drive = {
-    seat: {
-      provider: s.Provider.CLAUDE,
-      model: "claude-opus-5-5",
-      account: "work",
-    },
-    accounts,
-  };
-  const markup = s.renderToStaticMarkup(
-    h(s.LeadMenu, { agents, drive, onPick() {}, onMove() {} }),
-  );
-  // Each agent on its own sign-in, then on each account; the seat marked, with its model; Antigravity disabled.
-  const order = [
-    "Claude</span>",
-    "Claude · Work",
-    "Codex</span>",
-    "Codex · gpt",
-    "Antigravity",
-  ].map((name) => markup.indexOf(`<span class="lead-agent-name">${name}`));
-  assert.ok(
-    order.every((at, i) => at > 0 && (i === 0 || at > order[i - 1])),
-    order.join(),
-  );
-  assert.match(
-    markup,
-    /<button role="menuitem" class="lead-agent current" aria-current="true"><span class="lead-agent-name">Claude · Work<svg[^]*?The Djinn runs here, on claude-opus-5-5<\/span>/,
-  );
-  assert.match(
-    markup,
-    /<button role="menuitem" class="lead-agent" disabled=""><span class="lead-agent-name">Antigravity<\/span><span class="lead-agent-detail">Cannot lead yet: use Claude Code or Codex<\/span>/,
-  );
-  assert.match(
-    markup,
-    /Moves the Djinn here: its next batch starts here, with its journal/,
-  );
-  assert.match(
-    markup,
-    /<input placeholder="The agent&#x27;s default" aria-label="Model" value="claude-opus-5-5"\/>/,
-  );
-  // Its seats alone: the accounts, their order and their gauges live in the Summoning Circle (W540).
-  const withSetup = s.renderToStaticMarkup(
-    h(s.LeadMenu, { agents, drive, onPick() {}, onMove() {}, onSetup() {} }),
-  );
-  assert.doesNotMatch(withSetup, /Set up the agents/);
-  assert.doesNotMatch(withSetup, /sign-in-grip|usage-gauge/);
-  // The seat's name, as the attention bar says it.
   assert.equal(
     s.seatName({ provider: s.Provider.CODEX, account: "gpt" }, accounts),
     "Codex · gpt",
@@ -518,181 +405,16 @@ test("while Djinn drives the lead, its menu moves it to another agent, account o
   );
 });
 
-test("driven, Lead has no Talk to the Djinn: a chip names the seat, its menu moves the lead (Decision Q115 B)", () => {
-  const accounts = [
-    {
-      name: "work",
-      provider: s.Provider.CLAUDE,
-      label: "Work",
-      configDirectory: "/home/d/.claude-work",
-    },
-  ];
-  const drive = {
-    seat: {
-      provider: s.Provider.CLAUDE,
-      model: "claude-opus-5-5",
-      account: "",
-    },
-    accounts,
-  };
+test("driven, Lead has neither Talk to the Djinn nor a seat's chip: its batch and journal alone, the seat chosen in the Circle (W578)", () => {
   const markup = s.renderToStaticMarkup(
     h(s.LeadButton, {
-      agents: [],
-      loadAgents: async () => [],
       trouble: { text: "The Djinn could not start: boom", failed: true },
-      drive,
+      drive: {},
       onLead() {},
-      onPick() {},
-      onMove() {},
     }),
   );
-  assert.doesNotMatch(markup, /Talk to the Djinn/);
-  assert.doesNotMatch(markup, /split-button|lead-dot/);
-  assert.match(
-    markup,
-    /<div class="lead-seat-wrap"><button class="button secondary small lead-seat" aria-label="The Djinn runs on Claude Code · opus 5\.5: move it" title="Move the Djinn to another agent or model, pin it on an account, or let it follow the order of the accounts" aria-haspopup="menu" aria-expanded="false"><span>Claude Code · opus 5\.5<\/span><svg/,
-  );
-
-  // The seat's model, else the one its last batch ran on that agent, else none: the agent's default.
-  assert.equal(
-    s.seatLabel({
-      seat: { provider: s.Provider.CLAUDE, model: "", account: "work" },
-      accounts,
-      batch: { provider: s.Provider.CLAUDE, model: "claude-sonnet-5-5" },
-    }),
-    "Claude Code · Work · sonnet 5.5",
-  );
-  assert.equal(
-    s.seatLabel({
-      seat: { provider: s.Provider.CODEX, model: "", account: "" },
-      accounts,
-      batch: { provider: s.Provider.CLAUDE, model: "claude-sonnet-5-5" },
-    }),
-    "Codex",
-  );
-  assert.equal(s.seatLabel({ accounts: [] }), "Claude Code");
-  // Following the order, the chip names the account its batch runs on, and says when it runs past its limits.
-  assert.equal(
-    s.seatLabel({
-      seat: { provider: s.Provider.CLAUDE, model: "", account: "" },
-      pinned: false,
-      accounts,
-      batch: {
-        provider: s.Provider.CLAUDE,
-        model: "claude-opus-5-5",
-        account: "work",
-        overflow: true,
-        state: s.LeadBatchState.RUNNING,
-      },
-    }),
-    "Claude Code · Work · opus 5.5 · in overflow",
-  );
-});
-
-test("the Djinn's menu offers Follows the order first, pins it on a sign-in of its agent, and still moves it to another agent", async () => {
-  const agents = [
-    { id: "claude", name: "Claude", available: true, command: "claude" },
-    { id: "codex", name: "Codex", available: true, command: "codex" },
-  ];
-  const accounts = [
-    { name: "work", provider: s.Provider.CLAUDE, label: "Work" },
-    { name: "gpt", provider: s.Provider.CODEX, label: "" },
-  ];
-  const seat = { provider: s.Provider.CLAUDE, model: "", account: "work" };
-  const menu = (pinned) =>
-    s.renderToStaticMarkup(
-      h(s.LeadMenu, {
-        agents,
-        drive: { seat, accounts, pinned },
-        onPick() {},
-        onMove() {},
-        onPin() {},
-      }),
-    );
-  // Following the order: Follows the order is marked, first; each sign-in of Claude pins it there.
-  const follows = menu(false);
-  assert.match(
-    follows,
-    /^<div class="lead-menu" role="menu" aria-label="[^"]+"><button role="menuitem" class="lead-agent current" aria-current="true"><span class="lead-agent-name">Follows the order<svg[^]*?The Djinn follows the order of the accounts<\/span>/,
-  );
-  assert.match(
-    follows,
-    /<span class="lead-agent-name">Claude · Work<\/span><span class="lead-agent-detail">Pins the Djinn here: each batch starts here, whatever the order<\/span>/,
-  );
-  assert.match(
-    follows,
-    /<span class="lead-agent-name">Codex · gpt<\/span><span class="lead-agent-detail">Moves the Djinn here/,
-  );
-  // Pinned on work: work is marked, Follows the order takes the pin off.
-  const pinned = menu(true);
-  assert.match(
-    pinned,
-    /<button role="menuitem" class="lead-agent"><span class="lead-agent-name">Follows the order<\/span><span class="lead-agent-detail">Each batch starts on the first free sign-in of Claude Code in the order of the accounts<\/span>/,
-  );
-  assert.match(
-    pinned,
-    /class="lead-agent current" aria-current="true"><span class="lead-agent-name">Claude · Work<svg[^]*?The Djinn is pinned here<\/span>/,
-  );
-
-  // A click on Follows the order unpins, on Claude's own sign-in pins there, on Codex moves.
-  const container = setupMockDom();
-  const below = (el, out = []) => {
-    for (const child of el.childNodes) {
-      out.push(child);
-      below(child, out);
-    }
-    return out;
-  };
-  const props = (el) =>
-    el[Object.keys(el).find((k) => k.startsWith("__reactProps$"))];
-  // The text of a node: its text nodes', or what React set whole.
-  const text = (el) =>
-    el.nodeType === 3
-      ? (el.nodeValue ?? "")
-      : el.childNodes.length
-        ? el.childNodes.map(text).join("")
-        : (el.textContent ?? "");
-  const item = (name) =>
-    below(container).find(
-      (el) =>
-        el.attributes?.role === "menuitem" &&
-        below(el).some(
-          (c) =>
-            String(c.attributes?.class ?? "") === "lead-agent-name" &&
-            text(c) === name,
-        ),
-    );
-  const pins = [];
-  const moves = [];
-  const root = s.createRoot(container);
-  try {
-    await s.act(async () =>
-      root.render(
-        h(s.LeadMenu, {
-          agents,
-          drive: { seat, accounts, pinned: true },
-          onPick() {},
-          onMove: (to) => moves.push(to),
-          onPin: (pin) => pins.push(pin),
-        }),
-      ),
-    );
-    props(item("Follows the order")).onClick();
-    props(item("Claude")).onClick();
-    props(item("Codex")).onClick();
-    assert.deepEqual(pins, [
-      { account: "", unpin: true },
-      { account: "", unpin: false },
-    ]);
-    assert.deepEqual(moves, [
-      { provider: s.Provider.CODEX, account: "", model: "" },
-    ]);
-  } finally {
-    s.act(() => root.unmount());
-    await new Promise((r) => setTimeout(r, 30));
-    for (const handle of process._getActiveHandles())
-      if (handle?.constructor?.name === "MessagePort") handle.unref();
-  }
+  assert.equal(markup, "");
+  assert.doesNotMatch(markup, /Talk to the Djinn|lead-dot|lead-seat|menu/);
 });
 
 test("next to Lead, Djinn shows the running batch (since when, events, cost) and a failed batch's retry", () => {
@@ -807,23 +529,12 @@ test("next to Lead, the journal lists past batches (model, session, launches, la
   // Inside LeadButton: shows the running/failed batch chip and the Journal button next to Lead.
   const buttonMarkup = s.renderToStaticMarkup(
     h(s.LeadButton, {
-      agents: [
-        { id: "claude", name: "Claude", available: true, command: "claude" },
-      ],
-      loadAgents: async () => [],
       journalOpen: true,
       drive: {
-        seat: {
-          provider: s.Provider.CLAUDE,
-          model: "claude-opus-4-6",
-          account: "",
-        },
-        accounts: [],
         batch: { ...batches[0], state: s.LeadBatchState.RUNNING },
         journal: batches,
       },
       onLead() {},
-      onPick() {},
     }),
   );
   assert.match(buttonMarkup, /class="lead-batch running"/);

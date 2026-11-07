@@ -1,7 +1,7 @@
 // The setup of the agents, and the accounts screen: one line per agent, where it stands, and one button for its next
 // step, which says what it does on hover. Install and sign in run the agent's own command in a terminal of the panel,
 // so nobody opens a terminal of theirs; once the command ends, Djinn checks again. Shown at the top of the Summoning
-// Circle's page (summoning-circle.tsx), in the settings, and by itself when the window opens with no agent ready. Then every sign-in of every agent in one list,
+// Circle's page (summoning-circle.tsx), where the window opens when no agent can lead, and in the settings. Then every sign-in of every agent in one list,
 // the developer's order of priority (decision Q295 B, tilasm L49 v2 mockup A), ranked by drag and drop or Alt+Arrow
 // (sign-in-order.tsx, djinn lead order): the agent's own and its accounts, a sign-in each in a folder of the agent's
 // own, signed in once by the agent's own command; Djinn keeps no token, and shows none. Each pauses and resumes from
@@ -51,7 +51,6 @@ import {
 } from "../gen/ts/ui/v1/ui_pb";
 import { message } from "./data/client";
 import { useDjinn, useOptionalData } from "./data/djinn";
-import { ModalFrame } from "./frame";
 import { type TextKey, language, t } from "./i18n";
 import { type TerminalStatus, fitSafely, mountTerminal } from "./lead-terminal";
 import { type Ranked, RankedSignIns, reordered } from "./sign-in-order";
@@ -67,6 +66,22 @@ export function needsSetup(agent: AgentEnvironment): boolean {
   return (
     agent.state === ProviderState.MISSING ||
     agent.state === ProviderState.SIGNED_OUT
+  );
+}
+
+// leadReady tells whether a session of the Djinn can start: an agent that leads is installed and signed in (needsSetup).
+// Antigravity leads in its terminal only: while Djinn drives the lead, it does not count. With no agent told yet, the
+// lead is not held for missing: nothing warns. Without one, the Summoning Circle's entry wears a yellow dot, and the
+// window opens on the Circle (W578).
+export function leadReady(
+  env: UiServiceGetEnvironmentResponse,
+  driven = false,
+): boolean {
+  return (
+    env.providers.length === 0 ||
+    env.providers.some(
+      (agent) => !needsSetup(agent) && (!driven || agent.id !== "antigravity"),
+    )
   );
 }
 
@@ -807,61 +822,66 @@ function SignInRow({
             {t("agents.overflowing")}
           </span>
         )}
-        <span className="status-text">
-          <span className={`status-dot ${state.dot}`} />
-          {t(state.label)}
+        <span className="sign-in-controls">
+          <span className="status-text">
+            <span className={`status-dot ${state.dot}`} />
+            {t(state.label)}
+          </span>
+          {signIn && (
+            <button
+              type="button"
+              className="button small accent"
+              title={`${t("agents.account_login_detail")}\n${setup.loginCommand}`}
+              disabled={busy}
+              onClick={() => onRun(id, "login", setup.loginCommand)}
+            >
+              <LogIn size={13} />
+              {t("agents.login")}
+            </button>
+          )}
+          {onUnlimited && (
+            <button
+              type="button"
+              role="switch"
+              className="sign-in-unlimited-switch"
+              aria-checked={usage?.unlimited ?? false}
+              aria-label={t("agents.unlimited_switch", {
+                name: account ? account.label || account.name : agent.name,
+              })}
+              title={t("agents.unlimited_switch_detail")}
+              onClick={() =>
+                onUnlimited(
+                  id,
+                  unlimitedFor(usage, !(usage?.unlimited ?? false)),
+                )
+              }
+            >
+              <span className={`toggle${usage?.unlimited ? " on" : ""}`}>
+                <span />
+              </span>
+              {t("agents.unlimited")}
+            </button>
+          )}
+          <PauseButton
+            agentId={agent.id}
+            account={account?.name ?? ""}
+            paused={paused}
+            onPaused={onPaused}
+            onError={setError}
+          />
+          {account && (
+            <button
+              type="button"
+              className="button secondary small"
+              title={t("agents.account_forget_detail")}
+              aria-label={t("agents.account_forget")}
+              disabled={busy}
+              onClick={forget}
+            >
+              <X size={13} />
+            </button>
+          )}
         </span>
-        {signIn && (
-          <button
-            type="button"
-            className="button small accent"
-            title={`${t("agents.account_login_detail")}\n${setup.loginCommand}`}
-            disabled={busy}
-            onClick={() => onRun(id, "login", setup.loginCommand)}
-          >
-            <LogIn size={13} />
-            {t("agents.login")}
-          </button>
-        )}
-        {onUnlimited && (
-          <button
-            type="button"
-            role="switch"
-            className="sign-in-unlimited-switch"
-            aria-checked={usage?.unlimited ?? false}
-            aria-label={t("agents.unlimited_switch", {
-              name: account ? account.label || account.name : agent.name,
-            })}
-            title={t("agents.unlimited_switch_detail")}
-            onClick={() =>
-              onUnlimited(id, unlimitedFor(usage, !(usage?.unlimited ?? false)))
-            }
-          >
-            <span className={`toggle${usage?.unlimited ? " on" : ""}`}>
-              <span />
-            </span>
-            {t("agents.unlimited")}
-          </button>
-        )}
-        <PauseButton
-          agentId={agent.id}
-          account={account?.name ?? ""}
-          paused={paused}
-          onPaused={onPaused}
-          onError={setError}
-        />
-        {account && (
-          <button
-            type="button"
-            className="button secondary small"
-            title={t("agents.account_forget_detail")}
-            aria-label={t("agents.account_forget")}
-            disabled={busy}
-            onClick={forget}
-          >
-            <X size={13} />
-          </button>
-        )}
       </div>
       <SignInUsage
         id={id}
@@ -1279,25 +1299,5 @@ function StepTerminal({ step, onEnded }: { step: Step; onEnded: () => void }) {
             : status.message}
       </p>
     </div>
-  );
-}
-
-// AgentSetup is the panel on its own, as the window opens it when no agent is ready.
-export function AgentSetup({ onClose }: { onClose: () => void }) {
-  const agents = useAgents();
-  return (
-    <ModalFrame
-      title={t("agents.title")}
-      eyebrow={t("settings.eyebrow")}
-      onClose={onClose}
-      wide
-    >
-      <AgentSetupPanel agents={agents} />
-      <div className="modal-footer">
-        <button type="button" className="button secondary" onClick={onClose}>
-          {t("common.close")}
-        </button>
-      </div>
-    </ModalFrame>
   );
 }

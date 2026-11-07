@@ -46,8 +46,8 @@ You have three ways to reach it:
   Djinn with the wish named, whole, in the next batch, and the Djinn's eye answers in the bubble held to the pill.
 - **Talk to the Djinn**, at the top of a wish or of the flying carpet, is there only when the Djinn runs in its
   terminal: it opens that terminal in the window, focused on that wish. Driven by Djinn, the Djinn has no terminal to
-  open: at the top, a chip names where it runs, and a batch that failed twice is retried from its line in the **Lead**
-  journal.
+  open: at the top, its running batch and journal show, and a batch that failed twice is retried from its line in the
+  **Lead** journal.
 
 ## Djinn drives the lead
 
@@ -68,8 +68,8 @@ By default, Djinn drives the lead itself (decisions Q31, Q51), and no terminal r
   [the Djinn's eye](#the-window-the-djinn-s-eye) follows the batch by its colour and its gaze (emerald while listening,
   blue with a wandering gaze while thinking, two blinks and a flare of its golden flame when done, red under a lowered
   lid when it fails), and the **Lead** journal in [What runs](#the-window-the-workers-glance) writes one line per
-  command as the batch goes, then its duration and cost when done, or the cause when it fails. Beside the chip of the
-  Djinn's seat, at the top, the running batch shows since when it runs, how many events it took and its cost so far; the
+  command as the batch goes, then its duration and cost when done, or the cause when it fails. At the top of a wish or
+  of the flying carpet, the running batch shows since when it runs, how many events it took and its cost so far; the
   count beside it opens the journal of past batches. A wish's **History** tab shows the batches that touched that wish, and the command
   line prints the journal for every wish or for one. To read what a batch's session saw and did beyond the journal's
   summary, the command line (permitted to workers too, in read-only mode) lists the batches' sessions with their local
@@ -80,16 +80,15 @@ By default, Djinn drives the lead itself (decisions Q31, Q51), and no terminal r
   plan mode without touching the batch.
 - **Write to the Djinn** sends your words to the next batch, whole. Nothing reaches a terminal: the Djinn answers in the
   bubble held to the pill, or asks a question when a choice is yours.
-- **A failed batch** gets one new session, shown beside the chip of the Djinn's seat while it retries. Failed again,
+- **A failed batch** gets one new session, shown at the top while it retries. Failed again,
   it stays there and its events wait: the next event, or **Retry** at the end of its red line in the **Lead** journal,
   starts a session for them.
-- **Where it runs.** The Djinn runs on a seat you choose: an agent (Claude Code, Codex or Antigravity), a model, an account. The
-  chip at the top of a wish or of the flying carpet names it ("Claude Code · Work · opus 5.5", with "in overflow" while
-  its batch runs past its limits). Its menu starts with **Follows the order**, marked while the Djinn follows it: each
-  batch then starts on the sign-in of its agent the mode picks (dynamic or manual order), as a new task does,
-  its agent and model kept. Then each sign-in of its agent: one click pins the Djinn there, whatever the order, until
-  you click Follows the order again, which takes the pin off. Then the other agents, on their own sign-in and on each
-  account, and the model: one click moves the Djinn there. The command line does the same: djinn lead pin work pins
+- **Where it runs.** The Djinn runs on a seat you choose in the [Summoning Circle](#the-window-the-summoning-circle),
+  the one place for it (the top of the window has no selector): an agent (Claude Code, Codex or Antigravity) and a
+  model on the Djinn's row, an account with **The Djinn's account**, above the accounts list. **Follows the order**
+  lets each batch start on the sign-in of its agent the mode picks (dynamic or manual order), as a new task does, its
+  agent and model kept; a sign-in of its agent pins the Djinn there, whatever the order, until you choose Follows the
+  order again, which takes the pin off. A crown marks the sign-in where it runs. The command line does the same: djinn lead pin work pins
   it, djinn lead pin with no name pins it on its agent's own sign-in, djinn lead pin --unpin takes the pin off, and
   djinn lead move moves it (to an account, it pins it there). The next batch starts there with the lead's journal.
 - **A limit moves the Djinn along the order.** When the Djinn hits its subscription's limit, that account stays
@@ -98,8 +97,8 @@ By default, Djinn drives the lead itself (decisions Q31, Q51), and no terminal r
   on this machine. One click sends the waiting events there. Without a click, they wait for the first limit of its
   agent to reset.
 - **Several subscriptions on one machine.** An account is a folder of the agent's own, beside its default one, where
-  it keeps its login: Claude Code's configuration folder, Codex's home. The agents' setup, in the settings or from
-  the Djinn's menu, lists each agent, then the accounts screen: every sign-in in the order of priority. Its last line
+  it keeps its login: Claude Code's configuration folder, Codex's home. The agents' setup, in the Summoning Circle or
+  the settings, lists each agent, then the accounts screen: every sign-in in the order of priority. Its last line
   adds one: the agent, a name such as
   work, a label such as Work, as djinn lead add-account takes them. Sign in there once with the agent's own command,
   from the account's line, in the panel's terminal; Djinn keeps no token and shows none, only the folder. Antigravity
@@ -175,8 +174,10 @@ switches cleanly: the lead terminal is dropped, no waiting event is lost, and th
 - **At every start**, Djinn brings the terminal Djinn back on its session, in its terminal. **Talk to the Djinn** does
   the same if it does not run, or shows it if it does. A new Djinn starts on Claude Code, from its brief, in the first
   of your projects with a folder on this machine, never in your home folder.
-- **Choose the agent**, the arrow beside **Talk to the Djinn**, lists the agents found on this machine. While the
-  terminal Djinn runs, picking another agent starts nothing: Djinn says to quit it in its terminal first. A small dot
+- **Another agent** is chosen in the [Summoning Circle](#the-window-the-summoning-circle): when the Djinn's row names
+  another agent than the recorded session's, **Start the Djinn on** that agent starts a new session there from the
+  brief, which becomes the Djinn. While the terminal Djinn runs, it starts nothing: Djinn says to quit it in its
+  terminal first. A small dot
   on **Talk to the Djinn** says the Djinn could not start, or that its program ended: its tooltip gives the error or the
   exit code, and its tab keeps its last output.
 - **When its agent asks for approval** in its terminal (a command to run, a folder to trust), Djinn reads that choice
