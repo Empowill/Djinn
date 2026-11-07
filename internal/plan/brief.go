@@ -963,8 +963,7 @@ func movingBrief(
 }
 
 // azimaBranchText says, for a wish that pushes per azima, the own branch of the azima t and where its pull or merge
-// request stands, as its card shows them: "branch `ET-4368-x`, pull request open: <url>". Proposed, its branch is
-// pushed with none open (W593): the lead opens it as a draft, by a task.
+// request stands, as its card shows them: "branch `ET-4368-x`, pull request open: <url>".
 func azimaBranchText(t *planv1.Task) string {
 	text := "branch `" + AzimaBranchName(t) + "`"
 	if t.GetAzima().GetNamed() {
@@ -972,7 +971,7 @@ func azimaBranchText(t *planv1.Task) string {
 	}
 	switch pr := t.GetAzima().GetPr(); pr.GetState() {
 	case planv1.AzimaPrState_AZIMA_PR_STATE_PROPOSED:
-		text += ", pushed with no pull request: open it as a draft, by a task (`djinn lead notes azima-draft-request`)"
+		text += ", pull request proposed"
 	case planv1.AzimaPrState_AZIMA_PR_STATE_OPEN:
 		text += ", pull request open"
 	case planv1.AzimaPrState_AZIMA_PR_STATE_MERGED:

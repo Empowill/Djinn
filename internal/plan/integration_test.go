@@ -241,14 +241,9 @@ func TestBriefSaysWhereWorkLands(t *testing.T) {
 		},
 	}, &planv1.Task{
 		Id: store.NewID(), WishId: azimas.GetId(), ProjectId: ids[0], Code: "T2", Title: "Other subject", Kind: planv1.TaskKind_TASK_KIND_AZIMA,
-	}, &planv1.Task{ // W593: pushed with no request, the lead opens it.
-		Id: store.NewID(), WishId: azimas.GetId(), ProjectId: ids[0], Code: "T3", Title: "Pushed", Kind: planv1.TaskKind_TASK_KIND_AZIMA,
-		Azima: &planv1.Azima{Pr: &planv1.AzimaPr{State: planv1.AzimaPrState_AZIMA_PR_STATE_PROPOSED}},
 	})
 	lines[azimas.GetId()+" T1"] = "- **T1** Silae: ready, open; branch `ET-4368-silae` (named), pull request open: " + mr + "\n"
 	lines[azimas.GetId()+" T2"] = "- **T2** Other subject: ready, open; branch `djinn/T2-other-subject`\n"
-	lines[azimas.GetId()+" T3"] = "- **T3** Pushed: ready, open; branch `djinn/T3-pushed`, pushed with no pull request: open it as a " +
-		"draft, by a task (`djinn lead notes azima-draft-request`)\n"
 	global, err := BuildGlobalBrief(ctx, c.store, home)
 	if err != nil {
 		t.Fatal(err)
