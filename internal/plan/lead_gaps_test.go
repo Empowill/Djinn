@@ -15,7 +15,7 @@ import (
 // watch that followed a running task. The digest's own (TestDigest*) are beside it, in leadwatch_test.go.
 
 // TestQuestionGet: djinn question get prints one question as it stands, its answer and note whole, without what its
-// revisions replaced; a code two wishes share needs the wish.
+// revisions replaced; a code two wishes share needs the wish, unless only one of them is open (W481).
 func TestQuestionGet(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
@@ -35,6 +35,13 @@ func TestQuestionGet(t *testing.T) {
 	}
 	other := &planv1.Question{Id: store.NewID(), Code: "Q01", WishId: w2, Text: "Another one?"}
 	c.put(t, q, other)
+	byCode := &planv1.QuestionRef{Ref: &planv1.QuestionRef_Code{Code: "Q01"}}
+	if res, err := c.questions.Get(ctx, connect.NewRequest(&planv1.QuestionServiceGetRequest{Question: byCode})); err != nil ||
+		res.Msg.GetQuestion().GetId() != other.GetId() {
+		t.Errorf("a code of two wishes, one open = %v, %v; want the open one, %s", res, err, other.GetId())
+	}
+	other.Answer = &planv1.Answer{Choice: planv1.Choice_CHOICE_YES}
+	c.put(t, other)
 
 	get := func(req *planv1.QuestionServiceGetRequest) (*planv1.Question, error) {
 		res, err := c.questions.Get(ctx, connect.NewRequest(req))
@@ -43,7 +50,6 @@ func TestQuestionGet(t *testing.T) {
 		}
 		return res.Msg.GetQuestion(), nil
 	}
-	byCode := &planv1.QuestionRef{Ref: &planv1.QuestionRef_Code{Code: "Q01"}}
 	if _, err := get(&planv1.QuestionServiceGetRequest{Question: byCode}); code(err) != connect.CodeFailedPrecondition ||
 		!strings.Contains(err.Error(), "--wish-id") {
 		t.Errorf("a code of two wishes, no wish = %v, want failed_precondition naming --wish-id", err)

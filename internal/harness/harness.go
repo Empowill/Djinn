@@ -86,6 +86,9 @@ type Harness struct {
 	children *children
 
 	beforeStart func() // runs before a worker's process starts (WithBeforeStart); nil: nothing
+	// netSigned runs in a worker's pump once its error was read as a network sign, before the run ends: a test
+	// pauses there (withNetSigned); nil: nothing.
+	netSigned func(taskID string)
 
 	clock func() time.Time // nil: the machine's (WithClock)
 
@@ -179,6 +182,8 @@ type Harness struct {
 	ifritWarned  func(*planv1.Task)           // shows that an ifrit goes out soon (WarnIfrits), guarded by mu; nil: nothing shows
 	maxTurns     int                          // ceiling on model turns budget per task (lamplighter.go)
 	version      string                       // version of the running binary (WithVersion)
+	resumeHeld   string                       // why this start resumes no worker (WithResumeHeld); "" resumes them
+	heldTasks    []string                     // the tasks interrupted Recover held, by their codes, guarded by mu
 	builtFrom    map[string]string            // by project id: the branch the running binary was built from (compare.go)
 	runs         map[string]*run              // by task id
 	changed      chan struct{}                // closed at the next change of a task without worker (notifyLocked)
@@ -224,6 +229,7 @@ type run struct {
 	slotPaused         bool                 // paused to give its slot to an investigator: resumed first when a slot frees
 	netPaused          bool                 // paused while the network is down: resumed once it is back (network.go)
 	inTool             bool                 // a tool call of the worker runs: the network does not pause it (network.go)
+	failing            bool                 // the worker said its error and is ending on it: the network does not pause it (W646)
 	forced             bool                 // started or resumed by hand, whatever the slots (Harness.Forced)
 	holdWhy            string               // why the worker holds still (preemption or pause reason)
 	preemptedWhy       string               // if set, stopping to make room for an investigator
@@ -452,7 +458,7 @@ func (h *Harness) Recover(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	var interrupted, out []string
+	var interrupted, heldWatchers, out []string
 	for _, t := range tasks {
 		switch t.GetStatus() {
 		case planv1.TaskStatus_TASK_STATUS_PENDING, planv1.TaskStatus_TASK_STATUS_RUNNING, planv1.TaskStatus_TASK_STATUS_PAUSED:
@@ -465,8 +471,12 @@ func (h *Harness) Recover(ctx context.Context) error {
 				continue
 			}
 			// Stopped as the last djinn up ended (end): its worker ran, resumed by Djinn or not.
-			if !lastStart.IsZero() && t.GetEndTime().AsTime().After(lastStart) && !watching(t) {
-				interrupted = append(interrupted, t.GetCode())
+			if !lastStart.IsZero() && t.GetEndTime().AsTime().After(lastStart) {
+				if !watching(t) {
+					interrupted = append(interrupted, t.GetCode())
+				} else if h.resumeHeld != "" {
+					heldWatchers = append(heldWatchers, t.GetCode())
+				}
 			}
 			continue
 		default:
@@ -485,6 +495,8 @@ func (h *Harness) Recover(ctx context.Context) error {
 		}
 		if !watching(t) { // A watcher is no worker: the restart line counts it apart.
 			interrupted = append(interrupted, t.GetCode())
+		} else if h.resumeHeld != "" {
+			heldWatchers = append(heldWatchers, t.GetCode())
 		}
 		nowPb := timestamppb.New(h.now())
 		t.Status, t.Error, t.EndTime = planv1.TaskStatus_TASK_STATUS_INTERRUPTED, "djinn up ended while the worker ran", nowPb
@@ -508,14 +520,22 @@ func (h *Harness) Recover(ctx context.Context) error {
 			return fmt.Errorf("recover task %s: %w", t.GetCode(), err)
 		}
 	}
-	resumed, watchers, err := h.queueInterrupted(ctx, tasks)
-	if err != nil {
-		return err
+	var resumed, watchers []string
+	if h.resumeHeld == "" {
+		if resumed, watchers, err = h.queueInterrupted(ctx, tasks); err != nil {
+			return err
+		}
+	} else {
+		// Held (held.go): every task cut short stays interrupted, the move the lead's.
+		h.mu.Lock()
+		h.heldTasks = append(slices.Clone(interrupted), heldWatchers...)
+		h.mu.Unlock()
+		logx.L().Warn("djinn up resumes no worker", "why", h.resumeHeld, "held", strings.Join(h.Held(), ","))
 	}
 	// The lead hears of the restart from its queue, whether its watch died with the last djinn up or not.
 	restart := &planv1.LeadEvent{Kind: planv1.LeadEventKind_LEAD_EVENT_KIND_RESTART,
-		Text: restartLine(h.version, interrupted, resumed, watchers, out, orphans, cutPart(cut, integrating),
-			lockedPart(locked))}
+		Text: restartLine(h.version, h.resumeHeld, interrupted, resumed, watchers, heldWatchers, out, orphans,
+			cutPart(cut, integrating), lockedPart(locked))}
 	if err := plan.QueueLeadEvent(ctx, h.store, restart, h.now()); err != nil {
 		return fmt.Errorf("tell the lead of the restart: %w", err)
 	}
@@ -570,22 +590,26 @@ func (h *Harness) lastStart(ctx context.Context) (time.Time, error) {
 	return last, nil
 }
 
-// restartLine is what the lead's restart event says: the version Djinn started on, the workers the last djinn up
-// left running and Djinn interrupted (or that it stopped, and Djinn resumes), those of them it resumes by itself,
-// apart the watchers it resumes: a watcher is no worker, the ifrits it left lit, which come back out (putOut), the
-// processes the last djinn up left running that Djinn stopped, by their labels (orphansPart), and the parts more,
-// each "" for none: what the stop cut (cutPart), what it left in the person's checkouts (lockedPart).
-func restartLine(version string, interrupted, resumed, watchers, out, orphans []string, more ...string) string {
+// restartLine is what the lead's restart event says: the version Djinn started on, why it resumes no worker by
+// itself when held is not "" (held.go), the workers the last djinn up left running and Djinn interrupted (or that it
+// stopped, and Djinn resumes), those of them it resumes by itself, apart the watchers it resumes: a watcher is no
+// worker, and those it held, the ifrits it left lit, which come back out (putOut), the processes the last djinn up
+// left running that Djinn stopped, by their labels (orphansPart), and the parts more, each "" for none: what the stop
+// cut (cutPart), what it left in the person's checkouts (lockedPart).
+func restartLine(version, held string, interrupted, resumed, watchers, heldWatchers, out, orphans []string, more ...string) string {
 	if version == "" {
 		version = "unknown"
 	}
 	line := "Djinn: restarted on version " + version
+	var parts []string
+	if held != "" {
+		parts = append(parts, "it resumes no worker by itself, as "+held)
+	}
 	for _, c := range resumed {
 		if !slices.Contains(interrupted, c) {
 			interrupted = append(interrupted, c) // Stopped with the last djinn up: interrupted all the same.
 		}
 	}
-	var parts []string
 	if len(interrupted) > 0 {
 		part := fmt.Sprintf("%d %s interrupted (%s)", len(interrupted), plural(len(interrupted), "worker"),
 			strings.Join(interrupted, ", "))
@@ -606,6 +630,10 @@ func restartLine(version string, interrupted, resumed, watchers, out, orphans []
 	if len(watchers) > 0 {
 		parts = append(parts, fmt.Sprintf("%d %s resumed: %s", len(watchers), plural(len(watchers), "watcher"),
 			strings.Join(watchers, ", ")))
+	}
+	if len(heldWatchers) > 0 {
+		parts = append(parts, fmt.Sprintf("%d %s not resumed, the move is yours: %s", len(heldWatchers),
+			plural(len(heldWatchers), "watcher"), strings.Join(heldWatchers, ", ")))
 	}
 	switch len(out) {
 	case 0:
@@ -865,23 +893,6 @@ func (h *Harness) Spawn(ctx context.Context, procedure string, req *planv1.TaskS
 func (h *Harness) spawn(
 	ctx context.Context, procedure string, req *planv1.TaskServiceSpawnRequest, made *planv1.Task,
 ) (*planv1.Task, error) {
-	if path := req.GetPromptFile(); path != "" {
-		if req.GetPrompt() != "" {
-			return nil, connect.NewError(connect.CodeInvalidArgument,
-				errors.New("give prompt or prompt_file, not both"))
-		}
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("read prompt_file: %w", err))
-		}
-		text := strings.TrimRight(string(data), "\r\n")
-		if len(text) > 200000 {
-			return nil, connect.NewError(connect.CodeInvalidArgument,
-				fmt.Errorf("prompt_file exceeds 200000 bytes (%d)", len(text)))
-		}
-		req = proto.CloneOf(req)
-		req.Prompt, req.PromptFile = text, ""
-	}
 	if req.GetKind() == planv1.TaskKind_TASK_KIND_AZIMA {
 		return h.spawnAzima(ctx, procedure, req)
 	}
@@ -911,7 +922,7 @@ func (h *Harness) spawn(
 	if err != nil {
 		return nil, plan.Status(err)
 	}
-	project, err := pickProject(ctx, h.store, wish, req.GetProjectId())
+	project, err := pickProject(ctx, h.store, wish, req.GetProjectId(), req.GetPartOf())
 	if err != nil {
 		return nil, plan.Status(err)
 	}
@@ -1681,6 +1692,9 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 	})
 	r.failure, r.limit = "", nil
 	r.answered, r.closingFailed = false, false
+	h.mu.Lock()
+	r.failing = false // A new worker of the run: it has said no error yet.
+	h.mu.Unlock()
 	if r.startHead == "" {
 		wt := t.GetWorktree()
 		if wt == "" {
@@ -1810,17 +1824,27 @@ func editQuestion(t *planv1.Task, project *planv1.Project) *planv1.Question {
 	}
 }
 
-// pickProject is the project a task of wish works in: id, or the wish's only project; none for a wish without
-// any project.
-func pickProject(ctx context.Context, tx store.Reader, wish *planv1.Wish, id string) (*planv1.Project, error) {
+// pickProject is the project a task of wish works in: id, else the project of the azima partOf names when it has
+// one, else the wish's only project; none for a wish without any project. A refusal names the wish's projects, which
+// the command line offers as the corrected commands.
+func pickProject(ctx context.Context, tx store.Reader, wish *planv1.Wish, id, partOf string) (*planv1.Project, error) {
 	ids := wish.GetProjectIds()
+	if id == "" && len(ids) > 1 && partOf != "" {
+		// What resolveAzima refuses is said again where the part is placed.
+		if azimaID, err := resolveAzima(ctx, tx, wish.GetId(), partOf); err == nil {
+			if azima, err := store.Get[*planv1.Task](ctx, tx, azimaID); err == nil && slices.Contains(ids, azima.GetProjectId()) {
+				id = azima.GetProjectId()
+			}
+		}
+	}
 	if id == "" {
 		if len(ids) == 0 {
 			return nil, nil
 		}
 		if len(ids) != 1 {
 			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf(
-				"the wish has %d projects: name one with --project-id", len(ids)))
+				"the wish has %d projects: run it again with %s, or give --part-of an azima of one",
+				len(ids), plan.ProjectFlags(ctx, tx, ids)))
 		}
 		id = ids[0]
 	}
@@ -1830,7 +1854,8 @@ func pickProject(ctx context.Context, tx store.Reader, wish *planv1.Wish, id str
 	}
 	if len(ids) > 0 && !slices.ContainsFunc(ids, func(s string) bool { return s == project.GetId() }) {
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf(
-			"project %s is not one of the wish's projects", project.GetName()))
+			"project %s is not one of the wish's projects (%s): add it first with djinn wish add-project %s --project-id %s, or run it again with %s",
+			project.GetName(), plan.ProjectNames(ctx, tx, ids), wish.GetId(), project.GetName(), plan.ProjectFlags(ctx, tx, ids)))
 	}
 	return project, nil
 }
@@ -1959,7 +1984,21 @@ func (h *Harness) record(r *run, ev Event) {
 	}
 	if ev.Kind == planv1.TaskEventKind_TASK_EVENT_KIND_ERROR {
 		r.failure = ev.Text
+		// Ending on its error, before netSign may confirm an outage: the network pauses it not, else its run would
+		// close as "pause" and the task it cuts would resume with no "network" run (W646).
+		h.mu.Lock()
+		r.failing = true
+		h.mu.Unlock()
 		h.netSign(r.task.GetProvider(), ev.Text, true) // Its agent cannot reach its provider: the network may be down.
+		if h.netSigned != nil {
+			h.netSigned(r.task.GetId())
+		}
+	}
+	if r.failing && (ev.Kind == planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT ||
+		ev.Kind == planv1.TaskEventKind_TASK_EVENT_KIND_STATUS && strings.HasPrefix(ev.Text, "continued: ")) {
+		h.mu.Lock()
+		r.failing = false // A new turn: the worker goes on.
+		h.mu.Unlock()
 	}
 	if ev.Kind == planv1.TaskEventKind_TASK_EVENT_KIND_TEXT && strings.TrimSpace(ev.Text) != "" && !strings.HasSuffix(ev.Text, " [cut]") {
 		r.answered = true
@@ -2996,6 +3035,10 @@ func (h *Harness) hold(ctx context.Context, procedure string, req proto.Message,
 	if r == nil || r.worker == nil || r.stopping || r.final {
 		h.mu.Unlock()
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s is not running: %s", task.GetCode(), short(task.GetStatus())))
+	}
+	if pause && procedure == methodNetwork && r.failing { // It failed since pauseForNetwork listed it (W646).
+		h.mu.Unlock()
+		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s is ending on its error", task.GetCode()))
 	}
 	if pause {
 		for _, g := range []struct {

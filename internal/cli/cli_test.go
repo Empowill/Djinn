@@ -42,6 +42,8 @@ const (
 	wishID     = "0199c0a1-7b2e-7c3d-8e4f-000000000001"
 	projectID  = "0199c0a1-7b2e-7c3d-8e4f-000000000002"
 	taskID     = "0199c0a1-7b2e-7c3d-8e4f-000000000003"
+	docsID     = "0199c0a1-7b2e-7c3d-8e4f-000000000004"
+	grantedID  = "0199c0a1-7b2e-7c3d-8e4f-000000000005"
 )
 
 // fake is an in-memory server that records the requests it receives.
@@ -99,14 +101,31 @@ type tasks struct {
 	*fake
 }
 
-// Get is a task done whose work a correction worker took over, its batch red, after 412 model turns.
+// Get is a task done whose work a correction worker took over, its batch red, after 412 model turns; asked by code,
+// it is taskID.
 func (f tasks) Get(_ context.Context, req *connect.Request[planv1.TaskServiceGetRequest]) (*connect.Response[planv1.TaskServiceGetResponse], error) {
 	f.record(req.Msg)
+	id := req.Msg.GetTaskId()
+	if !uuidPattern.MatchString(id) {
+		id = taskID
+	}
 	return connect.NewResponse(&planv1.TaskServiceGetResponse{Task: &planv1.Task{
-		Id: req.Msg.GetTaskId(), Code: "W5", Status: planv1.TaskStatus_TASK_STATUS_DONE, Model: "claude-sonnet-5-5", Integration: &planv1.TaskIntegration{
+		Id: id, Code: "W5", Status: planv1.TaskStatus_TASK_STATUS_DONE, Model: "claude-sonnet-5-5", Integration: &planv1.TaskIntegration{
 			State: planv1.IntegrationState_INTEGRATION_STATE_RED, Branch: "feat/x", Reason: "test exited 1", CorrectedBy: "W9",
 		},
 		Turns: &planv1.Turns{Run: 37, Limit: 500, Total: 412},
+	}}), nil
+}
+
+// Spawn refuses a task that names no project, as a wish of two projects does, with what fits: api and web.
+func (f tasks) Spawn(_ context.Context, req *connect.Request[planv1.TaskServiceSpawnRequest]) (*connect.Response[planv1.TaskServiceSpawnResponse], error) {
+	f.record(req.Msg)
+	if req.Msg.GetProjectId() == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument,
+			fmt.Errorf("the wish has 2 projects: run it again with --project-id api or --project-id web"))
+	}
+	return connect.NewResponse(&planv1.TaskServiceSpawnResponse{Task: &planv1.Task{
+		Id: taskID, WishId: req.Msg.GetWishId(), ProjectId: req.Msg.GetProjectId(), Code: "W5", Title: req.Msg.GetTitle(),
 	}}), nil
 }
 
@@ -211,12 +230,22 @@ func (f wishes) PushStrategy(_ context.Context, req *connect.Request[planv1.Wish
 	}), nil
 }
 
+// List is the wishes: Ship it, Ship the docs, and a granted Ship it.
+func (f wishes) List(_ context.Context, req *connect.Request[planv1.WishServiceListRequest]) (*connect.Response[planv1.WishServiceListResponse], error) {
+	f.record(req.Msg)
+	return connect.NewResponse(&planv1.WishServiceListResponse{Wishes: []*planv1.Wish{
+		{Id: grantedID, Title: "Ship it", State: planv1.WishState_WISH_STATE_GRANTED},
+		{Id: wishID, Title: "Ship it", State: planv1.WishState_WISH_STATE_ACTIVE},
+		{Id: docsID, Title: "Ship the docs", State: planv1.WishState_WISH_STATE_PAUSED},
+	}}), nil
+}
+
 // AddProject adds the project named api, or of its identifier, to a wish that has web already; refuses web.
 func (f wishes) AddProject(_ context.Context, req *connect.Request[planv1.WishServiceAddProjectRequest]) (*connect.Response[planv1.WishServiceAddProjectResponse], error) {
 	f.record(req.Msg)
 	switch req.Msg.GetProjectId() {
 	case "api", projectID:
-	case "web":
+	case "web", wishID: // The command line gives web by the identifier djinn project list shows.
 		return nil, connect.NewError(connect.CodeAlreadyExists, fmt.Errorf(`project web is already in wish %q`, "Ship it"))
 	default:
 		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("no project %s: djinn project list shows them", req.Msg.GetProjectId()))
@@ -316,9 +345,9 @@ func TestRun(t *testing.T) {
 		{name: "list output", args: []string{"pr", "l"}, wantOut: "- id: " + projectID + "\n  name: api\n", wantCalled: true},
 		{name: "server error", args: []string{"q", "answer", "Q99", "a"}, wantCode: 1, wantErr: "not_found: no question Q99", wantCalled: true},
 		{name: "validation before sending", args: []string{"q", "answer"}, wantCode: 2, wantErr: "<question>: value is required; expected a match of ^Q[0-9]{2,3}$ or a UUID\n  <choice>: value is required; expected one of yes, no, a, b, c, d"},
-		{name: "rule on a positional", args: []string{"q", "ask", "Which?", "W1"}, wantCode: 2, wantErr: "<wish-id>: must be a valid UUID; expected a UUID"},
+		{name: "rule on a positional", args: []string{"task", "get", "X1"}, wantCode: 2, wantErr: "<task-id>: does not match regex pattern"},
 		{name: "rule on a repeated flag", args: []string{"q", "ask", "Which?", wishID, "--options", "a", "--options", "b", "--options", "c", "--options", "d", "--options", "e"}, wantCode: 2, wantErr: "--options: must contain no more than 4 item(s)"},
-		{name: "rule on a flag", args: []string{"q", "answer", "Q03", "b", "--wish-id", "W1"}, wantCode: 2, wantErr: "--wish-id: must be a valid UUID; expected a UUID"},
+		{name: "rule on a flag", args: []string{"q", "ask", "Which?", wishID, "--about", "Z1"}, wantCode: 2, wantErr: "--about: does not match regex pattern"},
 		{name: "ambiguous method", args: []string{"question", "a"}, wantCode: 2, wantErr: `question method "a" is ambiguous: ask, answer`},
 		{name: "unknown command", args: []string{"mission"}, wantCode: 2, wantErr: `unknown command "mission", expected one of: help, version, block, command, gate, inbox, lead, load, machine, mark, plan, project, query, question, serve, skill, task, tilasm, wish`},
 		{name: "load get", args: []string{"load", "get"}, wantOut: "notch: medium\n", wantCalled: true},
@@ -342,8 +371,9 @@ func TestRun(t *testing.T) {
 		{name: "wish push strategy set", args: []string{"wish", "push-strategy", wishID, "--strategy", "azima"}, wantOut: "strategy: azima\nsource: wish\n", wantCalled: true},
 		{name: "wish add project by name", args: []string{"wish", "add-project", wishID, "--project-id", "api"}, wantOut: "project_ids:\n  - " + taskID + "\n  - " + projectID + "\n", wantCalled: true},
 		{name: "wish add project already in", args: []string{"wish", "add-project", wishID, "--project-id", "web"}, wantCode: 1, wantErr: `already_exists: project web is already in wish "Ship it"`, wantCalled: true},
-		{name: "wish add project unknown", args: []string{"wish", "add-project", wishID, "--project-id", "ghost"}, wantCode: 1, wantErr: "not_found: no project ghost", wantCalled: true},
-		{name: "wish add project without one", args: []string{"wish", "add-project", wishID}, wantCode: 2, wantErr: "--project-id: "},
+		{name: "wish add project unknown", args: []string{"wish", "add-project", wishID, "--project-id", "ghost"}, wantCode: 2,
+			wantErr: "<project-id>: no project is named ghost; expected one of api, web, or a project's UUID", wantCalled: true},
+		{name: "wish add project without one", args: []string{"wish", "add-project", wishID}, wantCode: 2, wantErr: "<project-id>: "},
 		{name: "task update integration none", args: []string{"task", "update", taskID, "--integration", "none"}, wantCalled: true},
 		{name: "task update integration invalid", args: []string{"task", "update", taskID, "--integration", "other"}, wantCode: 2, wantErr: "--integration: must be in list [none, pending]"},
 		{name: "task cancel", args: []string{"task", "cancel", taskID, "--note", "not needed"}, wantOut: "status: cancelled", wantCalled: true},

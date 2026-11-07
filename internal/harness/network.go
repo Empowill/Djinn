@@ -471,12 +471,13 @@ func (h *Harness) tellNetwork(line, detail string) {
 
 // pauseForNetwork pauses the running workers while the network is down, why: each once no tool call of its runs (a
 // test, a build goes on without the network), never an ifrit, nor a worker that holds or waits for a gate (hold refuses
-// it), nor one whose agent cannot pause (Windows): those go on, and the network cuts them or not.
+// it), nor one whose agent cannot pause (Windows): those go on, and the network cuts them or not. Nor a worker ending on
+// the error that made the outage suspected (run.failing): its end makes its task wait for the network (networkCut).
 func (h *Harness) pauseForNetwork(ctx context.Context, why string) {
 	h.mu.Lock()
 	var ids []string
 	for id, r := range h.runs {
-		if r.paused || r.worker == nil || r.stopping || r.final || r.shelved || r.ifrit || r.inTool {
+		if r.paused || r.worker == nil || r.stopping || r.final || r.shelved || r.ifrit || r.inTool || r.failing {
 			continue
 		}
 		if _, ok := r.worker.(Pauser); !ok {

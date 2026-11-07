@@ -83,6 +83,19 @@ address in the data folder, for the other commands.`,
 				"default $DJINN_DISK_FULL_GB.",
 		},
 		{
+			Name: "--paused", Type: "bool",
+			Help: "Start without resuming any worker the last djinn up left interrupted, nor replaying a task an " +
+				"environment failure stopped: they stay interrupted, and the lead and the window hear it; djinn task " +
+				"continue resumes each. Djinn starts so by itself after a stop that was not clean, and after one whose " +
+				"last Hourglass reading had the memory past --paused-memory.",
+		},
+		{
+			Name: "--paused-memory", Type: "int", Default: "90", Env: "DJINN_PAUSED_MEMORY",
+			Help: "Start as with --paused when the Hourglass's last reading of the last djinn up had the machine's " +
+				"memory at or above this percent; a reading past it is written at once, so that a crash keeps it; 0 " +
+				"never; default $DJINN_PAUSED_MEMORY.",
+		},
+		{
 			Name: "--pprof", Type: "bool", Env: "DJINN_PPROF",
 			Help: "Serve Go's profiles of djinn up at /debug/pprof/, on its own address only (the Unix socket, or the " +
 				"loopback server and its token), to measure what it spends its CPU and memory on; default " +

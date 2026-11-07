@@ -25,6 +25,7 @@ import (
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
 	"github.com/empowill/djinn/internal/logx"
+	"github.com/empowill/djinn/internal/render"
 	"github.com/empowill/djinn/internal/server"
 	"github.com/empowill/djinn/internal/store"
 	"github.com/empowill/djinn/locales"
@@ -203,7 +204,7 @@ func Handlers(s *store.Store, opts ...Option) map[string]http.Handler {
 		o.enlight = append(o.enlight, wishes.Enlightened) // The lead learns each request to investigate, after the harness.
 	}
 	questions := &Questions{Store: s, Answered: o.answered, Told: told, Enlightened: o.enlight, Settle: wishes.settle,
-		Workers: o.workers, LaunchPlan: o.launch, Iterated: o.iterated}
+		Workers: o.workers, LaunchPlan: o.launch, Iterated: o.iterated, Clock: o.clock}
 	if o.leads != nil {
 		questions.Wishes = wishes                               // The lead learns of an iteration no mockup task took on.
 		questions.NoteEdited = wishes.NoteEdited                // The lead learns an answer's new note, once.
@@ -1198,6 +1199,8 @@ type Questions struct {
 	Settle Settle
 	// Workers tells whether a task is running.
 	Workers WishWorkers
+	// Clock gives the time a question is put off (Later); nil uses time.Now.
+	Clock func() time.Time
 	// LaunchPlan, when set, launches the task an answered question's option planned (Launch).
 	LaunchPlan LaunchPlan
 	// Iterated are called with a question once an iteration round is stored on it: the harness starts its mockup
@@ -1251,18 +1254,9 @@ func (q *Questions) Ask(
 	ctx context.Context, req *connect.Request[planv1.QuestionServiceAskRequest],
 ) (*connect.Response[planv1.QuestionServiceAskResponse], error) {
 	m := req.Msg
-	if len(m.GetPlanFile()) > 0 {
-		// The journal keeps the plans' texts, not where they were read.
-		plans, err := readPlans(m.GetPlan(), m.GetPlanFile())
-		if err != nil {
-			return nil, err
-		}
-		m = proto.CloneOf(m)
-		m.Plan, m.PlanFile = plans, nil
-	}
 	question := &planv1.Question{
 		Id: store.NewID(), WishId: req.Msg.GetWishId(), Text: req.Msg.GetText(), Options: req.Msg.GetOptions(),
-		Context: req.Msg.GetContext(), Recommendation: req.Msg.GetRecommendation(), CreateTime: timestamppb.Now(),
+		Context: m.GetContext(), Recommendation: req.Msg.GetRecommendation(), CreateTime: timestamppb.Now(),
 		Icon: req.Msg.GetIcon(), TaskId: req.Msg.GetTaskId(), Before: strings.TrimSpace(req.Msg.GetBefore()),
 		Move: req.Msg.GetMove(), Wait: req.Msg.GetWait(),
 	}
@@ -1480,8 +1474,16 @@ func (q *Questions) Answer(
 var errSameAnswer = errors.New("the question has this answer already")
 
 // find resolves a reference to a question: its id, or its code within wishID, or within every wish when the code
-// is used by one only.
+// is used by one only, or by one open question only (W481: the lead types Q05 for the one it waits on).
 func find(ctx context.Context, tx store.Reader, ref *planv1.QuestionRef, wishID string) (*planv1.Question, error) {
+	return findAmong(ctx, tx, ref, wishID, openQuestion)
+}
+
+// findAmong is find, a code in several wishes taken for the only question of them that fits: open for find, answered
+// for djinn question launch.
+func findAmong(
+	ctx context.Context, tx store.Reader, ref *planv1.QuestionRef, wishID string, fits func(*planv1.Question) bool,
+) (*planv1.Question, error) {
 	if id := ref.GetId(); id != "" {
 		return store.Get[*planv1.Question](ctx, tx, id)
 	}
@@ -1499,8 +1501,12 @@ func find(ctx context.Context, tx store.Reader, ref *planv1.QuestionRef, wishID 
 	case 1:
 		return found[0], nil
 	}
+	if fitting := slices.DeleteFunc(slices.Clone(found), func(q *planv1.Question) bool { return !fits(q) }); len(fitting) == 1 {
+		return fitting[0], nil
+	}
 	return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
-		"%d wishes have a question %s: give its identifier, or the wish with --wish-id", len(found), ref.GetCode()))
+		"%d wishes have a question %s: run it again with %s", len(found), ref.GetCode(),
+		WishFlags(ctx, tx, "--wish-id", wishesOf(found))))
 }
 
 // resolve checks that choice answers question, and returns the choice to keep: yes without options, or the letter
@@ -1842,6 +1848,33 @@ func (q *Questions) Withdraw(
 	return connect.NewResponse(&planv1.QuestionServiceWithdrawResponse{Question: question}), nil
 }
 
+// now is the questions' time: Clock, or time.Now.
+func (q *Questions) now() time.Time {
+	if q.Clock == nil {
+		return time.Now()
+	}
+	return q.Clock()
+}
+
+// laterThan is when question is put off: now, or a millisecond past the latest place of the wish's other questions
+// when now is not past it in milliseconds. A clock that has not moved since the last question was asked (Windows
+// reads it at a coarse step) would tie the two, and the put-off one would keep its place; the window compares
+// milliseconds.
+func laterThan(now time.Time, question *planv1.Question, others []*planv1.Question) time.Time {
+	last := time.Time{}
+	for _, o := range others {
+		if o.GetId() != question.GetId() {
+			if at := render.Place(o); at.After(last) {
+				last = at
+			}
+		}
+	}
+	if now.UnixMilli() > last.UnixMilli() {
+		return now
+	}
+	return time.UnixMilli(last.UnixMilli() + 1)
+}
+
 // Later puts an open question off for later, or back in its place with clear: its later_time is now, or unset.
 func (q *Questions) Later(
 	ctx context.Context, req *connect.Request[planv1.QuestionServiceLaterRequest],
@@ -1860,9 +1893,13 @@ func (q *Questions) Later(
 		}
 		if req.Msg.GetClear() {
 			question.LaterTime = nil
-		} else {
-			question.LaterTime = timestamppb.Now()
+			return tx.Put(question)
 		}
+		others, err := store.List[*planv1.Question](ctx, tx, store.Where{"wish_id": question.GetWishId()})
+		if err != nil {
+			return err
+		}
+		question.LaterTime = timestamppb.New(laterThan(q.now(), question, others))
 		return tx.Put(question)
 	})
 	if err != nil {

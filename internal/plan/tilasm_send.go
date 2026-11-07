@@ -153,13 +153,14 @@ func nextSend(ctx context.Context, r store.Reader, tilasm *planv1.Tilasm, commen
 }
 
 // SendLine is what a send tells the lead, in a line a digest keeps whole: the version read, how many comments on
-// what, the developer's choice, and the command that reads them. question is the open question that links the
-// tilasm, or nil.
+// what, the developer's choice, and the command that reads them, which names the wish: a code is in several. question
+// is the open question that links the tilasm, or nil.
 func SendLine(tilasm *planv1.Tilasm, send *planv1.TilasmSend, comments []*planv1.TilasmComment, question *planv1.Question) string {
 	code := tilasm.GetCode()
 	head := fmt.Sprintf("Djinn: %s v%d, ", code, latestVersion(tilasm))
 	if len(comments) == 0 {
-		return head + "launch its work: no comment, and no open question links it (djinn tilasm get " + code + ")."
+		return head + "launch its work: no comment, and no open question links it (djinn tilasm get " + code + " --wish " +
+			tilasm.GetWishId() + ")."
 	}
 	var choice string
 	switch {
@@ -170,7 +171,7 @@ func SendLine(tilasm *planv1.Tilasm, send *planv1.TilasmSend, comments []*planv1
 	default:
 		choice = "launch its work with them, no open question links it"
 	}
-	read := fmt.Sprintf(": djinn tilasm comments %s --send %d", code, send.GetNumber())
+	read := fmt.Sprintf(": djinn tilasm comments %s --wish %s --send %d", code, tilasm.GetWishId(), send.GetNumber())
 	count := fmt.Sprintf("%d comments", len(comments))
 	if len(comments) == 1 {
 		count = "1 comment"

@@ -982,7 +982,8 @@ export type TilasmServiceReplyRequest = Message<"plan.v1.TilasmServiceReplyReque
   task: string[];
 
   /**
-   * The wish, when a code is given and several wishes have it.
+   * The wish, when a code is given and several wishes have it; a worker's own by default. A worker replies on the
+   * tilasms of its own wish only, signed with its task's code.
    *
    * @generated from field: string wish = 5;
    */

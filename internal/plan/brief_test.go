@@ -488,11 +488,26 @@ func TestBuildBrief(t *testing.T) {
 				CreateTime: timestamppb.Now()}}
 		},
 		wish: func(w *planv1.Wish, tasks []*planv1.Task) {
+			w.IntegrationBranches = []*planv1.IntegrationBranch{{ProjectId: w.GetProjectIds()[0], Branch: "feat/x"}}
 			w.Pushes = []*planv1.WishPush{{ProjectId: w.GetProjectIds()[0], Holds: map[string]*planv1.PushHold{
 				"feat/x": {Held: "push checks failed: test exited 1", CorrectedBy: tasks[0].GetId()},
 			}}}
 		},
 		want: []string{"- Push held in api: push checks failed: test exited 1, corrected by W10.\n"},
+	}, {
+		// An azima's branch held alone is named (W630): the hold is that branch's, not the project's.
+		name: "held push of an azima",
+		tasks: func(wishID string) []*planv1.Task {
+			return []*planv1.Task{{Id: store.NewID(), WishId: wishID, Code: "W10", Title: "Fix push", Status: planv1.TaskStatus_TASK_STATUS_RUNNING,
+				CreateTime: timestamppb.Now()}}
+		},
+		wish: func(w *planv1.Wish, tasks []*planv1.Task) {
+			w.IntegrationBranches = []*planv1.IntegrationBranch{{ProjectId: w.GetProjectIds()[0], Branch: "feat/x"}}
+			w.Pushes = []*planv1.WishPush{{ProjectId: w.GetProjectIds()[0], Holds: map[string]*planv1.PushHold{
+				"djinn/T1-x": {Held: "push checks failed: test exited 1", CorrectedBy: tasks[0].GetId()},
+			}}}
+		},
+		want: []string{"- Push held of djinn/T1-x in api: push checks failed: test exited 1, corrected by W10.\n"},
 	}, {
 		// An investigation's line is marked, running, waiting or finished (W213).
 		name: "investigations",

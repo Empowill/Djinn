@@ -31,11 +31,11 @@ type running struct {
 	exited chan struct{}
 }
 
-// startUp starts djinn up in env, waits until it answers in home, and returns it with its address. The end of the
+// startUp starts djinn up in env, with flags, waits until it answers in home, and returns it with its address. The end of the
 // test stops it, if it still runs.
-func startUp(t *testing.T, home string, env []string) (*running, string) {
+func startUp(t *testing.T, home string, env []string, flags ...string) (*running, string) {
 	t.Helper()
-	r := &running{cmd: exec.Command(os.Args[0], "up"), errs: &buffer{}, exited: make(chan struct{})}
+	r := &running{cmd: exec.Command(os.Args[0], append([]string{"up"}, flags...)...), errs: &buffer{}, exited: make(chan struct{})}
 	r.cmd.Env = env
 	r.cmd.Stdout, r.cmd.Stderr = &buffer{}, r.errs
 	if err := r.cmd.Start(); err != nil {

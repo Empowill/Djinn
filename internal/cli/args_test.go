@@ -111,8 +111,8 @@ func parseCases(t *testing.T) []parseCase {
 			want: &planv1.WishServiceRenameRequest{WishId: wishID, Title: "Djinn orchestrator"},
 		},
 		{
-			name: "djinn wish add-project <wish> --project-id",
-			args: []string{wishID, "--project-id", "api"},
+			name: "djinn wish add-project <wish> <project-id>",
+			args: []string{wishID, "api"},
 			want: &planv1.WishServiceAddProjectRequest{WishId: wishID, ProjectId: "api"},
 		},
 		{

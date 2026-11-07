@@ -46,8 +46,17 @@ func TestReference(t *testing.T) {
 				t.Errorf("djinn %s is not documented", name)
 				continue
 			}
-			if got := len(c.Args) + len(c.Flags); got != md.Input().Fields().Len() {
-				t.Errorf("djinn %s documents %d arguments and flags, its request has %d fields", name, got, md.Input().Fields().Len())
+			want := md.Input().Fields().Len()
+			if scoped(md.Input()) {
+				want++ // The command line's own --wish-id, the wish a task given by code is looked up in.
+			}
+			for _, f := range fileFlags {
+				if fileField(md.Input(), f) != nil {
+					want++ // The command line's own --prompt-file or --context-file.
+				}
+			}
+			if got := len(c.Args) + len(c.Flags); got != want {
+				t.Errorf("djinn %s documents %d arguments and flags, want %d", name, got, want)
 			}
 		}
 	}

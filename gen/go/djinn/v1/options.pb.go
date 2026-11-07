@@ -394,7 +394,8 @@ var (
 	//
 	// optional string env = 51006;
 	E_Env = &file_djinn_v1_options_proto_extTypes[7]
-	// Keep a singular field positional when it becomes optional, preserving an existing command's arguments.
+	// Keep a singular field positional when it becomes optional, preserving an existing command's arguments. Such a
+	// field answers to its flag too: djinn wish add-project <wish> djinn, or --project-id djinn.
 	//
 	// optional bool positional = 51009;
 	E_Positional = &file_djinn_v1_options_proto_extTypes[8]

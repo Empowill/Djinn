@@ -57,6 +57,28 @@ test("the update banner links the release notes of a newer release, and only a w
     lost,
     /<span class="brand small">.*<div class="update-banner-actions"><button type="button" class="update-banner-dismiss">Dismiss<\/button><\/div><\/div><div class="update-banner-body"><ul class="update-banner-terminals"><li>npm run dev<\/li>/,
   );
+  // A start that resumed no worker says why, and which tasks wait for the lead; Dismiss beside it.
+  const memory = banner({
+    ready: "",
+    notesUrl: "",
+    held: { why: 3, memoryPercent: 95.4, tasks: ["W1", "W2"] },
+  });
+  assert.match(
+    memory,
+    /<span class="brand small">.*The machine&#x27;s memory was at 95 % at Djinn&#x27;s last reading before it stopped: no worker resumed by itself<\/span><\/div><div class="update-banner-actions"><button type="button" class="update-banner-dismiss">Dismiss<\/button><\/div><\/div><div class="update-banner-body">Interrupted, for the lead to continue: W1, W2<\/div>/,
+  );
+  assert.match(
+    banner({ held: { why: 2, memoryPercent: 0, tasks: [] } }),
+    /Djinn did not stop cleanly last time: no worker resumed by itself<\/span>/,
+  );
+  // Beside the terminals that did not start again, one Dismiss, theirs, for both.
+  const both = banner({
+    notResumed: ["npm run dev"],
+    held: { why: 1, memoryPercent: 0, tasks: ["W1"] },
+  });
+  assert.match(both, /Djinn started paused: no worker resumed by itself/);
+  assert.equal(both.match(/update-banner-dismiss/g).length, 1);
+  assert.equal(both.match(/class="brand small"/g).length, 1);
   // Nothing waits: no banner, whatever the notes.
   assert.equal(banner({ ready: "", notesUrl: "https://example.com" }), "");
 });

@@ -443,7 +443,7 @@ func integrationChange(
 	switch {
 	case id == "" && len(ids) != 1:
 		return "", false, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf(
-			"the wish has %d projects: name one with --project-id", len(ids)))
+			"the wish has %d projects: run it again with %s", len(ids), ProjectFlags(ctx, r, ids)))
 	case id == "":
 		id = ids[0]
 	}

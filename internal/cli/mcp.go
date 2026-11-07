@@ -352,7 +352,9 @@ func (s *mcpServer) call(ctx context.Context, md protoreflect.MethodDescriptor, 
 	name := func(fd protoreflect.FieldDescriptor) string { return string(fd.Name()) }
 	if err == nil {
 		fromEnv(req, s.cfg.getenv())
-		err = check(req, name)
+		if err = resolve(ctx, s.cfg, req, ""); err == nil {
+			err = check(req, name)
+		}
 	}
 	if err != nil {
 		return "", err

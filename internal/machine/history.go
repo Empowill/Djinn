@@ -91,6 +91,12 @@ func (h *History) Flush(ctx context.Context) {
 	}
 }
 
+// LastMachine is the machine's latest reading kept in the store: the Hourglass's last of the djinn up before this
+// one, read before this one samples. False when none is kept.
+func (h *History) LastMachine(ctx context.Context) (store.Sample, bool, error) {
+	return h.db.LastSample(ctx, machineSeries)
+}
+
 // read is the samples of series after from: the store's, then those waiting to be written.
 func (h *History) read(ctx context.Context, series string, from time.Time) []store.Sample {
 	out, err := h.db.Samples(ctx, series, from)
