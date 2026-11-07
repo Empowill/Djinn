@@ -205,6 +205,12 @@ func (p *Pages) render(ctx context.Context, id string, create bool) error {
 	if err != nil {
 		return err
 	}
+	if !create {
+		if _, err := os.Stat(file); errors.Is(err, fs.ErrNotExist) {
+			p.forget(id)
+			return nil
+		}
+	}
 	if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
 		return err
 	}
