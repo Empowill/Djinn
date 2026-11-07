@@ -1,9 +1,11 @@
 package harness
 
 import (
+	"context"
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -121,11 +123,55 @@ func TestNotchRuntimePriorityAndPause(t *testing.T) {
 
 // TestNotchRuntimeMemoryInterrupt verifies that a paused worker is interrupted
 // only when memory is short for a higher-priority worker that must start (Q122 A),
-// entering RESUMING without spending resumes, and resumes in its session when memory frees.
+// entering RESUMING without spending resumes, and resumes in its session when memory frees. Paused before its worker
+// said its session, it has none to resume: it starts again from its first prompt (W660, a pause right after it went
+// RUNNING on the macOS runner).
 func TestNotchRuntimeMemoryInterrupt(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
+	t.Run("in its session", func(t *testing.T) {
+		t.Parallel()
+		memoryInterrupt(t, true)
+	})
+	t.Run("before its session", func(t *testing.T) {
+		t.Parallel()
+		memoryInterrupt(t, false)
+	})
+}
 
+// mutedFirst is the fake agent, whose first worker on a prompt holding marker says nothing until it ends: paused
+// then, its task has no session known.
+type mutedFirst struct {
+	Fake
+	marker string
+	muted  *atomic.Bool
+}
+
+func (m mutedFirst) Start(ctx context.Context, spec Spec) (Worker, error) {
+	w, err := m.Fake.Start(ctx, spec)
+	if err != nil || !strings.Contains(spec.Prompt, m.marker) || !m.muted.CompareAndSwap(false, true) {
+		return w, err
+	}
+	fw := w.(*fakeWorker)
+	silent := make(chan Event)
+	go func() {
+		<-fw.done // Its first event waits on an unbuffered channel no one reads: stopped, it ends having said nothing.
+		close(silent)
+	}()
+	return mutedWorker{fakeWorker: fw, events: silent}, nil
+}
+
+// mutedWorker is a fake worker whose events no one sees.
+type mutedWorker struct {
+	*fakeWorker
+	events chan Event
+}
+
+func (w mutedWorker) Events() <-chan Event { return w.events }
+
+// memoryInterrupt plays TestNotchRuntimeMemoryInterrupt, the Wish 2 task paused once its session is known (said) or
+// before it is.
+func memoryInterrupt(t *testing.T, said bool) {
 	var mu sync.Mutex
 	free := uint64(5 * machine.GiB)
 	available := func() uint64 {
@@ -134,8 +180,13 @@ func TestNotchRuntimeMemoryInterrupt(t *testing.T) {
 		return free
 	}
 
+	const w2Prompt = "wait in wish 2" // A wait step: the rest of the line is not read.
+	providers := testProviders()
+	if !said {
+		providers[planv1.Provider_PROVIDER_FAKE] = mutedFirst{marker: w2Prompt, muted: &atomic.Bool{}}
+	}
 	lim := &limit{slots: 2}
-	e := up(t, t.TempDir(), WithEnlightenWorkers(), WithCapacity(lim.capacity),
+	e := upWith(t, t.TempDir(), providers, WithEnlightenWorkers(), WithCapacity(lim.capacity),
 		WithMemory(available, machine.DefaultPolicy()), WithTick(5*time.Millisecond))
 
 	repo := nativeFolder(t)
@@ -154,8 +205,13 @@ func TestNotchRuntimeMemoryInterrupt(t *testing.T) {
 	w1Task := e.mustSpawn(t, wish1, "Wish 1 Task", "wait", &planv1.TaskServiceSpawnRequest{WriteScopes: []string{"w1"}})
 	e.until(t, w1Task.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))
 
-	w2Task := e.mustSpawn(t, wish2, "Wish 2 Task", "wait", &planv1.TaskServiceSpawnRequest{WriteScopes: []string{"w2"}})
+	w2Task := e.mustSpawn(t, wish2, "Wish 2 Task", w2Prompt, &planv1.TaskServiceSpawnRequest{WriteScopes: []string{"w2"}})
 	e.until(t, w2Task.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))
+	if said {
+		// RUNNING comes as its worker starts, its session when the worker says it: paused in between, it has
+		// none to resume (the case below).
+		e.until(t, w2Task.GetId(), func(t *planv1.Task) bool { return t.GetSessionId() != "" })
+	}
 
 	// Lower notch to Minimal (1 slot) so Wish 2 task is paused (extra worker in lower priority wish).
 	lim.set(1, "")
@@ -165,6 +221,11 @@ func TestNotchRuntimeMemoryInterrupt(t *testing.T) {
 	e.until(t, w2Task.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_PAUSED))
 	if e.h.Paused() != 1 {
 		t.Fatalf("expected 1 paused worker, got %d", e.h.Paused())
+	}
+	if !said {
+		if got := e.get(t, w2Task.GetId()).GetSessionId(); got != "" {
+			t.Fatalf("muted, the Wish 2 task has session %q", got)
+		}
 	}
 
 	// Now constrict available memory so memory is short for a new task.
@@ -213,11 +274,22 @@ func TestNotchRuntimeMemoryInterrupt(t *testing.T) {
 	lim.set(2, "")
 	e.h.SetPolicy(machine.DefaultPolicy())
 
-	// Wish 2 task resumes and finishes with 0 resumes spent.
-	doneW2 := e.until(t, w2Task.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_DONE))
-	if doneW2 == nil {
-		t.Fatal("wish 2 task did not finish after resuming")
+	// Wish 2 task resumes: in its session, it is told why it stopped and ends; with no session, it starts again
+	// from its first prompt, which waits.
+	how := ", resuming its session"
+	if !said {
+		how = ", from its first prompt"
 	}
+	e.untilText(t, w2Task.GetId(), "resumed after making room: ")
+	if texts := eventTexts(e.storedEvents(t, w2Task.GetId())); !slices.ContainsFunc(texts, func(s string) bool {
+		return strings.HasPrefix(s, "resumed after making room: ") && strings.Contains(s, how)
+	}) {
+		t.Errorf("wish 2 task did not resume %q: %q", how, texts)
+	}
+	if !said {
+		e.release(t, w2Task.GetId())
+	}
+	doneW2 := e.until(t, w2Task.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_DONE))
 	if doneW2.GetResumes() != 0 {
 		t.Errorf("resumes = %d, want 0", doneW2.GetResumes())
 	}
