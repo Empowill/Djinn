@@ -1112,6 +1112,11 @@ func (h *Harness) spawn(
 	case req.GetLater() && why == "":
 		why = "planned: it starts at the scheduler's next pass"
 	}
+	// Work of no azima, in a wish that pushes per azima, is part of an azima made for it (own_azima.go).
+	own, err := h.ownAzimaFor(ctx, wish, project, task, made, blocked)
+	if err != nil {
+		return nil, err
+	}
 	var overlaps []spawnOverlap
 	if made == nil {
 		for _, b := range blocked {
@@ -1123,7 +1128,11 @@ func (h *Harness) spawn(
 	}
 	if why != "" {
 		task.MachineWait, task.RoomWait, task.Hold = machine, room, hold
-		return h.plan(ctx, procedure, req, task, parent, prompt, why, overlaps)
+		planned, err := h.plan(ctx, procedure, req, task, own, parent, prompt, why, overlaps)
+		if err == nil && own != nil {
+			h.cutAzimaBranch(ctx, wish, own)
+		}
+		return planned, err
 	}
 
 	actor := spawner(task) // before a babysit spawned by hand knows its request
@@ -1137,7 +1146,7 @@ func (h *Harness) spawn(
 	if err != nil {
 		return nil, err
 	}
-	r.branch, r.from = settings.Branch, h.workerStartBranch(ctx, wish, project, settings, task)
+	r.branch = settings.Branch
 	r.setChecks(settings)
 	if questionWorker(task) {
 		p, _, fb := questionProvider(settings)
@@ -1157,6 +1166,11 @@ func (h *Harness) spawn(
 		}
 		if task.Code, err = nextCode(ctx, tx, wish.GetId()); err != nil {
 			return err
+		}
+		if own != nil {
+			if err := putOwnAzima(ctx, tx, own, task); err != nil {
+				return err
+			}
 		}
 		if len(overlaps) > 0 {
 			overlapEv = h.newEvent(task.GetId(), Event{
@@ -1200,6 +1214,8 @@ func (h *Harness) spawn(
 		h.forget(r)
 		return nil, plan.Status(err)
 	}
+	// Read once the task is stored: the branch of an azima made for it (own) is cut now.
+	r.from = h.workerStartBranch(ctx, wish, project, settings, task)
 	h.publish(r, prompted)
 	if preEv != nil {
 		h.publish(r, preEv)
@@ -1227,10 +1243,10 @@ func after(req *planv1.TaskServiceSpawnRequest) []string {
 	return append(slices.Clip(req.GetDependsOn()), req.GetAfter()...)
 }
 
-// plan creates a task that waits, with its prompt and why it waits, closes the parent it continues, if any, and makes
-// the tasks it blocks (--blocks) wait for it; the scheduler starts it.
+// plan creates a task that waits, with its prompt and why it waits, and the azima made for it, if any (own), closes the
+// parent it continues, if any, and makes the tasks it blocks (--blocks) wait for it; the scheduler starts it.
 func (h *Harness) plan(
-	ctx context.Context, procedure string, req *planv1.TaskServiceSpawnRequest, task, parent *planv1.Task, prompt, why string,
+	ctx context.Context, procedure string, req *planv1.TaskServiceSpawnRequest, task, own, parent *planv1.Task, prompt, why string,
 	overlaps []spawnOverlap,
 ) (*planv1.Task, error) {
 	task.WaitReason = why
@@ -1241,6 +1257,11 @@ func (h *Harness) plan(
 		var err error
 		if task.Code, err = nextCode(ctx, tx, task.GetWishId()); err != nil {
 			return err
+		}
+		if own != nil {
+			if err := putOwnAzima(ctx, tx, own, task); err != nil {
+				return err
+			}
 		}
 		if task.PartOf != "" {
 			if err := reopenAzima(ctx, tx, task.PartOf, task, "spawned"); err != nil {

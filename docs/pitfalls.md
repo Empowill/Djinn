@@ -190,6 +190,10 @@ the code does not say by itself; remove one when a change makes it false.
   follows 30–200 ms later, and the main view is an empty `.wish-view[aria-busy]` until then (W496). *Do:* wait on
   the element you act on (`toBeVisible`, `toBeFocused`), never on Live; to catch a remount, record elements with a
   MutationObserver in `addInitScript`. *Where:* `src/wish-app.tsx`.
+- **A loaded machine starves the page's first script.** Under a busy push check, the page sent its first call
+  5.6 s after `goto` returned while the djinn answered in milliseconds, and the first Live wait of 6 s failed on
+  "Reading your wishes…" (W440, `question-shortcuts.spec.ts`). *Spot:* in `djinn-logs/<n>/djinn.log`, no
+  `GetEnvironment` until the deadline. *Do:* give the first wait after `goto` 15 s, as `azima-cli-worker.spec.ts`.
 - **Playwright's trace makes the page look slow.** A trace that snapshots the DOM at every action took ~800 ms a step
   on a big diff, while the window rendered in ~230 ms (W8); the config keeps no DOM snapshot since W249. *Do:* measure
   a budget inside one `page.evaluate` (act and poll with `requestAnimationFrame` there); profile with a CDP session

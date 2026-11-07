@@ -598,18 +598,38 @@ func TestAzimaBranchFor(t *testing.T) {
 		}
 	})
 
-	t.Run("task with no azima uses wish branch", func(t *testing.T) {
+	// Q268 B: work of no azima, spawned before Djinn gave it an azima at the spawn, merged into the wish's integration
+	// branch, main itself, which Djinn never pushes per azima: its commits lived only in the clone. It is made part of
+	// an azima made for it, titled as it, its branch cut from main, and that branch is pushed; main stays as it was.
+	t.Run("task with no azima gets an azima of its own", func(t *testing.T) {
 		t.Parallel()
 		in := integrating(t)
+		bare := in.remote(t)
 		in.setAzimaStrategy(t)
+		mainSha := in.tip(t)
 
 		w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}) // PartOf is empty.
 		in.pass(t, 0)
 
 		w1Task := in.get(t, w1.GetId())
-		if w1Task.GetIntegration().GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED ||
-			w1Task.GetIntegration().GetBranch() != in.branch || w1Task.GetIntegration().GetSha() != in.tip(t) {
-			t.Fatalf("w1 integration = %v, want COMMITTED on %s at %s", w1Task.GetIntegration(), in.branch, in.tip(t))
+		azima := in.stored(t, w1Task.GetPartOf())
+		if !plan.IsAzima(azima) || azima.GetTitle() != w1.GetTitle() || azima.GetCode() != "T1" {
+			t.Fatalf("W1 part of %v, want an azima T1 titled %q", azima, w1.GetTitle())
+		}
+		b1 := "djinn/T1-work-of-w1"
+		tip := in.git(t, in.repo, "rev-parse", "refs/heads/"+b1)
+		if in := w1Task.GetIntegration(); in.GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED ||
+			in.GetBranch() != b1 || in.GetSha() != tip {
+			t.Fatalf("w1 integration = %v, want COMMITTED on %s at %s", in, b1, tip)
+		}
+		if !isAncestor(t.Context(), in.repo, mainSha, tip) {
+			t.Errorf("%s at %s does not hold main's %s", b1, tip, mainSha)
+		}
+		if got := in.tip(t); got != mainSha {
+			t.Errorf("%s moved to %s, want %s: no work of the wish lands in it", in.branch, got, mainSha)
+		}
+		if got := commitOf(t.Context(), bare, "refs/heads/"+b1); got != tip {
+			t.Errorf("origin's %s at %q, want %s pushed", b1, got, tip)
 		}
 	})
 

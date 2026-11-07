@@ -229,7 +229,7 @@ func TestBriefSaysWhereWorkLands(t *testing.T) {
 			"`djinn wish set-integration <wish> --project-id <project> --branch <branch>` changes it.\n",
 		azimas.GetId(): "- Work lands per azima: each azima on its own branch, `djinn/<code>-<slug>` or the one named with " +
 			"`djinn task update <azima> --branch <name>`, cut from main and landing in main through its pull request; " +
-			"work of no azima in `feat/rest`.\n",
+			"work spawned with no azima gets an azima of its own, never `feat/rest`, which Djinn does not push per azima.\n",
 	}
 	// Per azima, each azima says its own branch and where its pull or merge request stands, as its card does.
 	const mr = "https://gitlab.example.com/dolmen/-/merge_requests/12"

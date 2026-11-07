@@ -127,8 +127,8 @@ The **Questions** column holds every open question that waits for you, those tha
 a new question comes below, a revised one keeps its place, one put off goes to the bottom. On the flying carpet they
 are grouped by wish, the first wish first, each under its title and count; a click on the title opens the wish.
 
-One question is open in full, the others fold to two lines. The arrows move from one to the next, across wishes, and
-the keys answer it. When the open one is answered, the one below opens. Below the column come **Your move**, the
+One question is open in full, the others fold to two lines. Left and Right move from one to the next, across wishes,
+Up and Down from one option to the next, and the keys answer it. When the open one is answered, the one below opens. Below the column come **Your move**, the
 workers that wait for you and the wishes ready to grant, then the questions **Being investigated**. The keys and the
 levels are in [Question and move](#question-and-move).
 
@@ -317,12 +317,23 @@ letter enables. A note keeps up to 8000 characters; its count shows from 6400, a
 | Ctrl+N (Cmd+N) | New wish |
 | Ctrl+1 (Cmd+1) | The flying carpet |
 | Ctrl+2 (Cmd+2) | The Hourglass |
+| Ctrl+Up, Ctrl+Down | The wish above or below in the wish bar, the active ones then the paused ones; the granted ones are skipped |
+| Alt+Left, Alt+Right | Back to the view before, forward to the next, as in a browser, the focus in a tilasm's page too |
+| Cmd+[, Cmd+], Cmd+Left, Cmd+Right | The same on macOS |
 | Ctrl+\ (Cmd+\) | Fold or unfold the side panel |
 | Ctrl+I (Cmd+I) | Write to the Djinn |
 | Ctrl+Shift+T | A new terminal |
 | Ctrl+Q (Cmd+Q) | Quit Djinn |
 | Alt+Up, Alt+Down | Move the wish in focus in the wish bar |
 | Escape | Close a dialog or a menu |
+
+A view is where the window stands: a page, a wish, the tab it shows, the tilasm open in its Tilasms tab or over the
+page. Back from a tilasm opened by a question's link closes it, on the page you came from; forward opens it again. A
+view you go to after going back drops the ones ahead, as in a browser. Moving from one question to the next is not a
+view: the arrows do that. Ctrl+Up and Ctrl+Down open a wish as a click on it does, its first question focused. None of
+these keys acts in a text field, where Alt and the arrows move the caret, nor in the terminal; a key pressed inside a
+tilasm's page stays in that page, but back and forward: with the focus in the page, out of its text fields, they move
+the window as anywhere else.
 
 Ctrl+1 and Ctrl+2 are keys' places, not characters: on a French keyboard, the keys of the ampersand and of the e with an
 acute accent; the numpad's 1 and 2 work too. They work in a text field, never in the terminal. Each entry's tooltip
