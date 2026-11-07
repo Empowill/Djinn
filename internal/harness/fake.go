@@ -44,7 +44,7 @@ type Fake struct{}
 func (Fake) Start(ctx context.Context, spec Spec) (Worker, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	w := &fakeWorker{events: make(chan Event), cancel: cancel, done: make(chan struct{}), sent: make(chan struct{}, 1),
-		closed: make(chan struct{}), lowPriority: spec.LowPriority}
+		closed: make(chan struct{}), nice: spec.Nice}
 	go func() {
 		defer logx.Crash("fake worker", "dir", spec.Dir)
 		w.play(ctx, spec)
@@ -61,11 +61,11 @@ type fakeWorker struct {
 	sent   chan struct{} // a message came (wait)
 	closed chan struct{} // its input is closed (CloseInput)
 
-	mu          sync.Mutex
-	ending      bool // its input is closed: it takes no more messages
-	inbox       []string
-	held        chan struct{} // while paused; closed when resumed
-	lowPriority bool
+	mu     sync.Mutex
+	ending bool // its input is closed: it takes no more messages
+	inbox  []string
+	held   chan struct{} // while paused; closed when resumed
+	nice   int
 }
 
 func (w *fakeWorker) Events() <-chan Event { return w.events }
@@ -123,17 +123,11 @@ func (w *fakeWorker) Resume() error {
 	return nil
 }
 
-func (w *fakeWorker) SetPriority(low bool) error {
+// Nice is the nice level the worker was started at (Spec.Nice).
+func (w *fakeWorker) Nice() int {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	w.lowPriority = low
-	return nil
-}
-
-func (w *fakeWorker) IsLowPriority() bool {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	return w.lowPriority
+	return w.nice
 }
 
 // hold waits while the worker is paused. It says false when the worker is stopped meanwhile.

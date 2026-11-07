@@ -367,12 +367,6 @@ func WithVersion(v string) Option {
 	return func(h *Harness) { h.version = v }
 }
 
-// lowPriority reports whether workers should run with low CPU priority under the current policy.
-// The caller holds h.sched.
-func (h *Harness) lowPriority() bool {
-	return h.Policy().LowPriority()
-}
-
 // Close stops the scheduler and every worker, waits for them to end, and records their tasks as interrupted.
 func (h *Harness) Close() {
 	h.mu.Lock()
@@ -1737,7 +1731,8 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 		kind = "watcher"
 	}
 	spec.Track = h.children.tracker(t.GetCode(), kind)
-	spec.LowPriority = h.lowPriority()
+	// Below the window at every notch but Overclock: typing stays fluid under load (Q298, L50, Q371).
+	spec.Nice = h.workerNice()
 	spec.StartHead = r.startHead
 	spec.Branch = t.GetBranch()
 	spec.IsWorkDone = func() bool {

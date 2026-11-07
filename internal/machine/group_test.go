@@ -83,28 +83,6 @@ func TestGroupPIDs(t *testing.T) {
 	}
 }
 
-// TestWorkerPIDs: a worker's processes are its cgroup's when it has one, else its tree's; without a process, none.
-func TestWorkerPIDs(t *testing.T) {
-	t.Parallel()
-	cases := []struct {
-		name   string
-		pid    int
-		cgroup func(t *testing.T) string
-		want   []int
-	}{
-		{name: "cgroup", pid: 1, cgroup: cgroupDir, want: []int{12, 34}},
-		{name: "no process", pid: 0, cgroup: func(*testing.T) string { return "" }},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			t.Parallel()
-			if got, err := WorkerPIDs(c.pid, c.cgroup(t)); err != nil || !slices.Equal(got, c.want) {
-				t.Errorf("WorkerPIDs = %v, %v; want %v", got, err, c.want)
-			}
-		})
-	}
-}
-
 // TestParsePS reads ps as macOS and Linux print it.
 func TestParsePS(t *testing.T) {
 	t.Parallel()

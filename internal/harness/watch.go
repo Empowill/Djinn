@@ -219,16 +219,6 @@ func (w *watchWorker) Resume() error {
 	return nil
 }
 
-// SetPriority sets the priority of the running command.
-func (w *watchWorker) SetPriority(low bool) error {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	if w.proc != nil {
-		return w.proc.SetPriority(low)
-	}
-	return nil
-}
-
 // loop runs the command, and again as the Lamplighter says (watcherLife): after it dies, and after each exit when the
 // task restarts it, until it is stopped, finished, or it died watchTries times in a row.
 func (w *watchWorker) loop() {
@@ -249,7 +239,7 @@ func (w *watchWorker) loop() {
 			return again
 		}
 		w.errs = nil
-		p, err := startCommand(w.spec.Dir, w.args[0], w.args[1:], w.spec.Env, w.spec.Scope, w.c.Grace, w.c.Items, w.spec.LowPriority, w.spec.Track)
+		p, err := startCommand(w.spec.Dir, w.args[0], w.args[1:], w.spec.Env, w.spec.Scope, w.c.Grace, w.c.Items, w.spec.Nice, w.spec.Track)
 		if err != nil {
 			res = Result{ExitCode: -1, Err: err}
 			next(res)

@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { screens } from "./screens.mjs";
+import { screens, setupMockDom } from "./screens.mjs";
 
 const { s, h, live } = await screens();
 
@@ -500,15 +500,13 @@ test("Enlighten me sends the answer's note in one click: no second field", async
   assert.doesNotMatch(open, /aria-expanded|Ask the lead to investigate/);
 
   // Typed in the note, sent at the first click, as typed; the note is cleared.
-  card.one("textarea").onChange({
-    target: { value: "  How long does each burn?\nAnd the price?  " },
-  });
+  card.one(s.TextField).onText("  How long does each burn?\nAnd the price?  ");
   assert.match(card.html(), /<textarea[^>]*> {2}How long does each burn\?/);
   card.one("lamp-enlighten").onClick();
   await card.settle();
   assert.deepEqual(sent, ["How long does each burn?\nAnd the price?"]);
   assert.match(card.html(), /<textarea[^>]*><\/textarea>/);
-  assert.equal(card.all("textarea").length, 1);
+  assert.equal(card.all(s.TextField).length, 1);
 
   // Nothing typed: it asks to investigate in general.
   card.one("lamp-enlighten").onClick();
@@ -527,7 +525,7 @@ test("Enlighten me sends the answer's note in one click: no second field", async
     kept.html(),
     /placeholder="Your answer, or what to look into for Enlighten me \(⇧↵ new line\)"/,
   );
-  kept.one("textarea").onChange({ target: { value: "Cotton?" } });
+  kept.one(s.TextField).onText("Cotton?");
   kept.one("lamp-enlighten").onClick();
   await kept.settle();
   assert.match(kept.html(), /<textarea[^>]*>Cotton\?<\/textarea>/);
@@ -759,10 +757,10 @@ test("keyboard shortcuts on a question card: Enter, Shift+Enter, Ctrl+Enter, Enl
   );
 
   // Typing in the textarea
-  card.one("textarea").onChange({ target: { value: "Pure and filtered" } });
+  card.one(s.TextField).onText("Pure and filtered");
 
   // IME composition: isComposing ignores Enter
-  card.one("textarea").onKeyDown({
+  card.one(s.TextField).onKeyDown({
     key: "Enter",
     isComposing: true,
     preventDefault: () => {},
@@ -772,7 +770,7 @@ test("keyboard shortcuts on a question card: Enter, Shift+Enter, Ctrl+Enter, Enl
 
   // Shift+Enter in textarea does not answer (allows native newline)
   let shiftPrevented = false;
-  card.one("textarea").onKeyDown({
+  card.one(s.TextField).onKeyDown({
     key: "Enter",
     shiftKey: true,
     preventDefault: () => {
@@ -785,7 +783,7 @@ test("keyboard shortcuts on a question card: Enter, Shift+Enter, Ctrl+Enter, Enl
 
   // Ctrl+Shift+Enter in textarea triggers Enlighten me, sending note text and clearing note
   let enlightenPrevented = false;
-  card.one("textarea").onKeyDown({
+  card.one(s.TextField).onKeyDown({
     key: "Enter",
     ctrlKey: true,
     shiftKey: true,
@@ -799,9 +797,9 @@ test("keyboard shortcuts on a question card: Enter, Shift+Enter, Ctrl+Enter, Enl
   assert.match(card.html(), /<textarea[^>]*><\/textarea>/);
 
   // Type new note, then Enter in textarea rubs the lamp
-  card.one("textarea").onChange({ target: { value: "Pressed today" } });
+  card.one(s.TextField).onText("Pressed today");
   let enterPrevented = false;
-  card.one("textarea").onKeyDown({
+  card.one(s.TextField).onKeyDown({
     key: "Enter",
     preventDefault: () => {
       enterPrevented = true;
@@ -821,7 +819,7 @@ test("keyboard shortcuts on a question card: Enter, Shift+Enter, Ctrl+Enter, Enl
   assert.equal(answered.length, 2);
 
   // Cmd+Shift+Enter on card triggers enlighten
-  card.one("textarea").onChange({ target: { value: "From card" } });
+  card.one(s.TextField).onText("From card");
   card.one("question-card").onKeyDown({
     key: "Enter",
     metaKey: true,
@@ -848,7 +846,7 @@ test("keyboard shortcuts on a question card: Enter, Shift+Enter, Ctrl+Enter, Enl
   assert.ok(withdrawPrevented);
   assert.deepEqual(withdrawn, ["Q01", "Q01"]);
   let textareaWithdrawPrevented = false;
-  card.one("textarea").onKeyDown({
+  card.one(s.TextField).onKeyDown({
     key: "Backspace",
     metaKey: true,
     shiftKey: true,
@@ -1519,13 +1517,13 @@ test("L25 / Q77: the answer button names the worker that starts (Build, Iterate,
   assert.match(html, /lamp-enlighten/);
 
   // Typing a note on a work option switches the button to "To the lead" (kind-lead, lamp) with the note tooltip.
-  card.one("textarea").onChange({ target: { value: "Keep the border 1px" } });
+  card.one(s.TextField).onText("Keep the border 1px");
   html = card.html();
   assert.match(
     html,
     /class="button accent lamp-rub kind-lead" title="Goes to the lead: your note lets the lead adjust the planned task \(Build typed answer buttons\) before launching it\. \(↵\)"><svg[^>]*lucide-lamp[^]*?To the lead<kbd/,
   );
-  card.one("textarea").onChange({ target: { value: "" } });
+  card.one(s.TextField).onText("");
   assert.match(card.html(), /lamp-rub kind-work".*?Build<kbd/);
 
   // Selecting option B (mockup): button is "Iterate · round 1/3" (kind-mock, pencil-ruler), Enlighten me is hidden,
@@ -1610,14 +1608,88 @@ test("L25 / Q77: note and comment fields allow 8000 characters in the window and
   assert.equal(s.renderToStaticMarkup(h(s.NoteCounter, { length: 6399 })), "");
   assert.equal(
     s.renderToStaticMarkup(h(s.NoteCounter, { length: 6400 })),
-    '<span class="note-count">6400 / 8000</span>',
+    '<span class="note-count" data-anchor-skip="">6400 / 8000</span>',
   );
   assert.equal(
     s.renderToStaticMarkup(h(s.NoteCounter, { length: 7599 })),
-    '<span class="note-count">7599 / 8000</span>',
+    '<span class="note-count" data-anchor-skip="">7599 / 8000</span>',
   );
   assert.equal(
     s.renderToStaticMarkup(h(s.NoteCounter, { length: 7600 })),
-    '<span class="note-count near">7600 / 8000</span>',
+    '<span class="note-count near" data-anchor-skip="">7600 / 8000</span>',
   );
+});
+
+// W526: a controlled note rendered the whole card at each key, 3 to 9 ms of script in WebKit (L55). The note is the
+// browser's own now: only what the card shows around it (a note that turns the plan over to the lead) renders it.
+test("a key typed in the note renders nothing of the card; Enlighten me sends the last text typed", async () => {
+  const container = setupMockDom();
+  const below = (el, out = []) => {
+    for (const child of el.childNodes) {
+      out.push(child);
+      below(child, out);
+    }
+    return out;
+  };
+  const props = (el) =>
+    el[Object.keys(el).find((k) => k.startsWith("__reactProps$"))];
+  const settle = async () => {
+    for (let i = 0; i < 4; i++)
+      await s.act(() => new Promise((r) => setTimeout(r, 0)));
+  };
+  const sent = [];
+  let renders = 0;
+  const root = s.createRoot(container);
+  try {
+    await s.act(async () =>
+      root.render(
+        h(
+          s.Profiler,
+          { id: "card", onRender: () => renders++ },
+          h(s.WishQuestion, {
+            question: {
+              id: "q1",
+              code: "Q01",
+              text: "Which oil?",
+              options: ["Olive", "Paraffin"],
+              recommendation: "A: it smells good.",
+              rounds: [],
+            },
+            onAnswer: async () => assert.fail("Enlighten me answers nothing"),
+            onEnlighten: async (note) => {
+              sent.push(note);
+            },
+          }),
+        ),
+      ),
+    );
+    const box = below(container).find((el) => el.nodeName === "TEXTAREA");
+    assert.ok(box, "an open question has its note");
+    // Typed as the browser does: the box holds the text, then React hears the change.
+    const type = (value) =>
+      s.act(() => {
+        box.value = value;
+        props(box).onChange({ target: box });
+      });
+    await type("H");
+    await settle();
+    const before = renders;
+    for (const value of ["Ho", "How", "How long", "How long?"])
+      await type(value);
+    await settle();
+    assert.equal(renders, before, "the keys after the first render nothing");
+    const enlighten = below(container).find((el) =>
+      String(el.attributes?.class ?? "").includes("lamp-enlighten"),
+    );
+    await s.act(async () => props(enlighten).onClick());
+    await new Promise((r) => setTimeout(r, 400));
+    await settle();
+    assert.deepEqual(sent, ["How long?"]);
+    assert.equal(box.value, "", "sent, the note is cleared");
+  } finally {
+    s.act(() => root.unmount());
+    await new Promise((r) => setTimeout(r, 30));
+    for (const handle of process._getActiveHandles())
+      if (handle?.constructor?.name === "MessagePort") handle.unref();
+  }
 });

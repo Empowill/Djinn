@@ -333,7 +333,8 @@
                 <h3><a href="#machine-and-load">The machine</a></h3>
                 <p>
                   Djinn reads what each worker uses, CPU, memory and processes, every five seconds; on Linux from a systemd
-                  scope of its own. Another worker starts only when the free memory holds its typical peak.
+                  scope of its own. Another worker starts only when the free memory holds its typical peak. The checks
+                  Djinn runs take the CPU after the window, the workers after them, so typing stays fluid.
                   <code>djinn machine show</code> lists them, the busiest first. Its Go builds share one cache across
                   worktrees (<code>-trimpath</code>); when the disk runs low, Djinn trims that cache, and almost full,
                   it tells you and holds the push checks until space comes back. On Auto, the load follows the programs

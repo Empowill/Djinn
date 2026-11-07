@@ -13,6 +13,7 @@ export async function screens() {
     `export {
   createElement,
   act,
+  Profiler,
   useState,
   __CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE as reactInternals,
 } from "react";
@@ -24,10 +25,16 @@ export { ProjectGear, WishSidebar } from "@/src/wish-sidebar.tsx";
 export { SyncLine, SyncLines, syncTitle } from "@/src/project-sync.tsx";
 export {
   WishQuestion,
-  NoteCounter,
   NOTE_KEY,
   optionStep,
 } from "@/src/wish-question.tsx";
+export {
+  NoteCounter,
+  TextField,
+  TextLine,
+  hasText,
+  useTyped,
+} from "@/src/text-field.tsx";
 export {
   historyStep,
   nextWish,
@@ -84,6 +91,7 @@ export {
   NOTE_MAX,
 } from "@/src/data/format.ts";
 export { FlightPlan } from "@/src/flight-plan.tsx";
+export { LeadMessage } from "@/src/lead-message.tsx";
 export {
   Glance,
   LeadSideLog,
@@ -128,6 +136,7 @@ export {
   sleepTasks,
   sleepUntil,
 } from "@/src/wish-dialogs.tsx";
+export { PromptShape, promptShape } from "@/src/wish-composer.tsx";
 export {
   BranchChoice,
   ConfigChanges,

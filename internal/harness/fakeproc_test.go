@@ -49,6 +49,10 @@ func TestMain(m *testing.M) {
 	if len(os.Args) > 1 && os.Args[1] == fakeParentArg {
 		os.Exit(fakeParent(os.Args[2:]))
 	}
+	if len(os.Args) > 1 && os.Args[1] == fakePriorityArg {
+		fmt.Println(ownLevel())
+		os.Exit(0)
+	}
 	if f := os.Getenv("DJINN_FAKE_PREFIX"); f != "" {
 		os.Exit(fakePrefix(f))
 	}

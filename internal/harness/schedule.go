@@ -70,7 +70,6 @@ func WithTotal(total func() uint64) Option {
 
 // SetPolicy updates the scheduling policy and wakes the scheduler for the next pass.
 func (h *Harness) SetPolicy(p machine.Policy) {
-	h.updatePriorities(p.LowPriority())
 	logx.Lock(&h.sched, "scheduler")
 	h.policy.Store(&p)
 	if !p.Auto && h.capacity != nil {

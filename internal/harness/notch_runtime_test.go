@@ -16,6 +16,7 @@ import (
 	"github.com/empowill/djinn/internal/testx"
 )
 
+// isWorkerLowPriority says whether the task's fake worker was started below the window (lowNice).
 func isWorkerLowPriority(h *Harness, taskID string) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -24,16 +25,16 @@ func isWorkerLowPriority(h *Harness, taskID string) bool {
 		return false
 	}
 	if fw, ok := r.worker.(*fakeWorker); ok {
-		return fw.IsLowPriority()
+		return fw.Nice() == lowNice
 	}
 	return false
 }
 
 // TestNotchRuntimePriorityAndPause verifies that lowering the operating load notch:
-// 1. Immediately sets low CPU priority on running workers (Q120 A).
+// 1. Leaves the running workers at the low CPU priority they started at under High (Q298, Q371).
 // 2. Immediately pauses extra running workers in Q121 order (Q117 reversed).
 // 3. Emits a paused status event and a journal entry with method "harness/notch".
-// 4. Raising the notch back resumes paused workers first (Q123) and restores normal priority.
+// 4. Raising the notch back resumes paused workers first (Q123), still at low priority.
 func TestNotchRuntimePriorityAndPause(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
@@ -42,7 +43,7 @@ func TestNotchRuntimePriorityAndPause(t *testing.T) {
 	e := up(t, t.TempDir(), WithCapacity(lim.capacity), WithTick(10*time.Millisecond))
 	wishID, _ := e.wish(t, nativeFolder(t))
 
-	// Start two workers with standard priority, disjoint write scopes.
+	// Start two workers under High, disjoint write scopes.
 	e.h.SetPolicy(machine.Policy{Notch: djinnv1.LoadNotch_LOAD_NOTCH_HIGH})
 
 	w1 := e.mustSpawn(t, wishID, "Work 1", "wait", &planv1.TaskServiceSpawnRequest{WriteScopes: []string{"s1"}})
@@ -51,8 +52,8 @@ func TestNotchRuntimePriorityAndPause(t *testing.T) {
 	w2 := e.mustSpawn(t, wishID, "Work 2", "wait", &planv1.TaskServiceSpawnRequest{WriteScopes: []string{"s2"}})
 	e.until(t, w2.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))
 
-	if isWorkerLowPriority(e.h, w1.GetId()) || isWorkerLowPriority(e.h, w2.GetId()) {
-		t.Fatal("expected standard priority on running workers under High notch")
+	if !isWorkerLowPriority(e.h, w1.GetId()) || !isWorkerLowPriority(e.h, w2.GetId()) {
+		t.Fatal("expected low priority on running workers under High notch")
 	}
 
 	// Lower notch to Minimal, then reduce slots to 1: the other way round, a scheduler pass between the two
@@ -60,12 +61,9 @@ func TestNotchRuntimePriorityAndPause(t *testing.T) {
 	e.h.SetPolicy(machine.Policy{Notch: djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL})
 	lim.set(1, "")
 
-	// 1. Priorities updated at once.
-	if !isWorkerLowPriority(e.h, w1.GetId()) {
-		t.Errorf("w1 was not set to low priority after lowering notch")
-	}
-	if !isWorkerLowPriority(e.h, w2.GetId()) {
-		t.Errorf("w2 was not set to low priority after lowering notch")
+	// 1. Priorities unchanged.
+	if !isWorkerLowPriority(e.h, w1.GetId()) || !isWorkerLowPriority(e.h, w2.GetId()) {
+		t.Errorf("a worker left low priority after lowering notch")
 	}
 
 	// 2. Extra worker paused in Q121 order (Q117 reversed):
@@ -96,15 +94,15 @@ func TestNotchRuntimePriorityAndPause(t *testing.T) {
 		t.Errorf("no journal entries with actor %q and method %q: %v", actorHarness, methodNotch, err)
 	}
 
-	// 4. Raise notch back to High with 2 slots: W2 resumes first with normal priority.
+	// 4. Raise notch back to High with 2 slots: W2 resumes first, at low priority still.
 	lim.set(2, "")
 	e.h.SetPolicy(machine.Policy{Notch: djinnv1.LoadNotch_LOAD_NOTCH_HIGH})
 	e.until(t, w2.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))
 	if paused := e.h.Paused(); paused != 0 {
 		t.Errorf("harness.Paused() = %d, want 0", paused)
 	}
-	if isWorkerLowPriority(e.h, w2.GetId()) {
-		t.Errorf("w2 is still low priority after raising notch to High")
+	if !isWorkerLowPriority(e.h, w2.GetId()) {
+		t.Errorf("w2 left low priority after raising notch to High")
 	}
 	w2Events = e.storedEvents(t, w2.GetId())
 	if !slices.ContainsFunc(w2Events, func(ev *planv1.TaskEvent) bool {
@@ -230,7 +228,7 @@ func TestNotchRuntimeMemoryInterrupt(t *testing.T) {
 }
 
 // TestNotchRuntimeAutoNeverPauses verifies Q124 (C):
-// in Auto mode, lower the priority and stop starting workers, never pause running workers.
+// in Auto mode, stop starting workers, never pause running workers, which stay at low priority.
 func TestNotchRuntimeAutoNeverPauses(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
@@ -271,7 +269,7 @@ func TestNotchRuntimeAutoNeverPauses(t *testing.T) {
 		t.Errorf("harness.Paused() = %d in Auto mode, want 0", paused)
 	}
 
-	// Priority is lowered even though no pause occurred.
+	// Low priority, as at any notch but Overclock.
 	if !isWorkerLowPriority(e.h, w1.GetId()) || !isWorkerLowPriority(e.h, w2.GetId()) {
 		t.Errorf("expected low priority on running workers in Auto mode under Minimal notch")
 	}
