@@ -2319,10 +2319,11 @@ type LeadServiceClient interface {
 	// next batch's session reads it, and a text written while a batch runs waits for the next one. A worker cannot
 	// call it, and djinn mcp has no tool for it.
 	Tell(context.Context, *connect.Request[v1.LeadServiceTellRequest]) (*connect.Response[v1.LeadServiceTellResponse], error)
-	// Answer the developer in the window, in a bubble held to the Lamp pill: a short reply to a message from the
-	// window, or, with --decided, a decision the lead took alone that the developer would want to know. Puts a block of
-	// kind "reply" (or "decided") on the wish, from the lead, at most 600 characters; for a longer answer, write a
-	// report block and name it here. A worker cannot call it.
+	// Acknowledge the developer in the window, in a bubble held to the Lamp pill that fades 2 minutes after it shows:
+	// one sentence that answers a message from the window, or, with --decided, a decision the lead took alone that the
+	// developer would want to know. Puts a block of kind "reply" (or "decided") on the wish, from the lead, at most 160
+	// characters on one line, never a discussion; what is longer goes in a question or a block. A worker cannot call
+	// it.
 	Say(context.Context, *connect.Request[v1.LeadServiceSayRequest]) (*connect.Response[v1.LeadServiceSayResponse], error)
 	// The lead's journal while Djinn drives it: a paragraph per batch, the latest last, saying who led it (agent, model,
 	// session), the events it took, the commands it ran, the text that ended its turn and what it cost. Each batch's
@@ -2769,10 +2770,11 @@ type LeadServiceHandler interface {
 	// next batch's session reads it, and a text written while a batch runs waits for the next one. A worker cannot
 	// call it, and djinn mcp has no tool for it.
 	Tell(context.Context, *connect.Request[v1.LeadServiceTellRequest]) (*connect.Response[v1.LeadServiceTellResponse], error)
-	// Answer the developer in the window, in a bubble held to the Lamp pill: a short reply to a message from the
-	// window, or, with --decided, a decision the lead took alone that the developer would want to know. Puts a block of
-	// kind "reply" (or "decided") on the wish, from the lead, at most 600 characters; for a longer answer, write a
-	// report block and name it here. A worker cannot call it.
+	// Acknowledge the developer in the window, in a bubble held to the Lamp pill that fades 2 minutes after it shows:
+	// one sentence that answers a message from the window, or, with --decided, a decision the lead took alone that the
+	// developer would want to know. Puts a block of kind "reply" (or "decided") on the wish, from the lead, at most 160
+	// characters on one line, never a discussion; what is longer goes in a question or a block. A worker cannot call
+	// it.
 	Say(context.Context, *connect.Request[v1.LeadServiceSayRequest]) (*connect.Response[v1.LeadServiceSayResponse], error)
 	// The lead's journal while Djinn drives it: a paragraph per batch, the latest last, saying who led it (agent, model,
 	// session), the events it took, the commands it ran, the text that ended its turn and what it cost. Each batch's

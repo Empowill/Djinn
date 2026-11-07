@@ -146,10 +146,11 @@ func leadRules(projects []*planv1.Project, home string, driven bool) string {
 		"request like any other: answer it in the window, never in the terminal, and a decision taken there gets a " +
 		"block of kind decision.\n" +
 		"- **Answer a message from the window in the Lamp's bubble (Q78).** To a message the developer sent from the " +
-		"window (\"About wish …\"), reply with `djinn lead say <wish> \"<text>\"` (at most 600 characters; for a longer " +
-		"answer, write a report block and name it there), and tell a decision you took alone that the developer would " +
-		"want to know with `djinn lead say <wish> \"<text>\" --decided` instead of a question that asks nothing; never " +
-		"say that a worker or a task started.\n"
+		"window (\"About wish …\"), reply with `djinn lead say <wish> \"<text>\"`: one sentence, an " +
+		"acknowledgement, never a discussion (at most 160 characters on one line); what is longer goes in a question " +
+		"or a block. Tell a decision you took alone that the developer would want to know with " +
+		"`djinn lead say <wish> \"<text>\" --decided` instead of a question that asks nothing; never say that a " +
+		"worker or a task started.\n"
 	startRule := "- **Start from the brief.** Djinn computes where the active wishes stand: `djinn brief`. " +
 		"Run it when you start and whenever you lose track, then continue from what it says. `djinn wish brief <wish>` gives one wish's detail. Another agent may " +
 		"have led before you: the plan carries over, its session does not.\n"
@@ -174,9 +175,10 @@ func leadRules(projects []*planv1.Project, home string, driven bool) string {
 			"`djinn lead watch`, never wait nor poll for what comes later: it comes in a next batch.\n" +
 			"- **A message is the developer's words (Q78).** A `message` event is what the developer wrote to the Djinn in the " +
 			"window: a request like any other, about the wish it names or none. Act on it, and answer them in the window's " +
-			"bubble with `djinn lead say <wish> \"<text>\"` (at most 600 characters; for a longer answer, write a report " +
-			"block and name it there), never in your text; tell a decision you took alone that the developer would want to " +
-			"know with `djinn lead say <wish> \"<text>\" --decided` instead of a question that asks nothing, and never say " +
+			"bubble with `djinn lead say <wish> \"<text>\"`, never in your text: one sentence, an acknowledgement, " +
+			"never a discussion (at most 160 characters on one line); what is longer goes in a question or a block. " +
+			"Tell a decision you took alone that the developer would want to know with " +
+			"`djinn lead say <wish> \"<text>\" --decided` instead of a question that asks nothing, and never say " +
 			"that a worker or a task started. A decision the developer's message states gets a block of kind decision.\n"
 		startRule = ""
 		watchRule = ""
@@ -448,10 +450,10 @@ func leadCommandsBrief(driven bool) string {
 		"- `djinn brief`: the brief of all active wishes; `djinn brief --wishes`: where they stand only, without these " +
 		"rules, short enough that no tool cuts it.\n" +
 		watch +
-		"- `djinn lead say <wish> \"<text>\"`: answer a message from the window in the Lamp's bubble (at most 600 " +
-		"characters; for a longer answer, write a report block and name it here); `--decided` tells a decision you took " +
-		"alone that the developer would want to know, instead of a question that asks nothing; never say that a worker " +
-		"or a task started.\n" +
+		"- `djinn lead say <wish> \"<text>\"`: acknowledge a message from the window in the Lamp's bubble, in one " +
+		"sentence, never a discussion (at most 160 characters on one line; what is longer goes in a question or a " +
+		"block); `--decided` tells a decision you took alone that the developer would want to know, instead of a " +
+		"question that asks nothing; never say that a worker or a task started.\n" +
 		"- `djinn wish brief <wish>`: one wish's brief, up to date.\n" +
 		"- `djinn wish describe <wish> --text \"…\"`: the wish's description, a few lines: what it is for, its scope, " +
 		"where it goes. The developer edits it in the window too.\n" +

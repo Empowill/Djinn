@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import { bundle } from "./bundle.mjs";
 
 const {
+  LEAD_SAY_SHOW_MS,
   LEAD_SAY_WINDOW_MS,
   advanceLeadSay,
   bubblePlace,
@@ -15,7 +16,9 @@ const {
   eyeTarget,
   flight,
   isLeadSayBlock,
+  leadSayLeftMs,
   leadSayQueue,
+  leadSayShown,
   readLastSent,
   readSeenIds,
   writeLastSent,
@@ -279,6 +282,23 @@ test("unseen reply and decided blocks queue in order, click advances and persist
   assert.equal(bubblePlace(false, 420), "side");
   assert.equal(bubblePlace(false, 280), "above");
   assert.equal(bubblePlace(true, 600), "above");
+});
+
+test("a message shows 2 minutes from when it reaches the front of the bubble, then fades (T70)", () => {
+  const t0 = 1_700_000_000_000;
+  assert.equal(LEAD_SAY_SHOW_MS, 120_000);
+  let shown = leadSayShown("b1", undefined, t0);
+  assert.deepEqual(shown, { id: "b1", at: t0 });
+  // The same front message keeps the time it showed; its time runs out at 2 minutes.
+  shown = leadSayShown("b1", shown, t0 + 90_000);
+  assert.equal(shown.at, t0);
+  assert.equal(leadSayLeftMs(shown, t0 + 90_000), 30_000);
+  assert.equal(leadSayLeftMs(shown, t0 + LEAD_SAY_SHOW_MS), 0);
+  assert.equal(leadSayLeftMs(shown, t0 + LEAD_SAY_SHOW_MS + 5_000), 0);
+  // The next one starts its own 2 minutes; an empty bubble has no clock.
+  shown = leadSayShown("b2", shown, t0 + LEAD_SAY_SHOW_MS);
+  assert.deepEqual(shown, { id: "b2", at: t0 + LEAD_SAY_SHOW_MS });
+  assert.equal(leadSayShown(undefined, shown, t0), undefined);
 });
 
 test("the eye follows a driven lead's batch: thinking, done, failed, while keeping the reader first", () => {

@@ -9861,8 +9861,7 @@ export type LeadServiceSayRequest = Message<"plan.v1.LeadServiceSayRequest"> & {
   wishId: string;
 
   /**
-   * What to show in the window's bubble, at most 600 characters; for a longer answer, write a report block and name it
-   * here.
+   * What to show in the window's bubble: one sentence, at most 160 characters on one line.
    *
    * @generated from field: string text = 2;
    */
@@ -17422,10 +17421,11 @@ export const LeadService: GenService<{
     output: typeof LeadServiceTellResponseSchema;
   },
   /**
-   * Answer the developer in the window, in a bubble held to the Lamp pill: a short reply to a message from the
-   * window, or, with --decided, a decision the lead took alone that the developer would want to know. Puts a block of
-   * kind "reply" (or "decided") on the wish, from the lead, at most 600 characters; for a longer answer, write a
-   * report block and name it here. A worker cannot call it.
+   * Acknowledge the developer in the window, in a bubble held to the Lamp pill that fades 2 minutes after it shows:
+   * one sentence that answers a message from the window, or, with --decided, a decision the lead took alone that the
+   * developer would want to know. Puts a block of kind "reply" (or "decided") on the wish, from the lead, at most 160
+   * characters on one line, never a discussion; what is longer goes in a question or a block. A worker cannot call
+   * it.
    *
    * @generated from rpc plan.v1.LeadService.Say
    */

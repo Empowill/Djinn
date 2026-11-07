@@ -94,3 +94,100 @@ test("a key typed in the box renders nothing; Enter sends the last text typed an
       if (handle?.constructor?.name === "MessagePort") handle.unref();
   }
 });
+
+// T70: the bubble is an acknowledgement of one sentence; it fades 2 minutes after it shows, seen, so a reload does not
+// bring it back. The clock is simulated: Date and setTimeout are node:test's mock timers.
+test("the lead's bubble fades 2 minutes after it shows and does not come back", async (t) => {
+  const container = setupMockDom();
+  const below = (el, out = []) => {
+    for (const child of el.childNodes) {
+      out.push(child);
+      below(child, out);
+    }
+    return out;
+  };
+  // An element is never asserted equal: the message of a failure would print the whole mock tree, and hang.
+  const bubbleText = () =>
+    below(container).find((el) =>
+      (el.attributes?.class ?? "").split(" ").includes("lead-bubble-text"),
+    );
+  const settle = async () => {
+    for (let i = 0; i < 4; i++)
+      await s.act(() => new Promise((r) => setImmediate(r)));
+  };
+  const mem = new Map();
+  const hadStorage = Object.getOwnPropertyDescriptor(
+    globalThis,
+    "localStorage",
+  );
+  Object.defineProperty(globalThis, "localStorage", {
+    configurable: true,
+    value: {
+      getItem: (k) => mem.get(k) ?? null,
+      setItem: (k, v) => mem.set(k, String(v)),
+      removeItem: (k) => mem.delete(k),
+    },
+  });
+  const now = 1_700_000_000_000;
+  const said = {
+    id: "b1",
+    wishId: "w1",
+    kind: "reply",
+    content: "Got it, on it.",
+    position: 1n,
+    createTime: { seconds: BigInt(now / 1000 - 5), nanos: 0 },
+  };
+  const transport = s.createRouterTransport(({ service }) => {
+    service(s.BlockService, { list: () => ({ blocks: [said], total: 1 }) });
+  });
+  const djinn = s.createDjinn(transport, 10);
+  const close = djinn.store.open("w1");
+  await djinn.store.changed("w1", [s.Change.BLOCK]);
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"], now });
+  const pill = () =>
+    h(
+      s.DjinnProvider,
+      { djinn },
+      h(s.LeadMessage, {
+        wishId: "w1",
+        stopped: false,
+        onResume: async () => {},
+      }),
+    );
+  let root = s.createRoot(container);
+  try {
+    await s.act(async () => root.render(pill()));
+    await settle();
+    assert.equal(
+      bubbleText()?.textContent,
+      "Got it, on it.",
+      "the lead's reply shows in the bubble",
+    );
+
+    await s.act(async () => t.mock.timers.tick(2 * 60 * 1000 - 1000));
+    await settle();
+    assert.ok(bubbleText(), "a second before its 2 minutes, it still shows");
+
+    await s.act(async () => t.mock.timers.tick(1000));
+    await settle();
+    assert.ok(!bubbleText(), "at 2 minutes it fades");
+    assert.deepEqual(JSON.parse(mem.get("djinn-lead-say-seen")), ["b1"]);
+
+    // A reload reads it seen: the bubble stays empty.
+    await s.act(async () => root.unmount());
+    root = s.createRoot(container);
+    await s.act(async () => root.render(pill()));
+    await settle();
+    assert.ok(!bubbleText(), "a faded bubble does not come back");
+  } finally {
+    s.act(() => root.unmount());
+    t.mock.timers.reset();
+    close();
+    if (hadStorage)
+      Object.defineProperty(globalThis, "localStorage", hadStorage);
+    else delete globalThis.localStorage;
+    await new Promise((r) => setTimeout(r, 30));
+    for (const handle of process._getActiveHandles())
+      if (handle?.constructor?.name === "MessagePort") handle.unref();
+  }
+});

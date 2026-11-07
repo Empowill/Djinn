@@ -20,8 +20,8 @@ Before the loop opens, three things are set, or there is no loop:
 Then write the mandate, with these three, in a decision block of the wish, so that every batch reads the same one.
 
 While the loop runs:
-- **No blocking question.** The lead decides, and says each decision the developer would want to know with
-  `djinn lead say <wish> --decided "…"`. A question that remains is asked without `--move` nor `--before`: it can
+- **No blocking question.** The lead decides, and says each decision the developer would want to know in one
+  sentence with `djinn lead say <wish> --decided "…"`, its why in a decision block. A question that remains is asked without `--move` nor `--before`: it can
   wait ([[blocking-or-can-wait]]). A worker's blocking question is answered by the lead from the mandate and the wish's
   decisions ([[worker-blocking-questions]]).
 - **The cycle**, numbered N from 1:
