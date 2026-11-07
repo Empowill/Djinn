@@ -1420,7 +1420,7 @@ func TestAzimaPRPass(t *testing.T) {
 		in.git(t, in.repo, "push", "origin", b1)
 		in.git(t, in.repo, "update-ref", "refs/remotes/origin/"+b1, in.git(t, in.repo, "rev-parse", "refs/heads/"+b1))
 
-		in.pass(t, 0)
+		pastDraft(t, in)
 
 		questions, err := store.List[*planv1.Question](t.Context(), in.db, store.Where{"wish_id": in.wishID})
 		if err != nil {
@@ -1493,7 +1493,7 @@ func TestAzimaPRPass(t *testing.T) {
 		forge.mu.Unlock()
 		in.git(t, in.repo, "merge", "--quiet", "--no-ff", b1, "-m", "Merge "+b1+" into main")
 
-		in.pass(t, 0)
+		pastDraft(t, in)
 
 		if got := in.get(t, t1.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE ||
 			got.GetAzima().GetPr().GetState() != planv1.AzimaPrState_AZIMA_PR_STATE_MERGED {
@@ -1558,7 +1558,7 @@ func TestAzimaPRPass(t *testing.T) {
 		forge.views[b1] = `{"iid":201,"state":"opened","target_branch":"main","web_url":"https://gitlab.example.com/acme/project/-/merge_requests/201","detailed_merge_status":"mergeable","head_pipeline":{"id":99,"status":"success"}}`
 		forge.mu.Unlock()
 
-		in.pass(t, 0)
+		pastDraft(t, in)
 
 		// Ready to merge question asked for MR !201.
 		questions, err := store.List[*planv1.Question](t.Context(), in.db, store.Where{"wish_id": in.wishID})
@@ -1671,4 +1671,14 @@ func skillOpens(t *testing.T, script string) (in *integration, opener *planv1.Ta
 		t.Errorf("Djinn created %q itself", got)
 	}
 	return in, all[0], asked, openers
+}
+
+// pastDraft makes the passes that bring azimas whose branches the test pushed past their drafts, to their requests on
+// the forge: the draft is tried at the first pass that sees a branch pushed, its request looked at by the next. That
+// pass is the one before, or the first of these two when the push apart of the one before ended after its look at
+// the azimas, as on a loaded machine (W640): one pass would leave the look to the next in that order.
+func pastDraft(t *testing.T, in *integration) {
+	t.Helper()
+	in.pass(t, 0)
+	in.pass(t, 0)
 }
