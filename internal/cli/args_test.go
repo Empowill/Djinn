@@ -267,6 +267,13 @@ func parseCases(t *testing.T) []parseCase {
 			parseOnly: true,
 		},
 		{name: "unknown flag", want: answer, args: []string{"Q03", "b", "--force"}, wantErr: "unknown flag --force"},
+		{
+			name: "the order of the sign-ins, a flag each",
+			args: []string{"--sign-in", "claude/work", "--sign-in", "codex", "--sign-in", "claude"},
+			want: &planv1.LeadServiceOrderRequest{SignIn: []string{"claude/work", "codex", "claude"}},
+		},
+		{name: "the lead pinned on an account", args: []string{"work"}, want: &planv1.LeadServicePinRequest{Account: "work"}},
+		{name: "the lead unpinned", args: []string{"--unpin"}, want: &planv1.LeadServicePinRequest{Unpin: true}},
 		{name: "flag without value", want: answer, args: []string{"Q03", "b", "--note"}, wantErr: "--note needs a value"},
 		{name: "too many arguments", want: answer, args: []string{"Q03", "b", "c"}, wantErr: `unexpected argument "c"`},
 		{name: "unknown enum value", want: answer, args: []string{"Q03", "e"}, wantErr: `<choice>: "e" is not one of yes, no, a, b, c, d`},
@@ -346,6 +353,37 @@ func TestCheck(t *testing.T) {
 			}
 			err = check(msg, label)
 			if (err == nil) != tt.valid {
+				t.Errorf("valid=%v, error=%v", tt.valid, err)
+			}
+		})
+	}
+}
+
+// TestCheckLeadOrder: djinn lead order takes each sign-in as an agent, or agent/name for an account, and needs one at
+// least; djinn lead pin takes an account's name.
+func TestCheckLeadOrder(t *testing.T) {
+	for _, tt := range []struct {
+		name  string
+		msg   proto.Message
+		args  []string
+		valid bool
+	}{
+		{"agents and accounts", &planv1.LeadServiceOrderRequest{}, []string{"--sign-in", "claude/work", "--sign-in", "antigravity"}, true},
+		{"no sign-in", &planv1.LeadServiceOrderRequest{}, nil, false},
+		{"an unknown agent", &planv1.LeadServiceOrderRequest{}, []string{"--sign-in", "gemini"}, false},
+		{"an account alone", &planv1.LeadServiceOrderRequest{}, []string{"--sign-in", "work"}, false},
+		{"a bad account name", &planv1.LeadServiceOrderRequest{}, []string{"--sign-in", "claude/Work"}, false},
+		{"pin on an account", &planv1.LeadServicePinRequest{}, []string{"work"}, true},
+		{"pin on its own sign-in", &planv1.LeadServicePinRequest{}, nil, true},
+		{"pin on a bad name", &planv1.LeadServicePinRequest{}, []string{"Work"}, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			msg, err := parse(local(t, tt.msg), tt.args)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := check(msg, label); (err == nil) != tt.valid {
 				t.Errorf("valid=%v, error=%v", tt.valid, err)
 			}
 		})

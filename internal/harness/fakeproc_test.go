@@ -33,7 +33,8 @@ import (
 //	DJINN_FAKE_END       what it does once the fixture is played: eof (wait until its input is closed, exit 0),
 //	                     eof:N (the same, exit N), exit:N (exit N at once), hang (ignore SIGTERM, never end),
 //	                     wait (wait until it is stopped), tick (write "tick N" to the error output every 20 ms
-//	                     until it is stopped)
+//	                     until it is stopped); claude auth status exits at once with its N, 0 by default
+//	DJINN_FAKE_AUTH      a fixture claude auth status prints, comments aside, when set
 //
 // claude and antigravity read one message before the first line and after each result line. codex answers
 // JSON-RPC: an answer line of the fixture (id and result or error) gets the id of the client's next request, and
@@ -87,6 +88,24 @@ func fakePrefix(record string) int {
 }
 
 func fakeProvider(provider string) int {
+	if len(os.Args) > 2 && slices.Equal(os.Args[1:3], []string{"auth", "status"}) {
+		// claude auth status: signed in (0), or with DJINN_FAKE_END eof:N, N; it prints DJINN_FAKE_AUTH and reads no
+		// input.
+		if f := os.Getenv("DJINN_FAKE_AUTH"); f != "" {
+			b, err := os.ReadFile(f)
+			if err != nil {
+				return 10
+			}
+			for l := range strings.Lines(string(b)) {
+				if !strings.HasPrefix(l, "#") {
+					fmt.Print(l)
+				}
+			}
+		}
+		_, code, _ := strings.Cut(os.Getenv("DJINN_FAKE_END"), ":")
+		n, _ := strconv.Atoi(code)
+		return n
+	}
 	if os.Getenv("DJINN_FAKE_END") == "hang" {
 		// From the start: a SIGTERM sent once the first line is read must not end it.
 		signal.Ignore(syscall.SIGTERM)
@@ -262,6 +281,7 @@ type fake struct {
 	provider string // claude, antigravity or codex
 	fixture  string // the case, a file of testdata/<provider>
 	end      string // DJINN_FAKE_END
+	auth     string // the case claude auth status prints (DJINN_FAKE_AUTH), a file of testdata/<provider>; none if empty
 }
 
 // env is the environment that makes the test binary play f, and the files where it writes its arguments and
@@ -278,6 +298,13 @@ func (f fake) env(t *testing.T) (env []string, args, input string) {
 		"DJINN_FAKE_ARGS=" + args, "DJINN_FAKE_INPUT=" + input}
 	if stderr := strings.TrimSuffix(fixture, ".jsonl") + ".stderr"; exists(stderr) {
 		env = append(env, "DJINN_FAKE_STDERR="+stderr)
+	}
+	if f.auth != "" {
+		auth, err := filepath.Abs(filepath.Join("testdata", f.provider, f.auth+".jsonl"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		env = append(env, "DJINN_FAKE_AUTH="+auth)
 	}
 	return env, args, input
 }

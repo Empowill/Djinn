@@ -59,11 +59,15 @@ export {
 } from "@/src/wish-task.tsx";
 export {
   AgentSetupPanel,
+  leadReady,
   accountNamePattern,
   accountNameValid,
+  timeLeft,
   usageOf,
   useAgents,
   withPaused,
+  withUnlimited,
+  unlimitedFor,
 } from "@/src/agent-setup.tsx";
 export {
   azimaTime,
@@ -114,6 +118,7 @@ export {
 } from "@/src/data/flight.ts";
 export { AzimaCard, azimaFinished, DraftAzimaCard } from "@/src/azima.tsx";
 export { RankedAzimaList } from "@/src/azima-rank.tsx";
+export { RankedSignIns, moved, reordered } from "@/src/sign-in-order.tsx";
 export {
   FolderField,
   MakeWish,
@@ -140,13 +145,13 @@ export {
   SummoningCircle,
   UpdateModelsSection,
   canonicalModelId,
+  loadOf,
 } from "@/src/summoning-circle.tsx";
 export {
   LastPushes,
   LeadBatchStatus,
   LeadButton,
   LeadJournal,
-  LeadMenu,
   MainMerges,
   PushStrategySelector,
   WhereWorkLands,
@@ -157,7 +162,6 @@ export {
   batchCost,
   leadTrouble,
   recordedAgent,
-  seatLabel,
   seatName,
 } from "@/src/wish-head.tsx";
 export { UpdateBannerView, readyKey } from "@/src/update-banner.tsx";
@@ -169,7 +173,7 @@ export {
   pageShortcut,
 } from "@/src/page-keys.ts";
 export { PageHeaderAction } from "@/src/page-header.tsx";
-export { InstallStep, UiService } from "@/gen/ts/ui/v1/ui_pb.ts";
+export { InstallStep, ProviderState, UiService } from "@/gen/ts/ui/v1/ui_pb.ts";
 export {
   memory,
   resourcesDetail,
@@ -476,7 +480,9 @@ export function setupMockDom() {
     get children() {
       return this.childNodes.filter((c) => c.nodeType === 1);
     }
+    // A node already in the tree moves, as in a browser: React moves a keyed line by inserting it again.
     appendChild(child) {
+      child.parentNode?.removeChild(child);
       child.parentNode = this;
       this.childNodes.push(child);
       return child;
@@ -490,6 +496,7 @@ export function setupMockDom() {
       return child;
     }
     insertBefore(child, before) {
+      child.parentNode?.removeChild(child);
       child.parentNode = this;
       const idx = this.childNodes.indexOf(before);
       if (idx !== -1) this.childNodes.splice(idx, 0, child);

@@ -1007,9 +1007,23 @@ The lead Djinn drives runs on a **seat**: an agent, a model and an account, chos
 `settings.json` (`ui.v1.Settings.lead`) until changed (W132, decision Q31). Each batch reads it as it starts, so a move
 takes effect at the next batch, which carries the lead's journal like any other; the batch records its agent, model and
 account. The moves: `djinn lead move --provider codex --model <model> --account <name>` (the whole seat: an empty model
-is the agent's default, an empty account its own sign-in; without `--provider`, the current agent), or the lead's menu
-in the window (the chip of the lead's seat, at the top of a wish or of the flying carpet), which lists each agent on its own sign-in then on each account,
-and the model.
+is the agent's default, an empty account its own sign-in; without `--provider`, the current agent), or the Summoning
+Circle in the window (W578: the top of a wish or of the flying carpet has no selector): its Djinn row sets the agent and
+model (`LeadService.SetCircle`), **The Djinn's account** pins it on a sign-in of its agent or lets it follow the order
+(`LeadService.Pin`).
+
+**The lead follows the order of the accounts (L2, decision of 06/11/2026 that revised Q31).** Unless it is pinned,
+each batch starts on the sign-in of its agent that the account policy picks for a new worker (`FirstInOrder`, below):
+the first in the developer's order neither paused, limited nor known out of quota, else in overflow. It keeps its agent
+and its model; only the sign-in follows (`LeadDriver.place`, `Harness.pickLead`). A move to an account pins the lead
+there (`ui.v1.Settings.lead_pinned`, `plan.PinLead`): it stays on that account, paused or limited, as the developer
+chose; a move without an account lets it follow the order again. `djinn lead pin [account]` (`LeadService.Pin`) pins
+it on a sign-in of its agent without moving it (no account: its agent's own sign-in), and `djinn lead pin --unpin`
+takes the pin off (Q317): the next batch starts again on the first free sign-in in the order; the window's lead menu
+(Follows the order, then each sign-in of its agent) and the accounts screen (The Djinn's account) call it.
+`LeadService.Get` says `pinned`, and the chip names the account of the last batch while the lead follows the order. A
+limit the lead hits holds its sign-in for every
+worker too (`Harness.holdLead`), and its stream's quota counts as a worker's (`noteQuota`).
 
 **Which agents may lead.** Claude: its rules in `--append-system-prompt-file` (W131). Codex: its rules as the thread's
 `developerInstructions`, and the lead's folder, without `edit`, as its `workspace-write` sandbox (the other folders it
@@ -1019,13 +1033,16 @@ and an agy project granting writes in `WriteDirs`, reads in `ReadDirs`, and the 
 tried on a real run:** a Codex or Antigravity batch; `--max-turns` has no Codex nor Antigravity equivalent, the
 30-minute timeout guards it.
 
-**A usage limit is the developer's move.** A batch that hits a limit (Claude's `rate_limit_event` `rejected`, or a
-limit in its error, as for a worker) is not tried again on the same seat: Djinn moves the lead nowhere by itself. It
-shows the limit beside the chip of the lead's seat and first in the attention bar, with a button per seat it may move to: the
+**A usage limit.** Following the order, a batch that hits a limit (Claude's `rate_limit_event` `rejected`, or a limit
+in its error, as for a worker) goes on at once, in a new session on the next sign-in the policy picks, when one is not
+held by a limit and was not stopped in that batch yet; it spends none of the batch's two tries. With none left, or
+pinned, the batch is not tried again on the same seat. Djinn shows the limit beside the chip of the lead's seat and first in the attention bar, with a button per seat it may move to: the
 other accounts of the same agent first (its model kept), then the other agents on their own sign-in and on each account,
 only those installed whose status command does not say signed out. A click is `LeadService.Move`: the waiting events
 go to the new seat at once. Without a move, the events, newer ones too, wait for the reset the agent gave (15 minutes
-when it gave none), then go to the same seat; **Retry**, on the batch's red line in the **Lead** journal under What runs, tries the
+when it gave none; following the order, the first reset of a sign-in of its agent that a limit holds), then go to the
+seat the next batch reads, its sign-in picked again; with every sign-in of its agent paused, a batch following the
+order fails at once, saying so, and its events wait for the next event or Lead; **Retry**, on the batch's red line in the **Lead** journal under What runs, tries the
 same seat at once.
 
 ### Several subscriptions at once
@@ -1039,21 +1056,51 @@ runs on it). The window's agents setup shows each account under its agent, where
 terminal of the panel. Djinn passes the folder's variable to the sessions it starts on the account and to the status
 check; it never reads nor stores a token.
 
-**The workers' accounts (T33).** Every worker of an agent runs on one of its *sign-ins*: its own (the default folder),
-then its accounts in the order they were added (`plan.SignIns`). One function picks it at each start of a worker,
-launch or resume (`harness.AccountPolicy`, `EarliestWeek` by default, decision Q258 B, `quota.go`), free meaning
-neither paused nor held by a limit: a task that ran stays on its sign-in while it is free and not known to be out of
-quota; a new one goes to the free sign-in whose week resets first among those with quota left (both windows under
-95 %), two weeks within an hour of each other going to the one with more left; with no quota known, `FirstFree`, the
-simple overflow: the first free sign-in in that order. With every free sign-in out of quota, `FirstFree` too: a quota
-spent does not hold a task back, as a limit does not (W409). The account goes in the worker's environment (`plan.AccountEnv`, `harness.go` `start`) and on its task
+**The workers' accounts (T33).** Every worker of an agent runs on one of its *sign-ins*: its own (the default folder)
+or one of its accounts, in the developer's order of priority (decision Q295 B): one list in `settings.json`
+(`ui.v1.Settings.account_order`, `plan.AccountOrder`) ranks the sign-ins of every agent from the highest priority to
+the lowest; a sign-in it does not name (none written yet, an account added since) comes after, in the order by default:
+each agent's own, then its accounts as added. `plan.WriteAccountOrder` writes the whole list at once, refusing an
+unknown sign-in or one named twice; `djinn lead order --sign-in claude/work --sign-in claude …` (`LeadService.Order`,
+a sign-in as `agent` or `agent/name`) writes it, and the accounts screen sends it whole after each drag or Alt+Up and
+Alt+Down (`src/sign-in-order.tsx`); `LeadService.Accounts` gives it back (`order`, with `pinned`). The order never changes a
+worker's agent. One function picks the sign-in at each start of a worker, launch or resume (`harness.AccountPolicy`,
+`ByMode` by default, `quota.go`), in the mode the developer chose (decision Q339 C, `Settings.account_mode`,
+`djinn lead account-mode dynamic|manual`, `LeadService.AccountMode`): a task that ran stays on its sign-in while it is
+free (neither paused nor held by a limit) and not known out of quota (either window at 95 % or more). Otherwise, in
+the **dynamic** mode, by default (`Dynamic`, decision Q258 B), among the free sign-ins with quota left, the one whose
+week resets first, two within an hour going to the least used; then the first free one whose quota is unknown; then
+the first free *pseudo-unlimited* one; each group in the order. In the **manual** mode (`FirstInOrder`, decision Q295
+B), the first such sign-in in the order. A quota never read, or older than 15 minutes, holds none back.
+
+**Pseudo-unlimited sign-ins.** A sign-in that gives no quota at all (`AccountOption.Unlimited`, `AccountUsage.unlimited`):
+its agent tells none (no `UsageProber`: Codex, Antigravity), or a reading told no window: claude answers `get_usage`
+with `rate_limits_available: false` while `claude auth status` exits 0 (an API key; signed out, the same answer is a
+probe failure, `claude_usage.go`). A failing probe alone never makes a Claude sign-in unlimited: its quota is only
+unknown. In the dynamic mode it goes after the sign-ins with a quota, and a forced one's quota never holds it back.
+`djinn lead unlimited claude/work forced|limited|auto` (`LeadService.Unlimited`, `Settings.unlimited_forced` and
+`unlimited_unforced`) corrects the detection either way; `AccountUsage.unlimited_detected` and `unlimited_setting`
+let the accounts screen show Unlimited (auto) or Unlimited (forced), and its switch write auto when it agrees with the
+detection.
+
+**Overflow (decision L2 of 06/11/2026).** With every sign-in of the agent full, limited or paused, the task does not
+only wait for a reset: it starts *in overflow* (`AccountPick.Overflow`) on the sign-in not paused that may spend extra
+credits as Djinn last read it, else on the first whose extra credits are unknown, else on the first full one, else on
+one a limit holds (W409: a limit learnt from a message does not hold a task back alone); the one it ran on first, then
+the first in the order. If the agent refuses, the worker hits the limit, which holds that sign-in: the task moves to
+the next one not held, or waits for its reset as before. The start event says "in overflow: every sign-in of claude is
+full, limited or paused; it spends extra credits if the account allows them, else waits for the reset", and
+`Harness.Overflowing` (a running worker) and `LeadDriver.Overflowing` (the lead's running session) tell it:
+`AccountUsage.overflowing` marks the sign-in where a worker, or the lead's running batch (`LeadBatch.overflow`), runs
+past its limits, and the accounts screen reads In overflow there. The account goes in the worker's environment (`plan.AccountEnv`, `harness.go` `start`) and on its task
 (`Task.account`, each `TaskRun.account`); a Claude session on an account gets `autoMemoryDirectory` in its
 `--settings`, the own folder's `projects/<repository>/memory`, so that every account shares one memory.
 
 - **Pause.** `djinn lead pause-account work`, or `djinn lead pause-account --provider antigravity` for an agent's own
   sign-in (`Account.paused`, `Settings.paused_sign_ins`), keeps new workers off it; `djinn lead resume-account` brings
   it back. A running worker finishes its turn. While every sign-in of an agent is paused, its tasks wait (hold
-  `LIMIT`, "waits for a claude sign-in: its own is paused; work is paused"). The lead's seat never moves (Q31).
+  `LIMIT`, "waits for a claude sign-in: its own is paused; work is paused"). A lead that follows the order skips a
+  paused sign-in too; a lead pinned on one stays there.
 - **A limit is held per sign-in.** A limit of the whole account (not per-minute, naming no model nor family such as
   Claude's `seven_day_opus`) holds the sign-in a worker hit it on until its reset (or the backoff). When another
   sign-in is free, the task resumes there at once, spending no resume, its wait reason "the account work hit the
@@ -1072,6 +1119,10 @@ spent does not hold a task back, as a limit does not (W409). The account goes in
   `{"type":"control_request","request_id":"djinn-usage","request":{"subtype":"get_usage"}}`, in the account's folder);
   and each claude worker's `rate_limit_event`, whose `unifiedWindows` (`five_hour`, `seven_day`: utilization 0 to 1,
   `resetsAt` in Unix seconds) come at every turn (an `allowed` one makes an event of no kind that is not written).
+  Both tell whether the sign-in may spend extra credits (`Quota.Extra`): get_usage's `rate_limits.extra_usage`
+  (`is_enabled`, and neither `user_disabled`, `spend_limit_reached` nor a `disabled_reason`), a worker's
+  `overageStatus` (`allowed` or `allowed_warning`: yes; `rejected`: no); a reading that does not tell keeps the last
+  one's. The credits spent and their limit are never kept.
   get_usage answers `rate_limits.five_hour|seven_day.{utilization (percent), resets_at (RFC 3339)}`, and
   `rate_limits_available: false` in a folder signed in to nothing; undocumented, tried on claude 2.1.316 (W374, W380),
   as T3 Code does. A reading older than 15 minutes counts as unknown. `LeadService.Accounts` gives them

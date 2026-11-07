@@ -1,7 +1,7 @@
 # Configure several Claude accounts
 
-With two Claude subscriptions on one machine, Djinn runs its workers on both, and spends first the week that ends
-first. Each extra subscription is an account: a folder of Claude Code's own, beside its default one, where Claude Code
+With two Claude subscriptions on one machine, Djinn runs its workers on both, in the order of priority you give
+them. Each extra subscription is an account: a folder of Claude Code's own, beside its default one, where Claude Code
 keeps that account's login. Djinn makes the folder and runs the sign-in; it keeps no token and shows none.
 
 ## Before you start
@@ -13,13 +13,15 @@ keeps that account's login. Djinn makes the folder and runs the sign-in; it keep
 
 ## Add the account, step by step
 
-1. Open the agents' setup: **Connections & preferences** at the bottom of the side panel, or **Set up the agents** at
-   the end of the menu of the Djinn's seat, the chip at the top of a wish.
-2. On the panel's last line, the one that starts with a plus, choose **Claude Code** in the first list.
+1. Open the **Summoning Circle**, below the Grimoire in the side panel: a page of the window, with the agents at the
+   top, then Accounts · order of priority. **Connections & preferences**, at the bottom of the side panel, shows the
+   same agents and accounts.
+2. On the last line of the accounts, the one that starts with a plus, choose **Claude Code** in the first list.
 3. Type the account's **name**, such as work: lowercase letters, digits and dashes (the format is below).
 4. Type a **label** if you want one, such as Work account: any text. The window shows it instead of the name.
 5. Click **Add**. Djinn makes the folder: in your home folder, a hidden folder named .claude- followed by the name
-   (for work, .claude-work beside .claude). The account's line appears under Claude Code, and reads Not signed in.
+   (for work, .claude-work beside .claude). The account's line appears at the bottom of the order, and reads Not
+   signed in.
 6. Click **Sign in** on the account's line. The panel's terminal runs Claude Code's own sign-in in that folder, and a
    page may open in your browser. Check that the page shows the second subscription before you accept: a browser
    already signed in to the first one signs that one in again.
@@ -42,21 +44,46 @@ agent and the label; djinn lead accounts lists the accounts.
 
 ## How Djinn shares the workers
 
-- **The week that ends first is spent first.** Each new task of Claude Code starts on the sign-in whose week resets
-  first, among those neither paused nor limited that have quota left: under 95 % of their 5 hours and of their week.
-  What is left of a week is lost at its reset. Two weeks that end within an hour of each other go to the one with more
-  left to lose.
+- **Two modes pick the sign-in.** At the right of Accounts · order of priority, a switch chooses how Djinn picks,
+  among the sign-ins of the agent neither paused, limited nor past 95 % of its 5 hours or of its week:
+  - **Dynamic**, the mode by default: the sign-in whose week ends soonest goes first, since what is left of a week is
+    lost at its reset; two weeks that end within an hour go to the least used. Then the sign-ins whose quota Djinn has
+    not read, then the unlimited ones, each group in your order.
+  - **Manual order**: the first in your order, whatever the weeks. A week that ends soon with quota left is not spent
+    first by itself: put that account at the top.
+
+  Under the switch, each line shows its rank and a grip: drag a line up or down, or focus its grip and press Alt+Up or
+  Alt+Down. In the dynamic mode, the order breaks ties. A change counts at once for the next task; nothing that runs
+  stops. From the command line: djinn lead account-mode dynamic, or manual, and djinn lead order --sign-in claude/work
+  --sign-in claude.
+- **Unlimited sign-ins go last.** A sign-in that gives no quota at all is unlimited: Codex, which tells Djinn none, or
+  a Claude Code account on an API key, signed in yet with no window in its answer. Its line reads Unlimited (auto). A
+  probe that fails is not enough: a Claude Code account Djinn cannot read, signed out, silent, or a subscription with
+  no window in its answer, only has a quota not read. The Unlimited switch on each line corrects Djinn either way: on, the line reads Unlimited (forced), and its quota
+  never holds it back in the dynamic mode; off, it counts as a sign-in with a quota. Switched back to what Djinn
+  detects, the line follows the detection again. From the command line: djinn lead unlimited claude/work forced, then
+  limited or auto.
+- **The Djinn follows the same rule.** Unless you pin it, each batch of the Djinn starts on the sign-in of its agent
+  that the mode picks for a new task. **The Djinn's account**, above the list, pins it on one sign-in whatever the order, or, with Follows
+  the order, takes the pin off; djinn lead pin work, then djinn lead pin --unpin, do it from the command line. A crown marks where the Djinn runs.
+- **When every sign-in is full, Djinn overflows.** It starts the task on the first sign-in that may spend extra
+  credits, if Claude Code told it, and that line reads In overflow while a session runs there past its limits. If the
+  account refuses, the task waits for the reset.
 - **A task stays where it ran.** A task that ran on a sign-in goes back to it while that one is free and has quota
   left: its session is there.
 - **Djinn reads each quota.** Every 5 minutes, Djinn asks Claude Code the usage of each sign-in, without a model turn;
-  each worker also tells its own at each of its turns. A reading older than 15 minutes counts as unknown. When Djinn
-  knows no quota, it takes the agent's own sign-in, then the accounts in the order you added them.
+  each worker also tells its own at each of its turns. A reading older than 15 minutes counts as unknown, and an
+  unknown quota holds no sign-in back: it is taken at its rank.
 - **A limit moves the task.** A worker that hits the limit of its account moves at once to another sign-in, its session
   copied into that account's folder. The account stays limited until its reset; with no other sign-in free, the task
   waits for the reset.
-- **The window shows it.** Under each sign-in's line: Active, Paused or Limited until its reset, the week's gauge and
-  when the week ends, its 5 hours used, and Next task here on the sign-in a new task would take now. A task's card
-  names the account it runs on by its label.
+- **The window shows it.** In the Summoning Circle, each sign-in's line names its agent and carries Next Claude Code
+  task here on the sign-in a new task of the agent would take now, a crown where the Djinn runs, how many workers run
+  there and how many tasks wait there for its limit to lift. Under it: Active, Paused or Limited until its reset; the
+  week's gauge and when the week ends; the 5 hours' gauge against their limit, with the hour the session ends and the
+  time left until then (ends at 14:20, in 1 h 12); and, for a sign-in the order passes over, skipped until its reset
+  or skipped while paused. A gauge past 95 % fills in a brighter tone. A task's card names the account it runs on by
+  its label.
 
 More on the rules, the quota probe and the sessions that follow a task: [the Djinn](#the-djinn).
 
@@ -82,6 +109,8 @@ More on the rules, the quota probe and the sessions that follow a task: [the Dji
 | Both sign-ins show the same week | The account signed in to the first subscription | Forget the account, add one with another name, and check the browser page shows the second subscription before you accept |
 | Quota not read yet | Djinn has not read it since the account was added | Wait a minute: the panel reads it again every minute while it is open |
 | Quota could not be read | The probe failed: the account is signed out, or Claude Code did not answer; the hover says which | Sign in again if it is signed out |
+| A Claude Code account on an API key reads Quota could not be read | Djinn did not tell it from a signed-out account or a subscription: an older Claude Code, or a key set in a way it does not name | Turn on its Unlimited switch: it goes after the others in the dynamic mode |
+| An account goes first though another one's week ends sooner | The mode is Manual order, or the other one is unlimited, paused, limited or past 95 % | Switch to Dynamic, or check the other line |
 
 ## Read next
 

@@ -122,7 +122,7 @@ export interface State {
   // in its terminal.
   leadDrive?: Pick<
     LeadServiceGetResponse,
-    "seat" | "accounts" | "limit" | "batch" | "journal"
+    "seat" | "accounts" | "limit" | "batch" | "journal" | "pinned"
   >;
   // As WishService.List gives them: the active ones by rank, then the paused ones, then the granted ones.
   wishes: Wish[];
@@ -1108,6 +1108,7 @@ export function createStore(
               limit,
               batch,
               journal,
+              pinned,
             } = leadRes;
             const sameLead =
               (!state.lead && !lead) ||
@@ -1135,6 +1136,7 @@ export function createStore(
                   limit,
                   batch,
                   journal,
+                  pinned,
                 })
               : undefined;
             const sameDrive =
@@ -1153,6 +1155,7 @@ export function createStore(
                 limit: drive.limit,
                 batch: drive.batch,
                 journal: drive.journal,
+                pinned: drive.pinned,
               };
           }
           if (loadedKeys.has("projects") && !state.loaded) patch.loaded = true;

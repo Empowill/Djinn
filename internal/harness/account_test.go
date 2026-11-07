@@ -19,41 +19,6 @@ import (
 	"github.com/empowill/djinn/internal/testx"
 )
 
-// TestFirstFree: the simple overflow, EarliestWeek's without a quota known, keeps a task on the sign-in it ran on while
-// that one is free, else takes the first free one in the developer's order, and none when each is paused or limited.
-func TestFirstFree(t *testing.T) {
-	t.Parallel()
-	now := time.Date(2026, 11, 5, 9, 0, 0, 0, time.UTC)
-	own := AccountOption{}
-	work := AccountOption{SignIn: plan.SignIn{Name: "work"}}
-	perso := AccountOption{SignIn: plan.SignIn{Name: "perso"}}
-	paused := func(o AccountOption) AccountOption { o.Paused = true; return o }
-	limited := func(o AccountOption, until time.Time) AccountOption { o.LimitedUntil = until; return o }
-	for _, c := range []struct {
-		name    string
-		options []AccountOption
-		current string
-		ran     bool
-		want    string
-		ok      bool
-	}{
-		{"a new task: the first", []AccountOption{own, work, perso}, "", false, "", true},
-		{"the one it ran on", []AccountOption{own, work, perso}, "perso", true, "perso", true},
-		{"the one it ran on, limited: the first free", []AccountOption{own, work, limited(perso, now.Add(time.Hour))}, "perso", true, "", true},
-		{"a limit past holds no more", []AccountOption{own, limited(work, now.Add(-time.Minute))}, "work", true, "work", true},
-		{"its own paused: the next", []AccountOption{paused(own), work}, "", false, "work", true},
-		{"a forgotten account: the first free", []AccountOption{paused(own), work}, "gone", true, "work", true},
-		{"each limited: the one it ran on (W409)", []AccountOption{limited(own, now.Add(time.Hour)), limited(work, now.Add(time.Hour))}, "work", true, "work", true},
-		{"each paused or limited: the one not paused", []AccountOption{paused(own), limited(work, now.Add(time.Hour))}, "", false, "work", true},
-		{"each paused", []AccountOption{paused(own), paused(work)}, "work", true, "", false},
-	} {
-		got, ok := FirstFree(AccountChoice{Provider: planv1.Provider_PROVIDER_CLAUDE, Options: c.options, Current: c.current, Ran: c.ran, Now: now})
-		if got != c.want || ok != c.ok {
-			t.Errorf("%s: %q, %v; want %q, %v", c.name, got, ok, c.want, c.ok)
-		}
-	}
-}
-
 // signIns writes the accounts and the paused own sign-ins of settings.json in home, as djinn lead add-account and
 // pause-account do.
 func signIns(t *testing.T, home string, settings *uiv1.Settings) {
@@ -276,6 +241,63 @@ func TestAccountWaitsThenMoves(t *testing.T) {
 	done := e.until(t, task.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_DONE))
 	if done.GetAccount() != "perso" || done.GetResumes() != 0 {
 		t.Errorf("account %q, resumes %d: want perso, none spent", done.GetAccount(), done.GetResumes())
+	}
+}
+
+// TestAccountOverflow: with each sign-in of claude full, a worker starts in overflow on the first that may spend extra
+// credits, before the first in the order that may not; refused there (its limit hit), it moves to the next one not
+// limited, in overflow too; refused again, it waits for the reset as before (decision L2 of 06/11).
+func TestAccountOverflow(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	home := t.TempDir()
+	work, perso := filepath.Join(t.TempDir(), ".claude-work"), filepath.Join(t.TempDir(), ".claude-perso")
+	signIns(t, home, &uiv1.Settings{
+		Accounts: []*planv1.Account{
+			{Name: "work", Provider: planv1.Provider_PROVIDER_CLAUDE, ConfigDirectory: work},
+			{Name: "perso", Provider: planv1.Provider_PROVIDER_CLAUDE, ConfigDirectory: perso},
+		},
+		PausedSignIns: []planv1.Provider{planv1.Provider_PROVIDER_CLAUDE},
+		AccountOrder: []*uiv1.SignInRef{
+			{Provider: planv1.Provider_PROVIDER_CLAUDE, Account: "perso"},
+			{Provider: planv1.Provider_PROVIDER_CLAUDE, Account: "work"},
+		},
+	})
+	probe := &signInProbe{scripts: []string{sessionLimit, sessionLimit}}
+	providers := testProviders()
+	providers[planv1.Provider_PROVIDER_CLAUDE] = probe
+	clock := &fakeClock{at: time.Date(2026, 11, 5, 4, 28, 30, 0, time.UTC)}
+	e := upWith(t, home, providers, WithClock(clock.now))
+	full := func(extra bool) Quota {
+		return Quota{Read: clock.now(), Extra: &extra, SevenDay: &UsageWindow{Used: .98, ResetsAt: clock.now().Add(48 * time.Hour)}}
+	}
+	e.h.noteQuota(planv1.Provider_PROVIDER_CLAUDE, "perso", full(false))
+	e.h.noteQuota(planv1.Provider_PROVIDER_CLAUDE, "work", full(true))
+	wishID, _ := e.wish(t, nativeFolder(t))
+
+	task := e.spawnClaude(t, wishID)
+	if got := configDir(probe.started(t, 0)); got != work {
+		t.Fatalf("first worker on %q, want work's %q: it may spend extra credits", got, work)
+	}
+	if got := configDir(probe.started(t, 1)); got != perso {
+		t.Errorf("refused on work, moved to %q, want perso's %q", got, perso)
+	}
+	waiting := e.until(t, task.GetId(), func(t *planv1.Task) bool {
+		return t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RESUMING && t.GetResumeAfter() != nil
+	})
+	if waiting.GetAccount() != "perso" || waiting.GetResumes() != 0 {
+		t.Errorf("waits on %q, %d resumes: want perso, none spent", waiting.GetAccount(), waiting.GetResumes())
+	}
+	texts := strings.Join(eventTexts(e.storedEvents(t, task.GetId())), "\n")
+	if n := strings.Count(texts, overflowText(planv1.Provider_PROVIDER_CLAUDE)); n != 2 {
+		t.Errorf("%d start events say the overflow, want 2:\n%s", n, texts)
+	}
+	e.passes(2)
+	probe.mu.Lock()
+	n := len(probe.specs)
+	probe.mu.Unlock()
+	if n != 2 || e.h.Overflowing(task.GetId()) {
+		t.Errorf("%d workers started, overflowing %v: want 2, none running", n, e.h.Overflowing(task.GetId()))
 	}
 }
 

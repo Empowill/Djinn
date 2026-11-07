@@ -24,7 +24,8 @@ agent works with the account you signed it in with, and that account pays for it
 **Connections & preferences**, at the bottom of the side panel, shows one line per agent: whether Djinn finds it, its
 version, and whether it is signed in. Where one is missing or signed out, a button installs it or signs it in: it runs
 the agent's own command in a terminal of the panel, where you answer if it asks, and Djinn checks again once it ends.
-The panel opens by itself when the window starts with no agent ready.
+The **Summoning Circle**, in the side panel, shows the same lines at its top: when the window starts with no agent able
+to lead, it opens there, and a yellow dot marks the Circle's entry until one is installed and signed in.
 
 One agent is enough to begin. With two subscriptions of the same agent, add the second as an account on the panel's
 last line: Djinn then spreads the workers between them by their weekly quota, and each line shows its gauge. The steps,
@@ -47,9 +48,9 @@ The app is Djinn; its lead is **the Djinn**. It leads every active wish: it talk
 starts workers on them, asks the questions and keeps the plans true. By default, Djinn drives it without a terminal:
 each batch of events starts a fresh Claude Code or Codex session, and its journal records every batch.
 
-- At the top of a wish or of the flying carpet, a chip names where the Djinn runs ("Claude Code · opus 5.5"); its menu
-  moves the Djinn to another agent, account or model for the next batch.
-- Beside it, the window shows the running batch (since when, how many events, its cost) and the count of past batches
+- The **Summoning Circle**, in the side panel, chooses where the Djinn runs: its agent and model on the Djinn's row,
+  its account above the accounts list. The next batch starts there.
+- At the top of a wish or of the flying carpet, the window shows the running batch (since when, how many events, its cost) and the count of past batches
   in the journal. A batch that failed twice is retried from its red line in the **Lead** journal, under What runs.
 - **Write to the Djinn**, the pill at the bottom of a wish, sends it a word about that wish without leaving the page
   (Ctrl+I, or Cmd+I on macOS), and its answer appears in the bubble held to the pill.

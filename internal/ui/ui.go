@@ -308,8 +308,10 @@ func (s *Service) GetEnvironment(
 			res.Providers = checkAgents(ctx, launchPath(), accounts)
 		}
 		for _, p := range res.Providers {
-			if signIns := plan.SignIns(s.Home, agentProviders[p.GetId()]); len(signIns) > 0 {
-				p.Paused = signIns[0].Paused
+			for _, si := range plan.SignIns(s.Home, agentProviders[p.GetId()]) {
+				if si.Name == "" {
+					p.Paused = si.Paused // Its own sign-in, wherever the order puts it.
+				}
 			}
 		}
 	} else {

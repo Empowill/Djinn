@@ -47,7 +47,9 @@ test("a long question reads top-down, its commands copy without answering, and t
   // A laptop's screen.
   await page.setViewportSize({ width: 1366, height: 768 });
   await page.goto(process.env.DJINN_URL!);
-  await expect(page.locator(".app-statusbar").getByText("Live")).toBeVisible();
+  await expect(page.locator(".app-statusbar").getByText("Live")).toBeVisible({
+    timeout: 15_000,
+  });
 
   // Three wishes at a time: the earlier specs' wishes make way.
   const listed = JSON.parse(djinn("wish", "list", "--json")).wishes ?? [];

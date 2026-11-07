@@ -1,0 +1,3 @@
+# claude auth status of claude 2.1.316 (07/11/2026) with a key in ANTHROPIC_API_KEY, its folders shortened: signed
+# in on an API key, exit 0. It does not check the key: a wrong one prints the same.
+{"loggedIn":true,"authMethod":"api_key","apiProvider":"firstParty","analyticsDisabled":false,"projectsDirectory":"/home/u/.claude/projects","configDirectory":"/home/u/.claude","apiKeySource":"ANTHROPIC_API_KEY"}
