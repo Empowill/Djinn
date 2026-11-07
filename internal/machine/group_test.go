@@ -228,6 +228,21 @@ func TestWork(t *testing.T) {
 				t.Errorf("processes %v, want djinn up, its window, and the browser's two", w.Procs)
 			}
 		}},
+		// A worker's container runs in docker's tree, under its task's slice: Djinn's work, not the load from outside.
+		{"containers", func(t *testing.T) {
+			fsys, procs := workFixture()
+			dir := "sys/fs/cgroup/djinn.slice/djinn-01a1b6c39f027bb0814dc4a3ccdb511e.slice/docker-0a1b.scope"
+			fsys[dir+"/cgroup.procs"] = &fstest.MapFile{Data: []byte("900\n")}
+			fsys[dir+"/cpu.stat"] = &fstest.MapFile{Data: []byte("usage_usec 30000000\n")}
+			procs = append(procs, proc{pid: 850, ppid: 1, pgrp: 850, memory: 2048}, proc{pid: 900, ppid: 850, pgrp: 900, memory: 4096})
+			w := work(fsys, procs, 100, slice, nil)
+			if w.Cgroups["/"+dir] != 30*time.Second {
+				t.Errorf("cgroups %v, want the container's 30 s", w.Cgroups)
+			}
+			if w.Memory != 2+4+8+16+32+64+256+4096 {
+				t.Errorf("memory %d, want the container's process counted, not docker's shim", w.Memory)
+			}
+		}},
 		// No cgroup at all (macOS): its tree, process by process.
 		{"no cgroup", func(t *testing.T) {
 			_, procs := workFixture()

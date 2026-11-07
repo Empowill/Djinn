@@ -88,6 +88,8 @@ func TestScopes_New(t *testing.T) {
 		{name: "capped", scopes: Scopes{slice: testSlice, CPU: 150, Memory: 512 << 20},
 			caps: []string{"CPUQuota=150%", "MemoryMax=536870912"}, cgroup: true},
 		{name: "no slice", scopes: Scopes{}},
+		{name: "tasks capped", scopes: Scopes{slice: testSlice, Memory: 512 << 20, Tasks: WorkerTasks},
+			caps: []string{"MemoryMax=536870912", "TasksMax=4096"}, cgroup: true},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -195,6 +197,11 @@ func TestReadProbe(t *testing.T) {
 		{name: "no cpu controller", scopes: Scopes{CPU: 150, Memory: 1 << 30}, printed: out + "none\n1073741824\n",
 			want: Scopes{Memory: 1 << 30, slice: testSlice}, notes: 1},
 		{name: "no cap asked", printed: out + "none\nnone\n", want: Scopes{slice: testSlice}},
+		{name: "tasks held", scopes: Scopes{Memory: 1 << 30, Tasks: WorkerTasks}, printed: out + "none\n1073741824\n4096\n",
+			want: Scopes{Memory: 1 << 30, Tasks: WorkerTasks, slice: testSlice}, notes: 0},
+		// Without the pids controller, the cap is dropped silently: it only stops a runaway.
+		{name: "no pids controller", scopes: Scopes{Tasks: WorkerTasks}, printed: out + "none\nnone\nnone\n",
+			want: Scopes{slice: testSlice}},
 		{name: "nothing useful", printed: "sh: sed: not found\n", wantErr: true},
 	}
 	for _, c := range cases {
@@ -208,7 +215,7 @@ func TestReadProbe(t *testing.T) {
 				}
 				return
 			}
-			if err != nil || len(notes) != c.notes || s.CPU != c.want.CPU || s.Memory != c.want.Memory || s.slice != c.want.slice {
+			if err != nil || len(notes) != c.notes || s.CPU != c.want.CPU || s.Memory != c.want.Memory || s.Tasks != c.want.Tasks || s.slice != c.want.slice {
 				t.Errorf("readProbe = %+v, %q, %v; want %+v, %d notes", s, notes, err, c.want, c.notes)
 			}
 		})
@@ -271,9 +278,9 @@ func TestProbeScopes(t *testing.T) {
 			}
 		}},
 		{"no cpu controller", true, func(t *testing.T) {
-			args := fakeSystemdRun(t, probed+"echo none; echo 1073741824")
+			args := fakeSystemdRun(t, probed+"echo none; echo 1073741824; echo 4096")
 			s, notes, err := ProbeScopes(t.Context(), 150, 1<<30)
-			if err != nil || s.CPU != 0 || s.Memory != 1<<30 || !s.MemoryController || len(notes) != 1 || !strings.Contains(notes[0], "cpu controller") {
+			if err != nil || s.CPU != 0 || s.Memory != 1<<30 || s.Tasks != WorkerTasks || !s.MemoryController || len(notes) != 1 || !strings.Contains(notes[0], "cpu controller") {
 				t.Fatalf("a user systemd without the cpu controller: %+v, %q, %v", s, notes, err)
 			}
 			b, err := os.ReadFile(args)
@@ -281,7 +288,7 @@ func TestProbeScopes(t *testing.T) {
 				t.Fatal(err)
 			}
 			if got := string(b); !strings.HasPrefix(got, "--user\n--scope\n--quiet\n--collect\n--unit=djinn-probe-") ||
-				!strings.Contains(got, "\n-p\nCPUQuota=150%\n-p\nMemoryMax=1073741824\n--\nsh\n-c\n") {
+				!strings.Contains(got, "\n-p\nCPUQuota=150%\n-p\nMemoryMax=1073741824\n-p\nTasksMax=4096\n--\nsh\n-c\n") {
 				t.Errorf("the probe ran systemd-run with %q", got)
 			}
 			if c := s.New("W3").Cgroup; !strings.HasPrefix(c, "/sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/app.slice/djinn-W3-") {

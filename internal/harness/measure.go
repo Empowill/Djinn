@@ -83,6 +83,7 @@ func (h *Harness) measure(r *run, m *meter) {
 	if err != nil || g.Processes == 0 {
 		return
 	}
+	g = h.withContainers(r.task.GetId(), g) // Its containers run in docker's tree, under its task's slice.
 	if pid != m.pid {
 		m.pid, m.cpu = pid, 0 // A watcher's next command.
 	}

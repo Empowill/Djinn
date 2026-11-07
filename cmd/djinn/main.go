@@ -48,6 +48,8 @@ var handwritten = map[string]func(args []string) int{
 	"gate run": func(args []string) int { return runGate(args, os.Stdin, os.Stdout, os.Stderr) },
 	// `djinn gate hook` admits a worker's Bash commands: Claude runs it as its PreToolUse hook.
 	"gate hook": func([]string) int { return runGateHook(os.Stdin, os.Stdout, os.Stderr) },
+	// `djinn gate wrap` runs docker or a heavy command of a worker in its place: the wrappers first on its path.
+	"gate wrap": func(args []string) int { return runGateWrap(args, os.Stderr) },
 	// `djinn backup` and `djinn backup restore` work with or without a running djinn.
 	"backup":           func(args []string) int { return runBackup(args, os.Stdout, os.Stderr) },
 	"backup restore":   func(args []string) int { return runBackup(append([]string{"restore"}, args...), os.Stdout, os.Stderr) },
