@@ -741,8 +741,11 @@ Workers share one machine. Heavy commands (tests, builds, code generation) run t
 djinn gate run test -- go tool task test
 ```
 
-A gate has one holder at a time, and is granted only while the machine is not under pressure; a command measured
-before waits until the machine has the memory it peaked at. The status bar shows how many gates are held. `djinn
+A gate is granted only while the machine is not under pressure; a command measured before waits until the machine
+has the memory it peaked at. What the command cost, not the gate's name, says how it holds it: a command measured heavy
+(below) holds its gate alone, one holder at a time; a light one, or one never measured, shares it, as many at once as
+the machine holds, and waits only for one that holds the name alone. A lit ifrit holds its gates alone whatever its
+server costs. The status bar shows how many gates are held. `djinn
 command list` shows what each command cost (CPU time, peak memory, duration).
 
 Who gets a gate first: Djinn's own requests to merge a task's work into its branch (its wish's or its azima's), to
@@ -767,7 +770,9 @@ A command measured heavy, past 2 GiB of peak memory or 60 s of CPU time, goes on
 task's heavy command holds its gate or its admission (`heavy commands go one at a time: W12: go test ./... runs one,
 for 40s`), a merge or a push keeping its place before the workers. `heavyCommandMemoryMib` and
 `heavyCommandCpuSeconds` in `settings.json` of Djinn's data folder change both limits; `djinn up` reads them as it
-starts. A gate's name keeps its own turn as before.
+starts. A heavy command under a gate's name holds that name alone: a light command of the same name waits for it, but it
+does not wait for the light ones already sharing it. Two light `stack` or `paid` runs may overlap: a gate's name no
+longer keeps two stacks off the same ports, nor two paid runs apart, unless their commands are measured heavy.
 
 A worker holding or waiting for an admission is neither paused for a slot nor judged silent; you may still pause it.
 
@@ -788,14 +793,17 @@ go tool task e2e has held gate e2e for 1h0m0s, its command never measured; nothi
 hangs.`), and the task's events say it.
 
 Every gate and admission held is kept in Djinn's database a week as it is released, and survives a restart: when it
-was asked, granted and released, its mode (exclusive for a named gate, shared for an admission), whether its command
+was asked, granted and released, its mode (exclusive for a gate held alone, shared for an admission or a light command under a gate's name), whether its command
 was heavy or had no measured cost of its own, what it waited for last (another holder, the pressure, the memory, a
 merge first, a heavy command) and why, the highest memory its holder used, and whether it took a slot outside a
-worker. The Hourglass reads them (`MachineService.Series`): the gates, and the admissions that waited a second or more
+worker. The Hourglass reads them (`MachineService.Series`): the gates, shared or alone, and the admissions that waited a second or more
 or ran a heavy command; every admission with `all_admissions`.
 
-A gate held outside a running worker (a merge's, a push's, your terminal's) takes one of the machine's slots; a
-worker's own gate is in its slot. An admission takes none, unless its command is heavy. On a machine of more than one slot, one stays free for the merges and pushes: a new
+A gate held alone outside a running worker (a merge's, a push's, your terminal's) takes one of the machine's slots; a
+worker's own gate is in its slot. A gate held shared takes none: an admission, or a light command under a gate's name.
+The list of gates (`GateService.List`) shows a shared gate under its first holder, or the one holding it alone.
+
+On a machine of more than one slot, one stays free for the merges and pushes: a new
 worker waits (`5 workers run, 1 slot is kept for merges and pushes, the most this machine holds`), and a merge's gate
 takes that slot. On a machine of one slot, none is kept: only the order above applies.
 
