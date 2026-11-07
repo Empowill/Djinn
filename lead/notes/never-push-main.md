@@ -15,10 +15,11 @@ projects/:id/protected_branches`). On djinn (Empowill/Djinn on GitHub), main is 
 05/11/2026).
 
 Under the per-azima strategy, Djinn pushes only the azimas' branches (`djinn/Tnn-...`), never the wish's integration
-branch, which is main on djinn. A task part of no azima merges into that branch and its commits stay there, never
-pushed, until a person realigns main on the remote. So on djinn every task is spawned `--part-of` an azima: no work
-out of an azima, a lead note included. A note, or any small change with no azima of its own, goes into an azima opened
-for it ("notes"), which has its pull request.
+branch, which is main on djinn. Before W401, a task part of no azima merged into that branch and its commits stayed
+there, never pushed, until a person realigned main on the remote; since W401, Djinn gives such work an azima of its
+own, with its pull request (see [[djinn-pushes]]). Still spawn every djinn task `--part-of` the azima it belongs to,
+a lead note included: a note, or any small change with no azima of its own, goes into an azima opened for it
+("notes"), rather than one pull request per task.
 
 **Why:** decision Q256 (B) of the wish Dew 13 oct, tilasm L42: W363, a lead note spawned part of no azima, was merged
 into the local main of djinn on 05/11/2026 and never pushed, so main ran ahead of origin/main. The developer's answer,

@@ -1,6 +1,6 @@
 ---
 name: djinn-pushes
-description: In standard mode Djinn pushes by itself, never ask the developer to push; per azima it pushes only the azimas' branches, so work of no azima is never pushed (a gap); spawn a task that needs a push only once the push is done
+description: In standard mode Djinn pushes by itself, never ask the developer to push; per azima it pushes only the azimas' branches, and work spawned with no azima gets an azima of its own; spawn a task that needs a push only once the push is done
 type: feedback
 ---
 
@@ -19,11 +19,15 @@ strategy each azima's own branch, by itself, within the minute of the merge that
    to report, not a move to ask for.
 
 Under the per-azima strategy, Djinn pushes only the azimas' own branches (`djinn/Tnn-...`), never the wish's integration
-branch, which on djinn is main itself. A task part of no azima is merged into that branch all the same, and its commits
-then live only in this clone: never pushed, lost with the clone. That is a gap of Djinn, not a behaviour to rely on: no
-work may end like this. Until Djinn keeps it from happening, the lead keeps it from happening: every task of such a
-project is spawned part of an azima, and a commit found there is carried at once into an azima's pull request, then
-reported to the developer as a bug: see [[never-push-main]].
+branch, which on djinn is main itself. So work spawned part of no azima gets an azima of its own, made for it with the
+task's title (decision Q268 B, W401): its branch is cut from main before the worker starts, then pushed and proposed as
+a pull request like any azima. Work part of no azima from before is given one when Djinn merges it. Watchers,
+investigations and mockups merge nothing and stay out. Still spawn work `--part-of` the azima it belongs to: an azima
+per task is a pull request per task, and a task `--after` work of another azima is refused (no azima waits for
+another). Work whose worker started from an azima's branch, or from the head of a pull request an azima carries, joins
+that azima when Djinn merges it, and the azima made for it is closed (W412, after W355 put a merge request into main).
+A commit found on the wish's integration branch all the same is a bug: carry it into an azima's pull request at once,
+then report it to the developer: see [[never-push-main]].
 
 The push checks run first; red, they hold the push and Djinn starts a correction. A held push comes to you as an
 event (Decision Q196): you decide, the developer is not asked. A wish in ask mode has Djinn ask the push question
