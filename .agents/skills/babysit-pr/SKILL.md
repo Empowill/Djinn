@@ -46,7 +46,7 @@ You lead a wish made for one pull request, or a wish one of whose tasks opened i
     the same login.
   - `changes requested`: the review decision turned to `CHANGES_REQUESTED`.
   - `mergeable: CONFLICTING`: the pull request is no longer mergeable (`UNKNOWN`, GitHub still computing, says
-    nothing).
+    nothing). Said once, until it is mergeable again: a conflict left unsettled is never said twice.
   - `PR #12: gh failed, trying again: …`: a look failed (network, gh logged out); said once until a look succeeds.
   Pending checks and partial passes say nothing: no news is no failure yet. Its first look says what is already
   there (failures, all passing, changes requested, a conflict), and of the comments only the latest one: read the
@@ -74,12 +74,22 @@ the wish goes on with its other work.
 
 ## Each time the watcher speaks
 
+A message of the watcher may hold several paragraphs: a conflict and comments, failed checks and a review. Each one is
+news; handle them all, the conflict first.
+
 1. Read what changed: the comment at its link, or all of them with `gh pr view <pr> --comments` (the conversation and
    the reviews) and `gh api repos/{owner}/{repo}/pulls/<pr>/comments` (the comments on lines of the diff, which
    `gh pr view` does not show); `gh pr checks <pr>`, and for a failed check `gh run view <run-id> --log-failed`.
 2. Decide what to do. A failed check, a review comment to address, a conflict with the base branch: each is a task
    for a worker (`djinn task spawn`), with the failing log or the comment in its prompt. Group what touches the same
    files into one task.
+   - `mergeable: CONFLICTING` gets its resolution task in the same pass (decision Q407, lead note `babysit-conflict`):
+     `--part-of` the pull request's azima, it merges the base branch (`gh pr view <pr> --json baseRefName`) into the
+     branch and resolves; a merge, never a rebase. One at a time per pull request: one already open is the answer.
+   - A worker already runs on the azima's branch: the resolution is spawned `--after` it, never beside it.
+   - The azima's planned tasks, not started, go after the resolution: spawn it `--blocks` them, or place them later
+     with `djinn task depend <task> --after <its other dependencies>,<resolution>` (`--after` replaces the list).
+   - No planned task: the resolution starts at once.
 3. Review each worker's diff, then commit and push once for the round, as the project's rules say.
 4. Answer review comments only with what was done, in the developer's name only if they asked you to. A thread a
    commit fixes waits for that commit on the pull request: once its head (`gh pr view <pr> --json headRefOid`, after
