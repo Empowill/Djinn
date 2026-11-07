@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -26,9 +27,17 @@ func TestRun(t *testing.T) {
 		g.tick = 10 * time.Millisecond
 		client := server(t, g)
 		t.Setenv(helperEnv, "exit3")
-		var out, notice bytes.Buffer
-		go func() { time.Sleep(100 * time.Millisecond); p.squeeze(false) }()
-		code, err := Run(t.Context(), client, "codegen", "", Command{Args: []string{os.Args[0]}, Stdout: &out, Stderr: &out, Notice: &notice})
+		var out bytes.Buffer
+		notice := &noticeRecorder{waited: make(chan struct{})}
+		go func() {
+			select {
+			case <-notice.waited:
+				p.squeeze(false)
+			case <-time.After(5 * time.Second):
+				p.squeeze(false)
+			}
+		}()
+		code, err := Run(t.Context(), client, "codegen", "", Command{Args: []string{os.Args[0]}, Stdout: &out, Stderr: &out, Notice: notice})
 		if err != nil || code != 3 || out.String() != "working\n" {
 			t.Errorf("run = %d, %v, output %q", code, err, out.String())
 		}
@@ -37,7 +46,7 @@ func TestRun(t *testing.T) {
 		}
 		waitFree(t, g)
 
-		if _, err := Run(t.Context(), client, "codegen", "", Command{Args: []string{"djinn-no-such-command"}, Notice: &notice}); err == nil {
+		if _, err := Run(t.Context(), client, "codegen", "", Command{Args: []string{"djinn-no-such-command"}, Notice: notice}); err == nil {
 			t.Error("ran a command that does not exist")
 		}
 		waitFree(t, g)
@@ -151,4 +160,31 @@ func TestRun(t *testing.T) {
 			t.Errorf("a command outside any worktree recorded the tree %s", tree)
 		}
 	})
+}
+
+// noticeRecorder captures command notices thread-safely and signals when a waiting notice arrives.
+type noticeRecorder struct {
+	mu     sync.Mutex
+	buf    bytes.Buffer
+	waited chan struct{}
+}
+
+func (r *noticeRecorder) Write(p []byte) (int, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	n, err := r.buf.Write(p)
+	if strings.Contains(r.buf.String(), "waiting:") {
+		select {
+		case <-r.waited:
+		default:
+			close(r.waited)
+		}
+	}
+	return n, err
+}
+
+func (r *noticeRecorder) String() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.buf.String()
 }
