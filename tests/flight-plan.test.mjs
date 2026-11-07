@@ -109,10 +109,10 @@ test("the flying carpet merges the active wishes: their questions, the blocking 
   // Its live graphs are in the Hourglass (W542): none here.
   assert.doesNotMatch(html, /consumption-panel|resource-chart/);
   // W538: the Djinn is at hand as on a wish: Talk to the Djinn in the header opens its terminal, on no wish, and the
-  // pill at the bottom writes to it, Cmd/Ctrl+I.
+  // pill at the bottom writes to it, Cmd/Ctrl+I. No agent selector beside it: the Summoning Circle has it (W578).
   assert.match(
     html,
-    /<div class="topbar-actions"><div class="split-button"><button class="button secondary small" title="Opens the Djinn&#x27;s terminal"><svg[^]*?<span>Talk to the Djinn<\/span><\/button>/,
+    /<div class="topbar-actions"><button class="button secondary small" title="Opens the Djinn&#x27;s terminal"><svg[^]*?<span>Talk to the Djinn<\/span><\/button><\/div>/,
   );
   assert.doesNotMatch(html, /focused on this wish/);
   assert.match(

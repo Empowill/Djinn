@@ -68,10 +68,9 @@ type Spec struct {
 	// LastLine is the first line of the last paragraph a watcher's task said before this start (Task.last_line): its
 	// command's first paragraph wakes no one when it says it again. Agents ignore it.
 	LastLine string
-	// LowPriority runs the worker process with low CPU priority (nice 10 on Unix,
-	// BELOW_NORMAL_PRIORITY_CLASS on Windows) when running at minimal or medium operating load;
-	// else it runs at Djinn's own priority.
-	LowPriority bool
+	// Nice is the nice level the worker process starts at (nice.go): 10 is below the window (BELOW_NORMAL_PRIORITY_CLASS
+	// on Windows), 0 Djinn's own priority. Djinn gives a worker 10 at every load notch but Overclock (workerNiceAt).
+	Nice int
 	// StartHead is the git commit hash at task start, used to verify progress.
 	StartHead string
 	// Branch is the task's git branch name.
@@ -140,14 +139,6 @@ type Pauser interface {
 	Pause() error
 	// Resume lets them go on.
 	Resume() error
-}
-
-// Prioritizer is a worker that can change its CPU priority while running.
-type Prioritizer interface {
-	// SetPriority sets the worker and its process tree to low CPU priority (nice 10 / cpu.weight 10)
-	// when low is true, or standard priority (Djinn's own nice level or priority class / cpu.weight 100)
-	// when low is false.
-	SetPriority(low bool) error
 }
 
 // Process is a worker that runs a process of its own, which leads its process group: Djinn measures what it uses.

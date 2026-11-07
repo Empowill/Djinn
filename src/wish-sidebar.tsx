@@ -111,6 +111,8 @@ export function WishSidebar({
   onSelectHourglass,
   grimoireSelected = false,
   onSelectGrimoire,
+  summoningSelected = false,
+  summoningAlert = false,
   onOpenSummoningCircle,
   selectedWishId,
   selectedProjectId,
@@ -140,7 +142,10 @@ export function WishSidebar({
   // The Grimoire, the documentation, shows.
   grimoireSelected?: boolean;
   onSelectGrimoire?: () => void;
-  // Opens the Summoning Circle: the default agent and model per project.
+  // Shows the Summoning Circle page, marked while shown: the agents, their accounts in order, a model per kind of worker.
+  summoningSelected?: boolean;
+  // No agent can lead yet (leadReady): a yellow dot on the Circle's entry, where the agents are set up, until one can.
+  summoningAlert?: boolean;
   onOpenSummoningCircle?: () => void;
   selectedWishId: string;
   selectedProjectId: string;
@@ -748,13 +753,28 @@ export function WishSidebar({
       )}
       {onOpenSummoningCircle && (
         <button
-          className="nav-item summoning-nav"
+          className={
+            summoningSelected
+              ? "nav-item summoning-nav selected"
+              : "nav-item summoning-nav"
+          }
           onClick={onOpenSummoningCircle}
-          title={t("summoning.subtitle")}
-          aria-label={t("sidebar.summoning_circle")}
+          title={
+            summoningAlert
+              ? t("sidebar.summoning_no_lead")
+              : t("summoning.subtitle")
+          }
+          aria-label={
+            summoningAlert
+              ? `${t("sidebar.summoning_circle")}: ${t("sidebar.summoning_no_lead")}`
+              : t("sidebar.summoning_circle")
+          }
         >
           <Compass size={15} />
           {!collapsed && <span>{t("sidebar.summoning_circle")}</span>}
+          {summoningAlert && (
+            <span className="summoning-alert" aria-hidden="true" />
+          )}
         </button>
       )}
     </>

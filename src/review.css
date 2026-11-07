@@ -2481,27 +2481,6 @@ html[data-theme="light"] .review .question-meta .wish-origin {
   resize: vertical;
 }
 
-/* Lead, split: the button resumes the recorded lead, the arrow beside it lists the agents of this machine. */
-.split-button {
-  position: relative;
-  display: inline-flex;
-}
-.split-button > .button:first-child {
-  border-top-right-radius: 0;
-  border-bottom-right-radius: 0;
-}
-.split-button > .split-arrow {
-  padding-left: 0.375rem;
-  padding-right: 0.375rem;
-  margin-left: -1px;
-  border-top-left-radius: 0;
-  border-bottom-left-radius: 0;
-}
-/* Driven by Djinn, the lead's seat in a chip (Decision Q115 B): agent, account and model, its arrow opening the seats. */
-.lead-seat-wrap {
-  position: relative;
-  display: inline-flex;
-}
 /* The lead could not start, or ended: a dot on Lead until Lead starts it again. */
 .lead-dot {
   width: 0.4375rem;
@@ -2511,52 +2490,6 @@ html[data-theme="light"] .review .question-meta .wish-origin {
 }
 .lead-dot.failed {
   background: var(--st-failed);
-}
-.lead-menu {
-  position: absolute;
-  top: calc(100% + 0.375rem);
-  right: 0;
-  z-index: 60;
-  min-width: 16.25rem;
-  padding: 0.3125rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.125rem;
-  background: var(--surface);
-  border: 1px solid var(--line-strong);
-  border-radius: 0.5rem;
-  box-shadow: 0 0.625rem 1.875rem color-mix(in srgb, black 35%, transparent);
-}
-.lead-menu > p {
-  padding: 0.5rem 0.625rem;
-}
-.lead-agent {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 0.125rem;
-  padding: 0.5rem 0.625rem;
-  border-radius: 0.3125rem;
-  text-align: left;
-  color: var(--text);
-}
-.lead-agent:not(:disabled):hover,
-.lead-agent:not(:disabled):focus-visible {
-  background: var(--n-28);
-}
-.lead-agent:disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
-}
-.lead-agent-name {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.375rem;
-  font-weight: 550;
-}
-.lead-agent-detail {
-  font-size: var(--font-size-body, 0.75rem);
-  color: var(--muted);
 }
 
 /* The driven lead's running or failed batch beside Lead, and its journal of past batches. */

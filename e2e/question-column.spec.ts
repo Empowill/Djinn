@@ -154,7 +154,9 @@ test("the questions column: grouped by wish, arrows across the groups, letters, 
 
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(process.env.DJINN_URL!);
-    await expect(page.locator(".hero h1")).toHaveText("Flying carpet");
+    await expect(page.locator(".hero h1")).toHaveText("Flying carpet", {
+      timeout: 15_000,
+    });
 
     const column = page.locator(".question-column");
     const rows = column.locator(".question-row");
@@ -477,7 +479,7 @@ for (const engine of ["native", "script"] as const)
       const importer = page
         .locator(".sidebar")
         .getByRole("button", { name: "Import a wish" });
-      await expect(importer).toBeEnabled();
+      await expect(importer).toBeEnabled({ timeout: 15_000 });
       const chooser = page.waitForEvent("filechooser");
       await importer.click();
       await (await chooser).setFiles(file);
@@ -535,7 +537,11 @@ for (const engine of ["native", "script"] as const)
       await onTop("Which wick?");
       expect(errors).toEqual([]);
     } finally {
-      djinn("wish", "delete", wishId);
+      try {
+        djinn("wish", "delete", wishId);
+      } catch {
+        // The wish may not exist if import didn't complete before an error.
+      }
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });

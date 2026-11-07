@@ -843,10 +843,8 @@ test("the Summoning Circle lists one global row per kind of worker, shows each m
       }),
     ),
   );
-  assert.match(
-    restrictedHtml,
-    /<span class="summoning-provider unsigned" title="sign in with codex login">Codex · sign in with <code>codex login<\/code><\/span>/,
-  );
+  // The agents' lines above (agent-setup.tsx) say where each stands; the rows say how to sign one in.
+  assert.doesNotMatch(restrictedHtml, /summoning-providers/);
   // No Codex model is offered as a choice anywhere when Codex is not signed in.
   assert.doesNotMatch(restrictedHtml, /value="gpt-5\.5"/);
   assert.doesNotMatch(restrictedHtml, /value="gpt-5\.3-codex"/);

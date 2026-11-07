@@ -39,3 +39,6 @@ repeat them.
   one-sided border or a thicker accent border on one side. Straight separators belong on square elements.
 - A list being read never moves under the reader: new items append below the older ones, a revision keeps an item's
   place, and the scroll stays anchored on what is on screen (`src/scroll-anchor.ts`).
+- A field the developer types free text in is a `TextField` or a `TextLine` (`src/text-field.tsx`), never a controlled
+  `<textarea>` or `<input>`: a key renders nothing around it (W526). Its owner keeps the text in `useTyped`, or a store
+  of its own, renders only on what it shows of it (a shape), and reads the text now with `read()` in a handler.

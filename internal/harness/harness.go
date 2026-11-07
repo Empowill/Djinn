@@ -146,7 +146,7 @@ type Harness struct {
 	accounts  map[accountKey]accountSeen // each sign-in's account, as last read
 
 	// The sign-ins the workers run on (account.go).
-	accountPolicy AccountPolicy            // nil: EarliestWeek
+	accountPolicy AccountPolicy            // nil: ByMode
 	accountMu     sync.Mutex               // guards accountLimits and quota
 	accountLimits map[accountKey]heldLimit // the usage limits that hold a sign-in
 
@@ -246,6 +246,7 @@ type run struct {
 	lastActivity       time.Time            // when the worker last produced an event (lamplighter.go)
 	lastKind           planv1.TaskEventKind // the kind of that event: after its turn's result, a worker may wait for its background work (health.go)
 	lastLamplighterCPU time.Duration        // CPU time used at the Lamplighter's previous check
+	overflow           bool                 // the worker started past its sign-in's limits (AccountPick.Overflow)
 	resultAt           time.Time            // when the worker's turn ended with its result, said nothing of a new turn since; zero otherwise (silent.go)
 	resultNote         bool                 // that turn left a final note
 	silentWhy          string               // why Djinn stops the worker, silent after its result (silent.go)
@@ -364,12 +365,6 @@ func WithUninstalledDelay(d time.Duration) Option {
 // WithVersion sets the version of the running binary.
 func WithVersion(v string) Option {
 	return func(h *Harness) { h.version = v }
-}
-
-// lowPriority reports whether workers should run with low CPU priority under the current policy.
-// The caller holds h.sched.
-func (h *Harness) lowPriority() bool {
-	return h.Policy().LowPriority()
 }
 
 // Close stops the scheduler and every worker, waits for them to end, and records their tasks as interrupted.
@@ -1596,10 +1591,11 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 	t := r.task
 	// The sign-in its worker runs on (account.go): the one it ran on while it may, else another.
 	prior, ran := t.GetAccount(), len(t.GetRuns()) > 0
-	name, account, err := h.accountFor(t)
+	pick, account, err := h.accountFor(t)
 	if err != nil {
 		return err
 	}
+	name := pick.Name
 	t.Account = name
 	if name != "" && (!ran || name == prior) {
 		text += ", on " + accountText(name)
@@ -1620,6 +1616,10 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 	} else if spec.Fork && spec.Resume != "" {
 		h.moveSession(t.GetProvider(), spec.Resume, spec.Dir, "", account) // The session forked may be another sign-in's.
 	}
+	if pick.Overflow {
+		text += ", " + overflowText(agentOf(t))
+		logx.L().Info("task starts in overflow", "task", t.GetCode(), "account", name)
+	}
 	if account != nil && agentOf(t) == planv1.Provider_PROVIDER_CLAUDE && !spec.ReadOnly {
 		spec.MemoryDir = h.memoryDir(spec.Dir)
 	}
@@ -1639,6 +1639,7 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 		r.resumed = spec.Resume
 	}
 	r.resultAt, r.silentWhy, r.silentNote = time.Time{}, "", false
+	r.overflow = pick.Overflow
 	r.code = t.GetCode()
 	r.listenSince, r.listened = time.Time{}, t.GetIfrit().GetListened().AsDuration()
 	h.mu.Unlock()
@@ -1730,7 +1731,8 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 		kind = "watcher"
 	}
 	spec.Track = h.children.tracker(t.GetCode(), kind)
-	spec.LowPriority = h.lowPriority()
+	// Below the window at every notch but Overclock: typing stays fluid under load (Q298, L50, Q371).
+	spec.Nice = h.workerNice()
 	spec.StartHead = r.startHead
 	spec.Branch = t.GetBranch()
 	spec.IsWorkDone = func() bool {

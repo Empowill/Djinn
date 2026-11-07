@@ -83,12 +83,15 @@ djinn/T07-the-orchestrator.
 
 ### An azima's pull request
 
-Once every part of the azima is done and committed and its branch pushed, Djinn proposes its pull request: *Open a pull
-request for T07 to main?*, answered **Open pull request** or **Not yet**. Its card follows it:
+Djinn opens it as a draft at the branch's first push, once the branch holds commits main lacks, with no question, as
+an answered proposal would: by the project's skill for opening requests when it has one, else by the forge's command
+line. The Djinn hears what it did. When it could not, once every part of the azima is done and committed, Djinn
+proposes it: *Open a pull request for T07 to main?*, answered **Open pull request** or **Not yet**. A wish pushed per
+wish gets no draft per azima: its one pull request is proposed when the wish settles. Its card follows it:
 
 | The card shows | What it means |
 | --- | --- |
-| **PR proposed** | Djinn asked you whether to open it. |
+| **PR proposed** | A task opens it by the project's skill, or Djinn could not open it, or asked you whether to. |
 | **PR open** | The request is open, as a draft at first; a click opens it on the forge. Each push of the branch updates it. |
 | **PR merged** | Merged into main: the azima is done. |
 

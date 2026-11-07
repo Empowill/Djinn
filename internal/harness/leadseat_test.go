@@ -13,6 +13,7 @@ import (
 	"connectrpc.com/connect"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	uiv1 "github.com/empowill/djinn/gen/go/ui/v1"
 	"github.com/empowill/djinn/internal/plan"
 )
 
@@ -25,10 +26,12 @@ type seatBench struct {
 	asked chan *planv1.LeadSeat
 }
 
-func driveSeats(t *testing.T, claude, codex func(n int) ([]Event, error), ready func(*planv1.LeadSeat) bool) *seatBench {
+func driveSeats(
+	t *testing.T, claude, codex func(n int) ([]Event, error), ready func(*planv1.LeadSeat) bool, set ...func(*LeadDriver),
+) *seatBench {
 	t.Helper()
 	s := &seatBench{codex: newLeadAgent(codex), asked: make(chan *planv1.LeadSeat, 20)}
-	s.leadBench = driveLead(t, newLeadAgent(claude), func(d *LeadDriver) {
+	s.leadBench = driveLead(t, newLeadAgent(claude), append([]func(*LeadDriver){func(d *LeadDriver) {
 		d.Providers = map[planv1.Provider]Provider{
 			planv1.Provider_PROVIDER_CLAUDE: d.Provider, planv1.Provider_PROVIDER_CODEX: s.codex,
 		}
@@ -36,7 +39,7 @@ func driveSeats(t *testing.T, claude, codex func(n int) ([]Event, error), ready 
 			s.asked <- seat
 			return ready == nil || ready(seat)
 		}
-	})
+	}}, set...)...)
 	s.lead = &plan.LeadService{Wishes: s.wishes}
 	return s
 }
@@ -75,6 +78,194 @@ func (s *seatBench) move(t *testing.T, provider planv1.Provider, model, account 
 		t.Fatal(err)
 	}
 	return res.Msg
+}
+
+// followOrder makes the driver's lead follow the order of the sign-ins, as Djinn's does (L2): h, on the driver's
+// home, keeps the limits and the quotas.
+func followOrder(h *Harness) func(*LeadDriver) {
+	return func(d *LeadDriver) {
+		h.home = d.Home
+		d.accounts = h
+	}
+}
+
+// writeOrder writes the order of the sign-ins of claude: "" for its own.
+func (s *seatBench) writeOrder(t *testing.T, names ...string) {
+	t.Helper()
+	var order []*uiv1.SignInRef
+	for _, n := range names {
+		order = append(order, &uiv1.SignInRef{Provider: planv1.Provider_PROVIDER_CLAUDE, Account: n})
+	}
+	if _, err := plan.WriteAccountOrder(s.home, order); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestLeadFollowsOrder: the lead's batches start on the first free sign-in of its agent in the order (L2), its model
+// kept; a limit it hits holds that sign-in for the workers too and the batch goes on at once on the next one; a pause
+// skips one; pinned, the lead stays where it is.
+func TestLeadFollowsOrder(t *testing.T) {
+	t.Parallel()
+	until := time.Now().Add(3 * time.Hour).Truncate(time.Second)
+	h := &Harness{}
+	s := driveSeats(t, func(n int) ([]Event, error) {
+		if n == 0 {
+			limit := &Limit{What: "the account's session limit", Until: until}
+			return []Event{{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "rate limit rejected", Limit: limit}},
+				errors.New("You've hit your session limit")
+		}
+		return leadTurn("djinn brief", "Took the batch over"), nil
+	}, nil, nil, followOrder(h))
+	work := s.addAccount(t, "work", planv1.Provider_PROVIDER_CLAUDE)
+	perso := s.addAccount(t, "perso", planv1.Provider_PROVIDER_CLAUDE)
+	s.writeOrder(t, "work", "", "perso")
+	s.move(t, planv1.Provider_PROVIDER_CLAUDE, "claude-opus-5-5", "")
+
+	s.notify(t, planv1.LeadEventKind_LEAD_EVENT_KIND_ENDED, "W2", "W2 ended")
+	if spec := s.started(t, 0); configDir(spec) != work.GetConfigDirectory() || spec.Model != "claude-opus-5-5" {
+		t.Errorf("first batch on %q, model %q: want work's folder, the seat's model", configDir(spec), spec.Model)
+	}
+	spec := s.started(t, 1)
+	if configDir(spec) != "" || !strings.Contains(spec.Prompt, "### W2 ended") {
+		t.Errorf("after work's limit, on %q: want claude's own sign-in, the same events:\n%s", configDir(spec), spec.Prompt)
+	}
+	waitFor(t, "the batch done", func() bool { return len(s.waiting(t)) == 0 })
+	if l := s.drive.LeadLimit(); l != nil {
+		t.Errorf("a limit reported: %v", l)
+	}
+	if o := h.accountOptions(planv1.Provider_PROVIDER_CLAUDE); o[0].Name != "work" || !o[0].LimitedUntil.Equal(until) {
+		t.Errorf("work not held for the workers: %+v", o)
+	}
+	batches := s.batches(t)
+	if len(batches) != 2 || batches[0].GetAccount() != "work" || batches[1].GetAccount() != "" {
+		t.Errorf("journal: %v", batches)
+	}
+
+	if _, err := s.lead.PauseAccount(t.Context(), connect.NewRequest(&planv1.LeadServicePauseAccountRequest{
+		Provider: planv1.Provider_PROVIDER_CLAUDE,
+	})); err != nil {
+		t.Fatal(err)
+	}
+	s.notify(t, planv1.LeadEventKind_LEAD_EVENT_KIND_ENDED, "W3", "W3 ended")
+	if got := configDir(s.started(t, 2)); got != perso.GetConfigDirectory() {
+		t.Errorf("its own paused, work limited: on %q, want perso's", got)
+	}
+	waitFor(t, "the batch done", func() bool { return len(s.waiting(t)) == 0 })
+
+	s.move(t, planv1.Provider_PROVIDER_CLAUDE, "", "work")
+	if !plan.LeadPinned(s.home) {
+		t.Error("a move to an account does not pin the lead")
+	}
+	s.notify(t, planv1.LeadEventKind_LEAD_EVENT_KIND_ENDED, "W4", "W4 ended")
+	if got := configDir(s.started(t, 3)); got != work.GetConfigDirectory() {
+		t.Errorf("pinned on work, limited: on %q, want work's, as the developer chose", got)
+	}
+}
+
+// TestLeadOverflow: with each sign-in of its agent full, the lead's batch starts in overflow on the one that may spend
+// extra credits; refused there, then on the next, it waits for the first of their limits to reset, saying so.
+func TestLeadOverflow(t *testing.T) {
+	t.Parallel()
+	now := time.Now()
+	first, second := now.Add(2*time.Hour).Truncate(time.Second), now.Add(4*time.Hour).Truncate(time.Second)
+	h := &Harness{}
+	var overflowing []bool
+	var d *LeadDriver
+	s := driveSeats(t, func(n int) ([]Event, error) {
+		overflowing = append(overflowing, d.Overflowing())
+		reset := first
+		if n == 1 {
+			reset = second
+		}
+		limit := &Limit{What: "the account's session limit", Until: reset}
+		return []Event{{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "rate limit rejected", Limit: limit}},
+			errors.New("You've hit your session limit")
+	}, nil, nil, followOrder(h), func(driver *LeadDriver) { d = driver })
+	work := s.addAccount(t, "work", planv1.Provider_PROVIDER_CLAUDE)
+	full := func(extra bool) Quota {
+		return Quota{Read: now, Extra: &extra, FiveHour: &UsageWindow{Used: 1, ResetsAt: now.Add(time.Hour)}, SevenDay: &UsageWindow{Used: .5}}
+	}
+	h.noteQuota(planv1.Provider_PROVIDER_CLAUDE, "", full(false))
+	h.noteQuota(planv1.Provider_PROVIDER_CLAUDE, "work", full(true))
+
+	s.notify(t, planv1.LeadEventKind_LEAD_EVENT_KIND_ENDED, "W2", "W2 ended")
+	if got := configDir(s.started(t, 0)); got != work.GetConfigDirectory() {
+		t.Errorf("first batch on %q, want work's: it may spend extra credits", got)
+	}
+	if got := configDir(s.started(t, 1)); got != "" {
+		t.Errorf("refused on work, then on %q: want claude's own sign-in", got)
+	}
+	waitFor(t, "the limit reported", func() bool { return s.drive.LeadLimit() != nil })
+	limit := s.drive.LeadLimit()
+	if limit.GetUntil() == nil || !limit.GetUntil().AsTime().Equal(first) || !strings.Contains(s.drive.Failure(),
+		"no other sign-in of its agent is free") {
+		t.Errorf("limit until %v, why %q: want work's reset %v", limit.GetUntil().AsTime(), s.drive.Failure(), first)
+	}
+	if n := len(s.agent.all()); n != 2 || !slices.Equal(overflowing, []bool{true, true}) {
+		t.Errorf("%d sessions, overflowing %v: want 2, both past their limits", n, overflowing)
+	}
+	if batches := s.batches(t); len(batches) != 2 || !batches[0].GetOverflow() || !batches[1].GetOverflow() {
+		t.Errorf("journal: %v, want each batch marked in overflow", batches)
+	}
+}
+
+// TestLeadPinAndUnpin: djinn lead pin keeps each batch of the lead on the sign-in named, whatever the order; --unpin
+// takes the pin off, and the next batch starts again on the first free sign-in of its agent in the order (Q317).
+func TestLeadPinAndUnpin(t *testing.T) {
+	t.Parallel()
+	h := &Harness{}
+	s := driveSeats(t, func(int) ([]Event, error) { return leadTurn("djinn brief", "Took the batch over"), nil },
+		nil, nil, followOrder(h))
+	work := s.addAccount(t, "work", planv1.Provider_PROVIDER_CLAUDE)
+	perso := s.addAccount(t, "perso", planv1.Provider_PROVIDER_CLAUDE)
+	s.writeOrder(t, "work", "", "perso")
+	pin := func(account string, unpin bool) *planv1.LeadServicePinResponse {
+		t.Helper()
+		res, err := s.lead.Pin(t.Context(), connect.NewRequest(&planv1.LeadServicePinRequest{Account: account, Unpin: unpin}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res.Msg
+	}
+
+	if res := pin("perso", false); !res.GetPinned() || res.GetSeat().GetAccount() != "perso" || !plan.LeadPinned(s.home) {
+		t.Errorf("pinned on perso: %v", res)
+	}
+	s.notify(t, planv1.LeadEventKind_LEAD_EVENT_KIND_ENDED, "W2", "W2 ended")
+	if got := configDir(s.started(t, 0)); got != perso.GetConfigDirectory() {
+		t.Errorf("pinned on perso: on %q, want perso's, whatever the order", got)
+	}
+	waitFor(t, "the batch done", func() bool { return len(s.waiting(t)) == 0 })
+
+	res := pin("", true)
+	if res.GetPinned() || res.GetSeat().GetAccount() != "" || plan.LeadPinned(s.home) ||
+		!strings.Contains(res.GetNote(), "follows the order again") {
+		t.Errorf("unpinned: %v", res)
+	}
+	s.notify(t, planv1.LeadEventKind_LEAD_EVENT_KIND_ENDED, "W3", "W3 ended")
+	if got := configDir(s.started(t, 1)); got != work.GetConfigDirectory() {
+		t.Errorf("unpinned: on %q, want work's, the first in the order", got)
+	}
+	waitFor(t, "the batch done", func() bool { return len(s.waiting(t)) == 0 })
+
+	if res := pin("", false); !res.GetPinned() || res.GetSeat().GetAccount() != "" {
+		t.Errorf("pinned on its own sign-in: %v", res)
+	}
+	s.notify(t, planv1.LeadEventKind_LEAD_EVENT_KIND_ENDED, "W4", "W4 ended")
+	if got := configDir(s.started(t, 2)); got != "" {
+		t.Errorf("pinned on claude's own sign-in: on %q, want its default folder", got)
+	}
+
+	for _, bad := range []*planv1.LeadServicePinRequest{{Account: "work", Unpin: true}, {Account: "nobody"}} {
+		if _, err := s.lead.Pin(t.Context(), connect.NewRequest(bad)); err == nil {
+			t.Errorf("pin %v accepted", bad)
+		}
+	}
+	s.addAccount(t, "gpt", planv1.Provider_PROVIDER_CODEX)
+	if _, err := s.lead.Pin(t.Context(), connect.NewRequest(&planv1.LeadServicePinRequest{Account: "gpt"})); err == nil ||
+		!strings.Contains(err.Error(), "djinn lead move --provider codex --account gpt") {
+		t.Errorf("pin on codex's account while claude leads: %v", err)
+	}
 }
 
 // TestLeadSeat tests moving the lead between providers, models, and accounts, and handling account limits.

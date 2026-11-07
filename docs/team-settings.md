@@ -547,7 +547,7 @@ does; otherwise it says the build is installed.
 
 **What installs by itself.** A build of the running Djinn's own line (the branch it was built from, or one that carries
 it on, W527), pushed past the push checks, installs without a click when `install_builds` is on, the default: one at a
-time, at a low-priority worker's CPU priority, once no gate is held and the machine is not under pressure (the banner
+time, at a check's CPU priority (below the window, above the workers), once no gate is held and the machine is not under pressure (the banner
 says what it waits for meanwhile); a newer push of the line replaces one that waits. A build that does not hold the
 build installed last, when that one is newer than the running Djinn (another branch's, installed by your click), is
 only offered, and so is every other branch's build, a push made without its checks, and a project with no push check.

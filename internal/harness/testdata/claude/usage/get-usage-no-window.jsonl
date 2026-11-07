@@ -1,0 +1,3 @@
+# claude 2.1.316's answer to get_usage with no rate limits (07/11/2026: the same signed out, on an API key, and on a
+# subscription's token it could not read): only claude auth status's authMethod tells an API key apart.
+{"type":"control_response","response":{"subtype":"success","request_id":"djinn-usage","response":{"session":{"total_cost_usd":0},"subscription_type":null,"rate_limits_available":false,"rate_limits":null,"behaviors":null}}}

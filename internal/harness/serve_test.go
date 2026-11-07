@@ -178,6 +178,8 @@ func TestServe(t *testing.T) {
 		if !gates.holds("stack") {
 			t.Errorf("gate stack not held while the serve runs")
 		}
+		// A worker's load, below the window (Q371).
+		checkWorkerPriority(t, "serve", int(sv.GetPid()), serveNice)
 		serves := &Serves{h: e.h}
 		list, err := serves.List(t.Context(), connect.NewRequest(&planv1.ServeServiceListRequest{TaskId: ifrit.GetId()}))
 		if err != nil {

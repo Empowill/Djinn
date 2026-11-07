@@ -1,8 +1,8 @@
 // The buttons at the top of a wish, against the real djinn up --browser (see global-setup.ts): Share writes the wish's
 // export (binary protobuf), a file the command line imports again; Talk to the Djinn on the flying carpet's header
 // resumes the one lead, the Djinn, in its terminal, on no wish (on a wish, lead-switch.spec.ts checks it); driven by
-// Djinn, a chip of the lead's seat replaces it, and a batch that failed twice is retried from its line in the side
-// journal (Decision Q115 B). The lead is
+// Djinn, its batch and journal replace it, no seat's chip (the Summoning Circle chooses the seat, W578), and a batch
+// that failed twice is retried from its line in the side journal (Decision Q115 B). The lead is
 // a fake claude on djinn's PATH that repeats what it reads. The chip beside the push strategy says where the wish's
 // work lands, in a real Git repository, and changes its branch. The trash has its own spec (wish-lifecycle.spec.ts).
 import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
@@ -461,7 +461,7 @@ test("next to Lead, the driven lead shows the running batch, the journal and a f
   }
 });
 
-test("driven, no Talk to the Djinn: the seat's chip opens the seats, and Retry on the failed line resumes the lead", async ({
+test("driven, no Talk to the Djinn and no seat's chip (the Circle has it, W578), and Retry on the failed line resumes the lead", async ({
   page,
 }) => {
   const title = `Driven retry ${randomUUID().slice(0, 8)}`;
@@ -529,19 +529,9 @@ test("driven, no Talk to the Djinn: the seat's chip opens the seats, and Retry o
     );
     await expect(actions).not.toContainText("Talk to the Djinn");
 
-    // The seat, in a chip; its menu moves the lead.
-    const seat = actions.getByRole("button", {
-      name: "The Djinn runs on Claude Code · opus 4.7: move it",
-    });
-    await expect(seat).toHaveText("Claude Code · opus 4.7");
-    await seat.click();
-    const menu = actions.getByRole("menu", { name: "Choose the agent" });
-    await expect(menu).toBeVisible();
-    await expect(
-      menu.getByRole("menuitem", { name: /Claude.*The Djinn runs here/ }),
-    ).toHaveAttribute("aria-current", "true");
-    await page.keyboard.press("Escape");
-    await expect(menu).toHaveCount(0);
+    // No seat's chip, no menu: the agent, model and account are chosen in the Summoning Circle alone.
+    await expect(actions.locator(".lead-seat")).toHaveCount(0);
+    await expect(actions.locator("[aria-haspopup=menu]")).toHaveCount(0);
 
     // Retry is on the failed line of the side journal, once.
     const failed = page.locator(".glance .lead-side-log-line.failed");
@@ -564,11 +554,6 @@ test("driven, no Talk to the Djinn: the seat's chip opens the seats, and Retry o
         await page.locator(".glance .lead-side-log").screenshot({
           path: path.join(shots, `driven-lead-retry-${theme}.png`),
         });
-        await seat.click();
-        await page.screenshot({
-          path: path.join(shots, `driven-lead-seats-${theme}.png`),
-        });
-        await page.keyboard.press("Escape");
       }
     await failed.getByRole("button", { name: "Retry" }).click();
     await expect.poll(() => resumed).toEqual([wishId]);

@@ -974,14 +974,17 @@ message LeadBatch {
   int32 prompt_chars = 16;
   // The account it ran on, by its name (Account.name); empty for the agent's own sign-in.
   string account = 17;
+  // Its session started past the limits of its sign-in, in overflow: each sign-in of its agent was full, limited or
+  // paused, and it spends extra credits if the account allows them, else waits for the reset.
+  bool overflow = 18;
 }
 
 // Account is a sign-in of an agent on this machine beside its default one: a folder of the agent's own where it keeps
 // its configuration, its sessions and its login (Claude Code's CLAUDE_CONFIG_DIR, Codex's CODEX_HOME). The developer
 // signs in there once, with the agent's own command; Djinn names the folder and passes it to the sessions it starts,
 // and never reads nor stores a token. Kept in settings.json of Djinn's data folder: never a secret, never shared.
-// Every worker of the agent runs on one of its sign-ins, its own first and then its accounts in the order they were
-// added: the first neither paused nor known to be limited, and the one it ran on before while that one is. A limit of
+// Every worker of the agent runs on one of its sign-ins, in the developer's order of priority (djinn lead order): the
+// first neither paused, limited nor known out of quota, and the one it ran on before while that one may. A limit of
 // the whole account that a worker hits moves its task at once to another sign-in free.
 message Account {
   // How the commands name it: lowercase letters, digits and dashes, such as work.
@@ -993,15 +996,17 @@ message Account {
   // The agent's folder for it, absolute: ~/.claude-<name> or ~/.codex-<name> unless given.
   string config_directory = 4;
   // Paused: Djinn starts no worker on it (djinn lead pause-account), and the tasks that ran on it move to another
-  // sign-in of the agent, or wait while each one is paused. The lead's seat stays where the developer put it.
+  // sign-in of the agent, or wait while each one is paused. The lead's next batch skips it too, unless it is pinned
+  // there.
   bool paused = 5;
 }
 
 // AccountUsage is what Djinn knows of the usage limits of one sign-in of an agent: its own (no account) or an
 // account. Two sources tell it, the latest reading winning: a probe that asks the agent without a model turn (Claude
 // Code's get_usage, every 5 minutes, for an agent with accounts), and each worker running there, at each turn (claude's
-// rate_limit_event). A new task starts on the sign-in whose week resets first among those free with quota left
-// (decision Q258 B); a task that ran stays on its own while it is free and has quota left.
+// rate_limit_event). A new task starts on the first sign-in of its agent in the developer's order (djinn lead order,
+// decision Q295 B) neither paused, limited nor past 95 % of its 5 hours or its week; a task that ran stays on its own
+// while it may. With each one full, limited or paused, it starts in overflow on the first that may spend extra credits.
 message AccountUsage {
   // The agent.
   Provider provider = 1;
@@ -1023,6 +1028,17 @@ message AccountUsage {
   google.protobuf.Timestamp limited_until = 9;
   // The sign-in a new task of the agent would start on now, with more than one to choose from.
   bool next = 10;
+  // A worker, or the lead Djinn drives, runs there now past its limits, in overflow: each sign-in of the agent was
+  // full, limited or paused when it started, and it spends extra credits if the account allows them.
+  bool overflowing = 11;
+  // Pseudo-unlimited: in the dynamic mode, the order takes it after the sign-ins of its agent that tell a quota
+  // (Settings.account_mode). Detected (unlimited_detected) unless the developer forced it (unlimited_setting).
+  bool unlimited = 12;
+  // Djinn found it gives no quota at all: its agent tells none (Codex, Antigravity), or a Claude sign-in signed in
+  // answers the probe with no window (an API key). A failing probe alone never counts.
+  bool unlimited_detected = 13;
+  // The developer's override of the detection (djinn lead unlimited); unset or auto: the detection decides.
+  UnlimitedSetting unlimited_setting = 14;
 }
 
 // UsageWindow is one window of a sign-in's usage limit.
@@ -1077,8 +1093,10 @@ message WorkerSeat {
   string model = 3;
 }
 
-// LeadSeat is where the lead Djinn drives runs: its agent, its model, its account. Each batch's session starts there,
-// with the lead's journal, until the developer moves it (djinn lead move, the lead's menu).
+// LeadSeat is where the lead Djinn drives runs: its agent, its model, its account. Each batch's session starts on its
+// agent and model, with the lead's journal, until the developer moves it (djinn lead move, the lead's menu); on the
+// first free sign-in of its agent in the order of the accounts, unless the lead is pinned on the seat's account
+// (djinn lead pin).
 message LeadSeat {
   // The agent: claude (the default) or codex.
   Provider provider = 1;
@@ -1088,8 +1106,9 @@ message LeadSeat {
   string account = 3;
 }
 
-// LeadLimit is a usage limit the lead Djinn drives hit: its events wait, and Djinn moves it nowhere by itself. The
-// window offers each move in one click.
+// LeadLimit is a usage limit the lead Djinn drives hit, with no other sign-in of its agent free, or pinned where it hit
+// it: its events wait for the first to free, and Djinn changes neither its agent nor its pin by itself. The window
+// offers each move in one click.
 message LeadLimit {
   // What stopped it, for a reader: "the account's session limit, resets at 07:20".
   string text = 1;
@@ -4498,9 +4517,11 @@ service LeadService {
     option idempotency_level = NO_SIDE_EFFECTS;
   }
   // Move the lead Djinn drives to another agent, model or account: the next batch starts there, with the lead's
-  // journal, and the lead stays there until moved again. The whole seat is given: an empty model is the agent's
-  // default, an empty account its own sign-in; without --provider, the current agent. Events that wait after a failed
-  // batch or a limit go to the new seat at once. Antigravity cannot lead yet. Kept in settings.json, on this machine.
+  // journal. The whole seat is given: an empty model is the agent's default; with --account, the lead is pinned on
+  // that account until moved or unpinned (djinn lead pin --unpin); without, each batch starts on the first free
+  // sign-in of the agent in the order of the accounts. Without --provider, the current agent. Events that wait after a
+  // failed batch or a limit go to the new seat at once. Antigravity cannot lead yet. Kept in settings.json, on this
+  // machine.
   rpc Move(LeadServiceMoveRequest) returns (LeadServiceMoveResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
@@ -4517,16 +4538,16 @@ service LeadService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
-  // Forget an account: Djinn no longer names it, and leaves its folder, and the login in it, as they are. Refused
-  // while the lead runs on it.
+  // Forget an account: Djinn no longer names it, nor ranks it in the order, and leaves its folder, and the login in it,
+  // as they are. Refused while the lead is pinned on it.
   rpc RemoveAccount(LeadServiceRemoveAccountRequest) returns (LeadServiceRemoveAccountResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
   // Pause an account, or with --provider and no name an agent's own sign-in: Djinn starts no worker on it. A worker
   // that runs there finishes its turn; the tasks that start or resume next go to another sign-in of the agent neither
-  // paused nor limited; with each one paused, they wait. The lead's seat stays where the developer put it. Kept in
-  // settings.json.
+  // paused nor limited; with each one paused, they wait. The lead's next batch skips it too, unless the lead is pinned
+  // there. Kept in settings.json.
   rpc PauseAccount(LeadServicePauseAccountRequest) returns (LeadServicePauseAccountResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
@@ -4537,11 +4558,45 @@ service LeadService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
+  // Rank the sign-ins of every agent, from the highest priority to the lowest: each new worker, and each batch of the
+  // lead unless it is pinned, starts on the first of its agent in this order neither paused, limited nor out of quota.
+  // The whole order is given, a --sign-in each: claude for an agent's own sign-in, claude/work for its account work. A
+  // sign-in left out keeps its place after them. Nothing stops nor moves: the order counts at each next start. Kept in
+  // settings.json, on this machine; the window's accounts screen ranks them by drag and drop or Alt+Up and Alt+Down.
+  rpc Order(LeadServiceOrderRequest) returns (LeadServiceOrderResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // Pin the lead Djinn drives on a sign-in of its agent: the account named, or without one its agent's own sign-in;
+  // each batch starts there whatever the order, as djinn lead move --account does. With --unpin, the pin is taken off:
+  // each batch starts again on the first free sign-in of its agent in the order of the accounts. Its agent and model
+  // stay. Kept in settings.json, on this machine.
+  rpc Pin(LeadServicePinRequest) returns (LeadServicePinResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
   // Pick an option of the choice the lead's agent shows in its terminal (LeadServiceGetResponse.prompt), as its keys
   // would: the window's answer to an approval or a folder to trust. Refused when the screen shows another choice, or
   // none; the same choice is answered once. The window's only: an agent never answers its own approval.
   rpc Choose(LeadServiceChooseRequest) returns (LeadServiceChooseResponse) {
     option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // Choose how each new worker, and each batch of the lead unless it is pinned, picks its sign-in among the free ones
+  // of its agent. dynamic, by default: the one whose week ends soonest goes first (within an hour, the least used),
+  // then those whose quota is not known, then the pseudo-unlimited ones (djinn lead unlimited), each group in the
+  // order. manual: the first in the order (djinn lead order). Either way, a task that ran stays on its sign-in while it
+  // may. Nothing stops nor moves: the mode counts at each next start. Kept in settings.json, on this machine.
+  rpc AccountMode(LeadServiceAccountModeRequest) returns (LeadServiceAccountModeResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // Correct whether a sign-in counts as pseudo-unlimited, a sign-in a word as djinn lead order takes it (claude,
+  // claude/work): forced, it goes after the sign-ins of its agent with a quota in the dynamic mode, and its quota never
+  // holds it back; limited, it counts as one with a quota even when Djinn reads none; auto, Djinn's detection decides
+  // (an agent that tells no quota, as Codex, or a Claude sign-in on an API key). Kept in settings.json.
+  rpc Unlimited(LeadServiceUnlimitedRequest) returns (LeadServiceUnlimitedResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
   // Read the global Summoning Circle: one row per kind of model-calling worker across all projects.
@@ -4641,6 +4696,9 @@ message LeadServiceGetResponse {
   repeated WorkerSeat circle = 10;
   // The latest batches of the driven lead's journal, oldest first.
   repeated LeadBatch journal = 11;
+  // The driven lead stays on its seat's account whatever the order (djinn lead pin); false: each batch starts on the
+  // first free sign-in of its agent in the order of the accounts.
+  bool pinned = 12;
 }
 
 // LeadExit is how the program of the lead's terminal ended.
@@ -4894,6 +4952,50 @@ message LeadServiceAccountsResponse {
   // The usage limits of each sign-in Djinn read or tried to, in the order the workers take them, with --json: the
   // text says them.
   repeated AccountUsage usage = 4 [(djinn.v1.json_only) = true];
+  // Every sign-in of the agents in the developer's order of priority, as djinn lead order takes them (claude,
+  // claude/work), with --json: the text says it.
+  repeated string order = 5 [(djinn.v1.json_only) = true];
+  // The lead stays on its seat's account whatever the order (djinn lead pin), with --json: the text says it.
+  bool pinned = 6 [(djinn.v1.json_only) = true];
+  // How a sign-in is picked (djinn lead account-mode), with --json: the text says it.
+  AccountMode mode = 7 [(djinn.v1.json_only) = true];
+}
+
+message LeadServiceOrderRequest {
+  // The sign-ins from the highest priority to the lowest, each once: an agent (claude, codex, antigravity) for its own
+  // sign-in, agent/name for one of its accounts (djinn lead accounts lists them).
+  repeated string sign_in = 1 [
+    (buf.validate.field).repeated.min_items = 1,
+    (buf.validate.field).repeated.max_items = 200,
+    (buf.validate.field).repeated.items.string.pattern = "^(claude|codex|antigravity)(/[a-z0-9][a-z0-9-]{0,31})?$"
+  ];
+}
+
+message LeadServiceOrderResponse {
+  // The order as written, whole, a numbered line per sign-in.
+  string text = 1;
+  // The order as written, whole, as --sign-in takes it, with --json.
+  repeated string sign_in = 2 [(djinn.v1.json_only) = true];
+}
+
+message LeadServicePinRequest {
+  // The account to pin the lead on, by its name, of the lead's agent; empty for its agent's own sign-in.
+  string account = 1 [
+    (djinn.v1.positional) = true,
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.pattern = "^[a-z0-9][a-z0-9-]{0,31}$"
+  ];
+  // Take the pin off: each batch starts on the first free sign-in of the lead's agent in the order. No account then.
+  bool unpin = 2;
+}
+
+message LeadServicePinResponse {
+  // The seat, as it now is.
+  LeadSeat seat = 1;
+  // The lead stays on the seat's account whatever the order.
+  bool pinned = 2;
+  // What changes, in a line.
+  string note = 3;
 }
 
 message LeadServiceAddAccountRequest {
@@ -6512,4 +6614,63 @@ message PlanServiceSyncResponse {
   // The files whose status says not done while every box of their Done-when section is checked: their azimas count
   // as done. Set their status to done.
   repeated string all_checked = 5;
+}
+
+// AccountMode is how a new worker, and a batch of the lead that is not pinned, picks its sign-in among the free ones
+// of its agent (decision Q339 C).
+enum AccountMode {
+  // Not set: dynamic.
+  ACCOUNT_MODE_UNSPECIFIED = 0;
+  // The sign-in whose week ends soonest first (decision Q258 B): what is left of a week is lost at its reset. Then
+  // those whose quota Djinn does not know, then the pseudo-unlimited ones, each group in the order.
+  ACCOUNT_MODE_DYNAMIC = 1;
+  // The first in the order of priority (decision Q295 B).
+  ACCOUNT_MODE_MANUAL = 2;
+}
+
+// UnlimitedSetting is the developer's word on whether a sign-in is pseudo-unlimited.
+enum UnlimitedSetting {
+  // Not set: auto.
+  UNLIMITED_SETTING_UNSPECIFIED = 0;
+  // Djinn's detection decides: no quota told at all.
+  UNLIMITED_SETTING_AUTO = 1;
+  // Pseudo-unlimited, whatever Djinn reads.
+  UNLIMITED_SETTING_FORCED = 2;
+  // Counted with a quota, even when Djinn reads none.
+  UNLIMITED_SETTING_LIMITED = 3;
+}
+
+message LeadServiceAccountModeRequest {
+  // dynamic or manual.
+  AccountMode mode = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).enum.defined_only = true
+  ];
+}
+
+message LeadServiceAccountModeResponse {
+  // The mode, as written.
+  AccountMode mode = 1;
+  // What changes, in a line.
+  string note = 2;
+}
+
+message LeadServiceUnlimitedRequest {
+  // The sign-in: an agent (claude, codex, antigravity) for its own, agent/name for one of its accounts.
+  string sign_in = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.pattern = "^(claude|codex|antigravity)(/[a-z0-9][a-z0-9-]{0,31})?$"
+  ];
+  // auto, forced or limited.
+  UnlimitedSetting unlimited = 2 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).enum.defined_only = true
+  ];
+}
+
+message LeadServiceUnlimitedResponse {
+  // The setting, as written.
+  UnlimitedSetting unlimited = 1;
+  // What changes, in a line.
+  string note = 2;
 }

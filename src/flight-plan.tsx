@@ -14,7 +14,6 @@ import {
   Change,
   type Choice,
   Closer,
-  type Provider,
   type Question,
   type Task,
   type Wish,
@@ -69,12 +68,7 @@ import { Glance } from "./glance";
 import { WishTask } from "./wish-task";
 import { HourglassLine } from "./hourglass";
 import { PageHeader } from "./page-header";
-import {
-  LeadButton,
-  leadTrouble,
-  recordedAgent,
-  type SeatChoice,
-} from "./wish-head";
+import { LeadButton, leadTrouble } from "./wish-head";
 import {
   GrantCard,
   InvestigatingSection,
@@ -90,7 +84,6 @@ export function FlightPlan({
   onOpen,
   onOpenProject,
   onToast,
-  onSetupAgents,
 }: {
   // The active wishes, by rank.
   wishes: Wish[];
@@ -98,7 +91,6 @@ export function FlightPlan({
   // Opens a project's panel, from its line in the inbox.
   onOpenProject?: (projectId: string) => void;
   onToast: (text: string) => void;
-  onSetupAgents?: () => void;
 }) {
   const projects = useData((s) => s.projects);
   const lead = useData((s) => s.lead);
@@ -640,25 +632,13 @@ export function FlightPlan({
     () => noLead(lead, leadDrive),
     [lead, leadDrive],
   );
-  // resumeLead resumes the Djinn, or starts one of another agent, on no wish; what Djinn says of it shows as a toast.
-  const resumeLead = (provider?: Provider) => {
+  // resumeLead resumes the Djinn, on no wish; what Djinn says of it shows as a toast.
+  const resumeLead = () => {
     let note = "";
     return act(
       "",
       async () => {
-        ({ note } = await clients.lead.resume({ provider }));
-      },
-      [Change.WISH],
-      () => note,
-    );
-  };
-  // moveLead moves the lead Djinn drives to another seat; what Djinn says of it shows as a toast.
-  const moveLead = (seat: SeatChoice) => {
-    let note = "";
-    return act(
-      "",
-      async () => {
-        ({ note } = await clients.lead.move(seat));
+        ({ note } = await clients.lead.resume({}));
       },
       [Change.WISH],
       () => note,
@@ -677,16 +657,9 @@ export function FlightPlan({
         actions={
           <LeadButton
             focused={false}
-            recorded={recordedAgent(lead)}
             trouble={trouble}
-            loadAgents={async () =>
-              (await clients.ui.getEnvironment({})).providers
-            }
             onLead={() => quiet(resumeLead())}
-            onPick={(provider) => quiet(resumeLead(provider))}
-            onSetup={onSetupAgents}
             drive={leadDrive}
-            onMove={(seat) => quiet(moveLead(seat))}
           />
         }
       >
