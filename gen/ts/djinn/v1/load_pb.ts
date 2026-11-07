@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file djinn/v1/load.proto.
  */
 export const file_djinn_v1_load: GenFile = /*@__PURE__*/
-  fileDesc("ChNkamlubi92MS9sb2FkLnByb3RvEghkamlubi52MSIXChVMb2FkU2VydmljZUdldFJlcXVlc3QiqQQKFkxvYWRTZXJ2aWNlR2V0UmVzcG9uc2USIgoFbm90Y2gYASABKA4yEy5kamlubi52MS5Mb2FkTm90Y2gSDAoEYXV0bxgCIAEoCBISCgpiYXNlX3Nsb3RzGAMgASgFEhcKD3J1bm5pbmdfd29ya2VycxgEIAEoBRIaChJtZW1vcnlfdG90YWxfYnl0ZXMYBSABKAQSKQoMY2hvc2VuX25vdGNoGAYgASgOMhMuZGppbm4udjEuTG9hZE5vdGNoEh4KFm1lbW9yeV9hdmFpbGFibGVfYnl0ZXMYByABKAQSHQoVd29ya2VyX2ZvcmVjYXN0X2J5dGVzGAggASgEEhgKEGJpbmRpbmdfcmVzb3VyY2UYCSABKAkSEQoJY3B1X3Nsb3RzGAogASgFEhQKDG1lbW9yeV9zbG90cxgLIAEoBRIWCg5wYXVzZWRfd29ya2VycxgMIAEoBRIZChF3b3JrZXJfcGVyY2VudGlsZRgNIAEoBRIZChF3b3JrZXJfZW5nYWdlZF9hdBgOIAEoCRINCgVzbG90cxgPIAEoBRItCgtub3RjaF9zbG90cxgQIAMoCzIYLmRqaW5uLnYxLkxvYWROb3RjaFNsb3RzEhYKDmZvcmNlZF93b3JrZXJzGBEgASgFEhQKDGxvd2VyX3BhdXNlcxgSIAEoCBItCgthdXRvX3JlYXNvbhgTIAEoCzIYLmRqaW5uLnYxLkxvYWRBdXRvUmVhc29uIkoKFUxvYWRTZXJ2aWNlU2V0UmVxdWVzdBIxCgVub3RjaBgBIAEoDjITLmRqaW5uLnYxLkxvYWROb3RjaEINukgKyAEBggEEEAEgACJ1ChZMb2FkU2VydmljZVNldFJlc3BvbnNlEiIKBW5vdGNoGAEgASgOMhMuZGppbm4udjEuTG9hZE5vdGNoEgwKBGF1dG8YAiABKAgSKQoMY2hvc2VuX25vdGNoGAMgASgOMhMuZGppbm4udjEuTG9hZE5vdGNoIhkKF0xvYWRTZXJ2aWNlV2F0Y2hSZXF1ZXN0IuYEChhMb2FkU2VydmljZVdhdGNoUmVzcG9uc2USIgoFbm90Y2gYASABKA4yEy5kamlubi52MS5Mb2FkTm90Y2gSHAoUZW5nYWdlZF9tZW1vcnlfYnl0ZXMYAiABKAQSGwoTd29ya2VyX21lbW9yeV9ieXRlcxgDIAEoBBIaChJtZW1vcnlfdG90YWxfYnl0ZXMYBCABKAQSHgoWbWVtb3J5X2F2YWlsYWJsZV9ieXRlcxgFIAEoBBIMCgRhdXRvGAYgASgIEhIKCmJhc2Vfc2xvdHMYByABKAUSFwoPcnVubmluZ193b3JrZXJzGAggASgFEikKDGNob3Nlbl9ub3RjaBgJIAEoDjITLmRqaW5uLnYxLkxvYWROb3RjaBIdChV3b3JrZXJfZm9yZWNhc3RfYnl0ZXMYCiABKAQSGAoQYmluZGluZ19yZXNvdXJjZRgLIAEoCRIRCgljcHVfc2xvdHMYDCABKAUSFAoMbWVtb3J5X3Nsb3RzGA0gASgFEhYKDnBhdXNlZF93b3JrZXJzGA4gASgFEhkKEXdvcmtlcl9wZXJjZW50aWxlGA8gASgFEhkKEXdvcmtlcl9lbmdhZ2VkX2F0GBAgASgJEg0KBXNsb3RzGBEgASgFEi0KC25vdGNoX3Nsb3RzGBIgAygLMhguZGppbm4udjEuTG9hZE5vdGNoU2xvdHMSFgoOZm9yY2VkX3dvcmtlcnMYEyABKAUSFAoMbG93ZXJfcGF1c2VzGBQgASgIEi0KC2F1dG9fcmVhc29uGBUgASgLMhguZGppbm4udjEuTG9hZEF1dG9SZWFzb24irwEKDkxvYWRBdXRvUmVhc29uEhcKD291dHNpZGVfcGVyY2VudBgBIAEoARIOCgZtZW1vcnkYAiABKAgSFgoOd2luZG93X3NlY29uZHMYAyABKAUSJAoEc3RlcBgEIAEoDjIWLmRqaW5uLnYxLkxvYWRBdXRvU3RlcBIiCgVub3RjaBgFIAEoDjITLmRqaW5uLnYxLkxvYWROb3RjaBISCgppbl9zZWNvbmRzGAYgASgFIkMKDkxvYWROb3RjaFNsb3RzEiIKBW5vdGNoGAEgASgOMhMuZGppbm4udjEuTG9hZE5vdGNoEg0KBXNsb3RzGAIgASgFKsgBCglMb2FkTm90Y2gSGgoWTE9BRF9OT1RDSF9VTlNQRUNJRklFRBAAEhYKEkxPQURfTk9UQ0hfTUlOSU1BTBABEhgKEExPQURfTk9UQ0hfTElHSFQQAhoCCAESFQoRTE9BRF9OT1RDSF9NRURJVU0QAxITCg9MT0FEX05PVENIX0hJR0gQBBISCg5MT0FEX05PVENIX01BWBAFEhMKD0xPQURfTk9UQ0hfQVVUTxAGEhgKFExPQURfTk9UQ0hfT1ZFUkNMT0NLEAcqsQEKDExvYWRBdXRvU3RlcBIeChpMT0FEX0FVVE9fU1RFUF9VTlNQRUNJRklFRBAAEhcKE0xPQURfQVVUT19TVEVQX0hPTEQQARIYChRMT0FEX0FVVE9fU1RFUF9MT1dFUhACEhgKFExPQURfQVVUT19TVEVQX1JBSVNFEAMSGgoWTE9BRF9BVVRPX1NURVBfQ0VJTElORxAEEhgKFExPQURfQVVUT19TVEVQX0ZMT09SEAUyjAIKC0xvYWRTZXJ2aWNlElEKA0dldBIfLmRqaW5uLnYxLkxvYWRTZXJ2aWNlR2V0UmVxdWVzdBogLmRqaW5uLnYxLkxvYWRTZXJ2aWNlR2V0UmVzcG9uc2UiB5ACAcjzGAESUgoDU2V0Eh8uZGppbm4udjEuTG9hZFNlcnZpY2VTZXRSZXF1ZXN0GiAuZGppbm4udjEuTG9hZFNlcnZpY2VTZXRSZXNwb25zZSIIyPMYAeDzGAESVgoFV2F0Y2gSIS5kamlubi52MS5Mb2FkU2VydmljZVdhdGNoUmVxdWVzdBoiLmRqaW5uLnYxLkxvYWRTZXJ2aWNlV2F0Y2hSZXNwb25zZSIEyPMYATABQo0BCgxjb20uZGppbm4udjFCCUxvYWRQcm90b1ABWjFnaXRodWIuY29tL2VtcG93aWxsL2RqaW5uL2dlbi9nby9kamlubi92MTtkamlubnYxogIDRFhYqgIIRGppbm4uVjHKAghEamlublxWMeICFERqaW5uXFYxXEdQQk1ldGFkYXRh6gIJRGppbm46OlYxYgZwcm90bzM", [file_buf_validate_validate, file_djinn_v1_options]);
+  fileDesc("ChNkamlubi92MS9sb2FkLnByb3RvEghkamlubi52MSIXChVMb2FkU2VydmljZUdldFJlcXVlc3Qi4wQKFkxvYWRTZXJ2aWNlR2V0UmVzcG9uc2USIgoFbm90Y2gYASABKA4yEy5kamlubi52MS5Mb2FkTm90Y2gSDAoEYXV0bxgCIAEoCBISCgpiYXNlX3Nsb3RzGAMgASgFEhcKD3J1bm5pbmdfd29ya2VycxgEIAEoBRIaChJtZW1vcnlfdG90YWxfYnl0ZXMYBSABKAQSKQoMY2hvc2VuX25vdGNoGAYgASgOMhMuZGppbm4udjEuTG9hZE5vdGNoEh4KFm1lbW9yeV9hdmFpbGFibGVfYnl0ZXMYByABKAQSHQoVd29ya2VyX2ZvcmVjYXN0X2J5dGVzGAggASgEEhgKEGJpbmRpbmdfcmVzb3VyY2UYCSABKAkSEQoJY3B1X3Nsb3RzGAogASgFEhQKDG1lbW9yeV9zbG90cxgLIAEoBRIWCg5wYXVzZWRfd29ya2VycxgMIAEoBRIZChF3b3JrZXJfcGVyY2VudGlsZRgNIAEoBRIZChF3b3JrZXJfZW5nYWdlZF9hdBgOIAEoCRINCgVzbG90cxgPIAEoBRItCgtub3RjaF9zbG90cxgQIAMoCzIYLmRqaW5uLnYxLkxvYWROb3RjaFNsb3RzEhYKDmZvcmNlZF93b3JrZXJzGBEgASgFEhQKDGxvd2VyX3BhdXNlcxgSIAEoCBItCgthdXRvX3JlYXNvbhgTIAEoCzIYLmRqaW5uLnYxLkxvYWRBdXRvUmVhc29uEhwKFGJyYWtlX21lbW9yeV9wZXJjZW50GBQgASgFEhoKEmJyYWtlX21lbW9yeV9maXhlZBgVIAEoCCJKChVMb2FkU2VydmljZVNldFJlcXVlc3QSMQoFbm90Y2gYASABKA4yEy5kamlubi52MS5Mb2FkTm90Y2hCDbpICsgBAYIBBBABIAAidQoWTG9hZFNlcnZpY2VTZXRSZXNwb25zZRIiCgVub3RjaBgBIAEoDjITLmRqaW5uLnYxLkxvYWROb3RjaBIMCgRhdXRvGAIgASgIEikKDGNob3Nlbl9ub3RjaBgDIAEoDjITLmRqaW5uLnYxLkxvYWROb3RjaCJKChpMb2FkU2VydmljZVNldEJyYWtlUmVxdWVzdBIgCgdwZXJjZW50GAEgASgNQgq6SAfIAQEqAhhfSACIAQFCCgoIX3BlcmNlbnQiOwobTG9hZFNlcnZpY2VTZXRCcmFrZVJlc3BvbnNlEhwKFGJyYWtlX21lbW9yeV9wZXJjZW50GAEgASgFIhkKF0xvYWRTZXJ2aWNlV2F0Y2hSZXF1ZXN0IuYEChhMb2FkU2VydmljZVdhdGNoUmVzcG9uc2USIgoFbm90Y2gYASABKA4yEy5kamlubi52MS5Mb2FkTm90Y2gSHAoUZW5nYWdlZF9tZW1vcnlfYnl0ZXMYAiABKAQSGwoTd29ya2VyX21lbW9yeV9ieXRlcxgDIAEoBBIaChJtZW1vcnlfdG90YWxfYnl0ZXMYBCABKAQSHgoWbWVtb3J5X2F2YWlsYWJsZV9ieXRlcxgFIAEoBBIMCgRhdXRvGAYgASgIEhIKCmJhc2Vfc2xvdHMYByABKAUSFwoPcnVubmluZ193b3JrZXJzGAggASgFEikKDGNob3Nlbl9ub3RjaBgJIAEoDjITLmRqaW5uLnYxLkxvYWROb3RjaBIdChV3b3JrZXJfZm9yZWNhc3RfYnl0ZXMYCiABKAQSGAoQYmluZGluZ19yZXNvdXJjZRgLIAEoCRIRCgljcHVfc2xvdHMYDCABKAUSFAoMbWVtb3J5X3Nsb3RzGA0gASgFEhYKDnBhdXNlZF93b3JrZXJzGA4gASgFEhkKEXdvcmtlcl9wZXJjZW50aWxlGA8gASgFEhkKEXdvcmtlcl9lbmdhZ2VkX2F0GBAgASgJEg0KBXNsb3RzGBEgASgFEi0KC25vdGNoX3Nsb3RzGBIgAygLMhguZGppbm4udjEuTG9hZE5vdGNoU2xvdHMSFgoOZm9yY2VkX3dvcmtlcnMYEyABKAUSFAoMbG93ZXJfcGF1c2VzGBQgASgIEi0KC2F1dG9fcmVhc29uGBUgASgLMhguZGppbm4udjEuTG9hZEF1dG9SZWFzb24irwEKDkxvYWRBdXRvUmVhc29uEhcKD291dHNpZGVfcGVyY2VudBgBIAEoARIOCgZtZW1vcnkYAiABKAgSFgoOd2luZG93X3NlY29uZHMYAyABKAUSJAoEc3RlcBgEIAEoDjIWLmRqaW5uLnYxLkxvYWRBdXRvU3RlcBIiCgVub3RjaBgFIAEoDjITLmRqaW5uLnYxLkxvYWROb3RjaBISCgppbl9zZWNvbmRzGAYgASgFIkMKDkxvYWROb3RjaFNsb3RzEiIKBW5vdGNoGAEgASgOMhMuZGppbm4udjEuTG9hZE5vdGNoEg0KBXNsb3RzGAIgASgFKsgBCglMb2FkTm90Y2gSGgoWTE9BRF9OT1RDSF9VTlNQRUNJRklFRBAAEhYKEkxPQURfTk9UQ0hfTUlOSU1BTBABEhgKEExPQURfTk9UQ0hfTElHSFQQAhoCCAESFQoRTE9BRF9OT1RDSF9NRURJVU0QAxITCg9MT0FEX05PVENIX0hJR0gQBBISCg5MT0FEX05PVENIX01BWBAFEhMKD0xPQURfTk9UQ0hfQVVUTxAGEhgKFExPQURfTk9UQ0hfT1ZFUkNMT0NLEAcqsQEKDExvYWRBdXRvU3RlcBIeChpMT0FEX0FVVE9fU1RFUF9VTlNQRUNJRklFRBAAEhcKE0xPQURfQVVUT19TVEVQX0hPTEQQARIYChRMT0FEX0FVVE9fU1RFUF9MT1dFUhACEhgKFExPQURfQVVUT19TVEVQX1JBSVNFEAMSGgoWTE9BRF9BVVRPX1NURVBfQ0VJTElORxAEEhgKFExPQURfQVVUT19TVEVQX0ZMT09SEAUy7wIKC0xvYWRTZXJ2aWNlElEKA0dldBIfLmRqaW5uLnYxLkxvYWRTZXJ2aWNlR2V0UmVxdWVzdBogLmRqaW5uLnYxLkxvYWRTZXJ2aWNlR2V0UmVzcG9uc2UiB5ACAcjzGAESUgoDU2V0Eh8uZGppbm4udjEuTG9hZFNlcnZpY2VTZXRSZXF1ZXN0GiAuZGppbm4udjEuTG9hZFNlcnZpY2VTZXRSZXNwb25zZSIIyPMYAeDzGAESYQoIU2V0QnJha2USJC5kamlubi52MS5Mb2FkU2VydmljZVNldEJyYWtlUmVxdWVzdBolLmRqaW5uLnYxLkxvYWRTZXJ2aWNlU2V0QnJha2VSZXNwb25zZSIIyPMYAeDzGAESVgoFV2F0Y2gSIS5kamlubi52MS5Mb2FkU2VydmljZVdhdGNoUmVxdWVzdBoiLmRqaW5uLnYxLkxvYWRTZXJ2aWNlV2F0Y2hSZXNwb25zZSIEyPMYATABQo0BCgxjb20uZGppbm4udjFCCUxvYWRQcm90b1ABWjFnaXRodWIuY29tL2VtcG93aWxsL2RqaW5uL2dlbi9nby9kamlubi92MTtkamlubnYxogIDRFhYqgIIRGppbm4uVjHKAghEamlublxWMeICFERqaW5uXFYxXEdQQk1ldGFkYXRh6gIJRGppbm46OlYxYgZwcm90bzM", [file_buf_validate_validate, file_djinn_v1_options]);
 
 /**
  * @generated from message djinn.v1.LoadServiceGetRequest
@@ -170,6 +170,21 @@ export type LoadServiceGetResponse = Message<"djinn.v1.LoadServiceGetResponse"> 
    * @generated from field: djinn.v1.LoadAutoReason auto_reason = 19;
    */
   autoReason?: LoadAutoReason | undefined;
+
+  /**
+   * The memory brake's threshold in effect: under this percent of the machine's memory available, it freezes the
+   * worker that grows most outside the gates. 0: no brake.
+   *
+   * @generated from field: int32 brake_memory_percent = 20;
+   */
+  brakeMemoryPercent: number;
+
+  /**
+   * Whether djinn up --brake-memory (or DJINN_BRAKE_MEMORY) set the threshold for this run: SetBrake is refused.
+   *
+   * @generated from field: bool brake_memory_fixed = 21;
+   */
+  brakeMemoryFixed: boolean;
 };
 
 /**
@@ -232,6 +247,44 @@ export const LoadServiceSetResponseSchema: GenMessage<LoadServiceSetResponse> = 
   messageDesc(file_djinn_v1_load, 3);
 
 /**
+ * @generated from message djinn.v1.LoadServiceSetBrakeRequest
+ */
+export type LoadServiceSetBrakeRequest = Message<"djinn.v1.LoadServiceSetBrakeRequest"> & {
+  /**
+   * The percent of the machine's memory available under which the brake freezes a worker, up to 95; 0: no brake.
+   *
+   * @generated from field: optional uint32 percent = 1;
+   */
+  percent?: number | undefined;
+};
+
+/**
+ * Describes the message djinn.v1.LoadServiceSetBrakeRequest.
+ * Use `create(LoadServiceSetBrakeRequestSchema)` to create a new message.
+ */
+export const LoadServiceSetBrakeRequestSchema: GenMessage<LoadServiceSetBrakeRequest> = /*@__PURE__*/
+  messageDesc(file_djinn_v1_load, 4);
+
+/**
+ * @generated from message djinn.v1.LoadServiceSetBrakeResponse
+ */
+export type LoadServiceSetBrakeResponse = Message<"djinn.v1.LoadServiceSetBrakeResponse"> & {
+  /**
+   * The memory brake's threshold in effect now; 0: no brake.
+   *
+   * @generated from field: int32 brake_memory_percent = 1;
+   */
+  brakeMemoryPercent: number;
+};
+
+/**
+ * Describes the message djinn.v1.LoadServiceSetBrakeResponse.
+ * Use `create(LoadServiceSetBrakeResponseSchema)` to create a new message.
+ */
+export const LoadServiceSetBrakeResponseSchema: GenMessage<LoadServiceSetBrakeResponse> = /*@__PURE__*/
+  messageDesc(file_djinn_v1_load, 5);
+
+/**
  * @generated from message djinn.v1.LoadServiceWatchRequest
  */
 export type LoadServiceWatchRequest = Message<"djinn.v1.LoadServiceWatchRequest"> & {
@@ -242,7 +295,7 @@ export type LoadServiceWatchRequest = Message<"djinn.v1.LoadServiceWatchRequest"
  * Use `create(LoadServiceWatchRequestSchema)` to create a new message.
  */
 export const LoadServiceWatchRequestSchema: GenMessage<LoadServiceWatchRequest> = /*@__PURE__*/
-  messageDesc(file_djinn_v1_load, 4);
+  messageDesc(file_djinn_v1_load, 6);
 
 /**
  * @generated from message djinn.v1.LoadServiceWatchResponse
@@ -402,7 +455,7 @@ export type LoadServiceWatchResponse = Message<"djinn.v1.LoadServiceWatchRespons
  * Use `create(LoadServiceWatchResponseSchema)` to create a new message.
  */
 export const LoadServiceWatchResponseSchema: GenMessage<LoadServiceWatchResponse> = /*@__PURE__*/
-  messageDesc(file_djinn_v1_load, 5);
+  messageDesc(file_djinn_v1_load, 7);
 
 /**
  * LoadAutoReason says why auto mode runs at its notch: the load outside Djinn (the machine's CPU and memory beyond
@@ -462,7 +515,7 @@ export type LoadAutoReason = Message<"djinn.v1.LoadAutoReason"> & {
  * Use `create(LoadAutoReasonSchema)` to create a new message.
  */
 export const LoadAutoReasonSchema: GenMessage<LoadAutoReason> = /*@__PURE__*/
-  messageDesc(file_djinn_v1_load, 6);
+  messageDesc(file_djinn_v1_load, 8);
 
 /**
  * LoadNotchSlots is the most workers a notch lets run on the machine now.
@@ -490,7 +543,7 @@ export type LoadNotchSlots = Message<"djinn.v1.LoadNotchSlots"> & {
  * Use `create(LoadNotchSlotsSchema)` to create a new message.
  */
 export const LoadNotchSlotsSchema: GenMessage<LoadNotchSlots> = /*@__PURE__*/
-  messageDesc(file_djinn_v1_load, 7);
+  messageDesc(file_djinn_v1_load, 9);
 
 /**
  * LoadNotch is the operating load slider notch that controls how much of the machine Djinn uses.
@@ -642,6 +695,18 @@ export const LoadService: GenService<{
     methodKind: "unary";
     input: typeof LoadServiceSetRequestSchema;
     output: typeof LoadServiceSetResponseSchema;
+  },
+  /**
+   * Choose the memory brake's threshold on this machine: under this percent of the machine's memory available, the
+   * brake freezes the worker that grows most outside the gates; 0 turns it off. It applies at once, and is kept in
+   * settings.json for the next djinn up. Refused while djinn up --brake-memory (or DJINN_BRAKE_MEMORY) sets it.
+   *
+   * @generated from rpc djinn.v1.LoadService.SetBrake
+   */
+  setBrake: {
+    methodKind: "unary";
+    input: typeof LoadServiceSetBrakeRequestSchema;
+    output: typeof LoadServiceSetBrakeResponseSchema;
   },
   /**
    * Follow the operating load notch and live memory: engaged peak forecasts, real worker memory, and machine RAM.

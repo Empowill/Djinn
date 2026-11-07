@@ -98,6 +98,8 @@ type Harness struct {
 	brake        Brake                   // when the memory brake freezes and thaws (WithBrake); zero: no brake
 	brakeRead    func() machine.Snapshot // the machine as the brake reads it (WithBrake); nil: no brake
 	brakeAt      brakeState              // what the brake remembers between passes, guarded by sched (brake.go)
+	brakeMu      sync.Mutex              // guards brakeNext
+	brakeNext    *Brake                  // a threshold SetBrake gave, which the next brake pass takes; nil: none
 	history      *machine.History        // nil: the readings are kept in memory only (WithHistory)
 
 	tell       TellFunc      // wakes the lead of a watcher's wish (TellLeads); guarded by mu

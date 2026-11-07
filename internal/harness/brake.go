@@ -117,6 +117,16 @@ func percent(part, whole uint64) string {
 	return fmt.Sprintf("%.0f%%", math.Round(100*float64(part)/float64(max(whole, 1))))
 }
 
+// SetBrake changes the memory brake's threshold at once (LoadService.SetBrake, the Summoning Circle): the next
+// scheduler pass reads the machine against DefaultBrake(percent), and calm counts again from there; 0 turns the brake
+// off, and what it froze thaws, one worker a pass. Without WithBrake's reading of the machine, it changes nothing.
+func (h *Harness) SetBrake(percent int) {
+	b := DefaultBrake(percent)
+	h.brakeMu.Lock()
+	defer h.brakeMu.Unlock()
+	h.brakeNext = &b
+}
+
 // WithBrake has Djinn freeze, under strong memory pressure, the worker that grows outside the gates (b): read gives the
 // machine (djinn up gives its monitor's). Without it, or with b's thresholds 0, no brake.
 func WithBrake(read func() machine.Snapshot, b Brake) Option {
@@ -171,12 +181,22 @@ type brakeCandidate struct {
 // brakePass is the brake's turn in a scheduler pass: it reads the machine, every Brake.Every at most, and the
 // workers' memory, then freezes, interrupts or thaws one worker at most. The caller holds h.sched.
 func (h *Harness) brakePass(ctx context.Context) {
+	h.brakeTake()
 	b := h.brake
-	if h.brakeRead == nil || !b.on() || h.goosIs("windows") {
+	if h.brakeRead == nil || h.goosIs("windows") {
 		return
 	}
 	st := &h.brakeAt
 	now := h.now()
+	if !b.on() {
+		// Turned off while it held workers frozen: they thaw, one a pass, the last frozen first; those resumed by hand
+		// or ended meanwhile are forgotten first.
+		h.brakeForget()
+		if len(st.frozen) > 0 {
+			h.brakeThaw(ctx, "the memory brake is off", now)
+		}
+		return
+	}
 	if !st.read.IsZero() && now.Sub(st.read) < b.Every {
 		return
 	}
@@ -195,7 +215,7 @@ func (h *Harness) brakePass(ctx context.Context) {
 			st.calm = now
 		}
 		if len(st.frozen) > 0 && now.Sub(st.calm) >= b.Calm {
-			h.brakeThaw(ctx, s, now)
+			h.brakeThaw(ctx, calmAgain(s), now)
 			st.calm = now // The next thaws after another calm.
 		}
 		return
@@ -219,6 +239,21 @@ func (h *Harness) brakePass(ctx context.Context) {
 	if c := h.brakePick(cands, pending); c != nil {
 		h.brakeFreeze(ctx, c, short, now)
 	}
+}
+
+// brakeTake takes the threshold SetBrake gave last, if any: the readings and the calm count again under it. The
+// caller holds h.sched.
+func (h *Harness) brakeTake() {
+	h.brakeMu.Lock()
+	next := h.brakeNext
+	h.brakeNext = nil
+	h.brakeMu.Unlock()
+	if next == nil {
+		return
+	}
+	next.Memory, next.Git = h.brake.Memory, h.brake.Git
+	h.brake = *next
+	h.brakeAt.readings, h.brakeAt.calm = 0, time.Time{}
 }
 
 // goosIs says whether Djinn runs on the system goos.
@@ -424,15 +459,20 @@ func (h *Harness) brakeFreeze(ctx context.Context, c *brakeCandidate, short stri
 	h.brakeTell(c.wish, c.code, line)
 }
 
-// brakeThaw thaws the last worker the brake froze, its containers first, and tells its lead.
-func (h *Harness) brakeThaw(ctx context.Context, s machine.Snapshot, now time.Time) {
-	st := &h.brakeAt
-	f := st.frozen[len(st.frozen)-1]
-	st.frozen = st.frozen[:len(st.frozen)-1]
+// calmAgain says why the brake thaws a worker once the machine s is calm.
+func calmAgain(s machine.Snapshot) string {
 	calm := "the memory is calm again"
 	if s.MemoryTotal > 0 {
 		calm += " (" + percent(s.MemoryAvailable, s.MemoryTotal) + " available)"
 	}
+	return calm
+}
+
+// brakeThaw thaws the last worker the brake froze, its containers first, and tells its lead why (calm).
+func (h *Harness) brakeThaw(ctx context.Context, calm string, now time.Time) {
+	st := &h.brakeAt
+	f := st.frozen[len(st.frozen)-1]
+	st.frozen = st.frozen[:len(st.frozen)-1]
 	if f.containers {
 		h.pauseContainers(ctx, f.id, false)
 	}

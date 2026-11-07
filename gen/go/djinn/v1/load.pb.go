@@ -244,9 +244,14 @@ type LoadServiceGetResponse struct {
 	// where they finish their run. Investigators, corrections, reviews and workers started by hand always finish theirs.
 	LowerPauses bool `protobuf:"varint,18,opt,name=lower_pauses,json=lowerPauses,proto3" json:"lower_pauses,omitempty"`
 	// Why auto mode runs at its notch; unset outside auto mode.
-	AutoReason    *LoadAutoReason `protobuf:"bytes,19,opt,name=auto_reason,json=autoReason,proto3" json:"auto_reason,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	AutoReason *LoadAutoReason `protobuf:"bytes,19,opt,name=auto_reason,json=autoReason,proto3" json:"auto_reason,omitempty"`
+	// The memory brake's threshold in effect: under this percent of the machine's memory available, it freezes the
+	// worker that grows most outside the gates. 0: no brake.
+	BrakeMemoryPercent int32 `protobuf:"varint,20,opt,name=brake_memory_percent,json=brakeMemoryPercent,proto3" json:"brake_memory_percent,omitempty"`
+	// Whether djinn up --brake-memory (or DJINN_BRAKE_MEMORY) set the threshold for this run: SetBrake is refused.
+	BrakeMemoryFixed bool `protobuf:"varint,21,opt,name=brake_memory_fixed,json=brakeMemoryFixed,proto3" json:"brake_memory_fixed,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *LoadServiceGetResponse) Reset() {
@@ -412,6 +417,20 @@ func (x *LoadServiceGetResponse) GetAutoReason() *LoadAutoReason {
 	return nil
 }
 
+func (x *LoadServiceGetResponse) GetBrakeMemoryPercent() int32 {
+	if x != nil {
+		return x.BrakeMemoryPercent
+	}
+	return 0
+}
+
+func (x *LoadServiceGetResponse) GetBrakeMemoryFixed() bool {
+	if x != nil {
+		return x.BrakeMemoryFixed
+	}
+	return false
+}
+
 type LoadServiceSetRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The notch to set.
@@ -520,6 +539,96 @@ func (x *LoadServiceSetResponse) GetChosenNotch() LoadNotch {
 	return LoadNotch_LOAD_NOTCH_UNSPECIFIED
 }
 
+type LoadServiceSetBrakeRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The percent of the machine's memory available under which the brake freezes a worker, up to 95; 0: no brake.
+	Percent       *uint32 `protobuf:"varint,1,opt,name=percent,proto3,oneof" json:"percent,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LoadServiceSetBrakeRequest) Reset() {
+	*x = LoadServiceSetBrakeRequest{}
+	mi := &file_djinn_v1_load_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LoadServiceSetBrakeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LoadServiceSetBrakeRequest) ProtoMessage() {}
+
+func (x *LoadServiceSetBrakeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_djinn_v1_load_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LoadServiceSetBrakeRequest.ProtoReflect.Descriptor instead.
+func (*LoadServiceSetBrakeRequest) Descriptor() ([]byte, []int) {
+	return file_djinn_v1_load_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *LoadServiceSetBrakeRequest) GetPercent() uint32 {
+	if x != nil && x.Percent != nil {
+		return *x.Percent
+	}
+	return 0
+}
+
+type LoadServiceSetBrakeResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The memory brake's threshold in effect now; 0: no brake.
+	BrakeMemoryPercent int32 `protobuf:"varint,1,opt,name=brake_memory_percent,json=brakeMemoryPercent,proto3" json:"brake_memory_percent,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *LoadServiceSetBrakeResponse) Reset() {
+	*x = LoadServiceSetBrakeResponse{}
+	mi := &file_djinn_v1_load_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LoadServiceSetBrakeResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LoadServiceSetBrakeResponse) ProtoMessage() {}
+
+func (x *LoadServiceSetBrakeResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_djinn_v1_load_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LoadServiceSetBrakeResponse.ProtoReflect.Descriptor instead.
+func (*LoadServiceSetBrakeResponse) Descriptor() ([]byte, []int) {
+	return file_djinn_v1_load_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *LoadServiceSetBrakeResponse) GetBrakeMemoryPercent() int32 {
+	if x != nil {
+		return x.BrakeMemoryPercent
+	}
+	return 0
+}
+
 type LoadServiceWatchRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -528,7 +637,7 @@ type LoadServiceWatchRequest struct {
 
 func (x *LoadServiceWatchRequest) Reset() {
 	*x = LoadServiceWatchRequest{}
-	mi := &file_djinn_v1_load_proto_msgTypes[4]
+	mi := &file_djinn_v1_load_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -540,7 +649,7 @@ func (x *LoadServiceWatchRequest) String() string {
 func (*LoadServiceWatchRequest) ProtoMessage() {}
 
 func (x *LoadServiceWatchRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_djinn_v1_load_proto_msgTypes[4]
+	mi := &file_djinn_v1_load_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -553,7 +662,7 @@ func (x *LoadServiceWatchRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LoadServiceWatchRequest.ProtoReflect.Descriptor instead.
 func (*LoadServiceWatchRequest) Descriptor() ([]byte, []int) {
-	return file_djinn_v1_load_proto_rawDescGZIP(), []int{4}
+	return file_djinn_v1_load_proto_rawDescGZIP(), []int{6}
 }
 
 type LoadServiceWatchResponse struct {
@@ -607,7 +716,7 @@ type LoadServiceWatchResponse struct {
 
 func (x *LoadServiceWatchResponse) Reset() {
 	*x = LoadServiceWatchResponse{}
-	mi := &file_djinn_v1_load_proto_msgTypes[5]
+	mi := &file_djinn_v1_load_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -619,7 +728,7 @@ func (x *LoadServiceWatchResponse) String() string {
 func (*LoadServiceWatchResponse) ProtoMessage() {}
 
 func (x *LoadServiceWatchResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_djinn_v1_load_proto_msgTypes[5]
+	mi := &file_djinn_v1_load_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -632,7 +741,7 @@ func (x *LoadServiceWatchResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LoadServiceWatchResponse.ProtoReflect.Descriptor instead.
 func (*LoadServiceWatchResponse) Descriptor() ([]byte, []int) {
-	return file_djinn_v1_load_proto_rawDescGZIP(), []int{5}
+	return file_djinn_v1_load_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *LoadServiceWatchResponse) GetNotch() LoadNotch {
@@ -807,7 +916,7 @@ type LoadAutoReason struct {
 
 func (x *LoadAutoReason) Reset() {
 	*x = LoadAutoReason{}
-	mi := &file_djinn_v1_load_proto_msgTypes[6]
+	mi := &file_djinn_v1_load_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -819,7 +928,7 @@ func (x *LoadAutoReason) String() string {
 func (*LoadAutoReason) ProtoMessage() {}
 
 func (x *LoadAutoReason) ProtoReflect() protoreflect.Message {
-	mi := &file_djinn_v1_load_proto_msgTypes[6]
+	mi := &file_djinn_v1_load_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -832,7 +941,7 @@ func (x *LoadAutoReason) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LoadAutoReason.ProtoReflect.Descriptor instead.
 func (*LoadAutoReason) Descriptor() ([]byte, []int) {
-	return file_djinn_v1_load_proto_rawDescGZIP(), []int{6}
+	return file_djinn_v1_load_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *LoadAutoReason) GetOutsidePercent() float64 {
@@ -890,7 +999,7 @@ type LoadNotchSlots struct {
 
 func (x *LoadNotchSlots) Reset() {
 	*x = LoadNotchSlots{}
-	mi := &file_djinn_v1_load_proto_msgTypes[7]
+	mi := &file_djinn_v1_load_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -902,7 +1011,7 @@ func (x *LoadNotchSlots) String() string {
 func (*LoadNotchSlots) ProtoMessage() {}
 
 func (x *LoadNotchSlots) ProtoReflect() protoreflect.Message {
-	mi := &file_djinn_v1_load_proto_msgTypes[7]
+	mi := &file_djinn_v1_load_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -915,7 +1024,7 @@ func (x *LoadNotchSlots) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LoadNotchSlots.ProtoReflect.Descriptor instead.
 func (*LoadNotchSlots) Descriptor() ([]byte, []int) {
-	return file_djinn_v1_load_proto_rawDescGZIP(), []int{7}
+	return file_djinn_v1_load_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *LoadNotchSlots) GetNotch() LoadNotch {
@@ -937,7 +1046,7 @@ var File_djinn_v1_load_proto protoreflect.FileDescriptor
 const file_djinn_v1_load_proto_rawDesc = "" +
 	"\n" +
 	"\x13djinn/v1/load.proto\x12\bdjinn.v1\x1a\x1bbuf/validate/validate.proto\x1a\x16djinn/v1/options.proto\"\x17\n" +
-	"\x15LoadServiceGetRequest\"\xb0\x06\n" +
+	"\x15LoadServiceGetRequest\"\x90\a\n" +
 	"\x16LoadServiceGetResponse\x12)\n" +
 	"\x05notch\x18\x01 \x01(\x0e2\x13.djinn.v1.LoadNotchR\x05notch\x12\x12\n" +
 	"\x04auto\x18\x02 \x01(\bR\x04auto\x12\x1d\n" +
@@ -961,14 +1070,23 @@ const file_djinn_v1_load_proto_rawDesc = "" +
 	"\x0eforced_workers\x18\x11 \x01(\x05R\rforcedWorkers\x12!\n" +
 	"\flower_pauses\x18\x12 \x01(\bR\vlowerPauses\x129\n" +
 	"\vauto_reason\x18\x13 \x01(\v2\x18.djinn.v1.LoadAutoReasonR\n" +
-	"autoReason\"Q\n" +
+	"autoReason\x120\n" +
+	"\x14brake_memory_percent\x18\x14 \x01(\x05R\x12brakeMemoryPercent\x12,\n" +
+	"\x12brake_memory_fixed\x18\x15 \x01(\bR\x10brakeMemoryFixed\"Q\n" +
 	"\x15LoadServiceSetRequest\x128\n" +
 	"\x05notch\x18\x01 \x01(\x0e2\x13.djinn.v1.LoadNotchB\r\xbaH\n" +
 	"\xc8\x01\x01\x82\x01\x04\x10\x01 \x00R\x05notch\"\x8f\x01\n" +
 	"\x16LoadServiceSetResponse\x12)\n" +
 	"\x05notch\x18\x01 \x01(\x0e2\x13.djinn.v1.LoadNotchR\x05notch\x12\x12\n" +
 	"\x04auto\x18\x02 \x01(\bR\x04auto\x126\n" +
-	"\fchosen_notch\x18\x03 \x01(\x0e2\x13.djinn.v1.LoadNotchR\vchosenNotch\"\x19\n" +
+	"\fchosen_notch\x18\x03 \x01(\x0e2\x13.djinn.v1.LoadNotchR\vchosenNotch\"S\n" +
+	"\x1aLoadServiceSetBrakeRequest\x12)\n" +
+	"\apercent\x18\x01 \x01(\rB\n" +
+	"\xbaH\a\xc8\x01\x01*\x02\x18_H\x00R\apercent\x88\x01\x01B\n" +
+	"\n" +
+	"\b_percent\"O\n" +
+	"\x1bLoadServiceSetBrakeResponse\x120\n" +
+	"\x14brake_memory_percent\x18\x01 \x01(\x05R\x12brakeMemoryPercent\"\x19\n" +
 	"\x17LoadServiceWatchRequest\"\x94\a\n" +
 	"\x18LoadServiceWatchResponse\x12)\n" +
 	"\x05notch\x18\x01 \x01(\x0e2\x13.djinn.v1.LoadNotchR\x05notch\x120\n" +
@@ -1022,10 +1140,11 @@ const file_djinn_v1_load_proto_rawDesc = "" +
 	"\x14LOAD_AUTO_STEP_LOWER\x10\x02\x12\x18\n" +
 	"\x14LOAD_AUTO_STEP_RAISE\x10\x03\x12\x1a\n" +
 	"\x16LOAD_AUTO_STEP_CEILING\x10\x04\x12\x18\n" +
-	"\x14LOAD_AUTO_STEP_FLOOR\x10\x052\x8c\x02\n" +
+	"\x14LOAD_AUTO_STEP_FLOOR\x10\x052\xef\x02\n" +
 	"\vLoadService\x12Q\n" +
 	"\x03Get\x12\x1f.djinn.v1.LoadServiceGetRequest\x1a .djinn.v1.LoadServiceGetResponse\"\a\xc8\xf3\x18\x01\x90\x02\x01\x12R\n" +
-	"\x03Set\x12\x1f.djinn.v1.LoadServiceSetRequest\x1a .djinn.v1.LoadServiceSetResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12V\n" +
+	"\x03Set\x12\x1f.djinn.v1.LoadServiceSetRequest\x1a .djinn.v1.LoadServiceSetResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12a\n" +
+	"\bSetBrake\x12$.djinn.v1.LoadServiceSetBrakeRequest\x1a%.djinn.v1.LoadServiceSetBrakeResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12V\n" +
 	"\x05Watch\x12!.djinn.v1.LoadServiceWatchRequest\x1a\".djinn.v1.LoadServiceWatchResponse\"\x04\xc8\xf3\x18\x010\x01B\x8d\x01\n" +
 	"\fcom.djinn.v1B\tLoadProtoP\x01Z1github.com/empowill/djinn/gen/go/djinn/v1;djinnv1\xa2\x02\x03DXX\xaa\x02\bDjinn.V1\xca\x02\bDjinn\\V1\xe2\x02\x14Djinn\\V1\\GPBMetadata\xea\x02\tDjinn::V1b\x06proto3"
 
@@ -1042,42 +1161,46 @@ func file_djinn_v1_load_proto_rawDescGZIP() []byte {
 }
 
 var file_djinn_v1_load_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_djinn_v1_load_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_djinn_v1_load_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_djinn_v1_load_proto_goTypes = []any{
-	(LoadNotch)(0),                   // 0: djinn.v1.LoadNotch
-	(LoadAutoStep)(0),                // 1: djinn.v1.LoadAutoStep
-	(*LoadServiceGetRequest)(nil),    // 2: djinn.v1.LoadServiceGetRequest
-	(*LoadServiceGetResponse)(nil),   // 3: djinn.v1.LoadServiceGetResponse
-	(*LoadServiceSetRequest)(nil),    // 4: djinn.v1.LoadServiceSetRequest
-	(*LoadServiceSetResponse)(nil),   // 5: djinn.v1.LoadServiceSetResponse
-	(*LoadServiceWatchRequest)(nil),  // 6: djinn.v1.LoadServiceWatchRequest
-	(*LoadServiceWatchResponse)(nil), // 7: djinn.v1.LoadServiceWatchResponse
-	(*LoadAutoReason)(nil),           // 8: djinn.v1.LoadAutoReason
-	(*LoadNotchSlots)(nil),           // 9: djinn.v1.LoadNotchSlots
+	(LoadNotch)(0),                      // 0: djinn.v1.LoadNotch
+	(LoadAutoStep)(0),                   // 1: djinn.v1.LoadAutoStep
+	(*LoadServiceGetRequest)(nil),       // 2: djinn.v1.LoadServiceGetRequest
+	(*LoadServiceGetResponse)(nil),      // 3: djinn.v1.LoadServiceGetResponse
+	(*LoadServiceSetRequest)(nil),       // 4: djinn.v1.LoadServiceSetRequest
+	(*LoadServiceSetResponse)(nil),      // 5: djinn.v1.LoadServiceSetResponse
+	(*LoadServiceSetBrakeRequest)(nil),  // 6: djinn.v1.LoadServiceSetBrakeRequest
+	(*LoadServiceSetBrakeResponse)(nil), // 7: djinn.v1.LoadServiceSetBrakeResponse
+	(*LoadServiceWatchRequest)(nil),     // 8: djinn.v1.LoadServiceWatchRequest
+	(*LoadServiceWatchResponse)(nil),    // 9: djinn.v1.LoadServiceWatchResponse
+	(*LoadAutoReason)(nil),              // 10: djinn.v1.LoadAutoReason
+	(*LoadNotchSlots)(nil),              // 11: djinn.v1.LoadNotchSlots
 }
 var file_djinn_v1_load_proto_depIdxs = []int32{
 	0,  // 0: djinn.v1.LoadServiceGetResponse.notch:type_name -> djinn.v1.LoadNotch
 	0,  // 1: djinn.v1.LoadServiceGetResponse.chosen_notch:type_name -> djinn.v1.LoadNotch
-	9,  // 2: djinn.v1.LoadServiceGetResponse.notch_slots:type_name -> djinn.v1.LoadNotchSlots
-	8,  // 3: djinn.v1.LoadServiceGetResponse.auto_reason:type_name -> djinn.v1.LoadAutoReason
+	11, // 2: djinn.v1.LoadServiceGetResponse.notch_slots:type_name -> djinn.v1.LoadNotchSlots
+	10, // 3: djinn.v1.LoadServiceGetResponse.auto_reason:type_name -> djinn.v1.LoadAutoReason
 	0,  // 4: djinn.v1.LoadServiceSetRequest.notch:type_name -> djinn.v1.LoadNotch
 	0,  // 5: djinn.v1.LoadServiceSetResponse.notch:type_name -> djinn.v1.LoadNotch
 	0,  // 6: djinn.v1.LoadServiceSetResponse.chosen_notch:type_name -> djinn.v1.LoadNotch
 	0,  // 7: djinn.v1.LoadServiceWatchResponse.notch:type_name -> djinn.v1.LoadNotch
 	0,  // 8: djinn.v1.LoadServiceWatchResponse.chosen_notch:type_name -> djinn.v1.LoadNotch
-	9,  // 9: djinn.v1.LoadServiceWatchResponse.notch_slots:type_name -> djinn.v1.LoadNotchSlots
-	8,  // 10: djinn.v1.LoadServiceWatchResponse.auto_reason:type_name -> djinn.v1.LoadAutoReason
+	11, // 9: djinn.v1.LoadServiceWatchResponse.notch_slots:type_name -> djinn.v1.LoadNotchSlots
+	10, // 10: djinn.v1.LoadServiceWatchResponse.auto_reason:type_name -> djinn.v1.LoadAutoReason
 	1,  // 11: djinn.v1.LoadAutoReason.step:type_name -> djinn.v1.LoadAutoStep
 	0,  // 12: djinn.v1.LoadAutoReason.notch:type_name -> djinn.v1.LoadNotch
 	0,  // 13: djinn.v1.LoadNotchSlots.notch:type_name -> djinn.v1.LoadNotch
 	2,  // 14: djinn.v1.LoadService.Get:input_type -> djinn.v1.LoadServiceGetRequest
 	4,  // 15: djinn.v1.LoadService.Set:input_type -> djinn.v1.LoadServiceSetRequest
-	6,  // 16: djinn.v1.LoadService.Watch:input_type -> djinn.v1.LoadServiceWatchRequest
-	3,  // 17: djinn.v1.LoadService.Get:output_type -> djinn.v1.LoadServiceGetResponse
-	5,  // 18: djinn.v1.LoadService.Set:output_type -> djinn.v1.LoadServiceSetResponse
-	7,  // 19: djinn.v1.LoadService.Watch:output_type -> djinn.v1.LoadServiceWatchResponse
-	17, // [17:20] is the sub-list for method output_type
-	14, // [14:17] is the sub-list for method input_type
+	6,  // 16: djinn.v1.LoadService.SetBrake:input_type -> djinn.v1.LoadServiceSetBrakeRequest
+	8,  // 17: djinn.v1.LoadService.Watch:input_type -> djinn.v1.LoadServiceWatchRequest
+	3,  // 18: djinn.v1.LoadService.Get:output_type -> djinn.v1.LoadServiceGetResponse
+	5,  // 19: djinn.v1.LoadService.Set:output_type -> djinn.v1.LoadServiceSetResponse
+	7,  // 20: djinn.v1.LoadService.SetBrake:output_type -> djinn.v1.LoadServiceSetBrakeResponse
+	9,  // 21: djinn.v1.LoadService.Watch:output_type -> djinn.v1.LoadServiceWatchResponse
+	18, // [18:22] is the sub-list for method output_type
+	14, // [14:18] is the sub-list for method input_type
 	14, // [14:14] is the sub-list for extension type_name
 	14, // [14:14] is the sub-list for extension extendee
 	0,  // [0:14] is the sub-list for field type_name
@@ -1089,13 +1212,14 @@ func file_djinn_v1_load_proto_init() {
 		return
 	}
 	file_djinn_v1_options_proto_init()
+	file_djinn_v1_load_proto_msgTypes[4].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_djinn_v1_load_proto_rawDesc), len(file_djinn_v1_load_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   8,
+			NumMessages:   10,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

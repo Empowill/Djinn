@@ -341,7 +341,8 @@
                   <code>djinn machine show</code> lists them, the busiest first. Its Go builds share one cache across
                   worktrees (<code>-trimpath</code>); when the disk runs low, Djinn trims that cache, and almost full,
                   it tells you and holds the push checks until space comes back. Under strong memory pressure, its memory
-                  brake freezes the worker that grows outside the gates, interrupts it 30 s later if the memory stays
+                  brake freezes the worker that grows outside the gates (under 5 % of the memory available, a percent you
+                  choose in the Summoning Circle), interrupts it 30 s later if the memory stays
                   short, and never cuts a command the gates admitted. On Auto, the load follows the programs
                   outside Djinn, read from its systemd scopes and averaged over 3 minutes: 3 minutes above 30 % of the CPU
                   for a level down, 5 below 15 % for a level up, each level kept at least 3 minutes.
@@ -432,7 +433,8 @@
                   tooltip when a driven lead cannot). Every row but the lead offers <strong>Same as lead</strong> by default
                   (<code>djinn lead get-circle</code>, <code>djinn lead set-circle</code>), and <code>djinn task update-models</code>
                   (or the bulk switcher in the Summoning Circle, project settings, and wish settings) previews and switches
-                  open tasks and defaults in one gesture. It is the one place where the Djinn's agent, model and account
+                  open tasks and defaults in one gesture. Last, the memory brake's percent on this machine
+                  (<code>djinn load set-brake</code>), applied at once. It is the one place where the Djinn's agent, model and account
                   are chosen, and the first step of the onboarding: with no agent able to lead, the window opens there and
                   a yellow dot marks its entry until one is set up.
                 </p>
