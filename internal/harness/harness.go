@@ -1816,10 +1816,9 @@ func pickProject(ctx context.Context, tx store.Reader, wish *planv1.Wish, id, pa
 			return nil, nil
 		}
 		if len(ids) != 1 {
-			values := plan.ProjectValues(ctx, tx, ids)
-			return nil, plan.Retry(connect.CodeInvalidArgument, fmt.Errorf(
-				"the wish has %d projects: name one with --project-id (%s), or give --part-of an azima of one",
-				len(ids), plan.ValueNames(values)), "project_id", values...)
+			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf(
+				"the wish has %d projects: run it again with %s, or give --part-of an azima of one",
+				len(ids), plan.ProjectFlags(ctx, tx, ids)))
 		}
 		id = ids[0]
 	}
@@ -1828,10 +1827,9 @@ func pickProject(ctx context.Context, tx store.Reader, wish *planv1.Wish, id, pa
 		return nil, err
 	}
 	if len(ids) > 0 && !slices.ContainsFunc(ids, func(s string) bool { return s == project.GetId() }) {
-		values := plan.ProjectValues(ctx, tx, ids)
-		return nil, plan.Retry(connect.CodeInvalidArgument, fmt.Errorf(
-			"project %s is not one of the wish's projects (%s): add it first with djinn wish add-project %s --project-id %s, or name one of them",
-			project.GetName(), plan.ValueNames(values), wish.GetId(), project.GetName()), "project_id", values...)
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf(
+			"project %s is not one of the wish's projects (%s): add it first with djinn wish add-project %s --project-id %s, or run it again with %s",
+			project.GetName(), plan.ProjectNames(ctx, tx, ids), wish.GetId(), project.GetName(), plan.ProjectFlags(ctx, tx, ids)))
 	}
 	return project, nil
 }

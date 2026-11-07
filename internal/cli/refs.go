@@ -2,25 +2,18 @@ package cli
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"regexp"
 	"slices"
 	"strings"
-	"unicode/utf8"
 
-	"connectrpc.com/connect"
-	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/dynamicpb"
-
-	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
 )
 
 // The command line takes a project by its name, a wish by its title and a task by its code where a request wants an
 // identifier: it looks them up on the server before it sends the request (resolve). A wish is --wish-id or --wish,
-// whichever the request spells. A refusal that carries a djinn.v1.Retry prints the command again with each value
-// that fits (retried); the command line's own refusals carry one too (refusal).
+// whichever the request spells. A refusal names in its text the flag and the values that make the command pass.
 
 var (
 	uuidPattern     = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
@@ -111,7 +104,7 @@ type line struct {
 func resolve(ctx context.Context, cfg Config, req *dynamicpb.Message, wish string) error {
 	md := req.Descriptor()
 	var titles []wishTitle
-	titled := func(fd protoreflect.FieldDescriptor, flag, s string) (string, error) {
+	titled := func(flag, s string) (string, error) {
 		if s == "" || uuidPattern.MatchString(s) {
 			return s, nil
 		}
@@ -121,14 +114,14 @@ func resolve(ctx context.Context, cfg Config, req *dynamicpb.Message, wish strin
 				return "", fmt.Errorf("%s %s: read the wishes to find it: %w", flag, s, err)
 			}
 		}
-		return wishTitled(titles, fd, flag, s)
+		return wishTitled(titles, flag, s)
 	}
 	for _, fd := range byNumber(md) {
 		if !wishRef(fd) {
 			continue
 		}
 		if !fd.IsList() {
-			id, err := titled(fd, label(fd), req.Get(fd).String())
+			id, err := titled(label(fd), req.Get(fd).String())
 			if err != nil {
 				return err
 			}
@@ -142,7 +135,7 @@ func resolve(ctx context.Context, cfg Config, req *dynamicpb.Message, wish strin
 		}
 		list := req.Mutable(fd).List()
 		for i := range list.Len() {
-			id, err := titled(fd, label(fd), list.Get(i).String())
+			id, err := titled(label(fd), list.Get(i).String())
 			if err != nil {
 				return err
 			}
@@ -150,7 +143,7 @@ func resolve(ctx context.Context, cfg Config, req *dynamicpb.Message, wish strin
 		}
 	}
 	if wish != "" {
-		id, err := titled(nil, "--wish-id", wish)
+		id, err := titled("--wish-id", wish)
 		if err != nil {
 			return err
 		}
@@ -232,9 +225,9 @@ func wishTitles(ctx context.Context, cfg Config) ([]wishTitle, error) {
 }
 
 // wishTitled is the identifier of the wish titled s, case and outer spaces ignored, else of the only one whose title
-// starts so; among several, the only one not granted. Several left is a refusal that gives each one (refusal), for
-// the field fd of the request, or the command line's own --wish-id when fd is nil; none, one that says so.
-func wishTitled(wishes []wishTitle, fd protoreflect.FieldDescriptor, flag, s string) (string, error) {
+// starts so; among several, the only one not granted. Several left is a refusal that gives each one's UUID and title;
+// none, one that says so.
+func wishTitled(wishes []wishTitle, flag, s string) (string, error) {
 	want := strings.ToLower(strings.TrimSpace(s))
 	pick := func(match func(title string) bool) []wishTitle {
 		var found, open []wishTitle
@@ -262,26 +255,13 @@ func wishTitled(wishes []wishTitle, fd protoreflect.FieldDescriptor, flag, s str
 		return "", fmt.Errorf("%s: no wish is titled %q, nor starts so; expected %s (djinn wish list shows them)",
 			flag, s, wishExpect)
 	}
-	field := "wish_id"
-	if fd != nil {
-		field = string(fd.Name())
-	}
-	r := &djinnv1.Retry{Field: field}
+	var each []string
 	for _, w := range found {
-		r.Values = append(r.Values, &djinnv1.RetryValue{Value: w.id, Label: w.title})
+		each = append(each, w.id+" ("+w.title+")")
 	}
-	return "", &refusal{fmt.Errorf("%s: %d wishes are titled %q or start so: give one by its UUID", flag, len(found), s), r}
+	return "", fmt.Errorf("%s: %d wishes are titled %q or start so: give one by its UUID, %s", flag, len(found), s,
+		strings.Join(each, " or "))
 }
-
-// refusal is a refusal of the command line itself that says what fits, as a server's djinn.v1.Retry does.
-type refusal struct {
-	err   error
-	retry *djinnv1.Retry
-}
-
-func (r *refusal) Error() string { return r.err.Error() }
-
-func (r *refusal) Unwrap() error { return r.err }
 
 // projectNames are the projects of the server of cfg: identifier by lowercase name, and the names in their order.
 func projectNames(ctx context.Context, cfg Config) (map[string]string, []string, error) {
@@ -346,108 +326,4 @@ func callMethod(ctx context.Context, cfg Config, name string, fields map[string]
 		}
 	}
 	return call(ctx, cfg, md, req)
-}
-
-// retryOf is the djinn.v1.Retry an error of the server, or a refusal of the command line, carries; nil when it has
-// none.
-func retryOf(err error) *djinnv1.Retry {
-	if rf := (*refusal)(nil); errors.As(err, &rf) {
-		return rf.retry
-	}
-	var cerr *connect.Error
-	if !errors.As(err, &cerr) {
-		return nil
-	}
-	for _, d := range cerr.Details() {
-		if v, derr := d.Value(); derr == nil {
-			if r, ok := v.(*djinnv1.Retry); ok && len(r.GetValues()) > 0 {
-				return r
-			}
-		}
-	}
-	return nil
-}
-
-// retried is err followed by the command run again with each value its Retry offers, ready to copy; err when it
-// offers none, or when the request cannot take them. command is the command's words: "task spawn".
-func retried(err error, command string, l line) error {
-	r := retryOf(err)
-	if r == nil {
-		return err
-	}
-	md := l.req.Descriptor()
-	fd := md.Fields().ByName(protoreflect.Name(r.GetField()))
-	flag := ""
-	if fd == nil && (r.GetField() == "wish_id" || r.GetField() == "wish") && scoped(md) {
-		flag = "--wish-id" // The command line's own flag.
-	} else if fd == nil || fd.IsList() || fd.Kind() != protoreflect.StringKind {
-		return err
-	}
-	var commands []string
-	elided := false
-	for _, v := range r.GetValues() {
-		req := proto.Clone(l.req).(*dynamicpb.Message)
-		var args []string
-		if flag == "" {
-			req.Set(fd, protoreflect.ValueOfString(v.GetValue()))
-			args = format(req)
-		} else {
-			args = append(format(req), flag, v.GetValue())
-		}
-		words := []string{"djinn", command}
-		for _, a := range args {
-			q, cut := shellWord(a)
-			elided = elided || cut
-			words = append(words, q)
-		}
-		c := strings.Join(words, " ")
-		if label := strings.Join(strings.Fields(v.GetLabel()), " "); label != "" {
-			c += "  # " + clip(label, 60)
-		}
-		commands = append(commands, c)
-	}
-	head := "run it again with what fits:"
-	if elided {
-		head = "run it again with what fits (… stands for the long text you gave):"
-	}
-	return fmt.Errorf("%w\n%s\n%s", err, head, strings.Join(commands, "\n"))
-}
-
-// mcpRetried is err followed by the field and the values its Retry offers, for an agent's client.
-func mcpRetried(err error) error {
-	r := retryOf(err)
-	if r == nil {
-		return err
-	}
-	var values []string
-	for _, v := range r.GetValues() {
-		s := v.GetValue()
-		if label := strings.Join(strings.Fields(v.GetLabel()), " "); label != "" {
-			s += " (" + clip(label, 60) + ")"
-		}
-		values = append(values, s)
-	}
-	return fmt.Errorf("%w\ncall it again with %s set to one of: %s", err, r.GetField(), strings.Join(values, "; "))
-}
-
-// shellWord is s as a shell reads it back, quoted when it must be; a long or multi-line text is cut to "…", which
-// cut says.
-func shellWord(s string) (word string, cut bool) {
-	if strings.ContainsAny(s, "\n\r") || utf8.RuneCountInString(s) > 200 {
-		return "…", true
-	}
-	if s != "" && strings.IndexFunc(s, func(r rune) bool {
-		return !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("-_./:=@,+%", r))
-	}) < 0 {
-		return s, false
-	}
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'", false
-}
-
-// clip is s cut to n runes, an ellipsis ending it when cut.
-func clip(s string, n int) string {
-	if utf8.RuneCountInString(s) <= n {
-		return s
-	}
-	return string([]rune(s)[:n-1]) + "…"
 }

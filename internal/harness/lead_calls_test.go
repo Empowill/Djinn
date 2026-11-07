@@ -120,8 +120,8 @@ func (l *leadCalls) task(t *testing.T, wish, code string) *planv1.Task {
 }
 
 // TestLeadCallsProjects (W474): the lead names a project by its name, as djinn project list shows it; a part of an
-// azima works in the azima's project; a spawn that names none in a wish of several is refused with the command again,
-// one per project, ready to run.
+// azima works in the azima's project; a spawn that names none in a wish of several is refused with --project-id and
+// each project's name.
 func TestLeadCallsProjects(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
@@ -132,11 +132,9 @@ func TestLeadCallsProjects(t *testing.T) {
 	if got := l.task(t, l.dew, "W1").GetProjectId(); got != l.projects["djinn"] {
 		t.Errorf("W1 works in %s, want djinn (%s)", got, l.projects["djinn"])
 	}
-	// The same spawn without --project-id: refused, naming the projects and the command for each.
+	// The same spawn without --project-id: refused, naming the flag for each project.
 	l.refused(t, []string{"task", "spawn", l.dew, "--title", "Mockup of the accounts", "--later"},
-		"the wish has 3 projects: name one with --project-id (dolmen, terraform or djinn)",
-		"djinn task spawn "+l.dew+" --title 'Mockup of the accounts' --project-id dolmen --later",
-		"djinn task spawn "+l.dew+" --title 'Mockup of the accounts' --project-id djinn --later")
+		"the wish has 3 projects: run it again with --project-id dolmen, --project-id terraform or --project-id djinn")
 	// A project no one has: the names it could be.
 	l.refused(t, []string{"task", "spawn", l.dew, "--title", "x", "--project-id", "dolmne"},
 		"--project-id: no project is named dolmne; expected one of dolmen, terraform, djinn, or a project's UUID")
@@ -150,12 +148,11 @@ func TestLeadCallsProjects(t *testing.T) {
 
 	// A project the wish lacks: refused, naming the wish's.
 	l.refused(t, []string{"task", "spawn", l.other, "--title", "x", "--project-id", "dolmen"},
-		"project dolmen is not one of the wish's projects (djinn)",
-		"djinn task spawn "+l.other+" --title x --project-id djinn")
+		"project dolmen is not one of the wish's projects (djinn)", "or run it again with --project-id djinn")
 }
 
 // TestLeadCallsCodes (W474): a task, a tilasm or a question given by code passes alone when it is unique, with
-// --wish-id or --wish whichever the command spells; in several wishes, the refusal gives the command again with each.
+// --wish-id or --wish whichever the command spells; in several wishes, the refusal gives the flag with each wish.
 // What Djinn writes in its comments event passes as it is.
 func TestLeadCallsCodes(t *testing.T) {
 	testx.Portable(t)
@@ -166,8 +163,7 @@ func TestLeadCallsCodes(t *testing.T) {
 
 	// Refused on 06/11: "unknown flag --wish-id", then "<task-id>: must be a valid UUID".
 	l.refused(t, []string{"task", "done", "W1"},
-		"2 wishes have a task W1: give its identifier, or the wish with --wish-id",
-		"djinn task done W1 --wish-id "+l.dew+"  # Dew", "djinn task done W1 --wish-id "+l.other+"  # Other")
+		"2 wishes have a task W1: run it again with --wish-id "+l.dew+" (Dew) or --wish-id "+l.other+" (Other)")
 	l.passes(t, "task", "done", "W1", "--wish-id", l.dew, "--note", "merged by hand")
 	if got := l.task(t, l.dew, "W1").GetStatus(); got != planv1.TaskStatus_TASK_STATUS_DONE {
 		t.Errorf("Dew's W1 is %v, want done", got)
@@ -220,10 +216,9 @@ func TestLeadCallsCodes(t *testing.T) {
 		t.Errorf("djinn %s printed\n%s\nwant the comment sent", command, out)
 	}
 	l.refused(t, []string{"tilasm", "comments", "L01", "--send", "1"},
-		"2 wishes have a tilasm L01: give its identifier, or the wish with --wish",
-		"djinn tilasm comments L01 --wish "+l.dew+" --send 1  # Dew")
+		"2 wishes have a tilasm L01: run it again with --wish "+l.dew+" (Dew) or --wish "+l.other+" (Other)")
 	l.refused(t, []string{"tilasm", "reply", "L01", "C1", "--text", "Done: ordered by drag and drop."},
-		"djinn tilasm reply L01 C1 --text 'Done: ordered by drag and drop.' --wish "+l.dew+"  # Dew")
+		"--wish "+l.dew+" (Dew)")
 	l.passes(t, "tilasm", "reply", "L01", "C1", "--text", "Done: ordered by drag and drop.", "--wish-id", l.dew)
 
 	// A question Q01 in each wish.
@@ -235,7 +230,7 @@ func TestLeadCallsCodes(t *testing.T) {
 		}
 	}
 	l.refused(t, []string{"question", "get", "Q01"},
-		"2 wishes have a question Q01", "djinn question get Q01 --wish-id "+l.dew+"  # Dew")
+		"2 wishes have a question Q01", "--wish-id "+l.dew+" (Dew)")
 }
 
 // TestLeadCallsContextFile (W474): djinn question ask reads its context from a file, as djinn question revise does:
@@ -262,7 +257,7 @@ func TestLeadCallsContextFile(t *testing.T) {
 }
 
 // TestLeadCallsGates (W592): the calls the leads of 07/11 00:28 and 00:29 typed seven times in a wish of three
-// projects, on a binary without W474: each passes, or its refusal gives the command that passes, which does.
+// projects, on a binary without W474: each passes, or its refusal gives the flag and the values that pass.
 func TestLeadCallsGates(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
@@ -287,10 +282,9 @@ func TestLeadCallsGates(t *testing.T) {
 	if got := l.task(t, wish, "T1").GetProjectId(); got != l.projects["djinn"] {
 		t.Errorf("T1 works in %s, want djinn", got)
 	}
-	// 00:29: "the wish has 3 projects: name one with --project-id", with nothing to run.
+	// 00:29: "the wish has 3 projects: name one with --project-id", with no flag to add.
 	l.refused(t, []string{"task", "spawn", wish, "--kind", "azima", "--title", "Remote branches have a PR"},
-		"the wish has 3 projects: name one with --project-id (dolmen-git, terraform or djinn)",
-		"djinn task spawn "+wish+" --title 'Remote branches have a PR' --project-id djinn --kind azima")
+		"the wish has 3 projects: run it again with --project-id dolmen-git, --project-id terraform or --project-id djinn")
 
 	// W588's state at 00:29: done, merged into its azima's branch, which removed its worktree.
 	l.passes(t, "task", "spawn", wish, "--kind", "azima", "--title", "The job boarder has time", "--project-id", "dolmen-git")

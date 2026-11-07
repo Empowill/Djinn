@@ -351,7 +351,7 @@ func (s *mcpServer) call(ctx context.Context, md protoreflect.MethodDescriptor, 
 		}
 	}
 	if err != nil {
-		return "", mcpRetried(err)
+		return "", err
 	}
 	cfg, err := autostart(ctx, s.cfg, md)
 	if err != nil {
@@ -359,7 +359,7 @@ func (s *mcpServer) call(ctx context.Context, md protoreflect.MethodDescriptor, 
 	}
 	res, err := call(ctx, cfg, md, req)
 	if err != nil {
-		return "", mcpRetried(err)
+		return "", err
 	}
 	return indentedJSON(res)
 }

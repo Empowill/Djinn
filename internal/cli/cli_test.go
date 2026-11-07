@@ -120,13 +120,8 @@ func (f tasks) Get(_ context.Context, req *connect.Request[planv1.TaskServiceGet
 func (f tasks) Spawn(_ context.Context, req *connect.Request[planv1.TaskServiceSpawnRequest]) (*connect.Response[planv1.TaskServiceSpawnResponse], error) {
 	f.record(req.Msg)
 	if req.Msg.GetProjectId() == "" {
-		cerr := connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("the wish has 2 projects: name one with --project-id"))
-		detail, err := connect.NewErrorDetail(&djinnv1.Retry{Field: "project_id", Values: []*djinnv1.RetryValue{{Value: "api"}, {Value: "web"}}})
-		if err != nil {
-			return nil, err
-		}
-		cerr.AddDetail(detail)
-		return nil, cerr
+		return nil, connect.NewError(connect.CodeInvalidArgument,
+			fmt.Errorf("the wish has 2 projects: run it again with --project-id api or --project-id web"))
 	}
 	return connect.NewResponse(&planv1.TaskServiceSpawnResponse{Task: &planv1.Task{
 		Id: taskID, WishId: req.Msg.GetWishId(), ProjectId: req.Msg.GetProjectId(), Code: "W5", Title: req.Msg.GetTitle(),

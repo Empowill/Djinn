@@ -1518,9 +1518,9 @@ func findAmong(
 	if fitting := slices.DeleteFunc(slices.Clone(found), func(q *planv1.Question) bool { return !fits(q) }); len(fitting) == 1 {
 		return fitting[0], nil
 	}
-	return nil, Retry(connect.CodeFailedPrecondition, fmt.Errorf(
-		"%d wishes have a question %s: give its identifier, or the wish with --wish-id", len(found), ref.GetCode()),
-		"wish_id", WishValues(ctx, tx, wishesOf(found))...)
+	return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
+		"%d wishes have a question %s: run it again with %s", len(found), ref.GetCode(),
+		WishFlags(ctx, tx, "--wish-id", wishesOf(found))))
 }
 
 // resolve checks that choice answers question, and returns the choice to keep: yes without options, or the letter

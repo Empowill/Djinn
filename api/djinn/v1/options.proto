@@ -33,24 +33,6 @@ message Unique {
   repeated string fields = 1;
 }
 
-// What a refused call takes to pass: one field of the request and the values that fit it. The server puts it as a
-// detail of the error; the command line prints the command again with each value, ready to run, and djinn mcp names
-// the field and the values.
-message Retry {
-  // The request's field to set, by its name in the proto (project_id, wish_id, wish).
-  string field = 1;
-  // The values that fit, best first.
-  repeated RetryValue values = 2;
-}
-
-// One value of a Retry.
-message RetryValue {
-  // What to give the field, as the command line takes it: a project's name, a wish's identifier.
-  string value = 1;
-  // What the value is, in a few words: a wish's title.
-  string label = 2;
-}
-
 extend google.protobuf.MethodOptions {
   // Who may call the method. Only VISIBILITY_PUBLIC methods become commands.
   Visibility visibility = 51001;
