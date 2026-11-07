@@ -105,7 +105,9 @@ test("a click on a wish in the side panel brings back its questions", async ({
       await expect(rows).toHaveCount(2);
       await expect(rows.first()).toContainText(wick);
       await expect(rows.first()).toHaveClass(/current/);
-      await expect(rows.first()).toBeFocused();
+      await expect(rows.first().and(page.locator(":focus-within"))).toHaveCount(
+        1,
+      );
       await expect(over).toHaveCount(0);
       await expect(page.locator(".tilasm-view.full")).toHaveCount(0);
       await expect(view).toHaveJSProperty("inert", false);
@@ -128,8 +130,8 @@ test("a click on a wish in the side panel brings back its questions", async ({
     await landed();
 
     // On its questions already, the second open and focused, read down the page: back to the top, on the first.
-    await page.keyboard.press("ArrowDown");
-    await expect(rows.nth(1)).toBeFocused();
+    await page.keyboard.press("ArrowRight");
+    await expect(rows.nth(1).and(page.locator(":focus-within"))).toHaveCount(1);
     await scrollDown();
     expect(await scrollTop()).toBeGreaterThan(0);
     await nav.click();
@@ -199,7 +201,9 @@ test("a click on a wish in the side panel brings back its questions", async ({
     await expect(page.locator(".hero h1")).toHaveText(other);
     await expect(main).toHaveAttribute("aria-selected", "true");
     await expect(rows).toHaveCount(1);
-    await expect(rows.first()).toBeFocused();
+    await expect(rows.first().and(page.locator(":focus-within"))).toHaveCount(
+      1,
+    );
     await page.locator("#view-tab-decisions").click();
     await nav.click();
     await expect(page.locator(".hero h1")).toHaveText(title);

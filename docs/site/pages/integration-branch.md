@@ -5,8 +5,8 @@ from it, Djinn merges each task's work into it once checked, and Djinn pushes it
 everything the wish has done so far in that project.
 
 Under the per-wish [push strategy](#push-strategy), the default, a wish has one integration branch per project. Under
-the per-azima strategy, each azima has a branch of its own instead, and the wish's integration branch only takes the work
-that belongs to no azima.
+the per-azima strategy, each azima has a branch of its own instead, and work spawned with no azima gets an azima of its
+own: the wish's integration branch only takes a correction of work of no azima merged before.
 
 ## Why an integration branch
 

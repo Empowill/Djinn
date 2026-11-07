@@ -8,14 +8,15 @@
 // first, so a new one comes below and a revised one keeps its place; the groups keep the wishes' rank. The question
 // open stays open when one comes above it, and stays where it is on screen: the page's scroll anchoring holds it
 // (scroll-anchor.ts), and at the very top of the page, where that holds nothing, the column does.
-// The keys: ↑ and ↓ (Home, End) go to the question above or below, from one wish to the next, and nothing moves past
-// either end; the question they reach opens, and the page scrolls its title to the top of the view, wherever it was:
-// a scroll you ask for by moving. The question that has the focus, the one Enter acts on, shows a gold ring. With no
-// question focused, anywhere on the page but in a field, the first ↑ or ↓ gives the open question the focus (none
-// open, the first for ↓, the last for ↑), and the next one moves. Escape steps back: from the note to the question,
-// then your pick is cleared (wish-question.tsx), then the focus leaves the column, where ↓ brings it back. With the
-// focus nowhere, the open question takes the other keys as if it had it, and the focus with them. Space and the page
-// keys scroll a long question: the arrows stay with the questions.
+// The keys (W491): ← and → (Home, End) go to the question before or after, from one wish to the next, and nothing
+// moves past either end; the question they reach opens, the focus on its option selected (the recommended one until you
+// pick another), and the page scrolls its title to the top of the view, wherever it was: a scroll you ask for by
+// moving. ↑ and ↓ are the open question's: the option above or below, never another question (wish-question.tsx). The
+// question that has the focus, the one Enter acts on, shows a gold ring. With no question focused, anywhere on the page
+// but in a field, the first arrow gives the open question the focus (none open, the first for ↓ or →, the last for ↑ or
+// ←), and the next one moves. Escape steps back: from the note to the option, then your pick is cleared, then the
+// focus leaves the column, where an arrow brings it back. With the focus nowhere, the open question takes the other
+// keys as if it had it, and the focus with them. Space and the page keys scroll a long question.
 // A click on the wish in the side panel gives the focus to its first question, which opens (land): the developer answers
 // or scrolls from the keyboard at once, and the Djinn's eye, which rests by the focus, reads it with them (W259).
 import { Moon } from "lucide-react";
@@ -39,6 +40,7 @@ import { QuestionsEmpty } from "./empty-art";
 import { t } from "./i18n";
 import { ReadingLine } from "./reading-line";
 import {
+  choiceIn,
   type QuestionKey,
   type QuestionKeys,
   WishQuestion,
@@ -113,9 +115,11 @@ export function heir(
   );
 }
 
-// What a key does to the column itself: go to another question, leave the column, or nothing it knows (the open
-// question may take it).
-export type ColumnMove = "up" | "down" | "first" | "last" | "leave";
+// What a key does to the column itself: go to another question (prev, next, first, last), take the focus (up and down,
+// with none in a question: in one, they are its options'), leave the column, or nothing it knows (the open question
+// may take it).
+export type ColumnMove =
+  "up" | "down" | "prev" | "next" | "first" | "last" | "leave";
 
 export function columnMove(e: {
   key: string;
@@ -129,6 +133,8 @@ export function columnMove(e: {
     {
       ArrowUp: "up",
       ArrowDown: "down",
+      ArrowLeft: "prev",
+      ArrowRight: "next",
       Home: "first",
       End: "last",
       Escape: "leave",
@@ -247,8 +253,9 @@ export function QuestionColumn({
     }
     const element = document.getElementById(`question-${current}`);
     if (!element) return;
-    if (document.activeElement !== element)
-      element.focus({ preventScroll: true });
+    const choice = choiceIn(element);
+    if (document.activeElement !== choice)
+      choice.focus({ preventScroll: true });
     if (moved) toTitle(element);
     else reveal(element);
   }, [current, order, chosen]);
@@ -321,14 +328,13 @@ export function QuestionColumn({
       if (typing(target)) return;
       const { order, current } = state.current;
       const move = columnMove(e);
+      const arrow =
+        move === "up" || move === "down" || move === "prev" || move === "next";
+      const step = move === "down" || move === "next" ? 1 : -1;
       // No question has the focus: from anywhere on the page, the arrows give it to the open one first.
       const focused = inQuestion(root, target);
-      if (
-        (move === "up" || move === "down") &&
-        !focused &&
-        (inside || nowhere || onPage(root, target))
-      ) {
-        const to = arrowTo(order, current, move === "down" ? 1 : -1, false);
+      if (arrow && !focused && (inside || nowhere || onPage(root, target))) {
+        const to = arrowTo(order, current, step, false);
         if (!to) return;
         e.preventDefault();
         if (to.move) select(to.id);
@@ -336,6 +342,8 @@ export function QuestionColumn({
         return;
       }
       if (!inside && !nowhere) return;
+      // In a question, Up and Down are its options' (wish-question.tsx): one with none leaves them to the page.
+      if (move === "up" || move === "down") return;
       if (move && move !== "leave") {
         if (!order.length) return;
         e.preventDefault();
@@ -344,7 +352,7 @@ export function QuestionColumn({
             ? order[0]
             : move === "last"
               ? order.at(-1)
-              : stepTo(order, current, move === "down" ? 1 : -1);
+              : stepTo(order, current, step);
         if (next === undefined) return;
         if (next === current) {
           // Nothing past either end: the focus stays where it is.
@@ -362,10 +370,10 @@ export function QuestionColumn({
           e.defaultPrevented &&
           move !== "leave" &&
           !inQuestion(root, document.activeElement)
-        )
-          document
-            .getElementById(`question-${current}`)
-            ?.focus({ preventScroll: true });
+        ) {
+          const question = document.getElementById(`question-${current}`);
+          if (question) choiceIn(question).focus({ preventScroll: true });
+        }
       }
       if (move !== "leave" || e.defaultPrevented) return;
       e.preventDefault();
@@ -525,12 +533,12 @@ export function AsleepQuestions({
   );
 }
 
-// take gives the focus to the open question, without moving: the page scrolls to its title only when none of it is in
-// sight.
+// take gives the focus to the open question, on its option selected, without moving: the page scrolls to its title
+// only when none of it is in sight.
 function take(id: string) {
   const element = document.getElementById(`question-${id}`);
   if (!element) return;
-  element.focus({ preventScroll: true });
+  choiceIn(element).focus({ preventScroll: true });
   const scroller = scrollerOf(element);
   const view = scroller
     ? scroller.getBoundingClientRect()

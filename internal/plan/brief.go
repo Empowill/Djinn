@@ -1526,8 +1526,9 @@ func glanceLine(exp *planv1.WishExport) string {
 }
 
 // landsLine says in one line where the wish's work lands, and how to change it: its integration branch in each of its
-// projects, named when it has several; or, per azima, each azima's own branch landing in main, and the wish's branch
-// for work of no azima. Empty for a wish without a branch, outside Git.
+// projects, named when it has several; or, per azima, each azima's own branch landing in main, work spawned with no
+// azima given an azima of its own, never the wish's branch, which Djinn does not push. Empty for a wish without a branch,
+// outside Git.
 func landsLine(exp *planv1.WishExport, strategy planv1.PushStrategy) string {
 	wish := exp.GetWish()
 	names := map[string]string{}
@@ -1554,7 +1555,8 @@ func landsLine(exp *planv1.WishExport, strategy planv1.PushStrategy) string {
 		line := "- Work lands per azima: each azima on its own branch, `djinn/<code>-<slug>` or the one named with " +
 			"`djinn task update <azima> --branch <name>`, cut from main and landing in main through its pull request"
 		if len(branches) > 0 {
-			line += "; work of no azima in " + strings.Join(branches, ", ")
+			line += "; work spawned with no azima gets an azima of its own, never " + strings.Join(branches, ", ") +
+				", which Djinn does not push per azima"
 		}
 		return line + ".\n"
 	}

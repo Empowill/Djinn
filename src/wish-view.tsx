@@ -169,6 +169,7 @@ import { LeadMessage } from "./lead-message";
 import { useEyeNeeds } from "./djinn-eye";
 import { PageHeader, PageHeaderAction } from "./page-header";
 import { TooltipButton } from "./tooltip";
+import { usePlace } from "./view-history";
 
 // Opening is a tilasm to show in a wish's Tilasms tab, as a djinn:// link asks: a new object at each request.
 export interface Opening {
@@ -366,6 +367,8 @@ export function WishView({
     },
     [store, wish.id],
   );
+  // Its tab is a layer of the window's history of views (view-history.ts): going back shows it again.
+  usePlace("tab", view, (to) => show((to ?? "main") as View));
   // The tilasm a link opened: the Tilasms tab shows it, again at each new request.
   const [opened, setOpened] = useState(opening);
   useEffect(() => {

@@ -20,6 +20,7 @@ import { draftsOn, sentOn } from "./data/comments";
 import { useDjinn, useWishDetail } from "./data/djinn";
 import { parseDjinnLink } from "./data/links";
 import { TilasmFrame, useCommentWrites } from "./tilasms";
+import { usePlace } from "./view-history";
 
 // Opens the tilasm a djinn:// link names over the view, from the element clicked; undefined outside a TilasmOver.
 type OpenOver = (href: string, from: HTMLElement) => void;
@@ -105,6 +106,29 @@ export function TilasmOver({
     returning.current = over?.back;
     setOver(undefined);
   }, [over]);
+  // The tilasm over the view is the last layer of the window's history of views (view-history.ts): going back closes
+  // it, going forward opens it again over the view it was opened over, the focus going back where it was once closed.
+  const shown = useRef({ view, landing });
+  shown.current = { view, landing };
+  usePlace("over", over?.tilasm.id, (id) => {
+    if (!id) {
+      close();
+      return;
+    }
+    if (!djinn) return;
+    const active = document.activeElement;
+    const back: Back = {
+      link: active instanceof HTMLElement ? active : document.body,
+      href: "",
+      question: active?.closest(".question-card")?.id ?? "",
+    };
+    djinn.clients.tilasms
+      .get({ tilasm: { ref: { case: "id", value: id } } })
+      .then((res) => {
+        if (res.tilasm) setOver({ tilasm: res.tilasm, ...shown.current, back });
+      })
+      .catch(() => undefined);
+  });
   return (
     <TilasmOverContext value={open}>
       {children}

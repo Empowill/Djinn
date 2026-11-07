@@ -1,7 +1,8 @@
 // The bridge between a tilasm's frame and Djinn's window (L08, step 3). Djinn appends it to each HTML page of a tilasm
 // it serves, never to the tilasm's files. The frame is sandboxed, its origin opaque: the window reads nothing of its
 // document, and postMessage, open to any page in a frame, is the one way left between them. The bridge tells the window
-// the passage the developer selects, where it ends on the screen, and Ctrl+Alt+M; in Aim mode (step 4), the block
+// the passage the developer selects, where it ends on the screen, and Ctrl+Alt+M; the window's moves back and forward
+// in its history of views (W527), which a frame with the focus would keep; in Aim mode (step 4), the block
 // under the mouse and the one clicked, and Escape. The window sends it the anchors of the developer's comments, which
 // it finds in the page, perhaps changed by a new version (step 5), highlights with CSS.highlights, adding no element
 // to the page, and places: where each stands, again as the page scrolls, for the dots in the window's margin. It gives
@@ -306,8 +307,23 @@
     }
   }
 
+  // historyStep is where a key pressed in the frame goes in the window's history of views, as src/window-keys.ts reads
+  // it on the window: -1 back, 1 forward, 0 nowhere. Alt+Left and Alt+Right, on macOS Cmd+[ and Cmd+], Cmd+Left and
+  // Cmd+Right too.
+  function historyStep(event, mac) {
+    if (event.shiftKey) return 0;
+    var arrow = event.key === "ArrowLeft" ? -1 : event.key === "ArrowRight" ? 1 : 0;
+    if (event.altKey && !event.ctrlKey && !event.metaKey) return arrow;
+    if (!mac || !event.metaKey || event.ctrlKey || event.altKey) return 0;
+    if (arrow) return arrow;
+    if (event.key === "[" || event.code === "BracketLeft") return -1;
+    if (event.key === "]" || event.code === "BracketRight") return 1;
+    return 0;
+  }
+
   if (typeof document === "undefined") {
     globalThis.tilasmBridge = {
+      historyStep: historyStep,
       pageText: pageText,
       textOffset: textOffset,
       quote: quote,
@@ -619,6 +635,19 @@
     },
     true,
   );
+
+  // Back and forward in the window's views: a key the frame has would never reach the window. Told after the page's
+  // own listeners, unless one took it, and never from a text field, where Alt or Cmd with an arrow moves the caret.
+  var mac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || "");
+  window.addEventListener("keydown", function (event) {
+    if (event.defaultPrevented || event.isComposing) return;
+    var el = event.target;
+    if (el && el.nodeType === 1 && (el.isContentEditable || el.closest("input, textarea, select"))) return;
+    var step = historyStep(event, mac);
+    if (!step) return;
+    event.preventDefault();
+    post({ type: "key", name: step < 0 ? "back" : "forward" });
+  });
 
   // Aim mode: the block under the mouse is told, for the window to frame it, and a click takes it, nothing else of the
   // page's own; the cursor says so, through a sheet the page adopts while it lasts.

@@ -97,21 +97,24 @@ leaves, answered, withdrawn or moved, the one below opens, else the one above.
 
 | Keys | What they do |
 | --- | --- |
-| Up, Down | The previous or the next question, across wishes; it opens, its title at the top of the page |
+| Left, Right | The previous or the next question, across wishes; it opens, its title at the top of the page, the focus on its option selected |
 | Home, End | The first or the last question |
+| Up, Down | The option above or below, which takes the focus; nothing past the first or the last, never another question |
 | A to D, or 1 to 4 | Pick an option (not while typing in the note) |
-| Enter on the question | Put the caret in the note |
+| E, or Enter on the question | Put the caret in the note |
 | Enter in the note | Answer with the option selected |
 | Shift+Enter | A new line in the note |
 | Ctrl+Enter (Cmd+Enter on macOS) | Answer, from anywhere on the card |
 | Ctrl+Shift+Enter (Cmd+Shift+Enter on macOS) | Enlighten me, from anywhere on the card |
 | Ctrl+Shift+Backspace (Cmd+Shift+Delete on macOS) | Withdraw the question, once you confirm |
 | Space, Page Down | Scroll a long question |
-| Escape | One step back: from the note to the question, then the pick undone, then out of the column |
+| Escape | One step back: from the note to the option selected, then the pick undone, then out of the column |
 
-With nothing focused, the first Up or Down, anywhere but in a field, focuses the open question. Enter or Space on an
-option only picks it, and an input method still composing answers nothing. The keys stay on the card: they never take a
-key from the terminal or another field. On a card outside the column, the arrows pick the options.
+Arriving on a question, by the arrows, a click or the wish bar, the focus goes to its option selected: the recommended
+one until you pick another. With nothing focused, the first arrow, anywhere but in a field, focuses the open question.
+Enter or Space on another option only picks it; on the option selected, Enter writes the note and Space scrolls. An
+input method still composing answers nothing. The keys stay on the card: they never take a key from the terminal or
+another field. On a card outside the column, the arrows pick the options.
 
 ## Answering
 
