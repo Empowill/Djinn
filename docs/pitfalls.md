@@ -190,6 +190,10 @@ the code does not say by itself; remove one when a change makes it false.
   follows 30–200 ms later, and the main view is an empty `.wish-view[aria-busy]` until then (W496). *Do:* wait on
   the element you act on (`toBeVisible`, `toBeFocused`), never on Live; to catch a remount, record elements with a
   MutationObserver in `addInitScript`. *Where:* `src/wish-app.tsx`.
+- **A loaded machine starves the page's first script.** Under a busy push check, the page sent its first call
+  5.6 s after `goto` returned while the djinn answered in milliseconds, and the first Live wait of 6 s failed on
+  "Reading your wishes…" (W440, `question-shortcuts.spec.ts`). *Spot:* in `djinn-logs/<n>/djinn.log`, no
+  `GetEnvironment` until the deadline. *Do:* give the first wait after `goto` 15 s, as `azima-cli-worker.spec.ts`.
 - **Playwright's trace makes the page look slow.** A trace that snapshots the DOM at every action took ~800 ms a step
   on a big diff, while the window rendered in ~230 ms (W8); the config keeps no DOM snapshot since W249. *Do:* measure
   a budget inside one `page.evaluate` (act and poll with `requestAnimationFrame` there); profile with a CDP session
@@ -210,8 +214,9 @@ the code does not say by itself; remove one when a change makes it false.
   *Sign:* a task's integration stays PENDING with "git has no identity". *Do:* a spec whose task Djinn merges sets
   `user.name`/`user.email` in its project repository. *Where:* `e2e/global-setup.ts`, `noIdentity` in
   `internal/harness/worktree.go`.
-- **With no agent ready, a setup dialog covers the window.** A CI runner has no claude, codex or agy; the developer's
-  machine has one, so it never shows there (W487). *Sign:* "modal-backdrop intercepts pointer events", on CI only.
+- **With no agent ready, the window opens on the Summoning Circle.** A CI runner has no claude, codex or agy; the
+  developer's machine has one, so it never shows there (W487; a setup dialog until W578). *Sign:* the page a spec
+  expects is not shown, the Circle is, on CI only.
   *Do:* a spec that starts its own `djinn up` passes `withAgents(process.env)`; reproduce with
   `env -i HOME=$(mktemp -d) PATH=<node, go, /usr/bin, /bin> PLAYWRIGHT_BROWSERS_PATH=~/.cache/ms-playwright npx playwright test …`.
   *Where:* `e2e/agents.ts`.

@@ -1,5 +1,6 @@
-// The setup of the agents (src/agent-setup.tsx): each agent's line, its accounts under it, their pause, their usage
-// and the line that adds one. Run with `go tool task test-ui`.
+// The setup of the agents and the accounts screen (src/agent-setup.tsx): each agent's line, then every sign-in in the
+// order of priority (src/sign-in-order.tsx), their pause, their usage, the Djinn's account and the line that adds one.
+// Run with `go tool task test-ui`.
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -78,7 +79,8 @@ function environment() {
   };
 }
 
-// line is the markup of one line of the panel: the agent's (data-agent) or an account's (data-account).
+// line is the markup of one line of the panel: the agent's (data-agent), its own sign-in's (data-own) or an account's
+// (data-account).
 function line(html, attribute, value) {
   const start = html.indexOf(`${attribute}="${value}"`);
   assert.ok(start > 0, `${attribute}=${value} in ${html}`);
@@ -128,7 +130,9 @@ test("each sign-in shows its pause and the button that changes it: the agent's o
       },
     }),
   );
-  const claude = line(html, "data-agent", "claude");
+  // The agent's line says where it stands; its own sign-in, in the order, pauses.
+  assert.doesNotMatch(line(html, "data-agent", "claude"), /aria-pressed/);
+  const claude = line(html, "data-own", "claude");
   assert.match(
     claude,
     /<button type="button" class="button secondary small" title="Pause the agent&#x27;s own sign-in\nDjinn starts no worker on this sign-in: the next ones run on another sign-in of the agent, or wait while each one is paused\. A worker running there finishes its turn\." aria-label="Pause the agent&#x27;s own sign-in" aria-pressed="false">/,
@@ -149,8 +153,9 @@ test("each sign-in shows its pause and the button that changes it: the agent's o
   assert.doesNotMatch(usageLine(html, "claude/home"), /Paused/);
   // Codex is not installed: nothing to pause. Antigravity, with no account folder, pauses its own sign-in.
   assert.doesNotMatch(line(html, "data-agent", "codex"), /aria-pressed/);
+  assert.doesNotMatch(html, /data-own="codex"/);
   assert.doesNotMatch(html, /data-usage="codex"/);
-  const agy = line(html, "data-agent", "antigravity");
+  const agy = line(html, "data-own", "antigravity");
   assert.match(usageLine(html, "antigravity"), /Paused/);
   assert.match(agy, /aria-label="Resume the agent&#x27;s own sign-in"/);
 });
@@ -168,7 +173,10 @@ test("each sign-in shows its state, active, paused or limited, its week's gauge,
         usedPercent: 27.4,
         resetsTime: timestamp(new Date(now + 30 * hour)),
       },
-      fiveHour: { usedPercent: 44 },
+      fiveHour: {
+        usedPercent: 44,
+        resetsTime: timestamp(new Date(now + 2.5 * hour + 30_000)),
+      },
       readTime: timestamp(new Date(now)),
       source: s.UsageSource.PROBE,
       probeError: "",
@@ -209,9 +217,18 @@ test("each sign-in shows its state, active, paused or limited, its week's gauge,
     /<span class="usage-gauge" role="meter" aria-label="Share of the week used" aria-valuemin="0" aria-valuemax="100" aria-valuenow="27"><span style="width:27%"><\/span><\/span><span class="usage-percent">27 %<\/span>/,
   );
   assert.match(own, /ends [^<]+/);
-  assert.match(own, /5 h 44 %/);
+  // Its 5 hours against their limit: a gauge at 44 %, the hour the session ends and the time left until then.
+  assert.match(
+    own,
+    /<span class="usage-week usage-five-hour"><span class="muted-text">5 h<\/span><span class="usage-gauge" role="meter" aria-label="Share of the 5-hour session used" aria-valuemin="0" aria-valuemax="100" aria-valuenow="44"><span style="width:44%"><\/span><\/span><span class="usage-percent">44 %<\/span><span class="muted-text">ends at [^<]+, in 2 h 31<\/span>/,
+  );
   assert.match(own, /title="Read at [^"]+ by Djinn&#x27;s probe/);
-  assert.match(own, />Next task here</);
+  assert.doesNotMatch(own, /skipped/);
+  // The next task of its agent starts there: said on its line, with the agent's name.
+  assert.match(
+    line(html, "data-own", "claude"),
+    />Next Claude Code task here</,
+  );
 
   // work: limited until its reset, its week full past 95 %.
   const work = usageLine(html, "claude/work");
@@ -221,8 +238,14 @@ test("each sign-in shows its state, active, paused or limited, its week's gauge,
     /<span class="status-dot blocked"><\/span>Limited until [^<]+<\/span>/,
   );
   assert.match(work, /class="usage-gauge full"/);
+  // Its 5 hours used up, their end not told: a full gauge, no end; the order skips it until its limit lifts.
+  assert.match(
+    work,
+    /aria-valuenow="100"><span style="width:100%"><\/span><\/span><span class="usage-percent">100 %<\/span><\/span>/,
+  );
+  assert.match(work, /skipped until [^<]+</);
   assert.match(work, /title="Read at [^"]+ from a worker running here"/);
-  assert.doesNotMatch(work, /Next task here/);
+  assert.doesNotMatch(line(html, "data-account", "work"), /Next/);
 
   // home: active, its quota not read, the probe's failure on hover.
   const home = usageLine(html, "claude/home");
@@ -237,6 +260,7 @@ test("each sign-in shows its state, active, paused or limited, its week's gauge,
   usage[1] = { ...usage[1], limitedUntil: undefined };
   const again = panel(env, usage);
   assert.match(usageLine(again, "claude/home"), /data-state="paused"/);
+  assert.match(usageLine(again, "claude/home"), />skipped while paused</);
   assert.doesNotMatch(usageLine(again, "claude/home"), /Limited/);
   assert.doesNotMatch(usageLine(again, "claude/work"), /data-state=/);
   assert.match(usageLine(again, "claude/work"), /usage-gauge full/);
@@ -519,6 +543,438 @@ test("the panel reads each sign-in's usage from the lead's service with the agen
     );
     await settle();
     assert.equal(reads, 2);
+  } finally {
+    s.act(() => root.unmount());
+    await new Promise((r) => setTimeout(r, 30));
+    for (const handle of process._getActiveHandles())
+      if (handle?.constructor?.name === "MessagePort") handle.unref();
+  }
+});
+
+// signIns are the sign-ins of the order as the panel shows them, top to bottom.
+function signIns(html) {
+  return [...html.matchAll(/data-sign-in="([^"]+)"/g)].map((m) => m[1]);
+}
+
+test("every sign-in of every agent shows in one list, in the developer's order, each with its grip and its rank", () => {
+  const env = environment();
+  const order = [
+    "claude/home",
+    "antigravity",
+    "claude",
+    "codex",
+    "claude/work",
+  ];
+  const html = s.renderToStaticMarkup(
+    h(s.AgentSetupPanel, {
+      agents: {
+        env,
+        checking: false,
+        error: "",
+        check() {},
+        setPaused() {},
+        order,
+      },
+    }),
+  );
+  // Codex, not installed, shows no line of its own sign-in: the others keep the order.
+  assert.deepEqual(signIns(html), [
+    "claude/home",
+    "antigravity",
+    "claude",
+    "claude/work",
+  ]);
+  assert.match(html, /Accounts · order of priority/);
+  assert.match(
+    html,
+    /<button type="button" class="sign-in-grip" title="Change the priority of home, rank 1 of 4 \(drag, or Alt\+Arrow\)" aria-label="Change the priority of home, rank 1 of 4 \(drag, or Alt\+Arrow\)" draggable="true"><svg[^]*?<span class="sign-in-rank">1<\/span><\/button>/,
+  );
+  assert.match(
+    html,
+    /title="Change the priority of Claude Code · Own sign-in, rank 3 of 4/,
+  );
+  // Without an order read yet, each agent's own sign-in comes first, then its accounts as added.
+  const unread = panel(env, undefined);
+  assert.deepEqual(signIns(unread), [
+    "claude",
+    "claude/work",
+    "claude/home",
+    "antigravity",
+  ]);
+  // The whole order a move writes keeps a sign-in the screen does not show at its rank.
+  assert.deepEqual(
+    s.reordered(order, ["claude", "claude/home", "antigravity", "claude/work"]),
+    ["claude", "claude/home", "antigravity", "codex", "claude/work"],
+  );
+  assert.deepEqual(s.moved(["a", "b", "c"], 2, 0), ["c", "a", "b"]);
+  assert.deepEqual(s.moved(["a", "b", "c"], 0, 3), ["b", "c", "a"]);
+});
+
+test("a sign-in where a session runs past its limits says it is in overflow, and the Djinn's sign-in is marked", () => {
+  const usage = [
+    { provider: s.Provider.CLAUDE, account: "home", overflowing: true },
+    { provider: s.Provider.CLAUDE, account: "work", overflowing: false },
+  ];
+  const html = s.renderToStaticMarkup(
+    h(s.AgentSetupPanel, {
+      agents: {
+        env: environment(),
+        checking: false,
+        error: "",
+        check() {},
+        setPaused() {},
+        usage,
+        seat: { provider: s.Provider.CLAUDE, model: "", account: "work" },
+        pinned: true,
+        pin() {},
+      },
+    }),
+  );
+  const home = line(html, "data-account", "home");
+  assert.match(
+    home,
+    /<span class="badge sign-in-overflow" title="A worker or the Djinn runs here past its limits: [^"]+">In overflow<\/span>/,
+  );
+  assert.doesNotMatch(line(html, "data-account", "work"), /In overflow/);
+  // Pinned on work: the Djinn is there, and its account says so.
+  assert.match(line(html, "data-account", "work"), /♛ Djinn here/);
+  assert.doesNotMatch(home, /Djinn here/);
+  assert.match(
+    html,
+    /<select aria-label="The Djinn&#x27;s account"><option value="follow">Follows the order<\/option><option value="pin:" selected="">Pinned on Claude Code · Own sign-in<\/option><option value="pin:work">Pinned on Work<\/option><option value="pin:home">Pinned on home<\/option><\/select>|<option value="pin:work" selected="">Pinned on Work<\/option>/,
+  );
+  assert.match(
+    html,
+    /<option value="pin:work" selected="">Pinned on Work<\/option>/,
+  );
+  assert.doesNotMatch(
+    html,
+    /Pinned on Antigravity/,
+    "only the sign-ins of its agent",
+  );
+});
+
+test("the screen ranks the sign-ins by keyboard and by drag and drop, writes the whole order, and pins or unpins the Djinn", async () => {
+  const container = setupMockDom();
+  const below = (el, out = []) => {
+    for (const child of el.childNodes) {
+      out.push(child);
+      below(child, out);
+    }
+    return out;
+  };
+  const props = (el) =>
+    el[Object.keys(el).find((k) => k.startsWith("__reactProps$"))];
+  const settle = async () => {
+    for (let i = 0; i < 4; i++)
+      await s.act(() => new Promise((r) => setTimeout(r, 0)));
+  };
+  const byLabel = (start) =>
+    below(container).find((el) =>
+      String(el.attributes?.["aria-label"] ?? "").startsWith(start),
+    );
+  const rowOf = (key) =>
+    below(container).find((el) => el.attributes?.["data-sign-in"] === key);
+  const shown = () =>
+    below(container)
+      .map((el) => el.attributes?.["data-sign-in"])
+      .filter(Boolean)
+      .map(String);
+  let order = ["claude", "claude/work", "claude/home", "codex", "antigravity"];
+  let pinned = true;
+  const calls = [];
+  const transport = s.createRouterTransport(({ service }) => {
+    service(s.UiService, { getEnvironment: () => environment() });
+    service(s.LeadService, {
+      accounts: () => ({
+        order,
+        pinned,
+        seat: { provider: s.Provider.CLAUDE, model: "", account: "work" },
+      }),
+      order: (req) => {
+        calls.push(["order", req.signIn]);
+        order = req.signIn;
+        return { signIn: req.signIn };
+      },
+      pin: (req) => {
+        calls.push(["pin", req.account, req.unpin]);
+        pinned = !req.unpin;
+        return { pinned, note: "" };
+      },
+    });
+  });
+  const djinn = s.createDjinn(transport, 10);
+  function Panel() {
+    return h(s.AgentSetupPanel, { agents: s.useAgents() });
+  }
+  const root = s.createRoot(container);
+  try {
+    await s.act(async () => {
+      root.render(h(s.DjinnProvider, { djinn }, h(Panel)));
+    });
+    await settle();
+    assert.deepEqual(shown(), [
+      "claude",
+      "claude/work",
+      "claude/home",
+      "antigravity",
+    ]);
+
+    // Alt+Up moves home above work: the whole order goes, Codex left at its rank, and the new rank is said.
+    await s.act(async () =>
+      props(byLabel("Change the priority of home")).onKeyDown({
+        altKey: true,
+        key: "ArrowUp",
+        preventDefault() {},
+      }),
+    );
+    await settle();
+    assert.deepEqual(calls, [
+      [
+        "order",
+        ["claude", "claude/home", "claude/work", "codex", "antigravity"],
+      ],
+    ]);
+    assert.deepEqual(shown(), [
+      "claude",
+      "claude/home",
+      "claude/work",
+      "antigravity",
+    ]);
+    const said = below(container).find(
+      (el) => el.attributes?.["aria-live"] === "polite",
+    );
+    assert.equal(said.textContent, "home, rank 2 of 4");
+    // Alt alone, or an arrow past the end, moves nothing.
+    await s.act(async () =>
+      props(byLabel("Change the priority of Claude Code")).onKeyDown({
+        altKey: true,
+        key: "ArrowUp",
+        preventDefault() {},
+      }),
+    );
+    assert.equal(calls.length, 1);
+
+    // Drag Antigravity's own sign-in by its grip, over the top half of the first line, and drop it there: first.
+    const data = { setData() {}, setDragImage() {}, dropEffect: "" };
+    await s.act(async () =>
+      props(byLabel("Change the priority of Antigravity")).onDragStart({
+        dataTransfer: data,
+      }),
+    );
+    await s.act(async () =>
+      props(rowOf("claude")).onDragOver({
+        currentTarget: {
+          getBoundingClientRect: () => ({ top: 0, height: 40 }),
+        },
+        clientY: 5,
+        dataTransfer: data,
+        preventDefault() {},
+      }),
+    );
+    const list = below(container).find((el) =>
+      String(el.attributes?.class ?? "")
+        .split(" ")
+        .includes("sign-in-order"),
+    );
+    await s.act(async () => props(list).onDrop({ preventDefault() {} }));
+    await settle();
+    assert.deepEqual(calls.at(-1), [
+      "order",
+      ["antigravity", "claude", "claude/home", "codex", "claude/work"],
+    ]);
+    assert.deepEqual(shown(), [
+      "antigravity",
+      "claude",
+      "claude/home",
+      "claude/work",
+    ]);
+
+    // The Djinn's account: Follows the order takes the pin off; a sign-in pins it there.
+    const select = byLabel("The Djinn's account");
+    assert.equal(props(select).value, "pin:work");
+    await s.act(async () =>
+      props(select).onChange({ target: { value: "follow" } }),
+    );
+    await settle();
+    assert.deepEqual(calls.at(-1), ["pin", "", true]);
+    assert.equal(props(byLabel("The Djinn's account")).value, "follow");
+    await s.act(async () =>
+      props(byLabel("The Djinn's account")).onChange({
+        target: { value: "pin:home" },
+      }),
+    );
+    await settle();
+    assert.deepEqual(calls.at(-1), ["pin", "home", false]);
+  } finally {
+    s.act(() => root.unmount());
+    await new Promise((r) => setTimeout(r, 30));
+    for (const handle of process._getActiveHandles())
+      if (handle?.constructor?.name === "MessagePort") handle.unref();
+  }
+});
+
+test("each sign-in says whether it is unlimited, detected or forced, and its switch says what it would write", () => {
+  const usage = [
+    {
+      provider: s.Provider.CLAUDE,
+      account: "home",
+      unlimited: true,
+      unlimitedDetected: true,
+    },
+    {
+      provider: s.Provider.CLAUDE,
+      account: "work",
+      unlimited: true,
+      unlimitedDetected: false,
+      unlimitedSetting: s.UnlimitedSetting.FORCED,
+    },
+  ];
+  const html = s.renderToStaticMarkup(
+    h(s.AgentSetupPanel, {
+      agents: {
+        env: environment(),
+        checking: false,
+        error: "",
+        check() {},
+        setPaused() {},
+        usage,
+        setUnlimited() {},
+        setMode() {},
+      },
+    }),
+  );
+  assert.match(line(html, "data-account", "home"), /Unlimited \(auto\)/);
+  assert.match(line(html, "data-account", "work"), /Unlimited \(forced\)/);
+  assert.doesNotMatch(line(html, "data-own", "claude"), /Unlimited \(/);
+  assert.match(usageLine(html, "claude/home"), /No quota: unlimited/);
+  assert.match(
+    line(html, "data-account", "home"),
+    /role="switch"[^>]*aria-checked="true"[^>]*aria-label="home is unlimited"/,
+  );
+  assert.match(
+    line(html, "data-own", "claude"),
+    /role="switch"[^>]*aria-checked="false"/,
+  );
+  // Dynamic by default: its button pressed, and the detail says the week that ends soonest goes first.
+  assert.match(
+    html,
+    /<button type="button" class="active" aria-pressed="true"[^>]*>Dynamic<\/button>/,
+  );
+  assert.match(html, /the one whose week ends soonest takes each new task/);
+
+  // Turning it off where Djinn detects it writes limited; back on, auto; on where it detects none, forced.
+  assert.equal(s.unlimitedFor(usage[0], false), s.UnlimitedSetting.LIMITED);
+  assert.equal(s.unlimitedFor(usage[0], true), s.UnlimitedSetting.AUTO);
+  assert.equal(s.unlimitedFor(usage[1], false), s.UnlimitedSetting.AUTO);
+  assert.equal(s.unlimitedFor(undefined, true), s.UnlimitedSetting.FORCED);
+  // Shown at once: a sign-in Djinn said nothing of gets its line.
+  const shown = s.withUnlimited(usage, "codex", s.UnlimitedSetting.FORCED);
+  assert.equal(shown.length, 3);
+  assert.equal(shown[2].provider, s.Provider.CODEX);
+  assert.equal(shown[2].unlimited, true);
+  const off = s.withUnlimited(usage, "claude/home", s.UnlimitedSetting.LIMITED);
+  assert.equal(off[0].unlimited, false);
+  assert.equal(off[1], usage[1]);
+});
+
+test("the screen switches the mode and a sign-in's Unlimited through the lead's service", async () => {
+  const container = setupMockDom();
+  const below = (el, out = []) => {
+    for (const child of el.childNodes) {
+      out.push(child);
+      below(child, out);
+    }
+    return out;
+  };
+  const props = (el) =>
+    el[Object.keys(el).find((k) => k.startsWith("__reactProps$"))];
+  const settle = async () => {
+    for (let i = 0; i < 4; i++)
+      await s.act(() => new Promise((r) => setTimeout(r, 0)));
+  };
+  const byLabel = (label) =>
+    below(container).find((el) => el.attributes?.["aria-label"] === label);
+  const button = (text) =>
+    below(container).find(
+      (el) => el.tagName === "BUTTON" && el.textContent === text,
+    );
+  let mode = s.AccountMode.DYNAMIC;
+  let homeSetting = s.UnlimitedSetting.UNSPECIFIED;
+  const calls = [];
+  const transport = s.createRouterTransport(({ service }) => {
+    service(s.UiService, { getEnvironment: () => environment() });
+    service(s.LeadService, {
+      accounts: () => ({
+        order: ["claude", "claude/work", "claude/home", "codex", "antigravity"],
+        mode,
+        usage: [
+          {
+            provider: s.Provider.CLAUDE,
+            account: "home",
+            unlimitedDetected: false,
+            unlimitedSetting: homeSetting,
+            unlimited: homeSetting === s.UnlimitedSetting.FORCED,
+          },
+        ],
+      }),
+      accountMode: (req) => {
+        calls.push(["mode", req.mode]);
+        mode = req.mode;
+        return { mode, note: "" };
+      },
+      unlimited: (req) => {
+        calls.push(["unlimited", req.signIn, req.unlimited]);
+        homeSetting = req.unlimited;
+        return { unlimited: req.unlimited, note: "" };
+      },
+    });
+  });
+  const djinn = s.createDjinn(transport, 10);
+  function Panel() {
+    return h(s.AgentSetupPanel, { agents: s.useAgents() });
+  }
+  const root = s.createRoot(container);
+  try {
+    await s.act(async () => {
+      root.render(h(s.DjinnProvider, { djinn }, h(Panel)));
+    });
+    await settle();
+    assert.equal(button("Dynamic").attributes["aria-pressed"], "true");
+
+    // Manual order: written, and shown pressed.
+    await s.act(async () => props(button("Manual order")).onClick());
+    await settle();
+    assert.deepEqual(calls, [["mode", s.AccountMode.MANUAL]]);
+    assert.equal(button("Manual order").attributes["aria-pressed"], "true");
+    assert.equal(button("Dynamic").attributes["aria-pressed"], "false");
+
+    // home's switch, off and not detected: on forces it.
+    const sw = byLabel("home is unlimited");
+    assert.equal(sw.attributes["aria-checked"], "false");
+    await s.act(async () => props(sw).onClick());
+    await settle();
+    assert.deepEqual(calls.at(-1), [
+      "unlimited",
+      "claude/home",
+      s.UnlimitedSetting.FORCED,
+    ]);
+    assert.equal(
+      byLabel("home is unlimited").attributes["aria-checked"],
+      "true",
+    );
+    // Off again: back to auto, Djinn's detection, which finds none.
+    await s.act(async () => props(byLabel("home is unlimited")).onClick());
+    await settle();
+    assert.deepEqual(calls.at(-1), [
+      "unlimited",
+      "claude/home",
+      s.UnlimitedSetting.AUTO,
+    ]);
+    assert.equal(
+      byLabel("home is unlimited").attributes["aria-checked"],
+      "false",
+    );
   } finally {
     s.act(() => root.unmount());
     await new Promise((r) => setTimeout(r, 30));

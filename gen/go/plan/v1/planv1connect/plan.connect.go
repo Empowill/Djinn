@@ -216,8 +216,16 @@ const (
 	// LeadServiceResumeAccountProcedure is the fully-qualified name of the LeadService's ResumeAccount
 	// RPC.
 	LeadServiceResumeAccountProcedure = "/plan.v1.LeadService/ResumeAccount"
+	// LeadServiceOrderProcedure is the fully-qualified name of the LeadService's Order RPC.
+	LeadServiceOrderProcedure = "/plan.v1.LeadService/Order"
+	// LeadServicePinProcedure is the fully-qualified name of the LeadService's Pin RPC.
+	LeadServicePinProcedure = "/plan.v1.LeadService/Pin"
 	// LeadServiceChooseProcedure is the fully-qualified name of the LeadService's Choose RPC.
 	LeadServiceChooseProcedure = "/plan.v1.LeadService/Choose"
+	// LeadServiceAccountModeProcedure is the fully-qualified name of the LeadService's AccountMode RPC.
+	LeadServiceAccountModeProcedure = "/plan.v1.LeadService/AccountMode"
+	// LeadServiceUnlimitedProcedure is the fully-qualified name of the LeadService's Unlimited RPC.
+	LeadServiceUnlimitedProcedure = "/plan.v1.LeadService/Unlimited"
 	// LeadServiceGetCircleProcedure is the fully-qualified name of the LeadService's GetCircle RPC.
 	LeadServiceGetCircleProcedure = "/plan.v1.LeadService/GetCircle"
 	// LeadServiceSetCircleProcedure is the fully-qualified name of the LeadService's SetCircle RPC.
@@ -2329,9 +2337,11 @@ type LeadServiceClient interface {
 	// only.
 	Show(context.Context, *connect.Request[v1.LeadServiceShowRequest]) (*connect.Response[v1.LeadServiceShowResponse], error)
 	// Move the lead Djinn drives to another agent, model or account: the next batch starts there, with the lead's
-	// journal, and the lead stays there until moved again. The whole seat is given: an empty model is the agent's
-	// default, an empty account its own sign-in; without --provider, the current agent. Events that wait after a failed
-	// batch or a limit go to the new seat at once. Antigravity cannot lead yet. Kept in settings.json, on this machine.
+	// journal. The whole seat is given: an empty model is the agent's default; with --account, the lead is pinned on
+	// that account until moved or unpinned (djinn lead pin --unpin); without, each batch starts on the first free
+	// sign-in of the agent in the order of the accounts. Without --provider, the current agent. Events that wait after a
+	// failed batch or a limit go to the new seat at once. Antigravity cannot lead yet. Kept in settings.json, on this
+	// machine.
 	Move(context.Context, *connect.Request[v1.LeadServiceMoveRequest]) (*connect.Response[v1.LeadServiceMoveResponse], error)
 	// The accounts of the agents on this machine, the seat of the lead, for each account the command that signs it in,
 	// once, in its own folder, and the usage limits of each sign-in as Djinn last read them.
@@ -2339,21 +2349,43 @@ type LeadServiceClient interface {
 	// Name an account of an agent: a folder of its own where it keeps its login, ~/.claude-<name> or ~/.codex-<name>
 	// unless given. Djinn makes the folder and prints the command that signs in there; the login stays the agent's.
 	AddAccount(context.Context, *connect.Request[v1.LeadServiceAddAccountRequest]) (*connect.Response[v1.LeadServiceAddAccountResponse], error)
-	// Forget an account: Djinn no longer names it, and leaves its folder, and the login in it, as they are. Refused
-	// while the lead runs on it.
+	// Forget an account: Djinn no longer names it, nor ranks it in the order, and leaves its folder, and the login in it,
+	// as they are. Refused while the lead is pinned on it.
 	RemoveAccount(context.Context, *connect.Request[v1.LeadServiceRemoveAccountRequest]) (*connect.Response[v1.LeadServiceRemoveAccountResponse], error)
 	// Pause an account, or with --provider and no name an agent's own sign-in: Djinn starts no worker on it. A worker
 	// that runs there finishes its turn; the tasks that start or resume next go to another sign-in of the agent neither
-	// paused nor limited; with each one paused, they wait. The lead's seat stays where the developer put it. Kept in
-	// settings.json.
+	// paused nor limited; with each one paused, they wait. The lead's next batch skips it too, unless the lead is pinned
+	// there. Kept in settings.json.
 	PauseAccount(context.Context, *connect.Request[v1.LeadServicePauseAccountRequest]) (*connect.Response[v1.LeadServicePauseAccountResponse], error)
 	// Resume an account paused, or with --provider and no name an agent's own sign-in: workers start there again, and
 	// the tasks that waited for a sign-in of that agent start.
 	ResumeAccount(context.Context, *connect.Request[v1.LeadServiceResumeAccountRequest]) (*connect.Response[v1.LeadServiceResumeAccountResponse], error)
+	// Rank the sign-ins of every agent, from the highest priority to the lowest: each new worker, and each batch of the
+	// lead unless it is pinned, starts on the first of its agent in this order neither paused, limited nor out of quota.
+	// The whole order is given, a --sign-in each: claude for an agent's own sign-in, claude/work for its account work. A
+	// sign-in left out keeps its place after them. Nothing stops nor moves: the order counts at each next start. Kept in
+	// settings.json, on this machine; the window's accounts screen ranks them by drag and drop or Alt+Up and Alt+Down.
+	Order(context.Context, *connect.Request[v1.LeadServiceOrderRequest]) (*connect.Response[v1.LeadServiceOrderResponse], error)
+	// Pin the lead Djinn drives on a sign-in of its agent: the account named, or without one its agent's own sign-in;
+	// each batch starts there whatever the order, as djinn lead move --account does. With --unpin, the pin is taken off:
+	// each batch starts again on the first free sign-in of its agent in the order of the accounts. Its agent and model
+	// stay. Kept in settings.json, on this machine.
+	Pin(context.Context, *connect.Request[v1.LeadServicePinRequest]) (*connect.Response[v1.LeadServicePinResponse], error)
 	// Pick an option of the choice the lead's agent shows in its terminal (LeadServiceGetResponse.prompt), as its keys
 	// would: the window's answer to an approval or a folder to trust. Refused when the screen shows another choice, or
 	// none; the same choice is answered once. The window's only: an agent never answers its own approval.
 	Choose(context.Context, *connect.Request[v1.LeadServiceChooseRequest]) (*connect.Response[v1.LeadServiceChooseResponse], error)
+	// Choose how each new worker, and each batch of the lead unless it is pinned, picks its sign-in among the free ones
+	// of its agent. dynamic, by default: the one whose week ends soonest goes first (within an hour, the least used),
+	// then those whose quota is not known, then the pseudo-unlimited ones (djinn lead unlimited), each group in the
+	// order. manual: the first in the order (djinn lead order). Either way, a task that ran stays on its sign-in while it
+	// may. Nothing stops nor moves: the mode counts at each next start. Kept in settings.json, on this machine.
+	AccountMode(context.Context, *connect.Request[v1.LeadServiceAccountModeRequest]) (*connect.Response[v1.LeadServiceAccountModeResponse], error)
+	// Correct whether a sign-in counts as pseudo-unlimited, a sign-in a word as djinn lead order takes it (claude,
+	// claude/work): forced, it goes after the sign-ins of its agent with a quota in the dynamic mode, and its quota never
+	// holds it back; limited, it counts as one with a quota even when Djinn reads none; auto, Djinn's detection decides
+	// (an agent that tells no quota, as Codex, or a Claude sign-in on an API key). Kept in settings.json.
+	Unlimited(context.Context, *connect.Request[v1.LeadServiceUnlimitedRequest]) (*connect.Response[v1.LeadServiceUnlimitedResponse], error)
 	// Read the global Summoning Circle: one row per kind of model-calling worker across all projects.
 	GetCircle(context.Context, *connect.Request[v1.LeadServiceGetCircleRequest]) (*connect.Response[v1.LeadServiceGetCircleResponse], error)
 	// Set one row of the global Summoning Circle (lead, investigation, mockup, ifrit, work, correction, review, or
@@ -2488,10 +2520,34 @@ func NewLeadServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(leadServiceMethods.ByName("ResumeAccount")),
 			connect.WithClientOptions(opts...),
 		),
+		order: connect.NewClient[v1.LeadServiceOrderRequest, v1.LeadServiceOrderResponse](
+			httpClient,
+			baseURL+LeadServiceOrderProcedure,
+			connect.WithSchema(leadServiceMethods.ByName("Order")),
+			connect.WithClientOptions(opts...),
+		),
+		pin: connect.NewClient[v1.LeadServicePinRequest, v1.LeadServicePinResponse](
+			httpClient,
+			baseURL+LeadServicePinProcedure,
+			connect.WithSchema(leadServiceMethods.ByName("Pin")),
+			connect.WithClientOptions(opts...),
+		),
 		choose: connect.NewClient[v1.LeadServiceChooseRequest, v1.LeadServiceChooseResponse](
 			httpClient,
 			baseURL+LeadServiceChooseProcedure,
 			connect.WithSchema(leadServiceMethods.ByName("Choose")),
+			connect.WithClientOptions(opts...),
+		),
+		accountMode: connect.NewClient[v1.LeadServiceAccountModeRequest, v1.LeadServiceAccountModeResponse](
+			httpClient,
+			baseURL+LeadServiceAccountModeProcedure,
+			connect.WithSchema(leadServiceMethods.ByName("AccountMode")),
+			connect.WithClientOptions(opts...),
+		),
+		unlimited: connect.NewClient[v1.LeadServiceUnlimitedRequest, v1.LeadServiceUnlimitedResponse](
+			httpClient,
+			baseURL+LeadServiceUnlimitedProcedure,
+			connect.WithSchema(leadServiceMethods.ByName("Unlimited")),
 			connect.WithClientOptions(opts...),
 		),
 		getCircle: connect.NewClient[v1.LeadServiceGetCircleRequest, v1.LeadServiceGetCircleResponse](
@@ -2530,7 +2586,11 @@ type leadServiceClient struct {
 	removeAccount *connect.Client[v1.LeadServiceRemoveAccountRequest, v1.LeadServiceRemoveAccountResponse]
 	pauseAccount  *connect.Client[v1.LeadServicePauseAccountRequest, v1.LeadServicePauseAccountResponse]
 	resumeAccount *connect.Client[v1.LeadServiceResumeAccountRequest, v1.LeadServiceResumeAccountResponse]
+	order         *connect.Client[v1.LeadServiceOrderRequest, v1.LeadServiceOrderResponse]
+	pin           *connect.Client[v1.LeadServicePinRequest, v1.LeadServicePinResponse]
 	choose        *connect.Client[v1.LeadServiceChooseRequest, v1.LeadServiceChooseResponse]
+	accountMode   *connect.Client[v1.LeadServiceAccountModeRequest, v1.LeadServiceAccountModeResponse]
+	unlimited     *connect.Client[v1.LeadServiceUnlimitedRequest, v1.LeadServiceUnlimitedResponse]
 	getCircle     *connect.Client[v1.LeadServiceGetCircleRequest, v1.LeadServiceGetCircleResponse]
 	setCircle     *connect.Client[v1.LeadServiceSetCircleRequest, v1.LeadServiceSetCircleResponse]
 }
@@ -2625,9 +2685,29 @@ func (c *leadServiceClient) ResumeAccount(ctx context.Context, req *connect.Requ
 	return c.resumeAccount.CallUnary(ctx, req)
 }
 
+// Order calls plan.v1.LeadService.Order.
+func (c *leadServiceClient) Order(ctx context.Context, req *connect.Request[v1.LeadServiceOrderRequest]) (*connect.Response[v1.LeadServiceOrderResponse], error) {
+	return c.order.CallUnary(ctx, req)
+}
+
+// Pin calls plan.v1.LeadService.Pin.
+func (c *leadServiceClient) Pin(ctx context.Context, req *connect.Request[v1.LeadServicePinRequest]) (*connect.Response[v1.LeadServicePinResponse], error) {
+	return c.pin.CallUnary(ctx, req)
+}
+
 // Choose calls plan.v1.LeadService.Choose.
 func (c *leadServiceClient) Choose(ctx context.Context, req *connect.Request[v1.LeadServiceChooseRequest]) (*connect.Response[v1.LeadServiceChooseResponse], error) {
 	return c.choose.CallUnary(ctx, req)
+}
+
+// AccountMode calls plan.v1.LeadService.AccountMode.
+func (c *leadServiceClient) AccountMode(ctx context.Context, req *connect.Request[v1.LeadServiceAccountModeRequest]) (*connect.Response[v1.LeadServiceAccountModeResponse], error) {
+	return c.accountMode.CallUnary(ctx, req)
+}
+
+// Unlimited calls plan.v1.LeadService.Unlimited.
+func (c *leadServiceClient) Unlimited(ctx context.Context, req *connect.Request[v1.LeadServiceUnlimitedRequest]) (*connect.Response[v1.LeadServiceUnlimitedResponse], error) {
+	return c.unlimited.CallUnary(ctx, req)
 }
 
 // GetCircle calls plan.v1.LeadService.GetCircle.
@@ -2707,9 +2787,11 @@ type LeadServiceHandler interface {
 	// only.
 	Show(context.Context, *connect.Request[v1.LeadServiceShowRequest]) (*connect.Response[v1.LeadServiceShowResponse], error)
 	// Move the lead Djinn drives to another agent, model or account: the next batch starts there, with the lead's
-	// journal, and the lead stays there until moved again. The whole seat is given: an empty model is the agent's
-	// default, an empty account its own sign-in; without --provider, the current agent. Events that wait after a failed
-	// batch or a limit go to the new seat at once. Antigravity cannot lead yet. Kept in settings.json, on this machine.
+	// journal. The whole seat is given: an empty model is the agent's default; with --account, the lead is pinned on
+	// that account until moved or unpinned (djinn lead pin --unpin); without, each batch starts on the first free
+	// sign-in of the agent in the order of the accounts. Without --provider, the current agent. Events that wait after a
+	// failed batch or a limit go to the new seat at once. Antigravity cannot lead yet. Kept in settings.json, on this
+	// machine.
 	Move(context.Context, *connect.Request[v1.LeadServiceMoveRequest]) (*connect.Response[v1.LeadServiceMoveResponse], error)
 	// The accounts of the agents on this machine, the seat of the lead, for each account the command that signs it in,
 	// once, in its own folder, and the usage limits of each sign-in as Djinn last read them.
@@ -2717,21 +2799,43 @@ type LeadServiceHandler interface {
 	// Name an account of an agent: a folder of its own where it keeps its login, ~/.claude-<name> or ~/.codex-<name>
 	// unless given. Djinn makes the folder and prints the command that signs in there; the login stays the agent's.
 	AddAccount(context.Context, *connect.Request[v1.LeadServiceAddAccountRequest]) (*connect.Response[v1.LeadServiceAddAccountResponse], error)
-	// Forget an account: Djinn no longer names it, and leaves its folder, and the login in it, as they are. Refused
-	// while the lead runs on it.
+	// Forget an account: Djinn no longer names it, nor ranks it in the order, and leaves its folder, and the login in it,
+	// as they are. Refused while the lead is pinned on it.
 	RemoveAccount(context.Context, *connect.Request[v1.LeadServiceRemoveAccountRequest]) (*connect.Response[v1.LeadServiceRemoveAccountResponse], error)
 	// Pause an account, or with --provider and no name an agent's own sign-in: Djinn starts no worker on it. A worker
 	// that runs there finishes its turn; the tasks that start or resume next go to another sign-in of the agent neither
-	// paused nor limited; with each one paused, they wait. The lead's seat stays where the developer put it. Kept in
-	// settings.json.
+	// paused nor limited; with each one paused, they wait. The lead's next batch skips it too, unless the lead is pinned
+	// there. Kept in settings.json.
 	PauseAccount(context.Context, *connect.Request[v1.LeadServicePauseAccountRequest]) (*connect.Response[v1.LeadServicePauseAccountResponse], error)
 	// Resume an account paused, or with --provider and no name an agent's own sign-in: workers start there again, and
 	// the tasks that waited for a sign-in of that agent start.
 	ResumeAccount(context.Context, *connect.Request[v1.LeadServiceResumeAccountRequest]) (*connect.Response[v1.LeadServiceResumeAccountResponse], error)
+	// Rank the sign-ins of every agent, from the highest priority to the lowest: each new worker, and each batch of the
+	// lead unless it is pinned, starts on the first of its agent in this order neither paused, limited nor out of quota.
+	// The whole order is given, a --sign-in each: claude for an agent's own sign-in, claude/work for its account work. A
+	// sign-in left out keeps its place after them. Nothing stops nor moves: the order counts at each next start. Kept in
+	// settings.json, on this machine; the window's accounts screen ranks them by drag and drop or Alt+Up and Alt+Down.
+	Order(context.Context, *connect.Request[v1.LeadServiceOrderRequest]) (*connect.Response[v1.LeadServiceOrderResponse], error)
+	// Pin the lead Djinn drives on a sign-in of its agent: the account named, or without one its agent's own sign-in;
+	// each batch starts there whatever the order, as djinn lead move --account does. With --unpin, the pin is taken off:
+	// each batch starts again on the first free sign-in of its agent in the order of the accounts. Its agent and model
+	// stay. Kept in settings.json, on this machine.
+	Pin(context.Context, *connect.Request[v1.LeadServicePinRequest]) (*connect.Response[v1.LeadServicePinResponse], error)
 	// Pick an option of the choice the lead's agent shows in its terminal (LeadServiceGetResponse.prompt), as its keys
 	// would: the window's answer to an approval or a folder to trust. Refused when the screen shows another choice, or
 	// none; the same choice is answered once. The window's only: an agent never answers its own approval.
 	Choose(context.Context, *connect.Request[v1.LeadServiceChooseRequest]) (*connect.Response[v1.LeadServiceChooseResponse], error)
+	// Choose how each new worker, and each batch of the lead unless it is pinned, picks its sign-in among the free ones
+	// of its agent. dynamic, by default: the one whose week ends soonest goes first (within an hour, the least used),
+	// then those whose quota is not known, then the pseudo-unlimited ones (djinn lead unlimited), each group in the
+	// order. manual: the first in the order (djinn lead order). Either way, a task that ran stays on its sign-in while it
+	// may. Nothing stops nor moves: the mode counts at each next start. Kept in settings.json, on this machine.
+	AccountMode(context.Context, *connect.Request[v1.LeadServiceAccountModeRequest]) (*connect.Response[v1.LeadServiceAccountModeResponse], error)
+	// Correct whether a sign-in counts as pseudo-unlimited, a sign-in a word as djinn lead order takes it (claude,
+	// claude/work): forced, it goes after the sign-ins of its agent with a quota in the dynamic mode, and its quota never
+	// holds it back; limited, it counts as one with a quota even when Djinn reads none; auto, Djinn's detection decides
+	// (an agent that tells no quota, as Codex, or a Claude sign-in on an API key). Kept in settings.json.
+	Unlimited(context.Context, *connect.Request[v1.LeadServiceUnlimitedRequest]) (*connect.Response[v1.LeadServiceUnlimitedResponse], error)
 	// Read the global Summoning Circle: one row per kind of model-calling worker across all projects.
 	GetCircle(context.Context, *connect.Request[v1.LeadServiceGetCircleRequest]) (*connect.Response[v1.LeadServiceGetCircleResponse], error)
 	// Set one row of the global Summoning Circle (lead, investigation, mockup, ifrit, work, correction, review, or
@@ -2862,10 +2966,34 @@ func NewLeadServiceHandler(svc LeadServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(leadServiceMethods.ByName("ResumeAccount")),
 		connect.WithHandlerOptions(opts...),
 	)
+	leadServiceOrderHandler := connect.NewUnaryHandler(
+		LeadServiceOrderProcedure,
+		svc.Order,
+		connect.WithSchema(leadServiceMethods.ByName("Order")),
+		connect.WithHandlerOptions(opts...),
+	)
+	leadServicePinHandler := connect.NewUnaryHandler(
+		LeadServicePinProcedure,
+		svc.Pin,
+		connect.WithSchema(leadServiceMethods.ByName("Pin")),
+		connect.WithHandlerOptions(opts...),
+	)
 	leadServiceChooseHandler := connect.NewUnaryHandler(
 		LeadServiceChooseProcedure,
 		svc.Choose,
 		connect.WithSchema(leadServiceMethods.ByName("Choose")),
+		connect.WithHandlerOptions(opts...),
+	)
+	leadServiceAccountModeHandler := connect.NewUnaryHandler(
+		LeadServiceAccountModeProcedure,
+		svc.AccountMode,
+		connect.WithSchema(leadServiceMethods.ByName("AccountMode")),
+		connect.WithHandlerOptions(opts...),
+	)
+	leadServiceUnlimitedHandler := connect.NewUnaryHandler(
+		LeadServiceUnlimitedProcedure,
+		svc.Unlimited,
+		connect.WithSchema(leadServiceMethods.ByName("Unlimited")),
 		connect.WithHandlerOptions(opts...),
 	)
 	leadServiceGetCircleHandler := connect.NewUnaryHandler(
@@ -2919,8 +3047,16 @@ func NewLeadServiceHandler(svc LeadServiceHandler, opts ...connect.HandlerOption
 			leadServicePauseAccountHandler.ServeHTTP(w, r)
 		case LeadServiceResumeAccountProcedure:
 			leadServiceResumeAccountHandler.ServeHTTP(w, r)
+		case LeadServiceOrderProcedure:
+			leadServiceOrderHandler.ServeHTTP(w, r)
+		case LeadServicePinProcedure:
+			leadServicePinHandler.ServeHTTP(w, r)
 		case LeadServiceChooseProcedure:
 			leadServiceChooseHandler.ServeHTTP(w, r)
+		case LeadServiceAccountModeProcedure:
+			leadServiceAccountModeHandler.ServeHTTP(w, r)
+		case LeadServiceUnlimitedProcedure:
+			leadServiceUnlimitedHandler.ServeHTTP(w, r)
 		case LeadServiceGetCircleProcedure:
 			leadServiceGetCircleHandler.ServeHTTP(w, r)
 		case LeadServiceSetCircleProcedure:
@@ -3006,8 +3142,24 @@ func (UnimplementedLeadServiceHandler) ResumeAccount(context.Context, *connect.R
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.LeadService.ResumeAccount is not implemented"))
 }
 
+func (UnimplementedLeadServiceHandler) Order(context.Context, *connect.Request[v1.LeadServiceOrderRequest]) (*connect.Response[v1.LeadServiceOrderResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.LeadService.Order is not implemented"))
+}
+
+func (UnimplementedLeadServiceHandler) Pin(context.Context, *connect.Request[v1.LeadServicePinRequest]) (*connect.Response[v1.LeadServicePinResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.LeadService.Pin is not implemented"))
+}
+
 func (UnimplementedLeadServiceHandler) Choose(context.Context, *connect.Request[v1.LeadServiceChooseRequest]) (*connect.Response[v1.LeadServiceChooseResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.LeadService.Choose is not implemented"))
+}
+
+func (UnimplementedLeadServiceHandler) AccountMode(context.Context, *connect.Request[v1.LeadServiceAccountModeRequest]) (*connect.Response[v1.LeadServiceAccountModeResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.LeadService.AccountMode is not implemented"))
+}
+
+func (UnimplementedLeadServiceHandler) Unlimited(context.Context, *connect.Request[v1.LeadServiceUnlimitedRequest]) (*connect.Response[v1.LeadServiceUnlimitedResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.LeadService.Unlimited is not implemented"))
 }
 
 func (UnimplementedLeadServiceHandler) GetCircle(context.Context, *connect.Request[v1.LeadServiceGetCircleRequest]) (*connect.Response[v1.LeadServiceGetCircleResponse], error) {

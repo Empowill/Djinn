@@ -120,9 +120,12 @@ djinn/T07-the-orchestrator):
 - Djinn cuts it from the project's main branch when the azima is made, or when its first part starts if the azima came
   before the switch. Its card shows the branch, the commit it was cut from, and that it lands in main.
 - The azima's work merges into it, checked, and Djinn keeps it up with main as it does a wish's branch.
-- It lands in main through its own pull request. Once the branch is pushed and the azima's parts are done and green,
-  Djinn asks you, as a move, whether to open it, and opens it as a draft when you say yes. The card shows **PR
-  proposed**, **PR open** or **PR merged**, with a link to the request. You merge it on the forge; once it is merged,
+- Work spawned with no azima gets an azima of its own, made for it with its title, so that its branch is pushed like any
+  other: Djinn never pushes the wish's integration branch per azima. Work whose worker started from an azima's branch,
+  or from the head of the pull request an azima carries, joins that azima instead and lands on its branch.
+- It lands in main through its own pull request, which Djinn opens as a draft at the branch's first push, with no
+  question. When it cannot, it asks you once the azima's parts are done and green, as a move, and opens it when you say
+  yes. The card shows **PR proposed**, **PR open** or **PR merged**, with a link to the request. You merge it on the forge; once it is merged,
   Djinn marks the azima done.
 - Djinn pushes the branch by itself under the standard cadence, at the azima's end, after three tasks and an hour, or
   once main is merged into it after its first push;

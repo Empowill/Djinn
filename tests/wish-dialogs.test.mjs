@@ -3,7 +3,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { screens } from "./screens.mjs";
+import { screens, setupMockDom } from "./screens.mjs";
 
 const { s, h, live } = await screens();
 
@@ -99,10 +99,10 @@ test("MakeWish requires an active lead before a wish can be created", async () =
     return found;
   };
   const composerNode = findByProp(
-    (n) => typeof n.props.onChange === "function" && "invalid" in n.props,
+    (n) => typeof n.props.onText === "function" && "invalid" in n.props,
   )[0];
   assert.ok(composerNode, "WishComposer mounted");
-  composerNode.props.onChange("Build a flying carpet.", true);
+  composerNode.props.onText("Build a flying carpet.");
 
   const submitButton = () =>
     findByProp((n) => n.props.type === "submit")[0].props;
@@ -160,6 +160,113 @@ test("MakeWish requires an active lead before a wish can be created", async () =
   });
   assert.match(exitedPage.html(), /The Djinn ended \(code 1\)/);
   assert.match(exitedPage.html(), /djinn lead resume/);
+});
+
+// W567: the new wish kept its request in its state, and rendered the whole page at each key. The request is the
+// field's own: a key renders the page only when the request turns sendable, or too long; the wish made is what is typed.
+test("a key typed in a new wish renders nothing of the page; the wish is made with the last text typed", async () => {
+  const container = setupMockDom();
+  const proto = Object.getPrototypeOf(container);
+  proto.focus = proto.focus ?? function () {};
+  // What the page asks of the document beyond the mock: the field it focuses, the reduced-motion query.
+  globalThis.document.getElementById = () => null;
+  globalThis.matchMedia = () => ({
+    matches: true,
+    addEventListener() {},
+    removeEventListener() {},
+  });
+  const below = (el, out = []) => {
+    for (const child of el.childNodes) {
+      out.push(child);
+      below(child, out);
+    }
+    return out;
+  };
+  const props = (el) =>
+    el[Object.keys(el).find((k) => k.startsWith("__reactProps$"))];
+  const settle = async () => {
+    for (let i = 0; i < 4; i++)
+      await s.act(() => new Promise((r) => setTimeout(r, 0)));
+  };
+  const made = [];
+  const wish = { id: "w1", title: "Carpet" };
+  const transport = s.createRouterTransport(({ service }) => {
+    service(s.WishService, {
+      make: (req) => {
+        made.push(req.prompt);
+        return { wish };
+      },
+    });
+  });
+  const djinn = s.createDjinn(transport, 10);
+  const done = [];
+  let renders = 0;
+  const root = s.createRoot(container);
+  try {
+    await s.act(async () =>
+      root.render(
+        h(
+          s.DjinnProvider,
+          { djinn },
+          h(
+            s.Profiler,
+            { id: "page", onRender: () => renders++ },
+            h(s.MakeWish, {
+              projects: [],
+              active: 0,
+              lead: {
+                provider: s.Provider.CLAUDE_CODE,
+                sessionId: "lead-session",
+                directory: "/workspace/lamp",
+              },
+              onMade: (w) => done.push(w.id),
+              onClose() {},
+            }),
+          ),
+        ),
+      ),
+    );
+    await settle();
+    const box = below(container).find((el) => el.nodeName === "TEXTAREA");
+    assert.ok(box, "the request is open");
+    const submit = () =>
+      below(container).find(
+        (el) => el.nodeName === "BUTTON" && el.attributes.type === "submit",
+      );
+    assert.equal(props(submit()).disabled, true, "nothing typed, nothing sent");
+    // Typed as the browser does: the box holds the text, then React hears the change.
+    const type = (value) =>
+      s.act(() => {
+        box.value = value;
+        props(box).onChange({ target: box });
+      });
+    await type("B");
+    await settle();
+    assert.equal(props(submit()).disabled, false, "the first letter sends");
+    const before = renders;
+    for (const value of ["Bu", "Build", "Build a", "  Build a flying carpet. "])
+      await type(value);
+    await settle();
+    assert.equal(renders, before, "the keys after the first render nothing");
+    await s.act(async () =>
+      props(below(container).find((el) => el.nodeName === "FORM")).onSubmit({
+        preventDefault() {},
+      }),
+    );
+    await settle();
+    assert.deepEqual(made, ["Build a flying carpet."]);
+    // The shape the page renders on: blank (spaces, format marks), to send, or over the API's limit.
+    assert.equal(s.promptShape(" \n\u200b"), s.PromptShape.EMPTY);
+    assert.equal(s.promptShape(" A carpet"), s.PromptShape.TEXT);
+    assert.equal(s.promptShape("a".repeat(1_000_001)), s.PromptShape.TOO_LONG);
+    assert.deepEqual(done, ["w1"]);
+  } finally {
+    s.act(() => root.unmount());
+    delete globalThis.matchMedia;
+    await new Promise((r) => setTimeout(r, 30));
+    for (const handle of process._getActiveHandles())
+      if (handle?.constructor?.name === "MessagePort") handle.unref();
+  }
 });
 
 test("the sleep dialog offers the wish's tasks not over and the requests not merged, and sends what you pick, all of it", () => {

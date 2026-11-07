@@ -5,8 +5,9 @@
 // as a button.
 // In the questions column (question-column.tsx, mockup L04 v2), a question has two states: closed, its two-line row
 // (its code, its title, how much it holds up); open, in full, its context never cut, its options lettered A, B, C,
-// picked by their letter or digit, the note and the gestures always in sight. Enter on it puts the caret in the note,
-// Escape in the note gives the focus back to the question, then clears your pick. Elsewhere (the questions being
+// picked by their letter or digit, or by Up and Down, which stop at the first and the last and give the option the
+// focus (W491), the note and the gestures always in sight. Enter on it, or E, puts the caret in the note, Escape in the
+// note gives the focus back to the option selected, then clears your pick. Elsewhere (the questions being
 // investigated) it is Clément's question card, its context in a first view that unfolds in place.
 // One note field for the gestures at the bottom: "Withdraw", on the left, closes the question without an answer;
 // "Enlighten me", in the middle, asks the lead to find out more first (QuestionService.Enlighten), the note saying
@@ -93,7 +94,7 @@ import { questionPerch } from "./data/eye";
 import { EyePerch } from "./djinn-eye";
 import { t } from "./i18n";
 import { CommandText } from "./copy-command";
-import { useGrowTextarea } from "./lead-message";
+import { TextField, useTyped } from "./text-field";
 import { MoveLink } from "./link";
 import { FoldedMarkdown, MarkdownBody } from "./markdown-body";
 import { StatusBadge } from "./status";
@@ -113,6 +114,24 @@ export type QuestionKey = Pick<
 
 // Where the open question of the column takes the keys pressed with the focus nowhere.
 export type QuestionKeys = RefObject<((e: QuestionKey) => void) | undefined>;
+
+// The options of an open question, and the key that writes its note (W491).
+const OPTIONS = ".question-options .option";
+const SELECTED = `${OPTIONS}[aria-pressed="true"]`;
+export const NOTE_KEY = "e";
+
+// choiceIn is where the focus goes on a question of the column: its option selected (the recommended one until you
+// pick another), else the question itself.
+export function choiceIn(question: HTMLElement): HTMLElement {
+  return question.querySelector<HTMLElement>(SELECTED) ?? question;
+}
+
+// optionStep is the option Up (step -1) or Down (step 1) goes to among count, from the one at (-1: none), nothing past
+// either end: from none, the first for Down, the last for Up.
+export function optionStep(count: number, at: number, step: number): number {
+  if (at < 0) return step > 0 ? 0 : count - 1;
+  return Math.min(Math.max(at + step, 0), count - 1);
+}
 
 export const WishQuestion = memo(function WishQuestion({
   question: q,
@@ -191,7 +210,9 @@ export const WishQuestion = memo(function WishQuestion({
   // option named, nothing is selected: rubbing the lamp waits for your pick.
   const [picked, setPicked] = useState<Choice>();
   const choice = picked ?? (q.options.length ? recommended : Choice.YES);
-  const [note, setNote] = useState("");
+  // The note is the field's own: a key renders the card only when it turns the plan over to the lead (W526).
+  const typed = useTyped(noteShape);
+  const note = typed.text;
   const [sending, setSending] = useState(false);
   const [unpicked, setUnpicked] = useState(false);
   // The gesture the card plays, and whether its button is still down. It lasts while its answer leaves, the chosen
@@ -224,10 +245,11 @@ export const WishQuestion = memo(function WishQuestion({
   const row = !!onSelect && !answered && !withdrawn;
   const card = useRef<HTMLElement>(null);
   const noteField = useRef<HTMLTextAreaElement>(null);
-  useGrowTextarea(noteField, note);
+  // The plan reads only whether the note holds something.
+  const noted = typed.shown ? "noted" : "";
   const outcome = useMemo(
-    () => (choice !== undefined ? answerOutcome(q, choice, note) : undefined),
-    [q, choice, note],
+    () => (choice !== undefined ? answerOutcome(q, choice, noted) : undefined),
+    [q, choice, noted],
   );
   const kind = outcome?.kind ?? "lead";
   const isMock = kind === "mock";
@@ -271,14 +293,14 @@ export const WishQuestion = memo(function WishQuestion({
       setUnpicked(true);
       return;
     }
-    void play("rub", () => onAnswer(choice, note.trim(), q));
+    void play("rub", () => onAnswer(choice, typed.read().trim(), q));
   };
 
   const triggerEnlighten = () => {
     if (sending || !onEnlighten || digging || isMock) return;
     void play("enlighten", async () => {
-      await onEnlighten(note.trim(), q);
-      setNote("");
+      await onEnlighten(typed.read().trim(), q);
+      typed.set("");
     });
   };
 
@@ -291,10 +313,10 @@ export const WishQuestion = memo(function WishQuestion({
     e: React.KeyboardEvent<HTMLTextAreaElement>,
   ) => {
     if (isComposing(e)) return;
-    // In the column, Escape gives the focus back to the question.
+    // In the column, Escape gives the focus back to the question, on the option selected.
     if (row && e.key === "Escape" && !e.ctrlKey && !e.metaKey && !e.altKey) {
       e.preventDefault();
-      card.current?.focus({ preventScroll: true });
+      if (card.current) choiceIn(card.current).focus({ preventScroll: true });
       return;
     }
     if (
@@ -348,9 +370,14 @@ export const WishQuestion = memo(function WishQuestion({
       // and a stray Enter sent the option just looked at (W574). A focused control (an option, a gesture's button,
       // a copy button, Read more) presses itself. Ctrl+Enter rubs the lamp, Ctrl+Shift+Enter enlightens.
       if (!e.ctrlKey && !e.metaKey) {
-        // In the column, Enter on the question itself (or with the focus nowhere) puts the caret in the note.
+        // In the column, Enter on the question itself, on its option selected, or with the focus nowhere, puts the
+        // caret in the note.
         const onQuestion =
-          e.target === e.currentTarget || !holds(card.current, e.target);
+          e.target === e.currentTarget ||
+          !holds(card.current, e.target) ||
+          (typeof Element !== "undefined" &&
+            e.target instanceof Element &&
+            e.target.matches(SELECTED));
         if (row && onQuestion && !e.shiftKey && !e.altKey) {
           e.preventDefault();
           focusNote();
@@ -365,8 +392,9 @@ export const WishQuestion = memo(function WishQuestion({
 
     if (e.ctrlKey || e.metaKey || e.altKey) return;
 
-    // In the column, the arrows go to the other questions: a letter or a digit picks an option, Escape clears your
-    // pick, and once none is left the column takes it (the focus leaves it).
+    // In the column, Up and Down pick the option above or below, which takes the focus, and stop at either end (Left
+    // and Right are the column's: the question before or after); E opens the note; a letter or a digit picks an
+    // option; Escape clears your pick, and once none is left the column takes it (the focus leaves it).
     if (row) {
       if (e.key === "Escape") {
         if (picked === undefined) return;
@@ -375,7 +403,33 @@ export const WishQuestion = memo(function WishQuestion({
         setUnpicked(false);
         return;
       }
-      if (e.shiftKey || [...e.key].length !== 1) return;
+      if (e.shiftKey) return;
+      if (
+        (e.key === "ArrowUp" || e.key === "ArrowDown") &&
+        q.options.length > 0
+      ) {
+        e.preventDefault();
+        const at =
+          choice === undefined || choice === Choice.YES
+            ? -1
+            : choice - Choice.A;
+        const to = optionStep(
+          q.options.length,
+          at,
+          e.key === "ArrowDown" ? 1 : -1,
+        );
+        setPicked(choiceOf(to));
+        setUnpicked(false);
+        card.current?.querySelectorAll<HTMLElement>(OPTIONS)[to]?.focus();
+        return;
+      }
+      // E writes the note: a question has four options at most, A to D (plan.proto), no E to pick.
+      if (e.key.toLowerCase() === NOTE_KEY) {
+        e.preventDefault();
+        focusNote();
+        return;
+      }
+      if ([...e.key].length !== 1) return;
       const index = /^[1-9]$/.test(e.key)
         ? Number(e.key) - 1
         : q.options.findIndex((_, i) => letter(i) === e.key.toUpperCase());
@@ -518,13 +572,13 @@ export const WishQuestion = memo(function WishQuestion({
       {q.options.map((option, index) => {
         const optChoice = choiceOf(index);
         const selected = choice === optChoice;
-        const optOutcome = answerOutcome(q, optChoice, note);
+        const optOutcome = answerOutcome(q, optChoice, noted);
         const pick = () => {
           setPicked(optChoice);
           setUnpicked(false);
         };
         // Not a <button>: its text is selectable, and a command in it has a copy button of its own. A
-        // click, Enter or Space picks it, never answers.
+        // click, Enter or Space picks it, never answers; selected, Space scrolls the page and Enter writes the note.
         return (
           <div
             key={index}
@@ -545,7 +599,10 @@ export const WishQuestion = memo(function WishQuestion({
                 e.metaKey ||
                 e.shiftKey ||
                 e.altKey ||
-                e.target !== e.currentTarget
+                e.target !== e.currentTarget ||
+                // On the option already selected, where the arrows leave the focus, Space scrolls a long question and
+                // Enter is the question's: the note (W491).
+                selected
               )
                 return;
               e.preventDefault();
@@ -572,10 +629,10 @@ export const WishQuestion = memo(function WishQuestion({
       {q.options.length === 0 && (
         <PlanLine question={q} plan={planOf(q, Choice.YES)} />
       )}
-      <textarea
-        ref={noteField}
-        value={note}
-        onChange={(e) => setNote(e.target.value)}
+      <TextField
+        fieldRef={noteField}
+        text={note}
+        onText={typed.type}
         onKeyDown={handleTextareaKeyDown}
         placeholder={
           q.options.length
@@ -586,7 +643,6 @@ export const WishQuestion = memo(function WishQuestion({
         maxLength={NOTE_MAX}
         aria-label={t("question.note_label")}
       />
-      <NoteCounter length={note.length} />
       {(unpicked || noLead) && (
         <p
           className={`question-hint${unpicked ? " unpicked" : ""}`}
@@ -911,21 +967,8 @@ function outcomeTitle(o: AnswerOutcome): string {
   return t("question.outcome_lead");
 }
 
-// NoteCounter shows a character count from 80 % of the limit (6400 / 8000), warming at 95 % (7600 / 8000).
-export function NoteCounter({
-  length,
-  max = NOTE_MAX,
-}: {
-  length: number;
-  max?: number;
-}) {
-  if (length < max * 0.8) return null;
-  return (
-    <span className={`note-count${length >= max * 0.95 ? " near" : ""}`}>
-      {length} / {max}
-    </span>
-  );
-}
+// noteShape is what the card shows of its note: whether it holds something, which turns the plan over to the lead.
+const noteShape = (text: string) => text.trim() !== "";
 
 // PlanLine is the task an option launches once picked, on one tinted line: its verb (Builds, Mockup, Investigates)
 // and title, cut short when long, then the azima it belongs to, whole, by its code and title once the wish's tasks

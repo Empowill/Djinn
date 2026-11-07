@@ -35,7 +35,6 @@ import {
   type KeptWorktree,
   type Project,
   type ProjectSync,
-  type Provider,
   type Question,
   type Task,
   TaskStatus,
@@ -162,13 +161,12 @@ import {
   WishModels,
   WishTitle,
   leadTrouble,
-  recordedAgent,
-  type SeatChoice,
 } from "./wish-head";
 import { LeadMessage } from "./lead-message";
 import { useEyeNeeds } from "./djinn-eye";
 import { PageHeader, PageHeaderAction } from "./page-header";
 import { TooltipButton } from "./tooltip";
+import { usePlace } from "./view-history";
 
 // Opening is a tilasm to show in a wish's Tilasms tab, as a djinn:// link asks: a new object at each request.
 export interface Opening {
@@ -195,7 +193,6 @@ export function WishView({
   reaching,
   landing,
   onToast,
-  onSetupAgents,
 }: {
   wish: Wish;
   // A tilasm of the wish to show now, in its Tilasms tab.
@@ -205,8 +202,6 @@ export function WishView({
   // The wish clicked in the side panel: its first tab now.
   landing?: Landing;
   onToast: (text: string) => void;
-  // Opens the setup of the agents, from the lead's menu.
-  onSetupAgents?: () => void;
 }) {
   const djinn = useDjinn();
   const store = djinn?.store;
@@ -366,6 +361,8 @@ export function WishView({
     },
     [store, wish.id],
   );
+  // Its tab is a layer of the window's history of views (view-history.ts): going back shows it again.
+  usePlace("tab", view, (to) => show((to ?? "main") as View));
   // The tilasm a link opened: the Tilasms tab shows it, again at each new request.
   const [opened, setOpened] = useState(opening);
   useEffect(() => {
@@ -983,33 +980,19 @@ export function WishView({
     [quiet, act, clients.questions, clients.tasks],
   );
 
-  // lead resumes the lead, focusing on this wish, or starts one of another agent; what Djinn says of it shows as a toast: a terminal
+  // lead resumes the lead, focusing on this wish; what Djinn says of it shows as a toast: a terminal
   // that runs a program already, a session Djinn does not know.
-  const resumeLead = (provider?: Provider) => {
+  const resumeLead = () => {
     let note = "";
     return act(
       async () => {
-        ({ note } = await clients.lead.resume({
-          wishId: wish.id,
-          provider,
-        }));
+        ({ note } = await clients.lead.resume({ wishId: wish.id }));
       },
       [Change.WISH],
       () => note,
     );
   };
-  const lead = (provider?: Provider) => quiet(resumeLead(provider));
-  // moveLead moves the lead Djinn drives to another seat; what Djinn says of it shows as a toast.
-  const moveLead = (seat: SeatChoice) => {
-    let note = "";
-    return act(
-      async () => {
-        ({ note } = await clients.lead.move(seat));
-      },
-      [Change.WISH],
-      () => note,
-    );
-  };
+  const lead = () => quiet(resumeLead());
   const attention = attentionOf(
     [...open, ...waitingLead],
     waiting,
@@ -1093,16 +1076,9 @@ export function WishView({
               </TooltipButton>
             )}
             <LeadButton
-              recorded={recordedAgent(leadRecord)}
               trouble={leadTrouble(leadExit, leadStartError)}
-              loadAgents={async () =>
-                (await clients.ui.getEnvironment({})).providers
-              }
               onLead={() => lead()}
-              onPick={(provider) => lead(provider)}
-              onSetup={onSetupAgents}
               drive={leadDrive}
-              onMove={(seat) => quiet(moveLead(seat))}
             />
             <PageHeaderAction
               label={t("app.share")}

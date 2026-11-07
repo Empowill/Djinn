@@ -78,7 +78,9 @@ test("a gesture presses its button and the card answers back; reduced motion fla
   const errors: string[] = [];
   page.on("pageerror", (err) => errors.push(err.message));
   await page.goto(process.env.DJINN_URL!);
-  await expect(page.locator(".app-statusbar").getByText("Live")).toBeVisible();
+  await expect(page.locator(".app-statusbar").getByText("Live")).toBeVisible({
+    timeout: 15_000,
+  });
 
   // Three wishes at a time: the earlier specs' wishes make way.
   const listed = JSON.parse(djinn("wish", "list", "--json")).wishes ?? [];

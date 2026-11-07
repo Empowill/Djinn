@@ -25,7 +25,7 @@ import (
 // (maxWakes) and usage-limit resumes (maxResumes), the spending cap (Task.max_budget_usd), an investigation's shorter
 // limits, at which it is asked to publish (investigationDue), the push guard and the
 // worker's identity (gitGuard, plan.WorkerGuard), the write scopes (dispatch), the load notch's CPU priority
-// (lowPriority) and the worker's memory ceiling (scopeFor), the slots and the gates.
+// (workerNiceAt) and the worker's memory ceiling (scopeFor), the slots and the gates.
 
 // SilenceLimit is how long a worker may produce no event before the Lamplighter checks its process tree and CPU:
 // long builds and test runs print periodically; background tasks in agy might execute commands, and any gated

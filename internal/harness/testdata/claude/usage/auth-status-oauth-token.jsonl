@@ -1,0 +1,4 @@
+# claude auth status of claude 2.1.316 (07/11/2026) with a subscription's token in CLAUDE_CODE_OAUTH_TOKEN (claude
+# setup-token), its folders shortened: signed in, exit 0, though get_usage may tell no window (a token it could not
+# read, here a made-up one). A subscription, not an API key.
+{"loggedIn":true,"authMethod":"oauth_token","apiProvider":"firstParty","analyticsDisabled":false,"projectsDirectory":"/home/u/.claude/projects","configDirectory":"/home/u/.claude"}

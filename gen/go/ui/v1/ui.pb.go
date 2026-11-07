@@ -494,8 +494,23 @@ type Settings struct {
 	// The agents whose own sign-in (their default folder, no account) is paused: Djinn starts no worker there (djinn
 	// lead pause-account --provider), and their workers run on the agent's accounts, or wait while each is paused.
 	PausedSignIns []v11.Provider `protobuf:"varint,9,rep,packed,name=paused_sign_ins,json=pausedSignIns,proto3,enum=plan.v1.Provider" json:"paused_sign_ins,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// The sign-ins of every agent from the highest priority to the lowest (decision Q295 B): each new worker, and each
+	// batch of the lead that follows the order, starts on the first free one of its agent. A sign-in missing from it
+	// (added since, or none written) comes after, in the order by default: each agent's own, then its accounts as added.
+	AccountOrder []*SignInRef `protobuf:"bytes,10,rep,name=account_order,json=accountOrder,proto3" json:"account_order,omitempty"`
+	// The lead stays on the account of its seat (lead.account, "" for its agent's own sign-in) whatever the order: the
+	// developer pinned it there (djinn lead move with an account). Unset or false: each batch of the lead starts on the
+	// first free sign-in of its agent in account_order, as a worker does (L2).
+	LeadPinned *bool `protobuf:"varint,11,opt,name=lead_pinned,json=leadPinned,proto3,oneof" json:"lead_pinned,omitempty"`
+	// How a sign-in is picked among the free ones of its agent (djinn lead account-mode, decision Q339 C). Unset:
+	// dynamic.
+	AccountMode v11.AccountMode `protobuf:"varint,12,opt,name=account_mode,json=accountMode,proto3,enum=plan.v1.AccountMode" json:"account_mode,omitempty"`
+	// The sign-ins the developer forced pseudo-unlimited (djinn lead unlimited ... forced), whatever Djinn detects.
+	UnlimitedForced []*SignInRef `protobuf:"bytes,13,rep,name=unlimited_forced,json=unlimitedForced,proto3" json:"unlimited_forced,omitempty"`
+	// The sign-ins the developer forced to count with a quota (djinn lead unlimited ... limited), whatever Djinn detects.
+	UnlimitedUnforced []*SignInRef `protobuf:"bytes,14,rep,name=unlimited_unforced,json=unlimitedUnforced,proto3" json:"unlimited_unforced,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *Settings) Reset() {
@@ -591,6 +606,96 @@ func (x *Settings) GetPausedSignIns() []v11.Provider {
 	return nil
 }
 
+func (x *Settings) GetAccountOrder() []*SignInRef {
+	if x != nil {
+		return x.AccountOrder
+	}
+	return nil
+}
+
+func (x *Settings) GetLeadPinned() bool {
+	if x != nil && x.LeadPinned != nil {
+		return *x.LeadPinned
+	}
+	return false
+}
+
+func (x *Settings) GetAccountMode() v11.AccountMode {
+	if x != nil {
+		return x.AccountMode
+	}
+	return v11.AccountMode(0)
+}
+
+func (x *Settings) GetUnlimitedForced() []*SignInRef {
+	if x != nil {
+		return x.UnlimitedForced
+	}
+	return nil
+}
+
+func (x *Settings) GetUnlimitedUnforced() []*SignInRef {
+	if x != nil {
+		return x.UnlimitedUnforced
+	}
+	return nil
+}
+
+// SignInRef names a sign-in of an agent: its own (no account) or one of its accounts.
+type SignInRef struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The agent.
+	Provider v11.Provider `protobuf:"varint,1,opt,name=provider,proto3,enum=plan.v1.Provider" json:"provider,omitempty"`
+	// The account's name; empty for the agent's own sign-in.
+	Account       string `protobuf:"bytes,2,opt,name=account,proto3" json:"account,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SignInRef) Reset() {
+	*x = SignInRef{}
+	mi := &file_ui_v1_ui_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SignInRef) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SignInRef) ProtoMessage() {}
+
+func (x *SignInRef) ProtoReflect() protoreflect.Message {
+	mi := &file_ui_v1_ui_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SignInRef.ProtoReflect.Descriptor instead.
+func (*SignInRef) Descriptor() ([]byte, []int) {
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *SignInRef) GetProvider() v11.Provider {
+	if x != nil {
+		return x.Provider
+	}
+	return v11.Provider(0)
+}
+
+func (x *SignInRef) GetAccount() string {
+	if x != nil {
+		return x.Account
+	}
+	return ""
+}
+
 // An agent command line. Djinn looks for it on its PATH, the PATH of the user's login shell, and the folders its
 // installers use, so that a window started from the Finder finds it too.
 type Provider struct {
@@ -622,7 +727,7 @@ type Provider struct {
 
 func (x *Provider) Reset() {
 	*x = Provider{}
-	mi := &file_ui_v1_ui_proto_msgTypes[4]
+	mi := &file_ui_v1_ui_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -634,7 +739,7 @@ func (x *Provider) String() string {
 func (*Provider) ProtoMessage() {}
 
 func (x *Provider) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[4]
+	mi := &file_ui_v1_ui_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -647,7 +752,7 @@ func (x *Provider) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Provider.ProtoReflect.Descriptor instead.
 func (*Provider) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{4}
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *Provider) GetId() string {
@@ -735,7 +840,7 @@ type AccountSetup struct {
 
 func (x *AccountSetup) Reset() {
 	*x = AccountSetup{}
-	mi := &file_ui_v1_ui_proto_msgTypes[5]
+	mi := &file_ui_v1_ui_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -747,7 +852,7 @@ func (x *AccountSetup) String() string {
 func (*AccountSetup) ProtoMessage() {}
 
 func (x *AccountSetup) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[5]
+	mi := &file_ui_v1_ui_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -760,7 +865,7 @@ func (x *AccountSetup) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AccountSetup.ProtoReflect.Descriptor instead.
 func (*AccountSetup) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{5}
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *AccountSetup) GetAccount() *v11.Account {
@@ -796,7 +901,7 @@ type UiServiceChooseDirectoryRequest struct {
 
 func (x *UiServiceChooseDirectoryRequest) Reset() {
 	*x = UiServiceChooseDirectoryRequest{}
-	mi := &file_ui_v1_ui_proto_msgTypes[6]
+	mi := &file_ui_v1_ui_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -808,7 +913,7 @@ func (x *UiServiceChooseDirectoryRequest) String() string {
 func (*UiServiceChooseDirectoryRequest) ProtoMessage() {}
 
 func (x *UiServiceChooseDirectoryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[6]
+	mi := &file_ui_v1_ui_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -821,7 +926,7 @@ func (x *UiServiceChooseDirectoryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UiServiceChooseDirectoryRequest.ProtoReflect.Descriptor instead.
 func (*UiServiceChooseDirectoryRequest) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{6}
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *UiServiceChooseDirectoryRequest) GetTitle() string {
@@ -848,7 +953,7 @@ type UiServiceChooseDirectoryResponse struct {
 
 func (x *UiServiceChooseDirectoryResponse) Reset() {
 	*x = UiServiceChooseDirectoryResponse{}
-	mi := &file_ui_v1_ui_proto_msgTypes[7]
+	mi := &file_ui_v1_ui_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -860,7 +965,7 @@ func (x *UiServiceChooseDirectoryResponse) String() string {
 func (*UiServiceChooseDirectoryResponse) ProtoMessage() {}
 
 func (x *UiServiceChooseDirectoryResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[7]
+	mi := &file_ui_v1_ui_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -873,7 +978,7 @@ func (x *UiServiceChooseDirectoryResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UiServiceChooseDirectoryResponse.ProtoReflect.Descriptor instead.
 func (*UiServiceChooseDirectoryResponse) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{7}
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *UiServiceChooseDirectoryResponse) GetDirectory() string {
@@ -893,7 +998,7 @@ type UiServiceOpenExternalRequest struct {
 
 func (x *UiServiceOpenExternalRequest) Reset() {
 	*x = UiServiceOpenExternalRequest{}
-	mi := &file_ui_v1_ui_proto_msgTypes[8]
+	mi := &file_ui_v1_ui_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -905,7 +1010,7 @@ func (x *UiServiceOpenExternalRequest) String() string {
 func (*UiServiceOpenExternalRequest) ProtoMessage() {}
 
 func (x *UiServiceOpenExternalRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[8]
+	mi := &file_ui_v1_ui_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -918,7 +1023,7 @@ func (x *UiServiceOpenExternalRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UiServiceOpenExternalRequest.ProtoReflect.Descriptor instead.
 func (*UiServiceOpenExternalRequest) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{8}
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *UiServiceOpenExternalRequest) GetUrl() string {
@@ -938,7 +1043,7 @@ type UiServiceOpenExternalResponse struct {
 
 func (x *UiServiceOpenExternalResponse) Reset() {
 	*x = UiServiceOpenExternalResponse{}
-	mi := &file_ui_v1_ui_proto_msgTypes[9]
+	mi := &file_ui_v1_ui_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -950,7 +1055,7 @@ func (x *UiServiceOpenExternalResponse) String() string {
 func (*UiServiceOpenExternalResponse) ProtoMessage() {}
 
 func (x *UiServiceOpenExternalResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[9]
+	mi := &file_ui_v1_ui_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -963,7 +1068,7 @@ func (x *UiServiceOpenExternalResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UiServiceOpenExternalResponse.ProtoReflect.Descriptor instead.
 func (*UiServiceOpenExternalResponse) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{9}
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *UiServiceOpenExternalResponse) GetUrl() string {
@@ -983,7 +1088,7 @@ type UiServiceSetShortcutRequest struct {
 
 func (x *UiServiceSetShortcutRequest) Reset() {
 	*x = UiServiceSetShortcutRequest{}
-	mi := &file_ui_v1_ui_proto_msgTypes[10]
+	mi := &file_ui_v1_ui_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -995,7 +1100,7 @@ func (x *UiServiceSetShortcutRequest) String() string {
 func (*UiServiceSetShortcutRequest) ProtoMessage() {}
 
 func (x *UiServiceSetShortcutRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[10]
+	mi := &file_ui_v1_ui_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1008,7 +1113,7 @@ func (x *UiServiceSetShortcutRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UiServiceSetShortcutRequest.ProtoReflect.Descriptor instead.
 func (*UiServiceSetShortcutRequest) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{10}
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *UiServiceSetShortcutRequest) GetChord() string {
@@ -1028,7 +1133,7 @@ type UiServiceSetShortcutResponse struct {
 
 func (x *UiServiceSetShortcutResponse) Reset() {
 	*x = UiServiceSetShortcutResponse{}
-	mi := &file_ui_v1_ui_proto_msgTypes[11]
+	mi := &file_ui_v1_ui_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1040,7 +1145,7 @@ func (x *UiServiceSetShortcutResponse) String() string {
 func (*UiServiceSetShortcutResponse) ProtoMessage() {}
 
 func (x *UiServiceSetShortcutResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[11]
+	mi := &file_ui_v1_ui_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1053,7 +1158,7 @@ func (x *UiServiceSetShortcutResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UiServiceSetShortcutResponse.ProtoReflect.Descriptor instead.
 func (*UiServiceSetShortcutResponse) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{11}
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *UiServiceSetShortcutResponse) GetShortcut() *Shortcut {
@@ -1075,7 +1180,7 @@ type UiServiceShowRequest struct {
 
 func (x *UiServiceShowRequest) Reset() {
 	*x = UiServiceShowRequest{}
-	mi := &file_ui_v1_ui_proto_msgTypes[12]
+	mi := &file_ui_v1_ui_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1087,7 +1192,7 @@ func (x *UiServiceShowRequest) String() string {
 func (*UiServiceShowRequest) ProtoMessage() {}
 
 func (x *UiServiceShowRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[12]
+	mi := &file_ui_v1_ui_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1100,7 +1205,7 @@ func (x *UiServiceShowRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UiServiceShowRequest.ProtoReflect.Descriptor instead.
 func (*UiServiceShowRequest) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{12}
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *UiServiceShowRequest) GetWishId() string {
@@ -1127,7 +1232,7 @@ type UiServiceShowResponse struct {
 
 func (x *UiServiceShowResponse) Reset() {
 	*x = UiServiceShowResponse{}
-	mi := &file_ui_v1_ui_proto_msgTypes[13]
+	mi := &file_ui_v1_ui_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1139,7 +1244,7 @@ func (x *UiServiceShowResponse) String() string {
 func (*UiServiceShowResponse) ProtoMessage() {}
 
 func (x *UiServiceShowResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[13]
+	mi := &file_ui_v1_ui_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1152,7 +1257,7 @@ func (x *UiServiceShowResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UiServiceShowResponse.ProtoReflect.Descriptor instead.
 func (*UiServiceShowResponse) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{13}
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *UiServiceShowResponse) GetWindow() bool {
@@ -1172,7 +1277,7 @@ type UiServiceOpenLinkRequest struct {
 
 func (x *UiServiceOpenLinkRequest) Reset() {
 	*x = UiServiceOpenLinkRequest{}
-	mi := &file_ui_v1_ui_proto_msgTypes[14]
+	mi := &file_ui_v1_ui_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1184,7 +1289,7 @@ func (x *UiServiceOpenLinkRequest) String() string {
 func (*UiServiceOpenLinkRequest) ProtoMessage() {}
 
 func (x *UiServiceOpenLinkRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[14]
+	mi := &file_ui_v1_ui_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1197,7 +1302,7 @@ func (x *UiServiceOpenLinkRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UiServiceOpenLinkRequest.ProtoReflect.Descriptor instead.
 func (*UiServiceOpenLinkRequest) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{14}
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *UiServiceOpenLinkRequest) GetUrl() string {
@@ -1221,7 +1326,7 @@ type UiServiceOpenLinkResponse struct {
 
 func (x *UiServiceOpenLinkResponse) Reset() {
 	*x = UiServiceOpenLinkResponse{}
-	mi := &file_ui_v1_ui_proto_msgTypes[15]
+	mi := &file_ui_v1_ui_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1233,7 +1338,7 @@ func (x *UiServiceOpenLinkResponse) String() string {
 func (*UiServiceOpenLinkResponse) ProtoMessage() {}
 
 func (x *UiServiceOpenLinkResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[15]
+	mi := &file_ui_v1_ui_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1246,7 +1351,7 @@ func (x *UiServiceOpenLinkResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UiServiceOpenLinkResponse.ProtoReflect.Descriptor instead.
 func (*UiServiceOpenLinkResponse) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{15}
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *UiServiceOpenLinkResponse) GetWishId() string {
@@ -1278,7 +1383,7 @@ type UiServiceWatchShowRequest struct {
 
 func (x *UiServiceWatchShowRequest) Reset() {
 	*x = UiServiceWatchShowRequest{}
-	mi := &file_ui_v1_ui_proto_msgTypes[16]
+	mi := &file_ui_v1_ui_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1290,7 +1395,7 @@ func (x *UiServiceWatchShowRequest) String() string {
 func (*UiServiceWatchShowRequest) ProtoMessage() {}
 
 func (x *UiServiceWatchShowRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[16]
+	mi := &file_ui_v1_ui_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1303,7 +1408,7 @@ func (x *UiServiceWatchShowRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UiServiceWatchShowRequest.ProtoReflect.Descriptor instead.
 func (*UiServiceWatchShowRequest) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{16}
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{17}
 }
 
 type UiServiceWatchShowResponse struct {
@@ -1326,7 +1431,7 @@ type UiServiceWatchShowResponse struct {
 
 func (x *UiServiceWatchShowResponse) Reset() {
 	*x = UiServiceWatchShowResponse{}
-	mi := &file_ui_v1_ui_proto_msgTypes[17]
+	mi := &file_ui_v1_ui_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1338,7 +1443,7 @@ func (x *UiServiceWatchShowResponse) String() string {
 func (*UiServiceWatchShowResponse) ProtoMessage() {}
 
 func (x *UiServiceWatchShowResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[17]
+	mi := &file_ui_v1_ui_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1351,7 +1456,7 @@ func (x *UiServiceWatchShowResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UiServiceWatchShowResponse.ProtoReflect.Descriptor instead.
 func (*UiServiceWatchShowResponse) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{17}
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *UiServiceWatchShowResponse) GetWishId() string {
@@ -1397,7 +1502,7 @@ type UiServiceWatchUpdateRequest struct {
 
 func (x *UiServiceWatchUpdateRequest) Reset() {
 	*x = UiServiceWatchUpdateRequest{}
-	mi := &file_ui_v1_ui_proto_msgTypes[18]
+	mi := &file_ui_v1_ui_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1409,7 +1514,7 @@ func (x *UiServiceWatchUpdateRequest) String() string {
 func (*UiServiceWatchUpdateRequest) ProtoMessage() {}
 
 func (x *UiServiceWatchUpdateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[18]
+	mi := &file_ui_v1_ui_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1422,7 +1527,7 @@ func (x *UiServiceWatchUpdateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UiServiceWatchUpdateRequest.ProtoReflect.Descriptor instead.
 func (*UiServiceWatchUpdateRequest) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{18}
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{19}
 }
 
 type UiServiceWatchUpdateResponse struct {
@@ -1455,7 +1560,7 @@ type UiServiceWatchUpdateResponse struct {
 
 func (x *UiServiceWatchUpdateResponse) Reset() {
 	*x = UiServiceWatchUpdateResponse{}
-	mi := &file_ui_v1_ui_proto_msgTypes[19]
+	mi := &file_ui_v1_ui_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1467,7 +1572,7 @@ func (x *UiServiceWatchUpdateResponse) String() string {
 func (*UiServiceWatchUpdateResponse) ProtoMessage() {}
 
 func (x *UiServiceWatchUpdateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[19]
+	mi := &file_ui_v1_ui_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1480,7 +1585,7 @@ func (x *UiServiceWatchUpdateResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UiServiceWatchUpdateResponse.ProtoReflect.Descriptor instead.
 func (*UiServiceWatchUpdateResponse) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{19}
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *UiServiceWatchUpdateResponse) GetCurrent() string {
@@ -1547,7 +1652,7 @@ type UiServiceWatchRequest struct {
 
 func (x *UiServiceWatchRequest) Reset() {
 	*x = UiServiceWatchRequest{}
-	mi := &file_ui_v1_ui_proto_msgTypes[20]
+	mi := &file_ui_v1_ui_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1559,7 +1664,7 @@ func (x *UiServiceWatchRequest) String() string {
 func (*UiServiceWatchRequest) ProtoMessage() {}
 
 func (x *UiServiceWatchRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[20]
+	mi := &file_ui_v1_ui_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1572,7 +1677,7 @@ func (x *UiServiceWatchRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UiServiceWatchRequest.ProtoReflect.Descriptor instead.
 func (*UiServiceWatchRequest) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{20}
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{21}
 }
 
 type UiServiceWatchResponse struct {
@@ -1589,7 +1694,7 @@ type UiServiceWatchResponse struct {
 
 func (x *UiServiceWatchResponse) Reset() {
 	*x = UiServiceWatchResponse{}
-	mi := &file_ui_v1_ui_proto_msgTypes[21]
+	mi := &file_ui_v1_ui_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1601,7 +1706,7 @@ func (x *UiServiceWatchResponse) String() string {
 func (*UiServiceWatchResponse) ProtoMessage() {}
 
 func (x *UiServiceWatchResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[21]
+	mi := &file_ui_v1_ui_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1614,7 +1719,7 @@ func (x *UiServiceWatchResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UiServiceWatchResponse.ProtoReflect.Descriptor instead.
 func (*UiServiceWatchResponse) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{21}
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *UiServiceWatchResponse) GetShow() *UiServiceWatchShowResponse {
@@ -1662,7 +1767,7 @@ type Installing struct {
 
 func (x *Installing) Reset() {
 	*x = Installing{}
-	mi := &file_ui_v1_ui_proto_msgTypes[22]
+	mi := &file_ui_v1_ui_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1674,7 +1779,7 @@ func (x *Installing) String() string {
 func (*Installing) ProtoMessage() {}
 
 func (x *Installing) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[22]
+	mi := &file_ui_v1_ui_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1687,7 +1792,7 @@ func (x *Installing) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Installing.ProtoReflect.Descriptor instead.
 func (*Installing) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{22}
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *Installing) GetSha() string {
@@ -1754,7 +1859,7 @@ type TaskSummary struct {
 
 func (x *TaskSummary) Reset() {
 	*x = TaskSummary{}
-	mi := &file_ui_v1_ui_proto_msgTypes[23]
+	mi := &file_ui_v1_ui_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1766,7 +1871,7 @@ func (x *TaskSummary) String() string {
 func (*TaskSummary) ProtoMessage() {}
 
 func (x *TaskSummary) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[23]
+	mi := &file_ui_v1_ui_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1779,7 +1884,7 @@ func (x *TaskSummary) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskSummary.ProtoReflect.Descriptor instead.
 func (*TaskSummary) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{23}
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *TaskSummary) GetCode() string {
@@ -1850,7 +1955,7 @@ type Build struct {
 
 func (x *Build) Reset() {
 	*x = Build{}
-	mi := &file_ui_v1_ui_proto_msgTypes[24]
+	mi := &file_ui_v1_ui_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1862,7 +1967,7 @@ func (x *Build) String() string {
 func (*Build) ProtoMessage() {}
 
 func (x *Build) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[24]
+	mi := &file_ui_v1_ui_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1875,7 +1980,7 @@ func (x *Build) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Build.ProtoReflect.Descriptor instead.
 func (*Build) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{24}
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *Build) GetWishId() string {
@@ -2008,7 +2113,7 @@ type UiServiceUpdateRequest struct {
 
 func (x *UiServiceUpdateRequest) Reset() {
 	*x = UiServiceUpdateRequest{}
-	mi := &file_ui_v1_ui_proto_msgTypes[25]
+	mi := &file_ui_v1_ui_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2020,7 +2125,7 @@ func (x *UiServiceUpdateRequest) String() string {
 func (*UiServiceUpdateRequest) ProtoMessage() {}
 
 func (x *UiServiceUpdateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[25]
+	mi := &file_ui_v1_ui_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2033,7 +2138,7 @@ func (x *UiServiceUpdateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UiServiceUpdateRequest.ProtoReflect.Descriptor instead.
 func (*UiServiceUpdateRequest) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{25}
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *UiServiceUpdateRequest) GetBuild() string {
@@ -2057,7 +2162,7 @@ type UiServiceUpdateResponse struct {
 
 func (x *UiServiceUpdateResponse) Reset() {
 	*x = UiServiceUpdateResponse{}
-	mi := &file_ui_v1_ui_proto_msgTypes[26]
+	mi := &file_ui_v1_ui_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2069,7 +2174,7 @@ func (x *UiServiceUpdateResponse) String() string {
 func (*UiServiceUpdateResponse) ProtoMessage() {}
 
 func (x *UiServiceUpdateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[26]
+	mi := &file_ui_v1_ui_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2082,7 +2187,7 @@ func (x *UiServiceUpdateResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UiServiceUpdateResponse.ProtoReflect.Descriptor instead.
 func (*UiServiceUpdateResponse) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{26}
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *UiServiceUpdateResponse) GetVersion() string {
@@ -2114,7 +2219,7 @@ type UiServiceGetNotificationsRequest struct {
 
 func (x *UiServiceGetNotificationsRequest) Reset() {
 	*x = UiServiceGetNotificationsRequest{}
-	mi := &file_ui_v1_ui_proto_msgTypes[27]
+	mi := &file_ui_v1_ui_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2126,7 +2231,7 @@ func (x *UiServiceGetNotificationsRequest) String() string {
 func (*UiServiceGetNotificationsRequest) ProtoMessage() {}
 
 func (x *UiServiceGetNotificationsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[27]
+	mi := &file_ui_v1_ui_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2139,7 +2244,7 @@ func (x *UiServiceGetNotificationsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UiServiceGetNotificationsRequest.ProtoReflect.Descriptor instead.
 func (*UiServiceGetNotificationsRequest) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{27}
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{28}
 }
 
 type UiServiceGetNotificationsResponse struct {
@@ -2153,7 +2258,7 @@ type UiServiceGetNotificationsResponse struct {
 
 func (x *UiServiceGetNotificationsResponse) Reset() {
 	*x = UiServiceGetNotificationsResponse{}
-	mi := &file_ui_v1_ui_proto_msgTypes[28]
+	mi := &file_ui_v1_ui_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2165,7 +2270,7 @@ func (x *UiServiceGetNotificationsResponse) String() string {
 func (*UiServiceGetNotificationsResponse) ProtoMessage() {}
 
 func (x *UiServiceGetNotificationsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[28]
+	mi := &file_ui_v1_ui_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2178,7 +2283,7 @@ func (x *UiServiceGetNotificationsResponse) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use UiServiceGetNotificationsResponse.ProtoReflect.Descriptor instead.
 func (*UiServiceGetNotificationsResponse) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{28}
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *UiServiceGetNotificationsResponse) GetAccess() NotificationAccess {
@@ -2203,7 +2308,7 @@ type UiServiceRequestNotificationsRequest struct {
 
 func (x *UiServiceRequestNotificationsRequest) Reset() {
 	*x = UiServiceRequestNotificationsRequest{}
-	mi := &file_ui_v1_ui_proto_msgTypes[29]
+	mi := &file_ui_v1_ui_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2215,7 +2320,7 @@ func (x *UiServiceRequestNotificationsRequest) String() string {
 func (*UiServiceRequestNotificationsRequest) ProtoMessage() {}
 
 func (x *UiServiceRequestNotificationsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[29]
+	mi := &file_ui_v1_ui_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2228,7 +2333,7 @@ func (x *UiServiceRequestNotificationsRequest) ProtoReflect() protoreflect.Messa
 
 // Deprecated: Use UiServiceRequestNotificationsRequest.ProtoReflect.Descriptor instead.
 func (*UiServiceRequestNotificationsRequest) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{29}
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{30}
 }
 
 type UiServiceRequestNotificationsResponse struct {
@@ -2242,7 +2347,7 @@ type UiServiceRequestNotificationsResponse struct {
 
 func (x *UiServiceRequestNotificationsResponse) Reset() {
 	*x = UiServiceRequestNotificationsResponse{}
-	mi := &file_ui_v1_ui_proto_msgTypes[30]
+	mi := &file_ui_v1_ui_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2254,7 +2359,7 @@ func (x *UiServiceRequestNotificationsResponse) String() string {
 func (*UiServiceRequestNotificationsResponse) ProtoMessage() {}
 
 func (x *UiServiceRequestNotificationsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[30]
+	mi := &file_ui_v1_ui_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2267,7 +2372,7 @@ func (x *UiServiceRequestNotificationsResponse) ProtoReflect() protoreflect.Mess
 
 // Deprecated: Use UiServiceRequestNotificationsResponse.ProtoReflect.Descriptor instead.
 func (*UiServiceRequestNotificationsResponse) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{30}
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *UiServiceRequestNotificationsResponse) GetAccess() NotificationAccess {
@@ -2292,7 +2397,7 @@ type UiServiceOpenNotificationSettingsRequest struct {
 
 func (x *UiServiceOpenNotificationSettingsRequest) Reset() {
 	*x = UiServiceOpenNotificationSettingsRequest{}
-	mi := &file_ui_v1_ui_proto_msgTypes[31]
+	mi := &file_ui_v1_ui_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2304,7 +2409,7 @@ func (x *UiServiceOpenNotificationSettingsRequest) String() string {
 func (*UiServiceOpenNotificationSettingsRequest) ProtoMessage() {}
 
 func (x *UiServiceOpenNotificationSettingsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[31]
+	mi := &file_ui_v1_ui_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2317,7 +2422,7 @@ func (x *UiServiceOpenNotificationSettingsRequest) ProtoReflect() protoreflect.M
 
 // Deprecated: Use UiServiceOpenNotificationSettingsRequest.ProtoReflect.Descriptor instead.
 func (*UiServiceOpenNotificationSettingsRequest) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{31}
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{32}
 }
 
 type UiServiceOpenNotificationSettingsResponse struct {
@@ -2328,7 +2433,7 @@ type UiServiceOpenNotificationSettingsResponse struct {
 
 func (x *UiServiceOpenNotificationSettingsResponse) Reset() {
 	*x = UiServiceOpenNotificationSettingsResponse{}
-	mi := &file_ui_v1_ui_proto_msgTypes[32]
+	mi := &file_ui_v1_ui_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2340,7 +2445,7 @@ func (x *UiServiceOpenNotificationSettingsResponse) String() string {
 func (*UiServiceOpenNotificationSettingsResponse) ProtoMessage() {}
 
 func (x *UiServiceOpenNotificationSettingsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[32]
+	mi := &file_ui_v1_ui_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2353,7 +2458,7 @@ func (x *UiServiceOpenNotificationSettingsResponse) ProtoReflect() protoreflect.
 
 // Deprecated: Use UiServiceOpenNotificationSettingsResponse.ProtoReflect.Descriptor instead.
 func (*UiServiceOpenNotificationSettingsResponse) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{32}
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{33}
 }
 
 type UiServiceViewRequest struct {
@@ -2369,7 +2474,7 @@ type UiServiceViewRequest struct {
 
 func (x *UiServiceViewRequest) Reset() {
 	*x = UiServiceViewRequest{}
-	mi := &file_ui_v1_ui_proto_msgTypes[33]
+	mi := &file_ui_v1_ui_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2381,7 +2486,7 @@ func (x *UiServiceViewRequest) String() string {
 func (*UiServiceViewRequest) ProtoMessage() {}
 
 func (x *UiServiceViewRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[33]
+	mi := &file_ui_v1_ui_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2394,7 +2499,7 @@ func (x *UiServiceViewRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UiServiceViewRequest.ProtoReflect.Descriptor instead.
 func (*UiServiceViewRequest) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{33}
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *UiServiceViewRequest) GetWishId() string {
@@ -2419,7 +2524,7 @@ type UiServiceViewResponse struct {
 
 func (x *UiServiceViewResponse) Reset() {
 	*x = UiServiceViewResponse{}
-	mi := &file_ui_v1_ui_proto_msgTypes[34]
+	mi := &file_ui_v1_ui_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2431,7 +2536,7 @@ func (x *UiServiceViewResponse) String() string {
 func (*UiServiceViewResponse) ProtoMessage() {}
 
 func (x *UiServiceViewResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[34]
+	mi := &file_ui_v1_ui_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2444,7 +2549,7 @@ func (x *UiServiceViewResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UiServiceViewResponse.ProtoReflect.Descriptor instead.
 func (*UiServiceViewResponse) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{34}
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{35}
 }
 
 type UiServiceTouchRequest struct {
@@ -2455,7 +2560,7 @@ type UiServiceTouchRequest struct {
 
 func (x *UiServiceTouchRequest) Reset() {
 	*x = UiServiceTouchRequest{}
-	mi := &file_ui_v1_ui_proto_msgTypes[35]
+	mi := &file_ui_v1_ui_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2467,7 +2572,7 @@ func (x *UiServiceTouchRequest) String() string {
 func (*UiServiceTouchRequest) ProtoMessage() {}
 
 func (x *UiServiceTouchRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[35]
+	mi := &file_ui_v1_ui_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2480,7 +2585,7 @@ func (x *UiServiceTouchRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UiServiceTouchRequest.ProtoReflect.Descriptor instead.
 func (*UiServiceTouchRequest) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{35}
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{36}
 }
 
 type UiServiceTouchResponse struct {
@@ -2491,7 +2596,7 @@ type UiServiceTouchResponse struct {
 
 func (x *UiServiceTouchResponse) Reset() {
 	*x = UiServiceTouchResponse{}
-	mi := &file_ui_v1_ui_proto_msgTypes[36]
+	mi := &file_ui_v1_ui_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2503,7 +2608,7 @@ func (x *UiServiceTouchResponse) String() string {
 func (*UiServiceTouchResponse) ProtoMessage() {}
 
 func (x *UiServiceTouchResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ui_v1_ui_proto_msgTypes[36]
+	mi := &file_ui_v1_ui_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2516,7 +2621,7 @@ func (x *UiServiceTouchResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UiServiceTouchResponse.ProtoReflect.Descriptor instead.
 func (*UiServiceTouchResponse) Descriptor() ([]byte, []int) {
-	return file_ui_v1_ui_proto_rawDescGZIP(), []int{36}
+	return file_ui_v1_ui_proto_rawDescGZIP(), []int{37}
 }
 
 var File_ui_v1_ui_proto protoreflect.FileDescriptor
@@ -2536,7 +2641,7 @@ const file_ui_v1_ui_proto_rawDesc = "" +
 	"\x05chord\x18\x01 \x01(\tR\x05chord\x12#\n" +
 	"\rdefault_chord\x18\x02 \x01(\tR\fdefaultChord\x12\x1c\n" +
 	"\tavailable\x18\x03 \x01(\bR\tavailable\x12\x18\n" +
-	"\aproblem\x18\x04 \x01(\tR\aproblem\"\xec\x03\n" +
+	"\aproblem\x18\x04 \x01(\tR\aproblem\"\x90\x06\n" +
 	"\bSettings\x12\x1f\n" +
 	"\bshortcut\x18\x01 \x01(\tH\x00R\bshortcut\x88\x01\x01\x12,\n" +
 	"\x04load\x18\x02 \x01(\x0e2\x13.djinn.v1.LoadNotchH\x01R\x04load\x88\x01\x01\x12=\n" +
@@ -2549,11 +2654,22 @@ const file_ui_v1_ui_proto_rawDesc = "" +
 	"\vshown_theme\x18\a \x01(\x0e2\x11.ui.v1.ShownThemeR\n" +
 	"shownTheme\x12+\n" +
 	"\x06circle\x18\b \x03(\v2\x13.plan.v1.WorkerSeatR\x06circle\x129\n" +
-	"\x0fpaused_sign_ins\x18\t \x03(\x0e2\x11.plan.v1.ProviderR\rpausedSignInsB\v\n" +
+	"\x0fpaused_sign_ins\x18\t \x03(\x0e2\x11.plan.v1.ProviderR\rpausedSignIns\x125\n" +
+	"\raccount_order\x18\n" +
+	" \x03(\v2\x10.ui.v1.SignInRefR\faccountOrder\x12$\n" +
+	"\vlead_pinned\x18\v \x01(\bH\x04R\n" +
+	"leadPinned\x88\x01\x01\x127\n" +
+	"\faccount_mode\x18\f \x01(\x0e2\x14.plan.v1.AccountModeR\vaccountMode\x12;\n" +
+	"\x10unlimited_forced\x18\r \x03(\v2\x10.ui.v1.SignInRefR\x0funlimitedForced\x12?\n" +
+	"\x12unlimited_unforced\x18\x0e \x03(\v2\x10.ui.v1.SignInRefR\x11unlimitedUnforcedB\v\n" +
 	"\t_shortcutB\a\n" +
 	"\x05_loadB\x15\n" +
 	"\x13_ifrit_idle_minutesB\x0e\n" +
-	"\f_lead_driven\"\xc3\x02\n" +
+	"\f_lead_drivenB\x0e\n" +
+	"\f_lead_pinned\"T\n" +
+	"\tSignInRef\x12-\n" +
+	"\bprovider\x18\x01 \x01(\x0e2\x11.plan.v1.ProviderR\bprovider\x12\x18\n" +
+	"\aaccount\x18\x02 \x01(\tR\aaccount\"\xc3\x02\n" +
 	"\bProvider\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1c\n" +
@@ -2731,7 +2847,7 @@ func file_ui_v1_ui_proto_rawDescGZIP() []byte {
 }
 
 var file_ui_v1_ui_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
-var file_ui_v1_ui_proto_msgTypes = make([]protoimpl.MessageInfo, 37)
+var file_ui_v1_ui_proto_msgTypes = make([]protoimpl.MessageInfo, 38)
 var file_ui_v1_ui_proto_goTypes = []any{
 	(ShownTheme)(0),                                   // 0: ui.v1.ShownTheme
 	(ProviderState)(0),                                // 1: ui.v1.ProviderState
@@ -2741,106 +2857,113 @@ var file_ui_v1_ui_proto_goTypes = []any{
 	(*UiServiceGetEnvironmentResponse)(nil),           // 5: ui.v1.UiServiceGetEnvironmentResponse
 	(*Shortcut)(nil),                                  // 6: ui.v1.Shortcut
 	(*Settings)(nil),                                  // 7: ui.v1.Settings
-	(*Provider)(nil),                                  // 8: ui.v1.Provider
-	(*AccountSetup)(nil),                              // 9: ui.v1.AccountSetup
-	(*UiServiceChooseDirectoryRequest)(nil),           // 10: ui.v1.UiServiceChooseDirectoryRequest
-	(*UiServiceChooseDirectoryResponse)(nil),          // 11: ui.v1.UiServiceChooseDirectoryResponse
-	(*UiServiceOpenExternalRequest)(nil),              // 12: ui.v1.UiServiceOpenExternalRequest
-	(*UiServiceOpenExternalResponse)(nil),             // 13: ui.v1.UiServiceOpenExternalResponse
-	(*UiServiceSetShortcutRequest)(nil),               // 14: ui.v1.UiServiceSetShortcutRequest
-	(*UiServiceSetShortcutResponse)(nil),              // 15: ui.v1.UiServiceSetShortcutResponse
-	(*UiServiceShowRequest)(nil),                      // 16: ui.v1.UiServiceShowRequest
-	(*UiServiceShowResponse)(nil),                     // 17: ui.v1.UiServiceShowResponse
-	(*UiServiceOpenLinkRequest)(nil),                  // 18: ui.v1.UiServiceOpenLinkRequest
-	(*UiServiceOpenLinkResponse)(nil),                 // 19: ui.v1.UiServiceOpenLinkResponse
-	(*UiServiceWatchShowRequest)(nil),                 // 20: ui.v1.UiServiceWatchShowRequest
-	(*UiServiceWatchShowResponse)(nil),                // 21: ui.v1.UiServiceWatchShowResponse
-	(*UiServiceWatchUpdateRequest)(nil),               // 22: ui.v1.UiServiceWatchUpdateRequest
-	(*UiServiceWatchUpdateResponse)(nil),              // 23: ui.v1.UiServiceWatchUpdateResponse
-	(*UiServiceWatchRequest)(nil),                     // 24: ui.v1.UiServiceWatchRequest
-	(*UiServiceWatchResponse)(nil),                    // 25: ui.v1.UiServiceWatchResponse
-	(*Installing)(nil),                                // 26: ui.v1.Installing
-	(*TaskSummary)(nil),                               // 27: ui.v1.TaskSummary
-	(*Build)(nil),                                     // 28: ui.v1.Build
-	(*UiServiceUpdateRequest)(nil),                    // 29: ui.v1.UiServiceUpdateRequest
-	(*UiServiceUpdateResponse)(nil),                   // 30: ui.v1.UiServiceUpdateResponse
-	(*UiServiceGetNotificationsRequest)(nil),          // 31: ui.v1.UiServiceGetNotificationsRequest
-	(*UiServiceGetNotificationsResponse)(nil),         // 32: ui.v1.UiServiceGetNotificationsResponse
-	(*UiServiceRequestNotificationsRequest)(nil),      // 33: ui.v1.UiServiceRequestNotificationsRequest
-	(*UiServiceRequestNotificationsResponse)(nil),     // 34: ui.v1.UiServiceRequestNotificationsResponse
-	(*UiServiceOpenNotificationSettingsRequest)(nil),  // 35: ui.v1.UiServiceOpenNotificationSettingsRequest
-	(*UiServiceOpenNotificationSettingsResponse)(nil), // 36: ui.v1.UiServiceOpenNotificationSettingsResponse
-	(*UiServiceViewRequest)(nil),                      // 37: ui.v1.UiServiceViewRequest
-	(*UiServiceViewResponse)(nil),                     // 38: ui.v1.UiServiceViewResponse
-	(*UiServiceTouchRequest)(nil),                     // 39: ui.v1.UiServiceTouchRequest
-	(*UiServiceTouchResponse)(nil),                    // 40: ui.v1.UiServiceTouchResponse
-	(v1.LoadNotch)(0),                                 // 41: djinn.v1.LoadNotch
-	(*v11.Account)(nil),                               // 42: plan.v1.Account
-	(*v11.LeadSeat)(nil),                              // 43: plan.v1.LeadSeat
-	(*v11.WorkerSeat)(nil),                            // 44: plan.v1.WorkerSeat
-	(v11.Provider)(0),                                 // 45: plan.v1.Provider
-	(*v1.LoadServiceWatchResponse)(nil),               // 46: djinn.v1.LoadServiceWatchResponse
+	(*SignInRef)(nil),                                 // 8: ui.v1.SignInRef
+	(*Provider)(nil),                                  // 9: ui.v1.Provider
+	(*AccountSetup)(nil),                              // 10: ui.v1.AccountSetup
+	(*UiServiceChooseDirectoryRequest)(nil),           // 11: ui.v1.UiServiceChooseDirectoryRequest
+	(*UiServiceChooseDirectoryResponse)(nil),          // 12: ui.v1.UiServiceChooseDirectoryResponse
+	(*UiServiceOpenExternalRequest)(nil),              // 13: ui.v1.UiServiceOpenExternalRequest
+	(*UiServiceOpenExternalResponse)(nil),             // 14: ui.v1.UiServiceOpenExternalResponse
+	(*UiServiceSetShortcutRequest)(nil),               // 15: ui.v1.UiServiceSetShortcutRequest
+	(*UiServiceSetShortcutResponse)(nil),              // 16: ui.v1.UiServiceSetShortcutResponse
+	(*UiServiceShowRequest)(nil),                      // 17: ui.v1.UiServiceShowRequest
+	(*UiServiceShowResponse)(nil),                     // 18: ui.v1.UiServiceShowResponse
+	(*UiServiceOpenLinkRequest)(nil),                  // 19: ui.v1.UiServiceOpenLinkRequest
+	(*UiServiceOpenLinkResponse)(nil),                 // 20: ui.v1.UiServiceOpenLinkResponse
+	(*UiServiceWatchShowRequest)(nil),                 // 21: ui.v1.UiServiceWatchShowRequest
+	(*UiServiceWatchShowResponse)(nil),                // 22: ui.v1.UiServiceWatchShowResponse
+	(*UiServiceWatchUpdateRequest)(nil),               // 23: ui.v1.UiServiceWatchUpdateRequest
+	(*UiServiceWatchUpdateResponse)(nil),              // 24: ui.v1.UiServiceWatchUpdateResponse
+	(*UiServiceWatchRequest)(nil),                     // 25: ui.v1.UiServiceWatchRequest
+	(*UiServiceWatchResponse)(nil),                    // 26: ui.v1.UiServiceWatchResponse
+	(*Installing)(nil),                                // 27: ui.v1.Installing
+	(*TaskSummary)(nil),                               // 28: ui.v1.TaskSummary
+	(*Build)(nil),                                     // 29: ui.v1.Build
+	(*UiServiceUpdateRequest)(nil),                    // 30: ui.v1.UiServiceUpdateRequest
+	(*UiServiceUpdateResponse)(nil),                   // 31: ui.v1.UiServiceUpdateResponse
+	(*UiServiceGetNotificationsRequest)(nil),          // 32: ui.v1.UiServiceGetNotificationsRequest
+	(*UiServiceGetNotificationsResponse)(nil),         // 33: ui.v1.UiServiceGetNotificationsResponse
+	(*UiServiceRequestNotificationsRequest)(nil),      // 34: ui.v1.UiServiceRequestNotificationsRequest
+	(*UiServiceRequestNotificationsResponse)(nil),     // 35: ui.v1.UiServiceRequestNotificationsResponse
+	(*UiServiceOpenNotificationSettingsRequest)(nil),  // 36: ui.v1.UiServiceOpenNotificationSettingsRequest
+	(*UiServiceOpenNotificationSettingsResponse)(nil), // 37: ui.v1.UiServiceOpenNotificationSettingsResponse
+	(*UiServiceViewRequest)(nil),                      // 38: ui.v1.UiServiceViewRequest
+	(*UiServiceViewResponse)(nil),                     // 39: ui.v1.UiServiceViewResponse
+	(*UiServiceTouchRequest)(nil),                     // 40: ui.v1.UiServiceTouchRequest
+	(*UiServiceTouchResponse)(nil),                    // 41: ui.v1.UiServiceTouchResponse
+	(v1.LoadNotch)(0),                                 // 42: djinn.v1.LoadNotch
+	(*v11.Account)(nil),                               // 43: plan.v1.Account
+	(*v11.LeadSeat)(nil),                              // 44: plan.v1.LeadSeat
+	(*v11.WorkerSeat)(nil),                            // 45: plan.v1.WorkerSeat
+	(v11.Provider)(0),                                 // 46: plan.v1.Provider
+	(v11.AccountMode)(0),                              // 47: plan.v1.AccountMode
+	(*v1.LoadServiceWatchResponse)(nil),               // 48: djinn.v1.LoadServiceWatchResponse
 }
 var file_ui_v1_ui_proto_depIdxs = []int32{
-	8,  // 0: ui.v1.UiServiceGetEnvironmentResponse.providers:type_name -> ui.v1.Provider
+	9,  // 0: ui.v1.UiServiceGetEnvironmentResponse.providers:type_name -> ui.v1.Provider
 	6,  // 1: ui.v1.UiServiceGetEnvironmentResponse.shortcut:type_name -> ui.v1.Shortcut
-	41, // 2: ui.v1.Settings.load:type_name -> djinn.v1.LoadNotch
-	42, // 3: ui.v1.Settings.accounts:type_name -> plan.v1.Account
-	43, // 4: ui.v1.Settings.lead:type_name -> plan.v1.LeadSeat
+	42, // 2: ui.v1.Settings.load:type_name -> djinn.v1.LoadNotch
+	43, // 3: ui.v1.Settings.accounts:type_name -> plan.v1.Account
+	44, // 4: ui.v1.Settings.lead:type_name -> plan.v1.LeadSeat
 	0,  // 5: ui.v1.Settings.shown_theme:type_name -> ui.v1.ShownTheme
-	44, // 6: ui.v1.Settings.circle:type_name -> plan.v1.WorkerSeat
-	45, // 7: ui.v1.Settings.paused_sign_ins:type_name -> plan.v1.Provider
-	1,  // 8: ui.v1.Provider.state:type_name -> ui.v1.ProviderState
-	9,  // 9: ui.v1.Provider.accounts:type_name -> ui.v1.AccountSetup
-	42, // 10: ui.v1.AccountSetup.account:type_name -> plan.v1.Account
-	1,  // 11: ui.v1.AccountSetup.state:type_name -> ui.v1.ProviderState
-	6,  // 12: ui.v1.UiServiceSetShortcutResponse.shortcut:type_name -> ui.v1.Shortcut
-	28, // 13: ui.v1.UiServiceWatchUpdateResponse.builds:type_name -> ui.v1.Build
-	26, // 14: ui.v1.UiServiceWatchUpdateResponse.installing:type_name -> ui.v1.Installing
-	28, // 15: ui.v1.UiServiceWatchUpdateResponse.ready_build:type_name -> ui.v1.Build
-	21, // 16: ui.v1.UiServiceWatchResponse.show:type_name -> ui.v1.UiServiceWatchShowResponse
-	23, // 17: ui.v1.UiServiceWatchResponse.update:type_name -> ui.v1.UiServiceWatchUpdateResponse
-	46, // 18: ui.v1.UiServiceWatchResponse.load:type_name -> djinn.v1.LoadServiceWatchResponse
-	2,  // 19: ui.v1.Installing.step:type_name -> ui.v1.InstallStep
-	27, // 20: ui.v1.Build.summaries:type_name -> ui.v1.TaskSummary
-	3,  // 21: ui.v1.UiServiceGetNotificationsResponse.access:type_name -> ui.v1.NotificationAccess
-	3,  // 22: ui.v1.UiServiceRequestNotificationsResponse.access:type_name -> ui.v1.NotificationAccess
-	0,  // 23: ui.v1.UiServiceViewRequest.theme:type_name -> ui.v1.ShownTheme
-	4,  // 24: ui.v1.UiService.GetEnvironment:input_type -> ui.v1.UiServiceGetEnvironmentRequest
-	10, // 25: ui.v1.UiService.ChooseDirectory:input_type -> ui.v1.UiServiceChooseDirectoryRequest
-	12, // 26: ui.v1.UiService.OpenExternal:input_type -> ui.v1.UiServiceOpenExternalRequest
-	14, // 27: ui.v1.UiService.SetShortcut:input_type -> ui.v1.UiServiceSetShortcutRequest
-	16, // 28: ui.v1.UiService.Show:input_type -> ui.v1.UiServiceShowRequest
-	18, // 29: ui.v1.UiService.OpenLink:input_type -> ui.v1.UiServiceOpenLinkRequest
-	20, // 30: ui.v1.UiService.WatchShow:input_type -> ui.v1.UiServiceWatchShowRequest
-	22, // 31: ui.v1.UiService.WatchUpdate:input_type -> ui.v1.UiServiceWatchUpdateRequest
-	24, // 32: ui.v1.UiService.Watch:input_type -> ui.v1.UiServiceWatchRequest
-	29, // 33: ui.v1.UiService.Update:input_type -> ui.v1.UiServiceUpdateRequest
-	31, // 34: ui.v1.UiService.GetNotifications:input_type -> ui.v1.UiServiceGetNotificationsRequest
-	33, // 35: ui.v1.UiService.RequestNotifications:input_type -> ui.v1.UiServiceRequestNotificationsRequest
-	35, // 36: ui.v1.UiService.OpenNotificationSettings:input_type -> ui.v1.UiServiceOpenNotificationSettingsRequest
-	37, // 37: ui.v1.UiService.View:input_type -> ui.v1.UiServiceViewRequest
-	39, // 38: ui.v1.UiService.Touch:input_type -> ui.v1.UiServiceTouchRequest
-	5,  // 39: ui.v1.UiService.GetEnvironment:output_type -> ui.v1.UiServiceGetEnvironmentResponse
-	11, // 40: ui.v1.UiService.ChooseDirectory:output_type -> ui.v1.UiServiceChooseDirectoryResponse
-	13, // 41: ui.v1.UiService.OpenExternal:output_type -> ui.v1.UiServiceOpenExternalResponse
-	15, // 42: ui.v1.UiService.SetShortcut:output_type -> ui.v1.UiServiceSetShortcutResponse
-	17, // 43: ui.v1.UiService.Show:output_type -> ui.v1.UiServiceShowResponse
-	19, // 44: ui.v1.UiService.OpenLink:output_type -> ui.v1.UiServiceOpenLinkResponse
-	21, // 45: ui.v1.UiService.WatchShow:output_type -> ui.v1.UiServiceWatchShowResponse
-	23, // 46: ui.v1.UiService.WatchUpdate:output_type -> ui.v1.UiServiceWatchUpdateResponse
-	25, // 47: ui.v1.UiService.Watch:output_type -> ui.v1.UiServiceWatchResponse
-	30, // 48: ui.v1.UiService.Update:output_type -> ui.v1.UiServiceUpdateResponse
-	32, // 49: ui.v1.UiService.GetNotifications:output_type -> ui.v1.UiServiceGetNotificationsResponse
-	34, // 50: ui.v1.UiService.RequestNotifications:output_type -> ui.v1.UiServiceRequestNotificationsResponse
-	36, // 51: ui.v1.UiService.OpenNotificationSettings:output_type -> ui.v1.UiServiceOpenNotificationSettingsResponse
-	38, // 52: ui.v1.UiService.View:output_type -> ui.v1.UiServiceViewResponse
-	40, // 53: ui.v1.UiService.Touch:output_type -> ui.v1.UiServiceTouchResponse
-	39, // [39:54] is the sub-list for method output_type
-	24, // [24:39] is the sub-list for method input_type
-	24, // [24:24] is the sub-list for extension type_name
-	24, // [24:24] is the sub-list for extension extendee
-	0,  // [0:24] is the sub-list for field type_name
+	45, // 6: ui.v1.Settings.circle:type_name -> plan.v1.WorkerSeat
+	46, // 7: ui.v1.Settings.paused_sign_ins:type_name -> plan.v1.Provider
+	8,  // 8: ui.v1.Settings.account_order:type_name -> ui.v1.SignInRef
+	47, // 9: ui.v1.Settings.account_mode:type_name -> plan.v1.AccountMode
+	8,  // 10: ui.v1.Settings.unlimited_forced:type_name -> ui.v1.SignInRef
+	8,  // 11: ui.v1.Settings.unlimited_unforced:type_name -> ui.v1.SignInRef
+	46, // 12: ui.v1.SignInRef.provider:type_name -> plan.v1.Provider
+	1,  // 13: ui.v1.Provider.state:type_name -> ui.v1.ProviderState
+	10, // 14: ui.v1.Provider.accounts:type_name -> ui.v1.AccountSetup
+	43, // 15: ui.v1.AccountSetup.account:type_name -> plan.v1.Account
+	1,  // 16: ui.v1.AccountSetup.state:type_name -> ui.v1.ProviderState
+	6,  // 17: ui.v1.UiServiceSetShortcutResponse.shortcut:type_name -> ui.v1.Shortcut
+	29, // 18: ui.v1.UiServiceWatchUpdateResponse.builds:type_name -> ui.v1.Build
+	27, // 19: ui.v1.UiServiceWatchUpdateResponse.installing:type_name -> ui.v1.Installing
+	29, // 20: ui.v1.UiServiceWatchUpdateResponse.ready_build:type_name -> ui.v1.Build
+	22, // 21: ui.v1.UiServiceWatchResponse.show:type_name -> ui.v1.UiServiceWatchShowResponse
+	24, // 22: ui.v1.UiServiceWatchResponse.update:type_name -> ui.v1.UiServiceWatchUpdateResponse
+	48, // 23: ui.v1.UiServiceWatchResponse.load:type_name -> djinn.v1.LoadServiceWatchResponse
+	2,  // 24: ui.v1.Installing.step:type_name -> ui.v1.InstallStep
+	28, // 25: ui.v1.Build.summaries:type_name -> ui.v1.TaskSummary
+	3,  // 26: ui.v1.UiServiceGetNotificationsResponse.access:type_name -> ui.v1.NotificationAccess
+	3,  // 27: ui.v1.UiServiceRequestNotificationsResponse.access:type_name -> ui.v1.NotificationAccess
+	0,  // 28: ui.v1.UiServiceViewRequest.theme:type_name -> ui.v1.ShownTheme
+	4,  // 29: ui.v1.UiService.GetEnvironment:input_type -> ui.v1.UiServiceGetEnvironmentRequest
+	11, // 30: ui.v1.UiService.ChooseDirectory:input_type -> ui.v1.UiServiceChooseDirectoryRequest
+	13, // 31: ui.v1.UiService.OpenExternal:input_type -> ui.v1.UiServiceOpenExternalRequest
+	15, // 32: ui.v1.UiService.SetShortcut:input_type -> ui.v1.UiServiceSetShortcutRequest
+	17, // 33: ui.v1.UiService.Show:input_type -> ui.v1.UiServiceShowRequest
+	19, // 34: ui.v1.UiService.OpenLink:input_type -> ui.v1.UiServiceOpenLinkRequest
+	21, // 35: ui.v1.UiService.WatchShow:input_type -> ui.v1.UiServiceWatchShowRequest
+	23, // 36: ui.v1.UiService.WatchUpdate:input_type -> ui.v1.UiServiceWatchUpdateRequest
+	25, // 37: ui.v1.UiService.Watch:input_type -> ui.v1.UiServiceWatchRequest
+	30, // 38: ui.v1.UiService.Update:input_type -> ui.v1.UiServiceUpdateRequest
+	32, // 39: ui.v1.UiService.GetNotifications:input_type -> ui.v1.UiServiceGetNotificationsRequest
+	34, // 40: ui.v1.UiService.RequestNotifications:input_type -> ui.v1.UiServiceRequestNotificationsRequest
+	36, // 41: ui.v1.UiService.OpenNotificationSettings:input_type -> ui.v1.UiServiceOpenNotificationSettingsRequest
+	38, // 42: ui.v1.UiService.View:input_type -> ui.v1.UiServiceViewRequest
+	40, // 43: ui.v1.UiService.Touch:input_type -> ui.v1.UiServiceTouchRequest
+	5,  // 44: ui.v1.UiService.GetEnvironment:output_type -> ui.v1.UiServiceGetEnvironmentResponse
+	12, // 45: ui.v1.UiService.ChooseDirectory:output_type -> ui.v1.UiServiceChooseDirectoryResponse
+	14, // 46: ui.v1.UiService.OpenExternal:output_type -> ui.v1.UiServiceOpenExternalResponse
+	16, // 47: ui.v1.UiService.SetShortcut:output_type -> ui.v1.UiServiceSetShortcutResponse
+	18, // 48: ui.v1.UiService.Show:output_type -> ui.v1.UiServiceShowResponse
+	20, // 49: ui.v1.UiService.OpenLink:output_type -> ui.v1.UiServiceOpenLinkResponse
+	22, // 50: ui.v1.UiService.WatchShow:output_type -> ui.v1.UiServiceWatchShowResponse
+	24, // 51: ui.v1.UiService.WatchUpdate:output_type -> ui.v1.UiServiceWatchUpdateResponse
+	26, // 52: ui.v1.UiService.Watch:output_type -> ui.v1.UiServiceWatchResponse
+	31, // 53: ui.v1.UiService.Update:output_type -> ui.v1.UiServiceUpdateResponse
+	33, // 54: ui.v1.UiService.GetNotifications:output_type -> ui.v1.UiServiceGetNotificationsResponse
+	35, // 55: ui.v1.UiService.RequestNotifications:output_type -> ui.v1.UiServiceRequestNotificationsResponse
+	37, // 56: ui.v1.UiService.OpenNotificationSettings:output_type -> ui.v1.UiServiceOpenNotificationSettingsResponse
+	39, // 57: ui.v1.UiService.View:output_type -> ui.v1.UiServiceViewResponse
+	41, // 58: ui.v1.UiService.Touch:output_type -> ui.v1.UiServiceTouchResponse
+	44, // [44:59] is the sub-list for method output_type
+	29, // [29:44] is the sub-list for method input_type
+	29, // [29:29] is the sub-list for extension type_name
+	29, // [29:29] is the sub-list for extension extendee
+	0,  // [0:29] is the sub-list for field type_name
 }
 
 func init() { file_ui_v1_ui_proto_init() }
@@ -2855,7 +2978,7 @@ func file_ui_v1_ui_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ui_v1_ui_proto_rawDesc), len(file_ui_v1_ui_proto_rawDesc)),
 			NumEnums:      4,
-			NumMessages:   37,
+			NumMessages:   38,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

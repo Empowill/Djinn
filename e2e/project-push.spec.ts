@@ -85,7 +85,9 @@ test("a push from the projects panel spins while its checks run, then its line f
       .filter({ hasText: name })
       .locator(".sync-line")
       .filter({ hasText: "main" });
-    await expect(line.locator(".sync-ahead")).toHaveText("↑1");
+    await expect(line.locator(".sync-ahead")).toHaveText("↑1", {
+      timeout: 15_000,
+    });
     await line.locator(".sync-push").click();
 
     // Its check runs: a spinner in the button, disabled, the check on hover; a reload shows it the same.
@@ -95,7 +97,9 @@ test("a push from the projects panel spins while its checks run, then its line f
     await expect(button.locator(".sync-spinner")).toBeVisible();
     await page.reload();
     await expect(button).toHaveAttribute("title", "Push checks running: slow");
-    await expect(line.locator(".sync-ahead")).toHaveText("↑1");
+    await expect(line.locator(".sync-ahead")).toHaveText("↑1", {
+      timeout: 15_000,
+    });
 
     // Let it go: pushed, a check mark, the counts in sync at once; then the line leaves.
     fs.writeFileSync(release, "");

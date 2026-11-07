@@ -138,9 +138,11 @@ async function openComposer(
   await expect(page.locator(".app-statusbar").getByText(liveLabel)).toBeVisible(
     { timeout: 15_000 },
   );
-  // With no agent ready the window opens the setup of the agents by itself (P6): closed, the creation page offers it.
+  // With no agent ready the window opens on the Summoning Circle, its entry dotted yellow (W578): the creation page
+  // offers the setup too.
   if (!agentReady) {
-    await page.getByRole("button", { name: "Close", exact: true }).click();
+    await expect(page.locator(".summoning-page")).toBeVisible();
+    await expect(page.locator(".summoning-nav .summoning-alert")).toBeVisible();
   }
   await page.locator(".sidebar .new-mission").click();
   const region = page.getByRole("region", {

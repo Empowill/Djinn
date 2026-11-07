@@ -139,7 +139,7 @@ func (c Codex) Start(ctx context.Context, spec Spec) (Worker, error) {
 	if grace == 0 {
 		grace = Grace
 	}
-	p, err := startProcess(spec.Dir, command, c.args(), spec.Env, spec.Scope, grace, spec.LowPriority, spec.Track)
+	p, err := startProcess(spec.Dir, command, c.args(), spec.Env, spec.Scope, grace, spec.Nice, spec.Track)
 	if err != nil {
 		return nil, fmt.Errorf("start %s: %w", command, err)
 	}
@@ -206,9 +206,8 @@ func (w *codexWorker) PID() int { return w.p.cmd.Process.Pid }
 // Cgroup is the cgroup of the agent's scope.
 func (w *codexWorker) Cgroup() string { return w.p.cgroup }
 
-func (w *codexWorker) Pause() error               { return w.p.Pause() }
-func (w *codexWorker) Resume() error              { return w.p.Resume() }
-func (w *codexWorker) SetPriority(low bool) error { return w.p.SetPriority(low) }
+func (w *codexWorker) Pause() error  { return w.p.Pause() }
+func (w *codexWorker) Resume() error { return w.p.Resume() }
 
 func (w *codexWorker) Stop() {
 	w.stopped.Store(true)

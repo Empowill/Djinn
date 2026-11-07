@@ -59,11 +59,10 @@ The Djinn is the agent the developer talks to. It changes the plan with `djinn`,
 - **The Djinn starts the same way, whatever its agent.** Its first message is one line, the same for claude, codex
   and antigravity: run `djinn brief`, then continue from what it says (`StartLine` in
   `internal/plan/newlead.go`). Nothing in it is about one agent or a wish's state: the Djinn on another agent than the
-  last one takes over from the brief, without the old session. In the window, the arrow beside **Talk to the Djinn** (the Djinn in its terminal) lists
-  the agents found on this machine (`UiService.GetEnvironment`: `claude`, `codex`, `agy`), those missing shown
-  disabled; picking the agent the Djinn last ran on resumes it (claude by session id, antigravity with `agy --continue` in the
-  Djinn's folder as the folder's most recent conversation), another starts the Djinn anew on that agent in its
-  terminal (`djinn lead resume --provider antigravity`). Resuming the Djinn resumes that session; starting it on
+  last one takes over from the brief, without the old session. In the window (W578), **Talk to the Djinn** (the Djinn in its terminal) resumes the agent the
+  Djinn last ran on (claude by session id, antigravity with `agy --continue` in the Djinn's folder as the folder's most
+  recent conversation); when the Summoning Circle's Djinn row names another agent, its **Start the Djinn on** button
+  starts the Djinn anew on that agent in its terminal (`djinn lead resume --provider antigravity`). Resuming the Djinn resumes that session; starting it on
   another provider replaces the session. A new claude or antigravity session becomes the Djinn; a codex one once
   `djinn lead set … --provider codex` gives its session. While the Djinn's terminal runs a program, nothing starts, and the window says to exit it there.
 - **The Djinn runs in a project, never in the home folder.** `djinn lead resume` resumes the Djinn's session in the
@@ -176,6 +175,9 @@ The Djinn is the agent the developer talks to. It changes the plan with `djinn`,
     `ended` event says it, with the first line of its final note (`W1 done: …`, incident W1 of wish Dew,
     12/10/2026); a worker with no commit of its own is never merged, its line saying so (`W103 done, nothing to
     merge: no commit of its own. …`, W196);
+  - an azima's branch pushed for the first time, ahead of main, under the per-azima strategy: Djinn opens its request as
+    a draft, and one `move` line says what it did (`T45 pushed: Djinn opened draft PR #41: <url>`, or why it could
+    not, or the task it spawned to open it by the project's skill), Q375;
   - work that waits out of its azima's branch, the azima done or its branch deleted: one `move` line, once (`azima T2
     is done: …; reopen T2 or drop the work`), Djinn making no branch again and pushing nothing;
   - the calls a worker's permissions refused in its run (its `permission denied: …` events, counted on the task's
