@@ -241,6 +241,7 @@ export {
   HourglassLine,
   HourglassSections,
 } from "@/src/hourglass.tsx";
+export { GatesTab, gateWaits } from "@/src/gates-tab.tsx";
 export { Docs, GRIMOIRE } from "@/src/docs.tsx";
 export {
   TaskDiffView,
@@ -739,9 +740,10 @@ export function resources(s) {
       gate: "test",
     }),
   ];
-  // A djinn whose machine services count their reads: the series, the commands, the machine the status bar reads.
+  // A djinn whose machine services count their reads: the series, the commands, the gates, the machine the status bar
+  // reads.
   function hourglassDjinn() {
-    const reads = { series: 0, commands: 0 };
+    const reads = { series: 0, commands: 0, gates: 0 };
     const transport = s.createRouterTransport(({ service }) => {
       service(s.MachineService, {
         series: () => {
@@ -758,7 +760,12 @@ export function resources(s) {
           },
         }),
       });
-      service(s.GateService, { list: () => ({ gates: [] }) });
+      service(s.GateService, {
+        list: () => {
+          reads.gates++;
+          return { gates: [] };
+        },
+      });
       service(s.CommandService, {
         list: () => {
           reads.commands++;

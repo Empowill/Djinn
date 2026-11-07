@@ -42,7 +42,9 @@ test("the Hourglass: its sections, the machine first, and the flying carpet's li
   );
 });
 
-test("leaving the Hourglass stops its reads and its timers", async () => {
+// leaves mounts what renders, lets its first reads answer, unmounts it, and says the reads, the timers while shown and
+// the timers left.
+async function leaves(render) {
   const container = setupMockDom();
   const { reads, djinn } = hourglassDjinn();
   const timers = () =>
@@ -50,12 +52,9 @@ test("leaving the Hourglass stops its reads and its timers", async () => {
   const before = timers();
   const root = s.createRoot(container);
   await s.act(async () => {
-    root.render(
-      h(s.DjinnProvider, { djinn }, h(s.HourglassSections, { wishes: [] })),
-    );
+    root.render(h(s.DjinnProvider, { djinn }, render()));
   });
   await s.act(() => new Promise((resolve) => setImmediate(resolve)));
-  // Shown: the machine's series and the commands are read, and read again by timers.
   const shown = timers();
   s.act(() => root.unmount());
   // The store's watch, stopped with the provider, ends its last wait of 10 ms.
@@ -64,8 +63,29 @@ test("leaving the Hourglass stops its reads and its timers", async () => {
   // React's scheduler keeps a port open: it holds the test's process no more.
   for (const handle of process._getActiveHandles())
     if (handle?.constructor?.name === "MessagePort") handle.unref();
-  assert.ok(reads.series >= 1 && reads.commands >= 1, JSON.stringify(reads));
-  assert.ok(shown > before, `timers while shown: ${shown}, before: ${before}`);
+  return { reads, before, shown, left };
+}
+
+test("leaving the Hourglass stops its reads and its timers", async () => {
+  // The machine: its series, read again by a timer; the commands are the Gates tab's.
+  const machine = await leaves(() => h(s.HourglassSections, { wishes: [] }));
+  assert.ok(machine.reads.series >= 1, JSON.stringify(machine.reads));
+  assert.equal(machine.reads.commands, 0);
+  assert.ok(
+    machine.shown > machine.before,
+    `timers while shown: ${machine.shown}, before: ${machine.before}`,
+  );
   // Left: no timer stays.
-  assert.equal(left, before);
+  assert.equal(machine.left, machine.before);
+
+  // The Gates tab: the gates live, the hour's intervals and the commands, each read again by a timer while it shows.
+  const gates = await leaves(() => h(s.GatesTab, {}));
+  assert.ok(
+    gates.reads.gates >= 1 &&
+      gates.reads.series >= 1 &&
+      gates.reads.commands >= 1,
+    JSON.stringify(gates.reads),
+  );
+  assert.ok(gates.shown > gates.before);
+  assert.equal(gates.left, gates.before);
 });

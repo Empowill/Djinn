@@ -327,7 +327,8 @@
                   waits for the memory it peaked at. Every other command of a Claude worker that neither reads nor edits is
                   admitted first, measured, and, when heavy, takes its turn. Djinn's own checks to merge a task's work or
                   push a branch go before the workers' requests, and on a machine of more than one slot, one stays free for
-                  them: what ends a task never waits behind workers.
+                  them: what ends a task never waits behind workers. The Gates tab of the Hourglass shows who holds each gate now,
+                  who waits, and which command takes the most time.
                 </p>
               </article>
               <article class="card word" id="word-machine">

@@ -23,11 +23,31 @@
   margin: var(--space-4, 1rem) 0;
 }
 
-/* Its tabs, Machine and Statistics, under the title. */
+/* Its tabs, Machine, Gates and Statistics, under the title: larger than a page's tabs, each with its icon of the
+   wishes' bank (wish-icon.tsx), drawn as in the menu; a tab not shown dims its icon. */
 .hourglass-body {
   padding-top: var(--space-4, 1rem);
 }
 
 .hourglass-tabs {
+  gap: 0.5rem;
   margin: 0 0 var(--space-3, 0.75rem);
+}
+
+.hourglass-tabs > button {
+  gap: 0.5rem;
+  padding: 0.5rem 1rem 0.5625rem;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.hourglass-tabs > button .wish-icon {
+  flex-shrink: 0;
+  opacity: 0.55;
+  transition: opacity 120ms ease;
+}
+
+.hourglass-tabs > button:hover .wish-icon,
+.hourglass-tabs > button.active .wish-icon {
+  opacity: 1;
 }
