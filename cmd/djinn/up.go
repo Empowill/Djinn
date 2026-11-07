@@ -342,6 +342,7 @@ func runUp(args []string) (restart bool, err error) {
 	gates.Heavy(machine.ReadHeavy(home))
 	gates.Keep(machine.NewIntervals(db))
 	workers.HeldGates(gates.Held, gates.Waiting)
+	workers.HeldAlone(func(taskID string) []string { return heldAlone(gates.Intervals(time.Now(), true), taskID) })
 	workers.GatesOutside(gates.Outside)
 	workers.GateGrants(func() map[string]time.Time { return heldSince(gates.Intervals(time.Now(), true)) })
 	gates.Freed(workers.Wake)

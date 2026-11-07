@@ -346,7 +346,8 @@ Every task, wish, and the flying carpet show token breakdowns (input, output, ca
 - **Local overrides**: The embedded table loader leaves a clear seam for local overrides from `~/.config/djinn/prices.yaml` (or `$DJINN_HOME/prices.yaml`) without requiring configuration UI today.
 
 `djinn task pause <task-id>` holds a worker where it is and frees its slot; `djinn task resume <task-id>` lets it go
-on (not on Windows yet). A worker that holds or waits for a gate is not paused.
+on (not on Windows yet). A worker that holds a gate alone, or waits for one, is not paused; one that only shares its
+gates (a light command under a gate's name) is, since no one waits for them.
 
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="screenshots/readme/tasks-light.png">
@@ -776,6 +777,8 @@ does not wait for the light ones already sharing it. Two light `stack` or `paid`
 longer keeps two stacks off the same ports, nor two paid runs apart, unless their commands are measured heavy.
 
 A worker holding or waiting for an admission is neither paused for a slot nor judged silent; you may still pause it.
+Likewise a worker whose light command shares a gate's name, a `lint` beside others: no one waits for a gate held shared,
+so you may pause it; one that holds a gate alone, its command heavy, is refused.
 
 A command's cost is kept and found by its key, so the same command run by another task finds the cost measured
 before: the folder it runs in becomes `.`, a worktree of Djinn `$WORKTREE`, a scratch folder `$DJINN_SCRATCH`, a file

@@ -180,6 +180,7 @@ type Harness struct {
 	closed       bool
 	held         func(taskID string) []string // the gates a task holds (HeldGates); nil: none known
 	waiting      func(taskID string) []string // the gates a task waits for (HeldGates); nil: none known
+	alone        func(taskID string) []string // the gates a task holds alone, none shared (HeldAlone); nil: all it holds
 	outside      func() (int, int)            // the gates held outside the running workers, and of them the merges' and pushes' (GatesOutside); nil: none
 	grants       func() map[string]time.Time  // when each task's latest gate or admission held now was granted (GateGrants); nil: none known
 	admit        string                       // djinn's path: its gate hook and its wrappers (WithAdmit); "": none
@@ -3030,8 +3031,9 @@ func (h *Harness) stopLost(ctx context.Context, procedure string, req *planv1.Ta
 
 // Pause holds the task's worker where it is, without killing it, until Resume: the task is paused, and its slot
 // of the machine is free meanwhile. A worker whose provider cannot pause, or Windows, refuses.
-// A worker that holds a gate is not paused: the gate would stay held, frozen, for every other worker. Nor is one
-// that waits for a gate: it would get the gate in its turn, and hold it frozen.
+// A worker that holds a gate alone is not paused: the gate would stay held, frozen, for every other worker. One that
+// only shares its gates (a light command under a gate's name, Q17 B) is: no one waits for a gate held shared. Nor is
+// one that waits for a gate: it would get the gate in its turn, and hold it frozen.
 func (h *Harness) Pause(ctx context.Context, procedure string, req *planv1.TaskServicePauseRequest) (*planv1.Task, error) {
 	return h.hold(ctx, procedure, req, req.GetTaskId(), true)
 }
@@ -3047,6 +3049,16 @@ func (h *Harness) hold(ctx context.Context, procedure string, req proto.Message,
 	task, err := store.Get[*planv1.Task](ctx, h.store, id)
 	if err != nil {
 		return nil, plan.Status(err)
+	}
+	byHarness := procedure == methodNotch || procedure == methodPreempt || procedure == methodNetwork || procedure == methodBrake
+	// The developer's pause is refused only for the gates the worker holds alone (W29): read without h.mu, as it may call
+	// the harness back. Djinn's own pauses still pass over every gate holder (notch, preempt, network).
+	var alone []string
+	h.mu.Lock()
+	aloneOf := h.alone
+	h.mu.Unlock()
+	if pause && !byHarness && aloneOf != nil {
+		alone = aloneOf(id)
 	}
 	h.mu.Lock()
 	r := h.runs[id]
@@ -3068,8 +3080,12 @@ func (h *Harness) hold(ctx context.Context, procedure string, req proto.Message,
 			if g.names == nil {
 				continue
 			}
+			names := g.names(id)
+			if g.verb == "holds" && aloneOf != nil && !byHarness {
+				names = alone // A gate held shared keeps no one waiting either.
+			}
 			// An admitted command holds nothing another waits for: pausing its worker freezes no one else's turn.
-			if names := slices.DeleteFunc(slices.Clone(g.names(id)), func(n string) bool { return n == AdmissionGate }); len(names) > 0 {
+			if names := slices.DeleteFunc(slices.Clone(names), func(n string) bool { return n == AdmissionGate }); len(names) > 0 {
 				h.mu.Unlock()
 				gate := "gate"
 				if len(names) > 1 {
@@ -3102,7 +3118,6 @@ func (h *Harness) hold(ctx context.Context, procedure string, req proto.Message,
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s: %w", task.GetCode(), err))
 	}
 	r.paused = pause
-	byHarness := procedure == methodNotch || procedure == methodPreempt || procedure == methodNetwork || procedure == methodBrake
 	// Thawed by hand, what the brake froze of its containers thaws too (brake.go).
 	thawContainers := !pause && r.brakePaused && procedure != methodBrake
 	if pause {

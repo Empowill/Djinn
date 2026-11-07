@@ -524,6 +524,16 @@ func (h *Harness) HeldGates(held, waiting func(taskID string) []string) {
 	h.held, h.waiting = held, waiting
 }
 
+// HeldAlone tells the harness which gates a task holds alone, by name, none it shares with others (a light command
+// under a gate's name, Q17 B): the developer may pause a worker that holds gates only shared, since no one waits for
+// them; one that holds a gate alone is refused. Without it, every gate held counts as held alone. djinn up gives the
+// gates' (gate.Gates.Intervals, their mode). alone runs without h.mu: it may call the harness back.
+func (h *Harness) HeldAlone(alone func(taskID string) []string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.alone = alone
+}
+
 // GatesOutside tells the harness how many gates are held outside its running workers, by a person's terminal, a
 // lead, a script or Djinn's own merges and pushes, and how many of them are those merges' and pushes': each takes a
 // slot, so no new worker starts on it while it is held. Once told, the scheduler keeps one slot for the merges and
