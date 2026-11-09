@@ -125,7 +125,7 @@ func TestDjinnYAMLNotices(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
-			dir := t.TempDir()
+			dir := resolvedTempDir(t) // the notices name files under the folder as djinn stores it
 			for name, content := range c.files {
 				writeSettings(t, filepath.Join(dir, filepath.FromSlash(name)), content)
 			}
