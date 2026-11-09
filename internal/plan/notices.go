@@ -15,6 +15,7 @@ import (
 // Notice kinds, topics and actions, short.
 const (
 	toFix       = planv1.ProjectNoticeKind_PROJECT_NOTICE_KIND_TO_FIX
+	warning     = planv1.ProjectNoticeKind_PROJECT_NOTICE_KIND_WARNING
 	information = planv1.ProjectNoticeKind_PROJECT_NOTICE_KIND_INFORMATION
 
 	topicSettings    = planv1.ProjectNoticeTopic_PROJECT_NOTICE_TOPIC_SETTINGS
@@ -32,8 +33,8 @@ const (
 )
 
 // projectNoticesWith are what Djinn finds in project's configuration on this machine: its settings files, its
-// permissions, its reference branch, its setup's last run, its skills and the sources this machine has not decided
-// on. The things to fix come first, then the information, each in that order.
+// permissions, its djinn.yaml, its reference branch, its setup's last run, its skills and the sources this machine has
+// not decided on. The things to fix come first, then the warnings, then the information, each in that order.
 func (p *Projects) projectNoticesWith(
 	ctx context.Context, project *planv1.Project, config Config, files []settingsRead, settings Settings, wantRef bool,
 ) ([]*planv1.ProjectNotice, *planv1.ProjectReference) {
@@ -48,6 +49,7 @@ func (p *Projects) projectNoticesWith(
 	var ref *planv1.ProjectReference
 	if project.GetDirectory() != "" {
 		out = append(out, permissionNotices(config)...)
+		out = append(out, projectConfigNotices(config)...)
 		if project.GetGit() && p.Pusher != nil {
 			var branch []*planv1.ProjectNotice
 			branch, ref = p.branchNoticesAndRef(
@@ -61,8 +63,22 @@ func (p *Projects) projectNoticesWith(
 	out = append(out, skills...)
 	out = append(out, p.sourceNoticesWithUsed(ctx, project, used)...)
 	out = append(out, changeNotices(ctx, p.Store, project)...)
-	slices.SortStableFunc(out, func(a, b *planv1.ProjectNotice) int { return cmp.Compare(a.GetKind(), b.GetKind()) })
+	slices.SortStableFunc(out, func(a, b *planv1.ProjectNotice) int {
+		return cmp.Compare(kindRank(a.GetKind()), kindRank(b.GetKind()))
+	})
 	return out, ref
+}
+
+// kindRank is where a notice of kind comes in the list: the things to fix, the warnings, then the information.
+func kindRank(kind planv1.ProjectNoticeKind) int {
+	switch kind {
+	case toFix:
+		return 0
+	case warning:
+		return 1
+	default:
+		return 2
+	}
 }
 
 // countToFix is how many of notices wait for you.
@@ -136,6 +152,45 @@ func permissionNotices(config Config) []*planv1.ProjectNotice {
 		out = append(out, &planv1.ProjectNotice{
 			Kind: information, Topic: topicPermissions, Subject: subject,
 			Text: "Djinn ignores a field of the project's permissions that a newer Djinn knows.", Detail: "unknown field " + u,
+		})
+	}
+	return out
+}
+
+// projectConfigNotices are what Djinn finds in the project's djinn.yaml, where it reads its configuration (config): a
+// file it cannot read is to fix, its configuration not applied; a field it does not know, and a second file it does not
+// read, are warnings, the rest of the file applied (Q21).
+func projectConfigNotices(config Config) []*planv1.ProjectNotice {
+	read, err := ReadProjectConfig(config.Dir)
+	if read.File == "" {
+		return nil
+	}
+	file := filepath.Join(config.Folder, filepath.FromSlash(read.File))
+	var out []*planv1.ProjectNotice
+	if err != nil {
+		detail := err.Error()
+		if config.FromReference() {
+			detail = config.Ref + ":" + detail // the error names the file: origin/main:djinn.yaml: ...
+		}
+		out = append(out, &planv1.ProjectNotice{
+			Kind: toFix, Topic: topicSettings, Subject: read.File, Action: fixFile, File: file, Detail: detail,
+			Text: "Djinn cannot read the project's " + read.File + ": none of it applies, Djinn's defaults hold until " +
+				"the file is fixed.",
+		})
+	}
+	for _, u := range read.Unknown {
+		out = append(out, &planv1.ProjectNotice{
+			Kind: warning, Topic: topicSettings, Subject: read.File, Action: fixFile, File: file,
+			Text: "Djinn ignores a field of the project's " + read.File + " it does not know: the rest of the file " +
+				"applies.",
+			Detail: "unknown field " + u,
+		})
+	}
+	if read.Ignored != "" {
+		out = append(out, &planv1.ProjectNotice{
+			Kind: warning, Topic: topicSettings, Subject: read.Ignored, Action: fixFile,
+			File: filepath.Join(config.Folder, filepath.FromSlash(read.Ignored)),
+			Text: "Djinn does not read the project's " + read.Ignored + ": " + read.File + " configures it, and wins.",
 		})
 	}
 	return out

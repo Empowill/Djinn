@@ -96,12 +96,13 @@ address in the data folder, for the other commands.`,
 				"never; default $DJINN_PAUSED_MEMORY.",
 		},
 		{
-			Name: "--brake-memory", Type: "int", Default: "10", Env: "DJINN_BRAKE_MEMORY",
+			Name: "--brake-memory", Type: "int", Default: "5", Env: "DJINN_BRAKE_MEMORY",
 			Help: "Under this percent of the machine's memory available, or a PSI full of 20, the memory brake freezes the " +
 				"worker that grows most outside the gates, its containers too, and interrupts it 30 s later if the memory " +
 				"stays short; a worker the gates admitted is never interrupted, and only frozen when it alone grows; calm a " +
 				"minute above this percent plus 5, it thaws; the lead hears each; 0 turns the brake off; default " +
-				"$DJINN_BRAKE_MEMORY.",
+				"$DJINN_BRAKE_MEMORY, else the percent chosen in the Summoning Circle, else 5. Given here or by " +
+				"$DJINN_BRAKE_MEMORY, it holds for the run: the Summoning Circle cannot change it.",
 		},
 		{
 			Name: "--pprof", Type: "bool", Env: "DJINN_PPROF",

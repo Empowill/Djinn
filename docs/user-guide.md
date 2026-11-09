@@ -346,7 +346,8 @@ Every task, wish, and the flying carpet show token breakdowns (input, output, ca
 - **Local overrides**: The embedded table loader leaves a clear seam for local overrides from `~/.config/djinn/prices.yaml` (or `$DJINN_HOME/prices.yaml`) without requiring configuration UI today.
 
 `djinn task pause <task-id>` holds a worker where it is and frees its slot; `djinn task resume <task-id>` lets it go
-on (not on Windows yet). A worker that holds or waits for a gate is not paused.
+on (not on Windows yet). A worker that holds a gate alone, or waits for one, is not paused; one that only shares its
+gates (a light command under a gate's name) is, since no one waits for them.
 
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="screenshots/readme/tasks-light.png">
@@ -673,8 +674,9 @@ much one may spend. Your own file, in Djinn's data folder, wins over the team's;
 
 A repository also tells Djinn about itself in `djinn.yaml`, at its root or in `.agents/djinn.yaml`, read on the
 reference branch like the permissions, so that a worker never changes what bounds it. With both files, the root's is
-read and Djinn's log warns that the other is not; a field Djinn does not know refuses the file, Djinn's defaults then
-hold, and the log names the file and the field. Today it holds the runaway ceilings of the containers the workers start
+read and a warning under "To fix" says the other is not; a field Djinn does not know is ignored, the rest of the file
+applies, and a warning under "To fix" names the file and the field, the gear left grey; a file that does not parse, or
+a value of the wrong type or out of range, is a thing to fix, Djinn's defaults then holding. Today it holds the runaway ceilings of the containers the workers start
 (`docker run`, `docker create`): without it, 4 GiB of memory (a quarter of the machine's when that is less) and 1024
 processes per container. Djinn's `docker`, first on each worker's path, brings a higher limit down to them and names
 the file to raise them in.
@@ -775,6 +777,8 @@ does not wait for the light ones already sharing it. Two light `stack` or `paid`
 longer keeps two stacks off the same ports, nor two paid runs apart, unless their commands are measured heavy.
 
 A worker holding or waiting for an admission is neither paused for a slot nor judged silent; you may still pause it.
+Likewise a worker whose light command shares a gate's name, a `lint` beside others: no one waits for a gate held shared,
+so you may pause it; one that holds a gate alone, its command heavy, is refused.
 
 A command's cost is kept and found by its key, so the same command run by another task finds the cost measured
 before: the folder it runs in becomes `.`, a worktree of Djinn `$WORKTREE`, a scratch folder `$DJINN_SCRATCH`, a file
@@ -814,9 +818,14 @@ run through an absolute path, an agent without a hook, or simply the sum of the 
 runaway (a worker's scope and containers); the memory brake catches a slower growth, which no ceiling sees. It never
 cuts a command the gates admitted.
 
-- **When.** Under 10 % of the machine's memory available, or a PSI full of 20 (every task waited for memory a fifth of
-  the last 10 s), two readings in a row, a second apart. `djinn up --brake-memory 10` (or `DJINN_BRAKE_MEMORY`) sets the
-  percent; 0 turns the brake off. The PSI threshold is fixed.
+- **When.** Under 5 % of the machine's memory available, or a PSI full of 20 (every task waited for memory a fifth of
+  the last 10 s), two readings in a row, a second apart. The PSI threshold is fixed.
+- **Its percent.** Chosen at the end of the **Summoning Circle** (Memory brake), or `djinn load set-brake 3`, for this
+  machine: it applies at once and is kept in `settings.json` for the next launches; **Off** (0) turns the brake off, and
+  what it froze thaws. `djinn load get` shows the percent in effect, or `brake_off: true` when the brake is off. On a
+  16 GB laptop where the browser leaves Djinn 2 or 3 GB, 5 % comes fast: choose 3 %, or Off.
+  `djinn up --brake-memory 8` (or `DJINN_BRAKE_MEMORY`) fixes the percent for that run instead: the Circle shows it and
+  `djinn load set-brake` refuses until Djinn starts without it.
 - **Whom.** Among the running workers, the one whose memory grew most over the last minute (256 MiB at least) while
   holding no gate nor admission: its scope's anonymous memory and its task's containers', not the page cache. Never
   Djinn, its merges, pushes and checks, the lead, a watcher, a question worker or an ifrit; a worker a `git` runs in
@@ -824,9 +833,11 @@ cuts a command the gates admitted.
 - **How.** It freezes the worker where it is (its scope's `cgroup.freeze`, as a pause) and its containers (`docker
   pause`); the task shows paused, `memory brake: 6% of memory available (1.9 GiB); it grew 1 GiB in 1 min outside the
   gates`, and its slot stays its own. One freeze every 10 s at most.
-- **Then.** Still frozen after 30 s with the memory short, it is interrupted: its task resumes later in its session,
-  once the machine allows (`resuming: memory brake: frozen 30 s, the memory stayed short…`), its containers removed.
-  An agent that cannot resume its session (Antigravity) stays frozen until calm instead.
+- **Then.** Still frozen after 30 s with the memory short, it is interrupted (`resuming: memory brake: frozen 30 s, the
+  memory stayed short…`), its containers removed. Its task resumes in its session once calm, after the workers the
+  brake froze thawed (`waiting: memory brake: interrupted, it resumes after 1 min of calm…`): resumed at once, it would
+  grow again into the memory still short. **Start anyway** (`djinn task start`) resumes it before; the brake turned off, it
+  resumes at once. An agent that cannot resume its session (Antigravity) stays frozen until calm instead.
 - **Admitted commands.** A worker whose command a gate admitted is never interrupted, nor frozen while anything else
   grows, nor while a worker frozen for a growth outside the gates waits for its interruption. Only when admitted
   workers alone grow does the brake freeze the last one admitted, and that one only thaws: its command lives on, its
