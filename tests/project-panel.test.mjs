@@ -381,6 +381,32 @@ test("a project's configuration says what to fix, its reference branch, each ski
   );
   assert.doesNotMatch(unreadable, /From a terminal/);
 
+  // A warning (Q21): what Djinn ignores and goes on without, quieter than a thing to fix, the file and field named.
+  const ignored = render(
+    h(s.NoticeLine, {
+      notice: {
+        kind: s.ProjectNoticeKind.WARNING,
+        topic: s.ProjectNoticeTopic.SETTINGS,
+        subject: "djinn.yaml",
+        text: "Djinn ignores a field of the project's djinn.yaml it does not know: the rest of the file applies.",
+        detail: "unknown field containers.memroy_mib",
+        action: s.ProjectNoticeAction.FIX_FILE,
+        file: "/tmp/dolmen/djinn.yaml",
+        command: "",
+      },
+      busy: false,
+      onAct() {},
+    }),
+  );
+  assert.match(
+    ignored,
+    /^<div class="notice warning"><p class="notice-text"><svg[^>]*lucide-triangle-alert/,
+  );
+  assert.match(
+    ignored,
+    /<pre class="notice-detail">unknown field containers\.memroy_mib<\/pre><p class="notice-where">To fix in <span class="command"><code>\/tmp\/dolmen\/djinn\.yaml<\/code>/,
+  );
+
   const acted = [];
   const offered = render(
     h(s.NoticeLine, {

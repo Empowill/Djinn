@@ -144,13 +144,18 @@ func runUp(args []string) (restart bool, err error) {
 	if pausedMemory < 0 || pausedMemory > 100 {
 		return false, fmt.Errorf("--paused-memory %d: expected a percent of the machine's memory, or 0 for never", pausedMemory)
 	}
-	if v := os.Getenv("DJINN_BRAKE_MEMORY"); v != "" && !flagSet(flags, "brake-memory") {
+	// The memory brake's threshold: the flag, else DJINN_BRAKE_MEMORY, fix it for this run; else the window's choice in
+	// settings.json, which it changes at once (LoadService.SetBrake), else 5 % (read below, once home is known).
+	brakeFixed := flagSet(flags, "brake-memory")
+	if v := os.Getenv("DJINN_BRAKE_MEMORY"); v != "" && !brakeFixed {
 		if _, err := fmt.Sscan(v, &brakeMemory); err != nil {
 			return false, fmt.Errorf("DJINN_BRAKE_MEMORY: %w", err)
 		}
+		brakeFixed = true
 	}
-	if brakeMemory < 0 || brakeMemory > 95 {
-		return false, fmt.Errorf("--brake-memory %d: expected a percent of the machine's memory, up to 95, or 0 for no brake", brakeMemory)
+	if brakeMemory < 0 || brakeMemory > machine.MostBrakeMemory {
+		return false, fmt.Errorf("--brake-memory %d: expected a percent of the machine's memory, up to %d, or 0 for no brake",
+			brakeMemory, machine.MostBrakeMemory)
 	}
 	disk := harness.DiskGuard{Free: diskFree}
 	if disk.Trim, err = diskFlag(flags, "disk-trim-gb", diskTrim); err != nil {
@@ -166,6 +171,9 @@ func runUp(args []string) (restart bool, err error) {
 	home, err := ui.Home()
 	if err != nil {
 		return false, err
+	}
+	if p, ok := machine.ReadBrake(home); ok && !brakeFixed {
+		brakeMemory = p
 	}
 	// One djinn per data directory: a second djinn up brings the first one's window to the front instead.
 	unclean := false
@@ -334,6 +342,7 @@ func runUp(args []string) (restart bool, err error) {
 	gates.Heavy(machine.ReadHeavy(home))
 	gates.Keep(machine.NewIntervals(db))
 	workers.HeldGates(gates.Held, gates.Waiting)
+	workers.HeldAlone(func(taskID string) []string { return heldAlone(gates.Intervals(time.Now(), true), taskID) })
 	workers.GatesOutside(gates.Outside)
 	workers.GateGrants(func() map[string]time.Time { return heldSince(gates.Intervals(time.Now(), true)) })
 	gates.Freed(workers.Wake)
@@ -564,6 +573,7 @@ func runUp(args []string) (restart bool, err error) {
 		machine.WithLoadLowerPauses(workers.LowerPauses),
 		machine.WithLoadWorkerForecast(workers.WorkerForecast),
 		machine.WithLoadOutside(seriesRec.Outside),
+		machine.WithLoadBrake(machine.BrakeSetting{Percent: brakeMemory, Fixed: brakeFixed, Apply: workers.SetBrake}),
 		machine.WithLoadStreamer(func(stream func(context.Context, func(*djinnv1.LoadServiceWatchResponse) error) error) {
 			uiSvc.WatchLoad = stream
 		}),

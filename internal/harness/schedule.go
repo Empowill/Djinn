@@ -309,6 +309,11 @@ func (h *Harness) schedule(ctx context.Context) {
 		if d.Commit {
 			h.kickIntegrate() // A task another waits for is committed at once.
 		}
+		if why := h.brakeHeld(d.Task); why != "" && d.Failed == "" {
+			// Interrupted by the memory brake: it resumes once calm (brake.go); djinn task start may start it.
+			h.setWaiting(ctx, d.Task, now, why, true, true, planv1.TaskHold_TASK_HOLD_PLACE)
+			continue
+		}
 		switch t := d.Task; {
 		case d.Failed != "":
 			h.failPlanned(ctx, t, d.Failed)
@@ -522,6 +527,16 @@ func (h *Harness) HeldGates(held, waiting func(taskID string) []string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.held, h.waiting = held, waiting
+}
+
+// HeldAlone tells the harness which gates a task holds alone, by name, none it shares with others (a light command
+// under a gate's name, Q17 B): the developer may pause a worker that holds gates only shared, since no one waits for
+// them; one that holds a gate alone is refused. Without it, every gate held counts as held alone. djinn up gives the
+// gates' (gate.Gates.Intervals, their mode). alone runs without h.mu: it may call the harness back.
+func (h *Harness) HeldAlone(alone func(taskID string) []string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.alone = alone
 }
 
 // GatesOutside tells the harness how many gates are held outside its running workers, by a person's terminal, a

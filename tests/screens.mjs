@@ -149,9 +149,11 @@ export {
   WatchCommands,
 } from "@/src/project-panel.tsx";
 export {
+  BrakeSection,
   CIRCLE_ROWS,
   DEFAULT_CIRCLE_PROVIDERS,
   SummoningCircle,
+  brakeChoices,
   UpdateModelsSection,
   canonicalModelId,
   loadOf,
@@ -267,7 +269,7 @@ export {
   nearestNotch,
   stopAt,
 } from "@/src/operating-load.tsx";
-export { LoadAutoStep, LoadNotch } from "@/gen/ts/djinn/v1/load_pb.ts";
+export { LoadAutoStep, LoadNotch, LoadService } from "@/gen/ts/djinn/v1/load_pb.ts";
 export { HeldGates } from "@/src/ifrit.tsx";
 export * from "@/gen/ts/plan/v1/plan_pb.ts";`,
   );

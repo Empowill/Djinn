@@ -384,3 +384,94 @@ test("leadReady: a session of the Djinn can start once an agent that leads is in
   // No agent told yet: nothing warns.
   assert.equal(s.leadReady({ providers: [] }), true);
 });
+
+test("the memory brake's threshold: 5 % by default among the choices, off at 0, fixed by djinn up's flag (W28)", () => {
+  assert.deepEqual(s.brakeChoices(5), [0, 3, 5, 8, 10, 15, 20]);
+  assert.deepEqual(s.brakeChoices(12), [0, 3, 5, 8, 10, 12, 15, 20]);
+  const brake = (initial) =>
+    s.renderToStaticMarkup(h(s.BrakeSection, { initial }));
+  const free = brake({ percent: 5, fixed: false });
+  assert.match(free, /<h3 class="summoning-section-title">Memory brake<\/h3>/);
+  assert.match(free, /<option value="0">Off<\/option>/);
+  assert.match(free, /<option value="5" selected="">5% \(default\)<\/option>/);
+  assert.match(free, /Applies at once and holds for the next launches/);
+  // Fixed by djinn up's flag: the list is closed, and says why.
+  const fixed = brake({ percent: 12, fixed: true });
+  assert.match(fixed, /<option value="12" selected="">12%<\/option>/);
+  assert.match(fixed, /<select[^>]*disabled=""/);
+  assert.match(fixed, /Set for this run by djinn up --brake-memory/);
+  // The Circle shows it last, after the change of the open tasks.
+  const page = s.renderToStaticMarkup(
+    h(s.SummoningCircle, {
+      initialRows: [],
+      initialModels: [],
+      initialAgents: {
+        env: environment(),
+        checking: false,
+        error: "",
+        check() {},
+        setPaused() {},
+      },
+      initialTasks: [],
+      initialBrake: { percent: 5, fixed: false },
+    }),
+  );
+  assert.ok(
+    page.indexOf("Memory brake") > page.indexOf("summoning-bulk"),
+    "the brake after the bulk change",
+  );
+});
+
+test("in the Circle, a threshold chosen goes to Djinn at once (LoadService.SetBrake), and the list shows Djinn's answer", async () => {
+  const container = setupMockDom();
+  const below = (el, out = []) => {
+    for (const child of el.childNodes) {
+      out.push(child);
+      below(child, out);
+    }
+    return out;
+  };
+  const props = (el) =>
+    el[Object.keys(el).find((k) => k.startsWith("__reactProps$"))];
+  const settle = async () => {
+    for (let i = 0; i < 4; i++)
+      await s.act(() => new Promise((r) => setTimeout(r, 0)));
+  };
+  const select = () =>
+    below(container).find(
+      (el) =>
+        el.attributes?.["aria-label"] ===
+        "Freeze under this share of memory available",
+    );
+  const sets = [];
+  const transport = s.createRouterTransport(({ service }) => {
+    service(s.LoadService, {
+      get: () => ({ brakeMemoryPercent: 5, brakeMemoryFixed: false }),
+      setBrake: (req) => {
+        sets.push(req.percent);
+        return { brakeMemoryPercent: req.percent };
+      },
+    });
+  });
+  const djinn = s.createDjinn(transport, 10);
+  const root = s.createRoot(container);
+  try {
+    await s.act(async () => {
+      root.render(h(s.DjinnProvider, { djinn }, h(s.BrakeSection, {})));
+    });
+    await settle();
+    assert.equal(props(select()).value, "5");
+    await s.act(async () =>
+      props(select()).onChange({ target: { value: "0" } }),
+    );
+    await settle();
+    assert.deepEqual(sets, [0]);
+    assert.equal(props(select()).value, "0");
+    assert.equal(props(select()).disabled, false);
+  } finally {
+    s.act(() => root.unmount());
+    await new Promise((r) => setTimeout(r, 30));
+    for (const handle of process._getActiveHandles())
+      if (handle?.constructor?.name === "MessagePort") handle.unref();
+  }
+});

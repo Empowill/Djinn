@@ -13,7 +13,8 @@ import (
 )
 
 // TestProjectContainers: the ceilings come from the project's djinn.yaml, the root's when both files are there, with a
-// warning naming the one not read; an unreadable file holds Djinn's defaults, warned once with the file and the field,
+// warning naming the one not read; a field Djinn does not know is warned once with the file and the field, and the
+// rest of the file applies (Q21); an unreadable file holds Djinn's defaults, warned once with the file and the error,
 // and is still named as the file where the project sets them. Serial: it captures Djinn's log, which is global.
 func TestProjectContainers(t *testing.T) {
 	var log bytes.Buffer
@@ -30,8 +31,10 @@ func TestProjectContainers(t *testing.T) {
 			file: ".agents/djinn.yaml", pids: 99},
 		{name: "both", files: map[string]string{"djinn.yaml": "containers: {pids: 64}\n", ".agents/djinn.yaml": "containers: {pids: 99}\n"},
 			file: "djinn.yaml", pids: 64, warn: []string{"two files configure Djinn", "ignored=.agents/djinn.yaml"}},
-		{name: "unknown field", files: map[string]string{"djinn.yaml": "containers: {pid: 64}\n"},
-			file: "djinn.yaml", warn: []string{"defaults hold", "djinn.yaml: unknown field containers.pid"}},
+		{name: "unknown field", files: map[string]string{"djinn.yaml": "containers: {pid: 64, pids: 32}\n"},
+			file: "djinn.yaml", pids: 32, warn: []string{"does not know", "file=djinn.yaml field=containers.pid"}},
+		{name: "unreadable", files: map[string]string{"djinn.yaml": "containers: {pids: many}\n"},
+			file: "djinn.yaml", warn: []string{"defaults hold", "djinn.yaml: "}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

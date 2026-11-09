@@ -35,11 +35,15 @@ type ProjectConfigRead struct {
 	File string
 	// Ignored is the other file, present beside File but not read; empty when there is none.
 	Ignored string
+	// Unknown are the fields of File the message does not know, as their paths in the file (containers.memroy_mib),
+	// sorted: ignored, the rest of the file applies (Q21).
+	Unknown []string
 }
 
 // ReadProjectConfig reads Djinn's configuration of the project laid out in dir (ConfigDir): its YAML turned into
-// JSON, then into the message, a field the message does not know refused. An error names the file, and the field when
-// one is unknown. A project that writes none has neither a configuration nor an error.
+// JSON, then into the message. A field the message does not know is ignored, and named in Unknown; the rest of the
+// file applies. An error names the file: a file that does not parse, a value of the wrong type or out of range, and
+// none of the file applies. A project that writes none has neither a configuration nor an error.
 func ReadProjectConfig(dir string) (ProjectConfigRead, error) {
 	var read ProjectConfigRead
 	var b []byte
@@ -62,7 +66,8 @@ func ReadProjectConfig(dir string) (ProjectConfigRead, error) {
 	if read.File == "" {
 		return read, nil
 	}
-	c, err := parseProjectConfig(b)
+	c, unknown, err := parseProjectConfig(b)
+	read.Unknown = unknown
 	if err != nil {
 		return read, fmt.Errorf("%s: %w", read.File, err)
 	}
@@ -74,42 +79,41 @@ func ReadProjectConfig(dir string) (ProjectConfigRead, error) {
 // tells nothing of the file.
 var protojsonPlace = regexp.MustCompile(`\(line \d+:\d+\): `)
 
-// parseProjectConfig is the configuration a djinn.yaml holds in b: YAML, then JSON, then protojson.
-func parseProjectConfig(b []byte) (*djinnv1.ProjectConfig, error) {
+// parseProjectConfig is the configuration a djinn.yaml holds in b: YAML, then JSON, then protojson; and the fields
+// the message does not know, dropped before protojson reads it. Those are said even when the file is refused.
+func parseProjectConfig(b []byte) (*djinnv1.ProjectConfig, []string, error) {
 	var doc any
 	if err := yaml.Unmarshal(b, &doc); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if doc == nil {
 		doc = map[string]any{} // An empty file, or comments only.
 	}
 	if _, ok := doc.(map[string]any); !ok {
-		return nil, errors.New("not a mapping of fields")
+		return nil, nil, errors.New("not a mapping of fields")
 	}
 	c := &djinnv1.ProjectConfig{}
-	if field := unknownField(doc, c.ProtoReflect().Descriptor(), ""); field != "" {
-		return nil, fmt.Errorf("unknown field %s", field)
-	}
+	unknown := dropUnknownFields(doc, c.ProtoReflect().Descriptor(), "", nil)
 	j, err := json.Marshal(doc)
 	if err != nil {
-		return nil, err
+		return nil, unknown, err
 	}
 	if err := protojson.Unmarshal(j, c); err != nil {
-		return nil, errors.New(protojsonPlace.ReplaceAllString(err.Error(), ""))
+		return nil, unknown, errors.New(protojsonPlace.ReplaceAllString(err.Error(), ""))
 	}
 	if err := protovalidate.Validate(c); err != nil {
-		return nil, err
+		return nil, unknown, err
 	}
-	return c, nil
+	return c, unknown, nil
 }
 
-// unknownField is the first field of v, a value read from YAML, that the message md does not know, as its path in the
-// file (containers.memroy_mib); empty when it knows them all. A field is known by its name or its JSON name, as
-// protojson knows it.
-func unknownField(v any, md protoreflect.MessageDescriptor, at string) string {
+// dropUnknownFields removes from v, a value read from YAML, the fields the message md does not know, and appends to
+// out their paths in the file (containers.memroy_mib), keys sorted at each level. A field is known by its
+// name or its JSON name, as protojson knows it.
+func dropUnknownFields(v any, md protoreflect.MessageDescriptor, at string, out []string) []string {
 	m, ok := v.(map[string]any)
 	if !ok {
-		return "" // Not a message: protojson says what is wrong with it.
+		return out // Not a message: protojson says what is wrong with it.
 	}
 	for _, k := range slices.Sorted(maps.Keys(m)) {
 		path := k
@@ -121,7 +125,9 @@ func unknownField(v any, md protoreflect.MessageDescriptor, at string) string {
 			fd = md.Fields().ByJSONName(k)
 		}
 		if fd == nil {
-			return path
+			delete(m, k)
+			out = append(out, path)
+			continue
 		}
 		sub := fd.Message()
 		if sub == nil || fd.IsMap() || strings.HasPrefix(string(sub.FullName()), "google.protobuf.") {
@@ -130,17 +136,13 @@ func unknownField(v any, md protoreflect.MessageDescriptor, at string) string {
 		if fd.IsList() {
 			list, _ := m[k].([]any)
 			for i, e := range list {
-				if f := unknownField(e, sub, fmt.Sprintf("%s[%d]", path, i)); f != "" {
-					return f
-				}
+				out = dropUnknownFields(e, sub, fmt.Sprintf("%s[%d]", path, i), out)
 			}
 			continue
 		}
-		if f := unknownField(m[k], sub, path); f != "" {
-			return f
-		}
+		out = dropUnknownFields(m[k], sub, path, out)
 	}
-	return ""
+	return out
 }
 
 // projectConfigLines say which of the project's djinn.yaml files changed from the configuration in old to the one in
