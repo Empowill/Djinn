@@ -572,8 +572,12 @@ type Settings struct {
 	// A command measured past this many seconds of CPU time is heavy, as above. Unset or 0: 60. djinn up reads it as it
 	// starts.
 	HeavyCommandCpuSeconds *uint32 `protobuf:"varint,16,opt,name=heavy_command_cpu_seconds,json=heavyCommandCpuSeconds,proto3,oneof" json:"heavy_command_cpu_seconds,omitempty"`
-	unknownFields          protoimpl.UnknownFields
-	sizeCache              protoimpl.SizeCache
+	// The memory brake freezes the worker that grows most outside the gates under this percent of the machine's memory
+	// available (LoadService.SetBrake, the Summoning Circle). Unset: 5. 0: no brake. djinn up --brake-memory, or
+	// DJINN_BRAKE_MEMORY, comes first.
+	BrakeMemoryPercent *uint32 `protobuf:"varint,17,opt,name=brake_memory_percent,json=brakeMemoryPercent,proto3,oneof" json:"brake_memory_percent,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *Settings) Reset() {
@@ -714,6 +718,13 @@ func (x *Settings) GetHeavyCommandMemoryMib() uint32 {
 func (x *Settings) GetHeavyCommandCpuSeconds() uint32 {
 	if x != nil && x.HeavyCommandCpuSeconds != nil {
 		return *x.HeavyCommandCpuSeconds
+	}
+	return 0
+}
+
+func (x *Settings) GetBrakeMemoryPercent() uint32 {
+	if x != nil && x.BrakeMemoryPercent != nil {
+		return *x.BrakeMemoryPercent
 	}
 	return 0
 }
@@ -2748,7 +2759,7 @@ const file_ui_v1_ui_proto_rawDesc = "" +
 	"\x05chord\x18\x01 \x01(\tR\x05chord\x12#\n" +
 	"\rdefault_chord\x18\x02 \x01(\tR\fdefaultChord\x12\x1c\n" +
 	"\tavailable\x18\x03 \x01(\bR\tavailable\x12\x18\n" +
-	"\aproblem\x18\x04 \x01(\tR\aproblem\"\xc9\a\n" +
+	"\aproblem\x18\x04 \x01(\tR\aproblem\"\xa2\b\n" +
 	"\bSettings\x12\x1f\n" +
 	"\bshortcut\x18\x01 \x01(\tH\x00R\bshortcut\x88\x01\x01\x12,\n" +
 	"\x04load\x18\x02 \x01(\x0e2\x13.djinn.v1.LoadNotchH\x01R\x04load\x88\x01\x01\x12=\n" +
@@ -2770,14 +2781,16 @@ const file_ui_v1_ui_proto_rawDesc = "" +
 	"\x10unlimited_forced\x18\r \x03(\v2\x10.ui.v1.SignInRefR\x0funlimitedForced\x12?\n" +
 	"\x12unlimited_unforced\x18\x0e \x03(\v2\x10.ui.v1.SignInRefR\x11unlimitedUnforced\x12<\n" +
 	"\x18heavy_command_memory_mib\x18\x0f \x01(\rH\x05R\x15heavyCommandMemoryMib\x88\x01\x01\x12>\n" +
-	"\x19heavy_command_cpu_seconds\x18\x10 \x01(\rH\x06R\x16heavyCommandCpuSeconds\x88\x01\x01B\v\n" +
+	"\x19heavy_command_cpu_seconds\x18\x10 \x01(\rH\x06R\x16heavyCommandCpuSeconds\x88\x01\x01\x12>\n" +
+	"\x14brake_memory_percent\x18\x11 \x01(\rB\a\xbaH\x04*\x02\x18_H\aR\x12brakeMemoryPercent\x88\x01\x01B\v\n" +
 	"\t_shortcutB\a\n" +
 	"\x05_loadB\x15\n" +
 	"\x13_ifrit_idle_minutesB\x0e\n" +
 	"\f_lead_drivenB\x0e\n" +
 	"\f_lead_pinnedB\x1b\n" +
 	"\x19_heavy_command_memory_mibB\x1c\n" +
-	"\x1a_heavy_command_cpu_seconds\"T\n" +
+	"\x1a_heavy_command_cpu_secondsB\x17\n" +
+	"\x15_brake_memory_percent\"T\n" +
 	"\tSignInRef\x12-\n" +
 	"\bprovider\x18\x01 \x01(\x0e2\x11.plan.v1.ProviderR\bprovider\x12\x18\n" +
 	"\aaccount\x18\x02 \x01(\tR\aaccount\"\xc3\x02\n" +

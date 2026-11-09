@@ -1,9 +1,11 @@
-// Package gate grants the gates: shared resources (code generation, the local stack, an end-to-end run, a paid
-// model run) that one holder uses at a time, granted only while the machine is not under pressure and has the memory
-// the command peaked at. It also admits each command a worker's Bash runs that neither reads nor edits (Request.Shared,
-// djinn gate hook): shared with the other commands, it waits only for a machine out of pressure and the memory its
-// measured peak needs. A command measured heavy (Heavy) goes one at a time, whatever its gate: an admitted one waits
-// for its turn, a named gate also for the heavy command another task runs. Djinn's own requests to merge a task's
+// Package gate grants the gates: named resources (code generation, the local stack, an end-to-end run, a paid model
+// run), granted only while the machine is not under pressure and has the memory the command peaked at. It also admits
+// each command a worker's Bash runs that neither reads nor edits (Request.Shared, djinn gate hook): shared with the
+// other commands, it waits only for a machine out of pressure and the memory its measured peak needs. The cost of a
+// command, not its gate's name, says how it passes (Q17 B): a light command under a gate's name shares it, as many at
+// once as the machine holds; a command measured heavy (Heavy) holds its gate alone and goes one at a time, whatever its
+// gate: it also waits for the heavy command another task runs. A lit ifrit, or a request that names no command, holds
+// its gate alone too. Djinn's own requests to merge a task's
 // work, settle a merge or check a push go first, the first come first; then the others, the first wish of the rank
 // first (Q26), then the work of its first azima (Task.rank). A holder keeps its gate until it gives it back, its
 // connection ends, its process ends or the timeout it asked for passes: none is taken back for a request that goes
@@ -147,8 +149,8 @@ type Gates struct {
 	log             Log // the intervals of the gates (Keep)
 
 	mu     sync.Mutex
-	held   map[string]*waiter // by gate name
-	shared map[*waiter]bool   // the admissions held (Request.Shared)
+	held   map[string]*waiter // the gates held alone, by name
+	shared map[*waiter]bool   // the gates held shared: the admissions, and the light commands under a gate's name
 	queue  []*waiter          // in arrival order
 	seq    int
 }
@@ -158,7 +160,8 @@ type waiter struct {
 	name, taskID, who, what string
 	dir, project            string
 	peak                    uint64                            // the command's highest measured peak memory; 0 when never measured
-	shared                  bool                              // an admission (Request.Shared): no name of its own to hold alone
+	shared                  bool                              // held with others: an admission, or a light command under a gate's name
+	admission               bool                              // an admission (Request.Shared): it goes by Commands, its process found (Find)
 	heavy                   bool                              // the command was measured heavy: it goes one at a time (Heavy)
 	find                    func(skip func(pid int) bool) int // finds the admitted command's process (Request.Find)
 	lost                    bool                              // no process of its command was found; guarded by Gates.mu
@@ -268,6 +271,8 @@ type Request struct {
 	// left out, the admission goes by Commands. It waits only for a machine out of pressure and the memory its
 	// measured peak needs, in the gates' order, and is held by as many as it admits; a command measured heavy waits
 	// for the heavy command of another task. It needs PID or Find: the admission is held until that process ends.
+	// A gate's name asked for a light command (What, not measured heavy) is shared the same way, without being asked:
+	// it waits only for one that holds its name alone (a heavy command, a lit ifrit) and a merge that goes first.
 	Shared bool
 	// Find, when PID is 0, finds the process of the admitted command, leaving out those skip says, once it starts:
 	// 0 while it is not found. The admission is given back when no process is found within a few seconds: its
@@ -337,6 +342,9 @@ func (g *Gates) Take(ctx context.Context, r Request, waiting func(why string)) (
 	g.mu.Lock()
 	g.seq++
 	heavy := g.heavyCost(cost)
+	// A light command shares its gate's name (Q17 B): only a heavy one, a lit ifrit's server, or a holder that says
+	// not what it runs holds it alone.
+	shared := r.Shared || what != "" && !heavy && !ifrit
 	var proj string
 	if g.projectResolver != nil {
 		proj = g.projectResolver(taskID, r.Dir)
@@ -350,7 +358,7 @@ func (g *Gates) Take(ctx context.Context, r Request, waiting func(why string)) (
 	}
 	w := &waiter{
 		name: name, taskID: taskID, who: who, what: what, dir: r.Dir, project: proj, peak: cost.Peak, pid: r.PID, first: r.First,
-		shared: r.Shared, heavy: heavy, find: r.Find, unmeasured: what != "" && (cost.Peak == 0 && cost.CPU == 0 || cost.Head != ""),
+		shared: shared, admission: r.Shared, heavy: heavy, find: r.Find, unmeasured: what != "" && (cost.Peak == 0 && cost.CPU == 0 || cost.Head != ""),
 		waitCause: machinev1.GateWaitCause_GATE_WAIT_CAUSE_NONE,
 		ifrit:     ifrit, out: out, timeout: timeout, long: long, usual: usual, timed: timeout > 0, seq: g.seq,
 		asked:   time.Now(),
@@ -388,7 +396,7 @@ func (g *Gates) Take(ctx context.Context, r Request, waiting func(why string)) (
 				// Granted as the caller left: give it back at once.
 				delete(g.held, name)
 			}
-			delete(g.shared, w)
+			delete(g.shared, w) // Likewise for one held shared.
 			g.queue = slices.DeleteFunc(g.queue, func(o *waiter) bool { return o == w })
 			g.mu.Unlock()
 			g.pass(context.WithoutCancel(ctx))
@@ -417,7 +425,9 @@ func (g *Gates) give(w *waiter, why string) {
 	}
 	outside := g.outside(w.taskID)
 	g.mu.Lock()
-	delete(g.held, w.name)
+	if g.held[w.name] == w {
+		delete(g.held, w.name)
+	}
 	delete(g.shared, w)
 	w.back = why
 	close(w.done)
@@ -453,10 +463,10 @@ func (g *Gates) holds(w *waiter) bool {
 }
 
 // Shown says whether the interval iv goes in the series of the gates unless all the admissions are asked for: every
-// gate, and an admission only when it waited a second or more or its command is heavy; the many that pass at once
-// would hide the gates from the Hourglass's frieze. Every interval is kept all the same (Log).
+// gate, shared or held alone, and an admission only when it waited a second or more or its command is heavy; the many
+// that pass at once would hide the gates from the Hourglass's frieze. Every interval is kept all the same (Log).
 func Shown(iv *machinev1.GateInterval) bool {
-	return iv.GetMode() != machinev1.GateMode_GATE_MODE_SHARED || iv.GetHeavy() ||
+	return iv.GetMode() != machinev1.GateMode_GATE_MODE_SHARED || iv.GetGate() != Commands || iv.GetHeavy() ||
 		iv.GetGrantTime().AsTime().Sub(iv.GetAskedTime().AsTime()) >= time.Second
 }
 
@@ -484,13 +494,13 @@ func (g *Gates) interval(w *waiter, outside bool) *machinev1.GateInterval {
 }
 
 // measured is the run of an admission given back as its command ended, as Djinn read it, to count in what the
-// command costs; nil when there is none to count: a gate (djinn gate run counts its own), an admission taken back, or
+// command costs; nil when there is none to count: a gate, shared or not (djinn gate run counts its own), an admission taken back, or
 // one whose command ended before a reading after the first (its shell is read each second for its first readings,
 // readEvery, then every few seconds: a command under a second goes unmeasured). Its peak is the highest reading, not
 // the kernel's: the shell is the agent's child, not Djinn's, and no wait4 gives Djinn its rusage. The caller holds
 // g.mu.
 func (g *Gates) measured(w *waiter, why string) *machinev1.CommandServiceRecordRequest {
-	if !w.shared || why != "" || g.costs == nil || w.what == "" || w.reads < 2 || w.since.IsZero() {
+	if !w.admission || why != "" || g.costs == nil || w.what == "" || w.reads < 2 || w.since.IsZero() {
 		return nil
 	}
 	held := time.Since(w.since)
@@ -535,7 +545,7 @@ func (g *Gates) keep(ctx context.Context, w *waiter) {
 			g.holdsLong(w)
 		case <-tick.C:
 			if w.pid != 0 && !alive(w.pid) {
-				if w.shared {
+				if w.admission {
 					g.give(w, "") // Its command ended: an admission lasts that long.
 				} else {
 					g.give(w, fmt.Sprintf("its process %d ended", w.pid))
@@ -588,7 +598,7 @@ func (g *Gates) holdsLong(w *waiter) {
 		return
 	}
 	what := "gate " + w.name
-	if w.shared {
+	if w.admission {
 		what = "its admitted command"
 	}
 	line := fmt.Sprintf("Djinn: %s has held %s for %s, %s; nothing is taken back: see whether it hangs.",
@@ -694,8 +704,8 @@ func (g *Gates) outside(taskID string) bool {
 
 // Outside counts the gates held outside any running worker, by a person's terminal, a lead, a script or Djinn's
 // merges and pushes, and of them the merges' and pushes' (Request.First): each takes a worker's slot, so no new worker
-// starts on it while it is held. A worker's gate is in the worker's own slot. An admission takes no slot, unless its
-// command is heavy: then it is held alone, as a gate.
+// starts on it while it is held. A worker's gate is in the worker's own slot. A gate held shared, an admission or a
+// light command under a gate's name, takes no slot (G9 of L04): only one held alone does, and a heavy admission.
 func (g *Gates) Outside() (n, merges int) {
 	g.mu.Lock()
 	holders := make([]*waiter, 0, len(g.held))
@@ -723,9 +733,11 @@ func (g *Gates) Outside() (n, merges int) {
 // waiter's command peaked at; it tells every other waiter why it waits. Djinn's merges and pushes come first, the
 // first come first; then the others, the first wish of the rank first, then the first azima of its rank, then the first
 // come. A waiter for a merge or a push that cannot have its gate yet keeps it from the others; within a class, one the
-// memory holds goes before one it does not. An admission (Request.Shared) waits in the same order, for the pressure and
-// the memory only. A heavy command, gate or admission, also waits while another task's heavy command holds its own,
-// and a merge or a push that waits so keeps the turn from the heavy commands of the workers.
+// memory holds goes before one it does not. A gate held shared waits in the same order: an admission (Request.Shared)
+// for the pressure and the memory only, a light command under a gate's name also for one that holds that name alone
+// and for a merge that waits for it. A heavy command, gate or admission, also waits while another task's heavy command
+// holds its own, and a merge or a push that waits so keeps the turn from the heavy commands of the workers; one under a
+// gate's name does not wait for the light commands that share it.
 func (g *Gates) pass(ctx context.Context) {
 	var snap machine.Snapshot
 	var policy machine.Policy
@@ -788,7 +800,7 @@ func (g *Gates) pass(ctx context.Context) {
 		var why, cause string
 		var kind machinev1.GateWaitCause
 		h := g.held[w.name]
-		if w.shared {
+		if w.admission {
 			h = nil
 		}
 		heavy := g.heavyHolder(w)
@@ -813,7 +825,7 @@ func (g *Gates) pass(ctx context.Context) {
 		case pressure != "":
 			why = "the machine is under pressure: " + pressure
 			cause, kind = why, machinev1.GateWaitCause_GATE_WAIT_CAUSE_PRESSURE
-		case !w.first && !w.shared && merges[w.name] > 0:
+		case !w.first && !w.admission && merges[w.name] > 0:
 			why = "a merge or a push goes first: " + mergeWhy[w.name]
 			cause, kind = "merge first: "+mergeCause[w.name], machinev1.GateWaitCause_GATE_WAIT_CAUSE_MERGE_FIRST
 		case heavy != nil:
@@ -894,8 +906,8 @@ func (g *Gates) note(w *waiter, text string) {
 	g.tasks.Note(w.taskID, harness.Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_GATE, Text: "gate " + w.name + ": " + text})
 }
 
-// Held gives the names of the gates the task holds now, in order, Commands among them while one of its commands is
-// admitted: its worker is neither paused, nor stopped for a slot, nor judged silent meanwhile.
+// Held gives the names of the gates the task holds now, alone or shared, in order, Commands among them while one of its
+// commands is admitted: its worker is neither paused, nor stopped for a slot, nor judged silent meanwhile.
 func (g *Gates) Held(taskID string) []string {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -906,8 +918,8 @@ func (g *Gates) Held(taskID string) []string {
 		}
 	}
 	for h := range g.shared {
-		if taskID != "" && h.taskID == taskID && !slices.Contains(out, Commands) {
-			out = append(out, Commands)
+		if taskID != "" && h.taskID == taskID && !slices.Contains(out, h.name) {
+			out = append(out, h.name)
 		}
 	}
 	slices.Sort(out)
@@ -949,12 +961,13 @@ type State struct {
 	Since, Until               time.Time // Until: when it is taken back at the latest; zero when not known
 	Waiting                    []string
 	WaitingTaskIDs             []string          // the tasks of the waiters, in the same order; a waiter outside any task left out
-	TakesSlot                  bool              // held outside a running worker
+	TakesSlot                  bool              // held alone outside a running worker
+	Shared                     int               // how many light commands share it; Holder is the first of them unless one holds it alone
 	Ifrit                      bool              // held by a lit ifrit, until it goes out or ends
 	Use                        *planv1.Resources // what the holder's process uses; nil when not read
 }
 
-// List gives the gates held or waited for, by name; the admissions are not listed.
+// List gives the gates held or waited for, by name, alone or shared; the admissions are not listed.
 func (g *Gates) List() []State {
 	g.mu.Lock()
 	byName := map[string]*State{}
@@ -968,8 +981,22 @@ func (g *Gates) List() []State {
 		s := get(name)
 		s.Holder, s.HolderTaskID, s.Since, s.Until, s.Use, s.Ifrit = h.who, h.taskID, h.since, h.until, h.use, h.ifrit
 	}
+	alone := map[string]bool{}
+	for name := range g.held {
+		alone[name] = true
+	}
+	for h := range g.shared {
+		if h.admission {
+			continue
+		}
+		s := get(h.name)
+		s.Shared++
+		if !alone[h.name] && (s.Holder == "" || h.since.Before(s.Since)) {
+			s.Holder, s.HolderTaskID, s.Since, s.Until, s.Use = h.who, h.taskID, h.since, h.until, h.use
+		}
+	}
 	for _, w := range g.queue {
-		if w.shared {
+		if w.admission {
 			continue // An admission is no gate to list: Held and Waiting tell its task's.
 		}
 		s := get(w.name)
@@ -981,7 +1008,7 @@ func (g *Gates) List() []State {
 	g.mu.Unlock()
 	out := make([]State, 0, len(byName))
 	for _, s := range byName {
-		s.TakesSlot = s.Holder != "" && g.outside(s.HolderTaskID)
+		s.TakesSlot = alone[s.Name] && g.outside(s.HolderTaskID)
 		out = append(out, *s)
 	}
 	slices.SortFunc(out, func(a, b State) int { return strings.Compare(a.Name, b.Name) })

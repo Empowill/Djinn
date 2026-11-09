@@ -40,6 +40,14 @@ service LoadService {
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
 
+  // Choose the memory brake's threshold on this machine: under this percent of the machine's memory available, the
+  // brake freezes the worker that grows most outside the gates; 0 turns it off. It applies at once, and is kept in
+  // settings.json for the next djinn up. Refused while djinn up --brake-memory (or DJINN_BRAKE_MEMORY) sets it.
+  rpc SetBrake(LoadServiceSetBrakeRequest) returns (LoadServiceSetBrakeResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+
   // Follow the operating load notch and live memory: engaged peak forecasts, real worker memory, and machine RAM.
   rpc Watch(LoadServiceWatchRequest) returns (stream LoadServiceWatchResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
@@ -92,6 +100,13 @@ message LoadServiceGetResponse {
   bool lower_pauses = 18;
   // Why auto mode runs at its notch; unset outside auto mode.
   LoadAutoReason auto_reason = 19;
+  // The memory brake's threshold in effect: under this percent of the machine's memory available, it freezes the
+  // worker that grows most outside the gates. 0: no brake.
+  int32 brake_memory_percent = 20;
+  // Whether djinn up --brake-memory (or DJINN_BRAKE_MEMORY) set the threshold for this run: SetBrake is refused.
+  bool brake_memory_fixed = 21;
+  // Whether the memory brake is off (brake_memory_percent 0): it freezes no worker.
+  bool brake_off = 22;
 }
 
 message LoadServiceSetRequest {
@@ -109,6 +124,21 @@ message LoadServiceSetResponse {
   bool auto = 2;
   // The chosen ceiling notch when auto mode is active.
   LoadNotch chosen_notch = 3;
+}
+
+message LoadServiceSetBrakeRequest {
+  // The percent of the machine's memory available under which the brake freezes a worker, up to 95; 0: no brake.
+  optional uint32 percent = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).uint32.lte = 95
+  ];
+}
+
+message LoadServiceSetBrakeResponse {
+  // The memory brake's threshold in effect now; 0: no brake.
+  int32 brake_memory_percent = 1;
+  // Whether the memory brake is off now (brake_memory_percent 0): it freezes no worker.
+  bool brake_off = 2;
 }
 
 message LoadServiceWatchRequest {}

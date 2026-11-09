@@ -176,6 +176,10 @@ message Settings {
   // A command measured past this many seconds of CPU time is heavy, as above. Unset or 0: 60. djinn up reads it as it
   // starts.
   optional uint32 heavy_command_cpu_seconds = 16;
+  // The memory brake freezes the worker that grows most outside the gates under this percent of the machine's memory
+  // available (LoadService.SetBrake, the Summoning Circle). Unset: 5. 0: no brake. djinn up --brake-memory, or
+  // DJINN_BRAKE_MEMORY, comes first.
+  optional uint32 brake_memory_percent = 17 [(buf.validate.field).uint32.lte = 95];
 }
 
 // SignInRef names a sign-in of an agent: its own (no account) or one of its accounts.

@@ -86,13 +86,17 @@ enum ProjectNoticeKind {
   PROJECT_NOTICE_KIND_TO_FIX = 1;
   // Worth knowing; nothing waits for you.
   PROJECT_NOTICE_KIND_INFORMATION = 2;
+  // Something Djinn ignores in a file and goes on without, that you may want to correct: shown under To fix, more
+  // quietly than a thing to fix, and not counted in Project.to_fix (an unknown field of djinn.yaml).
+  PROJECT_NOTICE_KIND_WARNING = 3;
 }
 
 // ProjectNoticeTopic is the part of a project's configuration a notice comes from.
 enum ProjectNoticeTopic {
   // Not set.
   PROJECT_NOTICE_TOPIC_UNSPECIFIED = 0;
-  // A settings file: the team's .agents/settings.txtpb, or your own in Djinn's data folder.
+  // A settings file: the team's .agents/settings.txtpb, or your own in Djinn's data folder; or the project's
+  // djinn.yaml.
   PROJECT_NOTICE_TOPIC_SETTINGS = 1;
   // The project's .agents/permissions.txtpb.
   PROJECT_NOTICE_TOPIC_PERMISSIONS = 2;
@@ -5391,7 +5395,8 @@ service TaskService {
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
   // Pause a running worker without killing it: it holds still, keeps what it did, and frees its slot of the machine
-  // until it is resumed. A worker that holds or waits for a gate is not paused: wait, or stop it. Not possible on
+  // until it is resumed. A worker that holds a gate alone, or waits for one, is not paused: wait, or stop it. One that
+  // only shares its gates (a light command under a gate's name) is, since no one waits for them. Not possible on
   // Windows yet.
   rpc Pause(TaskServicePauseRequest) returns (TaskServicePauseResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;

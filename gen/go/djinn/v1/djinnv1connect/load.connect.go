@@ -38,6 +38,8 @@ const (
 	LoadServiceGetProcedure = "/djinn.v1.LoadService/Get"
 	// LoadServiceSetProcedure is the fully-qualified name of the LoadService's Set RPC.
 	LoadServiceSetProcedure = "/djinn.v1.LoadService/Set"
+	// LoadServiceSetBrakeProcedure is the fully-qualified name of the LoadService's SetBrake RPC.
+	LoadServiceSetBrakeProcedure = "/djinn.v1.LoadService/SetBrake"
 	// LoadServiceWatchProcedure is the fully-qualified name of the LoadService's Watch RPC.
 	LoadServiceWatchProcedure = "/djinn.v1.LoadService/Watch"
 )
@@ -48,6 +50,10 @@ type LoadServiceClient interface {
 	Get(context.Context, *connect.Request[v1.LoadServiceGetRequest]) (*connect.Response[v1.LoadServiceGetResponse], error)
 	// Choose the operating load notch in effect on this machine.
 	Set(context.Context, *connect.Request[v1.LoadServiceSetRequest]) (*connect.Response[v1.LoadServiceSetResponse], error)
+	// Choose the memory brake's threshold on this machine: under this percent of the machine's memory available, the
+	// brake freezes the worker that grows most outside the gates; 0 turns it off. It applies at once, and is kept in
+	// settings.json for the next djinn up. Refused while djinn up --brake-memory (or DJINN_BRAKE_MEMORY) sets it.
+	SetBrake(context.Context, *connect.Request[v1.LoadServiceSetBrakeRequest]) (*connect.Response[v1.LoadServiceSetBrakeResponse], error)
 	// Follow the operating load notch and live memory: engaged peak forecasts, real worker memory, and machine RAM.
 	Watch(context.Context, *connect.Request[v1.LoadServiceWatchRequest]) (*connect.ServerStreamForClient[v1.LoadServiceWatchResponse], error)
 }
@@ -76,6 +82,12 @@ func NewLoadServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(loadServiceMethods.ByName("Set")),
 			connect.WithClientOptions(opts...),
 		),
+		setBrake: connect.NewClient[v1.LoadServiceSetBrakeRequest, v1.LoadServiceSetBrakeResponse](
+			httpClient,
+			baseURL+LoadServiceSetBrakeProcedure,
+			connect.WithSchema(loadServiceMethods.ByName("SetBrake")),
+			connect.WithClientOptions(opts...),
+		),
 		watch: connect.NewClient[v1.LoadServiceWatchRequest, v1.LoadServiceWatchResponse](
 			httpClient,
 			baseURL+LoadServiceWatchProcedure,
@@ -87,9 +99,10 @@ func NewLoadServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 
 // loadServiceClient implements LoadServiceClient.
 type loadServiceClient struct {
-	get   *connect.Client[v1.LoadServiceGetRequest, v1.LoadServiceGetResponse]
-	set   *connect.Client[v1.LoadServiceSetRequest, v1.LoadServiceSetResponse]
-	watch *connect.Client[v1.LoadServiceWatchRequest, v1.LoadServiceWatchResponse]
+	get      *connect.Client[v1.LoadServiceGetRequest, v1.LoadServiceGetResponse]
+	set      *connect.Client[v1.LoadServiceSetRequest, v1.LoadServiceSetResponse]
+	setBrake *connect.Client[v1.LoadServiceSetBrakeRequest, v1.LoadServiceSetBrakeResponse]
+	watch    *connect.Client[v1.LoadServiceWatchRequest, v1.LoadServiceWatchResponse]
 }
 
 // Get calls djinn.v1.LoadService.Get.
@@ -100,6 +113,11 @@ func (c *loadServiceClient) Get(ctx context.Context, req *connect.Request[v1.Loa
 // Set calls djinn.v1.LoadService.Set.
 func (c *loadServiceClient) Set(ctx context.Context, req *connect.Request[v1.LoadServiceSetRequest]) (*connect.Response[v1.LoadServiceSetResponse], error) {
 	return c.set.CallUnary(ctx, req)
+}
+
+// SetBrake calls djinn.v1.LoadService.SetBrake.
+func (c *loadServiceClient) SetBrake(ctx context.Context, req *connect.Request[v1.LoadServiceSetBrakeRequest]) (*connect.Response[v1.LoadServiceSetBrakeResponse], error) {
+	return c.setBrake.CallUnary(ctx, req)
 }
 
 // Watch calls djinn.v1.LoadService.Watch.
@@ -113,6 +131,10 @@ type LoadServiceHandler interface {
 	Get(context.Context, *connect.Request[v1.LoadServiceGetRequest]) (*connect.Response[v1.LoadServiceGetResponse], error)
 	// Choose the operating load notch in effect on this machine.
 	Set(context.Context, *connect.Request[v1.LoadServiceSetRequest]) (*connect.Response[v1.LoadServiceSetResponse], error)
+	// Choose the memory brake's threshold on this machine: under this percent of the machine's memory available, the
+	// brake freezes the worker that grows most outside the gates; 0 turns it off. It applies at once, and is kept in
+	// settings.json for the next djinn up. Refused while djinn up --brake-memory (or DJINN_BRAKE_MEMORY) sets it.
+	SetBrake(context.Context, *connect.Request[v1.LoadServiceSetBrakeRequest]) (*connect.Response[v1.LoadServiceSetBrakeResponse], error)
 	// Follow the operating load notch and live memory: engaged peak forecasts, real worker memory, and machine RAM.
 	Watch(context.Context, *connect.Request[v1.LoadServiceWatchRequest], *connect.ServerStream[v1.LoadServiceWatchResponse]) error
 }
@@ -137,6 +159,12 @@ func NewLoadServiceHandler(svc LoadServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(loadServiceMethods.ByName("Set")),
 		connect.WithHandlerOptions(opts...),
 	)
+	loadServiceSetBrakeHandler := connect.NewUnaryHandler(
+		LoadServiceSetBrakeProcedure,
+		svc.SetBrake,
+		connect.WithSchema(loadServiceMethods.ByName("SetBrake")),
+		connect.WithHandlerOptions(opts...),
+	)
 	loadServiceWatchHandler := connect.NewServerStreamHandler(
 		LoadServiceWatchProcedure,
 		svc.Watch,
@@ -149,6 +177,8 @@ func NewLoadServiceHandler(svc LoadServiceHandler, opts ...connect.HandlerOption
 			loadServiceGetHandler.ServeHTTP(w, r)
 		case LoadServiceSetProcedure:
 			loadServiceSetHandler.ServeHTTP(w, r)
+		case LoadServiceSetBrakeProcedure:
+			loadServiceSetBrakeHandler.ServeHTTP(w, r)
 		case LoadServiceWatchProcedure:
 			loadServiceWatchHandler.ServeHTTP(w, r)
 		default:
@@ -166,6 +196,10 @@ func (UnimplementedLoadServiceHandler) Get(context.Context, *connect.Request[v1.
 
 func (UnimplementedLoadServiceHandler) Set(context.Context, *connect.Request[v1.LoadServiceSetRequest]) (*connect.Response[v1.LoadServiceSetResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("djinn.v1.LoadService.Set is not implemented"))
+}
+
+func (UnimplementedLoadServiceHandler) SetBrake(context.Context, *connect.Request[v1.LoadServiceSetBrakeRequest]) (*connect.Response[v1.LoadServiceSetBrakeResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("djinn.v1.LoadService.SetBrake is not implemented"))
 }
 
 func (UnimplementedLoadServiceHandler) Watch(context.Context, *connect.Request[v1.LoadServiceWatchRequest], *connect.ServerStream[v1.LoadServiceWatchResponse]) error {

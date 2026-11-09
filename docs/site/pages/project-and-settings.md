@@ -56,7 +56,7 @@ for you first:
 
 | Part | What it shows |
 | --- | --- |
-| To fix | In red, first, only when something waits for you: what Djinn finds that you must settle, each in one sentence, the error as Djinn read it, and what settles it. A source to decide on has its two choices, **Plug in** and **Say no**, each with what it changes; a summoned skill no longer found has **Unsummon**; a file to correct names the file; a command that does it is there to copy. See below. |
+| To fix | First, only when something waits for you or Djinn warns: in red, what Djinn finds that you must settle; after it, quieter, what Djinn ignores in a file and goes on without. Each in one sentence, the error as Djinn read it, and what settles it. A source to decide on has its two choices, **Plug in** and **Say no**, each with what it changes; a summoned skill no longer found has **Unsummon**; a file to correct names the file; a command that does it is there to copy. See below. |
 | Reference branch | The branch Djinn reads the project's configuration on, keeps the wishes up to date with, that azimas are cut from and that pull requests aim at: its name, the ref Djinn merges it from and the commit it points at, and where its name comes from (Djinn's default, the team's file or yours). Under it, **Where workers start**, for each push strategy, the project's own marked: per wish, from the wish's integration branch, the reference branch for a new wish; per azima, an azima's work from its own branch, cut from the remote's reference branch, and work of no azima from the wish's integration branch. Never from your copy. When your copy has another branch checked out, a line says so. **Change** lists the remote's branches as your copy last fetched them; **Choose** writes the one you pick in your own file, never in the repository, and when the choice is yours the list offers to take it back. See below. |
 | Worth knowing | The information Djinn finds: nothing waits for you. |
 | Checks | The setup and the checks Djinn runs on finished work, where each comes from, and how each last ran: passed on which commit, when, in how long, or why it failed. |
@@ -77,17 +77,19 @@ Nothing removes or renames a project once added.
 ## What Djinn finds in a project
 
 Djinn reads a project's configuration each time it shows the project, and says what it finds in a list: things to fix,
-which wait for you, then information. Each one says what it is in one sentence, and the one action that settles it: a
+which wait for you, then warnings, then information. Each one says what it is in one sentence, and the one action that settles it: a
 file to correct, a source to decide on, a skill to unsummon, a reference branch to name. The projects list carries the
 number of things to fix: while there is one, the project's gear in the side panel turns red with a small flame, its
 tooltip counts them, and the [inbox](#inbox) gives the project one line that opens its configuration. Information
-leaves the gear grey: you read it on opening the configuration.
+leaves the gear grey: you read it on opening the configuration. So does a warning, shown under To fix after the
+things to fix, with an amber sign and in quieter text: Djinn ignores something in a file and goes on without it.
 
-- **Things to fix**: a settings file or the permissions Djinn cannot read; no reference branch found, or the one the
+- **Things to fix**: a settings file, the permissions or the djinn.yaml Djinn cannot read; no reference branch found, or the one the
   settings name missing from the repository; the setup that failed its last run; a skill whose header Djinn cannot
   read, or whose wish template, inbox source or babysit it cannot use; a summoned skill no longer found; an inbox
   source this machine has not decided on, plugged in or said no to; a change on the reference branch that waits for
   your look.
+- **Warnings**: a field of djinn.yaml Djinn does not know, ignored; a second djinn.yaml, not read.
 - **Information**: a field a newer Djinn knows, ignored; your copy on another branch than the reference branch, which
   does not change the configuration Djinn reads, nor where its workers start; a source plugged in that no skill declares any more; a line of a skill's
   header that breaks its format, which Claude Code reads anyway and Djinn reads around.
@@ -180,11 +182,11 @@ reference branch is not fetched yet, is read in its folder.
 ### The watch on the reference branch
 
 Every five minutes, and after each of its pushes, Djinn fetches the reference branch of each project, that branch alone,
-and compares the digest of its agents folder and its Claude skills folder with the one of its last look: nothing is read
-again while it has not moved. When it has, each commit that changed them becomes an entry of the project's journal of
-changes, told in sentences: a new check before a push, a setting changed, two more commands the workers may run, a new
-skill with a wish template. Past twenty commits in one look, the older ones are told together; a change of the
-reference branch itself is one entry, the whole difference. The first look tells the last five as history.
+and compares the digest of its agents folder, its Claude skills folder and its djinn.yaml with the one of its last look:
+nothing is read again while it has not moved. When it has, each commit that changed them becomes an entry of the
+project's journal of changes, told in sentences: a new check before a push, a setting changed, two more commands the
+workers may run, a new skill with a wish template. Past twenty commits in one look, the older ones are told together; a
+change of the reference branch itself is one entry, the whole difference. The first look tells the last five as history.
 
 A change is applied as soon as Djinn fetches it. The gear lights only when a decision comes back to you: the
 permissions give the workers more (a command allowed or no longer denied, editing, the network, the agent's own auto
@@ -208,6 +210,22 @@ The repository's file is shared and versioned: it holds no key. Djinn refuses a 
 setting's name speaks of a key, a token, a secret or a password, where a word starts like a well-known key, or where a
 long run of letters and digits looks like one. The problem gives the line, never the value. A worker's keys stay where
 its agent keeps them.
+
+## Djinn's own file
+
+A repository also tells Djinn about itself in a YAML file of its own, djinn.yaml, at its root or in its agents folder.
+Djinn reads it on the reference branch, as it reads the permissions: a worker never changes what bounds it. When both
+are there, the one at the root is read, and a warning under To fix says the other is not. A field Djinn does not know
+is ignored, and the rest of the file applies: a warning under To fix names the file and the field, more quietly than a
+thing to fix, and leaves the gear grey. A file that does not parse, or a value of the wrong type or out of range, is a
+thing to fix: none of the file applies, Djinn's defaults hold, and To fix names the file and the error.
+
+Today it holds the **ceilings of the containers** the workers start with Docker: the memory of each container, swap
+included, in MiB (containers, then memory_mib), and its processes (containers, then pids). They stop a runaway, a fork
+bomb or a leak, never a container's ordinary work: a project whose containers need more gives them more here. Without
+the file, each container gets 4 GiB, or a quarter of the machine's memory when that is less, and 1024 processes.
+Djinn's Docker, first on each worker's path, brings a higher limit down to these ceilings, refuses an update that
+would lift them, and names the file where the project raises them.
 
 ## Permissions
 

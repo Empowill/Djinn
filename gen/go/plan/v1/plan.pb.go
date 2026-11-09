@@ -39,6 +39,9 @@ const (
 	ProjectNoticeKind_PROJECT_NOTICE_KIND_TO_FIX ProjectNoticeKind = 1
 	// Worth knowing; nothing waits for you.
 	ProjectNoticeKind_PROJECT_NOTICE_KIND_INFORMATION ProjectNoticeKind = 2
+	// Something Djinn ignores in a file and goes on without, that you may want to correct: shown under To fix, more
+	// quietly than a thing to fix, and not counted in Project.to_fix (an unknown field of djinn.yaml).
+	ProjectNoticeKind_PROJECT_NOTICE_KIND_WARNING ProjectNoticeKind = 3
 )
 
 // Enum value maps for ProjectNoticeKind.
@@ -47,11 +50,13 @@ var (
 		0: "PROJECT_NOTICE_KIND_UNSPECIFIED",
 		1: "PROJECT_NOTICE_KIND_TO_FIX",
 		2: "PROJECT_NOTICE_KIND_INFORMATION",
+		3: "PROJECT_NOTICE_KIND_WARNING",
 	}
 	ProjectNoticeKind_value = map[string]int32{
 		"PROJECT_NOTICE_KIND_UNSPECIFIED": 0,
 		"PROJECT_NOTICE_KIND_TO_FIX":      1,
 		"PROJECT_NOTICE_KIND_INFORMATION": 2,
+		"PROJECT_NOTICE_KIND_WARNING":     3,
 	}
 )
 
@@ -88,7 +93,8 @@ type ProjectNoticeTopic int32
 const (
 	// Not set.
 	ProjectNoticeTopic_PROJECT_NOTICE_TOPIC_UNSPECIFIED ProjectNoticeTopic = 0
-	// A settings file: the team's .agents/settings.txtpb, or your own in Djinn's data folder.
+	// A settings file: the team's .agents/settings.txtpb, or your own in Djinn's data folder; or the project's
+	// djinn.yaml.
 	ProjectNoticeTopic_PROJECT_NOTICE_TOPIC_SETTINGS ProjectNoticeTopic = 1
 	// The project's .agents/permissions.txtpb.
 	ProjectNoticeTopic_PROJECT_NOTICE_TOPIC_PERMISSIONS ProjectNoticeTopic = 2
@@ -29936,11 +29942,12 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\tunlimited\x18\x02 \x01(\x0e2\x19.plan.v1.UnlimitedSettingB\v\xbaH\b\xc8\x01\x01\x82\x01\x02\x10\x01R\tunlimited\"k\n" +
 	"\x1cLeadServiceUnlimitedResponse\x127\n" +
 	"\tunlimited\x18\x01 \x01(\x0e2\x19.plan.v1.UnlimitedSettingR\tunlimited\x12\x12\n" +
-	"\x04note\x18\x02 \x01(\tR\x04note*}\n" +
+	"\x04note\x18\x02 \x01(\tR\x04note*\x9e\x01\n" +
 	"\x11ProjectNoticeKind\x12#\n" +
 	"\x1fPROJECT_NOTICE_KIND_UNSPECIFIED\x10\x00\x12\x1e\n" +
 	"\x1aPROJECT_NOTICE_KIND_TO_FIX\x10\x01\x12#\n" +
-	"\x1fPROJECT_NOTICE_KIND_INFORMATION\x10\x02*\xa6\x02\n" +
+	"\x1fPROJECT_NOTICE_KIND_INFORMATION\x10\x02\x12\x1f\n" +
+	"\x1bPROJECT_NOTICE_KIND_WARNING\x10\x03*\xa6\x02\n" +
 	"\x12ProjectNoticeTopic\x12$\n" +
 	" PROJECT_NOTICE_TOPIC_UNSPECIFIED\x10\x00\x12!\n" +
 	"\x1dPROJECT_NOTICE_TOPIC_SETTINGS\x10\x01\x12$\n" +

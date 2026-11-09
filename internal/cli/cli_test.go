@@ -282,6 +282,13 @@ func (f loads) Set(_ context.Context, req *connect.Request[djinnv1.LoadServiceSe
 	return connect.NewResponse(resp), nil
 }
 
+// SetBrake answers like machine's LoadService: the percent, and whether it turns the brake off.
+func (f loads) SetBrake(_ context.Context, req *connect.Request[djinnv1.LoadServiceSetBrakeRequest]) (*connect.Response[djinnv1.LoadServiceSetBrakeResponse], error) {
+	f.record(req.Msg)
+	p := req.Msg.GetPercent()
+	return connect.NewResponse(&djinnv1.LoadServiceSetBrakeResponse{BrakeMemoryPercent: int32(p), BrakeOff: p == 0}), nil
+}
+
 // Watch sends the medium notch, then the minimal one in auto mode, and ends.
 func (f loads) Watch(_ context.Context, req *connect.Request[djinnv1.LoadServiceWatchRequest], s *connect.ServerStream[djinnv1.LoadServiceWatchResponse]) error {
 	f.record(req.Msg)
@@ -353,6 +360,8 @@ func TestRun(t *testing.T) {
 		{name: "load get", args: []string{"load", "get"}, wantOut: "notch: medium\n", wantCalled: true},
 		{name: "load set", args: []string{"load", "set", "minimal"}, wantOut: "notch: minimal\n", wantCalled: true},
 		{name: "load set auto", args: []string{"load", "set", "auto"}, wantOut: "notch: minimal\nauto: true\n", wantCalled: true},
+		{name: "a brake turned off says so", args: []string{"load", "set-brake", "0"}, wantOut: "brake_off: true\n", wantCalled: true},
+		{name: "a brake set", args: []string{"load", "set-brake", "8"}, wantOut: "brake_memory_percent: 8\n", wantCalled: true},
 		{name: "internal service is hidden", args: []string{"ui", "get-environment"}, wantCode: 2, wantErr: `unknown command "ui"`},
 		{name: "optional positional help", args: []string{"wish", "make", "--help"}, wantOut: "Usage: djinn wish make [<title>] [flags]"},
 		{name: "version", args: []string{"v"}, wantOut: "djinn test\n"},

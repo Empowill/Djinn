@@ -39,7 +39,10 @@ const (
 	limitLine     = "Your provider's usage limit stopped you; it has reset. Your worktree is as you left it. Continue your task."
 	envReplayLine = "Djinn replays this task after an environment failure. Continue your task."
 	preemptLine   = "Djinn interrupted your worker to make room for an investigator; your worktree is as you left it. Continue your task."
-	accountLine   = "Djinn moved you to another account of your agent: the one you ran on hit its usage limit or was paused. " +
+	brakeLine     = "Djinn's memory brake froze, then interrupted your worker: the machine ran short of memory while what it ran " +
+		"grew outside the gates. Your worktree is as you left it; what it left running is gone. Continue your task, and " +
+		"run a heavy command in the foreground, where the gates admit it."
+	accountLine = "Djinn moved you to another account of your agent: the one you ran on hit its usage limit or was paused. " +
 		"Your worktree is as you left it. Continue your task."
 	newSessionLine = "Djinn could not resume your earlier session: you start a new one on the same task. " +
 		"Your worktree is as you left it. Continue your task."
@@ -53,6 +56,7 @@ const (
 	byContinue   = "continued" // djinn task continue: its worker takes the new prompt on its session
 	byEnvReplay  = "replaying environment failure"
 	byPreempt    = "after making room"
+	byBrake      = "after the memory brake"     // it froze, then interrupted it (brake.go)
 	byLost       = "after its process was lost" // a watcher's (restartLostWatcher)
 	byAccount    = "on another sign-in"         // its own hit its usage limit or was paused (account.go)
 	byNewSession = "on a new session"           // its session was not found where it resumed (sessionLost)
@@ -314,6 +318,8 @@ func (h *Harness) relaunch(ctx context.Context, t *planv1.Task, preemptedCode ..
 		by = byEnvReplay
 	case strings.HasPrefix(t.GetWaitReason(), "made room for "):
 		by = byPreempt
+	case strings.HasPrefix(t.GetWaitReason(), whyBrake):
+		by = byBrake
 	case strings.HasPrefix(t.GetWaitReason(), whyLost):
 		by = byLost
 	case strings.HasPrefix(t.GetWaitReason(), whyNetworkDown):
@@ -337,7 +343,7 @@ func (h *Harness) relaunch(ctx context.Context, t *planv1.Task, preemptedCode ..
 		if end := t.GetEndTime(); end == nil || !h.netCut(end.AsTime()) {
 			t.Resumes++ // No outage confirmed when it was cut: a resume spent, as for a limit; an outage costs none.
 		}
-	case byWish, byAnswer, byEnvReplay, byRestart, byPreempt, byLost, byAccount, byNewSession:
+	case byWish, byAnswer, byEnvReplay, byRestart, byPreempt, byBrake, byLost, byAccount, byNewSession:
 		// No resume spent.
 	}
 	t.EndTime = nil
@@ -525,6 +531,8 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 		line = envReplayLine
 	case byPreempt:
 		line = preemptLine
+	case byBrake:
+		line = brakeLine
 	case byNetwork:
 		line = networkLine
 	case byAccount:

@@ -3,14 +3,12 @@ package harness
 import (
 	"context"
 	"os"
-	"path/filepath"
 	"runtime"
 	"sync"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/machine"
-	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/wrap"
 )
 
@@ -24,6 +22,9 @@ type Containers struct {
 	Read func(taskID string) (machine.Group, error)
 	// Remove removes the containers that carry every label given (key=value); nil: none removed.
 	Remove func(ctx context.Context, labels ...string)
+	// Pause freezes the running containers that carry every label given, or thaws the paused ones, and says how many
+	// (wrap.Pause): the memory brake's (brake.go); nil: none frozen.
+	Pause func(ctx context.Context, pause bool, labels ...string) int
 }
 
 // WithContainers has Djinn count each worker's containers in its task's series, and remove them once it ends.
@@ -44,7 +45,7 @@ var machineMemory = sync.OnceValue(func() uint64 {
 	return s.MemoryTotal
 })
 
-// containerCaps are the ceilings of the containers of a worker in project: the project's (plan.ContainersFile), else
+// containerCaps are the ceilings of the containers of a worker in project: the project's (djinn.yaml), else
 // Djinn's defaults, a quarter of the machine's memory when 4 GiB is more.
 func (h *Harness) containerCaps(project *planv1.Project) wrap.Caps {
 	caps := wrap.Caps{Memory: defaultContainerMemory, PIDs: defaultContainerPIDs}
@@ -54,14 +55,8 @@ func (h *Harness) containerCaps(project *planv1.Project) wrap.Caps {
 	if project == nil {
 		return caps
 	}
-	dir := plan.ConfigDir(h.home, project)
-	c, unknowns, err := plan.ReadContainers(dir)
-	for _, u := range unknowns {
-		plan.WarnUnknownField(filepath.Join(dir, plan.ContainersFile), u)
-	}
-	if err != nil {
-		logx.L().Warn("containers' ceilings unread: Djinn's defaults hold", "project", project.GetId(), "err", err)
-	}
+	c, file := h.projectContainers(project)
+	caps.File = file
 	if c.GetMemoryMib() > 0 {
 		caps.Memory = uint64(c.GetMemoryMib()) << 20
 	}
