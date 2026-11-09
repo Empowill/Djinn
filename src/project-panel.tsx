@@ -9,6 +9,7 @@ import {
   GitFork,
   Info,
   Plug,
+  TriangleAlert,
   Unplug,
 } from "lucide-react";
 import {
@@ -167,13 +168,15 @@ export function ProjectPanel({
   const syncs = shown?.project?.syncs ?? project.syncs;
   const notices = shown?.notices ?? [];
   const toFix = notices.filter((n) => n.kind === ProjectNoticeKind.TO_FIX);
+  // Under To fix too, after the things to fix and more quietly: what Djinn ignores in a file and goes on without.
+  const warnings = notices.filter((n) => n.kind === ProjectNoticeKind.WARNING);
   const branchInfo = notices.filter(
     (n) =>
-      n.kind !== ProjectNoticeKind.TO_FIX &&
+      n.kind === ProjectNoticeKind.INFORMATION &&
       n.topic === ProjectNoticeTopic.BRANCH,
   );
   const information = notices.filter(
-    (n) => n.kind !== ProjectNoticeKind.TO_FIX && !branchInfo.includes(n),
+    (n) => n.kind === ProjectNoticeKind.INFORMATION && !branchInfo.includes(n),
   );
   const setting = (name: string) =>
     shown?.settings.find((s) => s.name === name);
@@ -322,13 +325,19 @@ export function ProjectPanel({
       {shown === undefined && !error && (
         <p className="muted-text">{t("common.loading")}</p>
       )}
-      {toFix.length > 0 && (
-        <section className="config-box to-fix">
+      {toFix.length + warnings.length > 0 && (
+        <section className={`config-box ${toFix.length > 0 ? "to-fix" : ""}`}>
           <h3>
-            <Flame size={14} aria-hidden="true" />
-            {t("project.to_fix_heading", { count: toFix.length })}
+            {toFix.length > 0 ? (
+              <Flame size={14} aria-hidden="true" />
+            ) : (
+              <TriangleAlert size={14} aria-hidden="true" />
+            )}
+            {t("project.to_fix_heading", {
+              count: toFix.length + warnings.length,
+            })}
           </h3>
-          {toFix.map((n) => (
+          {[...toFix, ...warnings].map((n) => (
             <NoticeLine
               key={`${n.topic} ${n.subject} ${n.text}`}
               notice={n}
@@ -491,6 +500,7 @@ export function NoticeLine({
   onAct: (plug?: boolean) => void;
 }) {
   const toFix = notice.kind === ProjectNoticeKind.TO_FIX;
+  const warning = notice.kind === ProjectNoticeKind.WARNING;
   const button = (label: string, effect: string, plug?: boolean): ReactNode => (
     <div className="notice-choice">
       <button
@@ -562,10 +572,12 @@ export function NoticeLine({
       break;
   }
   return (
-    <div className={`notice ${toFix ? "to-fix" : ""}`}>
+    <div className={`notice ${toFix ? "to-fix" : warning ? "warning" : ""}`}>
       <p className="notice-text">
         {toFix ? (
           <Flame size={13} aria-hidden="true" />
+        ) : warning ? (
+          <TriangleAlert size={13} aria-hidden="true" />
         ) : (
           <Info size={13} aria-hidden="true" />
         )}

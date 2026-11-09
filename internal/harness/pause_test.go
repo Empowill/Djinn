@@ -209,6 +209,43 @@ func TestPauseHoldingGate(t *testing.T) {
 	}
 }
 
+// TestPauseSharedGate (W29): a worker that holds a gate only shared, a light lint beside others (Q17 B), is paused by
+// the developer, since no one waits for it; one that holds a gate alone is still refused, shared ones beside it or not.
+func TestPauseSharedGate(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	e := up(t, t.TempDir())
+	wishID, _ := e.wish(t, nativeFolder(t))
+	long := e.mustSpawn(t, wishID, "Long", ticks(), nil)
+	id := long.GetId()
+	var mu sync.Mutex
+	held, alone := map[string][]string{id: {"lint", "test"}}, map[string][]string{id: {"test"}}
+	of := func(gates map[string][]string) func(string) []string {
+		return func(taskID string) []string {
+			mu.Lock()
+			defer mu.Unlock()
+			return gates[taskID]
+		}
+	}
+	e.h.HeldGates(of(held), nil)
+	e.h.HeldAlone(of(alone))
+	_, err := e.tasks.Pause(t.Context(), connect.NewRequest(&planv1.TaskServicePauseRequest{TaskId: id}))
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), long.GetCode()+" holds the gate test: wait or stop it") {
+		t.Fatalf("pause while holding test alone and lint shared: %v", err)
+	}
+
+	// test given back, lint still shared: the pause goes through, wherever the worker can pause.
+	mu.Lock()
+	held[id], alone[id] = []string{"lint"}, nil
+	mu.Unlock()
+	if runtime.GOOS == "windows" {
+		return
+	}
+	if got := e.pause(t, id); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_PAUSED {
+		t.Errorf("paused while holding lint shared = %v", got)
+	}
+}
+
 // TestPausedInterrupted: a task paused when djinn up stops is interrupted, its worker stopped, and the next start
 // resumes it; one left paused in the store by a crash is interrupted at the next start, as a running one, then
 // resumed.

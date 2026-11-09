@@ -190,8 +190,8 @@ func TestTake(t *testing.T) {
 	})
 
 	// A merge that waits for the memory keeps its free gate from a worker's lighter command, which says it waits for
-	// the merge; on a machine full of workers holding their own gates, a merge gets another gate at once, and its gate
-	// held outside the workers counts as a merge's (Outside).
+	// the merge; on a machine full of workers holding their own gates, a merge gets another gate at once, and its heavy
+	// command's gate held outside the workers counts as a merge's (Outside), its light one, shared, as none.
 	t.Run("merge keeps gate while waiting for memory", func(t *testing.T) {
 		t.Parallel()
 		f := &tasks{rank: map[string]int{"M": 0, "W1": 0, "W2": 0, "W3": 0}, works: map[string]bool{"W1": true, "W2": true, "W3": true}}
@@ -223,6 +223,11 @@ func TestTake(t *testing.T) {
 		}
 		c, _ := merge(t, g, "lint", "M", "go tool task lint")
 		gives = append(gives, await(t, c, "the merge's lint beside the workers' gates"))
+		if n, merges := g.Outside(); n != 0 || merges != 0 {
+			t.Errorf("a light merge outside the workers: %d gates, %d of merges", n, merges)
+		}
+		c, _ = merge(t, g, "test", "M", "go tool task test")
+		gives = append(gives, await(t, c, "the merge's test beside the workers' gates"))
 		if n, merges := g.Outside(); n != 1 || merges != 1 {
 			t.Errorf("outside the workers: %d gates, %d of merges", n, merges)
 		}
@@ -444,6 +449,86 @@ func TestTake(t *testing.T) {
 	})
 }
 
+// TestShared: a light command under a gate's name shares it (Q17 B): two light lints, two light stacks of other
+// tasks hold their gates together, each in its task's Held, the list saying how many share, taking no slot outside a
+// worker. A heavy command holds its gate alone and goes one at a time across names: it does not wait for the light
+// ones sharing its name, a light one then waits for it, and another task's heavy command waits under any other name. A
+// lit ifrit holds its gate alone whatever its command costs: a light command waits for it.
+func TestShared(t *testing.T) {
+	t.Parallel()
+	f := &tasks{rank: map[string]int{"W1": 0, "W2": 0, "W3": 0, "W4": 0, "W5": 0, "W6": 0, "W7": 0}}
+	m := &measured{costs: map[string]machine.Cost{
+		"go tool task lint":  {Peak: 300 << 20, CPU: 20 * time.Second},
+		"docker compose up":  {Peak: 900 << 20},
+		"golangci-lint run":  {Peak: 7 * machine.GiB},
+		"go tool task e2e":   {Peak: 500 << 20, CPU: 5 * time.Minute},
+		"task run-back":      {Peak: 100 << 20},
+		"go tool task stack": {Peak: 200 << 20},
+	}}
+	box := calm()
+	box.setFree(64 * machine.GiB)
+	g := New(box, m, f)
+	g.tick = 10 * time.Millisecond
+	grant := func(name, taskID, what string) func() {
+		t.Helper()
+		c, _ := run(t, g, name, taskID, what)
+		return await(t, c, taskID+"'s "+name)
+	}
+
+	lint1, lint2 := grant("lint", "W1", "go tool task lint"), grant("Lint", "W2", "go tool task lint")
+	stack1, stack2 := grant("stack", "W1", "docker compose up"), grant("stack", "W2", "docker compose up")
+	if !slices.Equal(g.Held("W1"), []string{"lint", "stack"}) || !slices.Equal(g.Held("W2"), []string{"lint", "stack"}) {
+		t.Errorf("held: W1 %v, W2 %v", g.Held("W1"), g.Held("W2"))
+	}
+	l := g.List()
+	if len(l) != 2 || l[0].Name != "lint" || l[0].Shared != 2 || l[0].HolderTaskID != "W1" || l[0].TakesSlot ||
+		l[1].Name != "stack" || l[1].Shared != 2 || l[1].TakesSlot {
+		t.Errorf("list = %+v", l)
+	}
+	if n, merges := g.Outside(); n != 0 || merges != 0 {
+		t.Errorf("light commands outside a worker: %d gates, %d of merges", n, merges)
+	}
+
+	// A heavy lint holds lint alone beside the light ones: a light lint now waits for it, a light stack does not.
+	heavy := grant("lint", "W3", "golangci-lint run")
+	light, lightWaits := run(t, g, "lint", "W4", "go tool task lint")
+	if why := times(await(t, lightWaits, "the light lint waits")); why != "held by W3: golangci-lint run, for Ns" {
+		t.Errorf("the light lint waits because %q", why)
+	}
+	notGranted(t, light, "a gate a heavy command holds alone")
+	stack3 := grant("stack", "W4", "docker compose up")
+	if n, _ := g.Outside(); n != 1 {
+		t.Errorf("a heavy command outside a worker: %d gates", n)
+	}
+
+	// Another task's heavy command waits for its turn under any name; the light ones it does not wait for.
+	e2e, e2eWaits := run(t, g, "stack", "W5", "go tool task e2e")
+	if why := times(await(t, e2eWaits, "the heavy stack waits")); why != "heavy commands go one at a time: W3: golangci-lint run runs one, for Ns" {
+		t.Errorf("the heavy stack waits because %q", why)
+	}
+	notGranted(t, e2e, "a heavy command while another task's runs")
+	heavy()
+	giveE2E := await(t, e2e, "the heavy stack once the heavy lint is given back")
+	await(t, light, "the light lint once the heavy lint is given back")()
+	if l := g.List(); l[1].Name != "stack" || l[1].HolderTaskID != "W5" || l[1].Shared != 3 || !l[1].TakesSlot {
+		t.Errorf("stack held alone beside the light ones: %+v", l[1])
+	}
+	for _, give := range []func(){lint1, lint2, stack1, stack2, stack3, giveE2E} {
+		give()
+	}
+
+	// A lit ifrit's light server holds its gate alone: a light command waits for it.
+	f.light("W6", time.Now().Add(30*time.Minute))
+	back := grant("stack", "W6", "task run-back")
+	after, afterWaits := run(t, g, "stack", "W7", "go tool task stack")
+	if why := await(t, afterWaits, "the light stack waits for the ifrit"); !strings.HasPrefix(why, "held by ifrit W6: task run-back") {
+		t.Errorf("the light stack waits because %q", why)
+	}
+	notGranted(t, after, "a gate a lit ifrit holds")
+	back()
+	await(t, after, "the light stack once the ifrit gives its gate back")()
+}
+
 // TestWaiting: Waiting says which gates a task waits for, held by another or kept by the pressure, until it gets
 // them or stops waiting; a holder waits for nothing, and a waiter outside any task is no task's.
 func TestWaiting(t *testing.T) {
@@ -534,7 +619,7 @@ func TestIntervals(t *testing.T) {
 	log := machine.NewIntervals(db)
 	log.Add(t.Context(), &machinev1.GateInterval{Gate: "old", ReleaseTime: timestamppb.New(time.Now().Add(-8 * 24 * time.Hour))})
 	f := &tasks{rank: map[string]int{"W1": 0, "W2": 0}}
-	m := &measured{costs: map[string]machine.Cost{"go test ./...": {Peak: machine.GiB, Held: time.Minute}}}
+	m := &measured{costs: map[string]machine.Cost{"go test ./...": {Peak: 3 * machine.GiB, Held: time.Minute}}}
 	g := New(nil, m, f)
 	g.tick = 10 * time.Millisecond
 	g.Keep(log)

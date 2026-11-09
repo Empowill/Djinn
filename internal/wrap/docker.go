@@ -18,6 +18,22 @@ type Caps struct {
 	Memory uint64
 	// PIDs is a container's processes and threads.
 	PIDs int64
+	// File is the project's file Djinn read them in, relative to the project: djinn.yaml or .agents/djinn.yaml;
+	// empty when the project sets none, and Djinn's defaults hold.
+	File string
+}
+
+// ConfigFile is the file a project raises its ceilings in when it has none yet.
+const ConfigFile = "djinn.yaml"
+
+// Setting names where the project raises its ceilings, as the wrapper's messages say it: the file Djinn read them
+// in, else ConfigFile.
+func (c Caps) Setting() string {
+	file := c.File
+	if file == "" {
+		file = ConfigFile
+	}
+	return file + " (containers: memory_mib, pids)"
 }
 
 // TaskLabel names the label that binds a container to the task whose worker started it; HomeLabel the one that
@@ -36,9 +52,6 @@ func Slice(taskID string) string {
 
 // ErrRefused is why the wrapper refuses a docker command: it would lift a container's ceilings.
 var ErrRefused = errors.New("refused by Djinn")
-
-// Setting names where a project raises its ceilings, as the wrapper's messages say it.
-const Setting = ".agents/containers.txtpb (memory_mib, pids)"
 
 // Docker rewrites the arguments of docker (args, the command name left out) for the worker of taskID in the Djinn
 // of home: docker run and docker create (docker container run, create) get the task's label and slice, and the
@@ -219,12 +232,12 @@ func checkUpdate(args []string, caps Caps) error {
 		case "-m", "--memory", "--memory-swap":
 			if v, err := Bytes(o.value); err != nil || v < 0 || uint64(v) > caps.Memory {
 				return fmt.Errorf("%w: %s %s would lift the runaway ceiling of a worker's container, %s; %s raises it",
-					ErrRefused, o.name, o.value, Size(caps.Memory), Setting)
+					ErrRefused, o.name, o.value, Size(caps.Memory), caps.Setting())
 			}
 		case "--pids-limit":
 			if v, err := strconv.ParseInt(o.value, 10, 64); err != nil || v <= 0 || v > caps.PIDs {
 				return fmt.Errorf("%w: --pids-limit %s would lift the runaway ceiling of a worker's container, %d; %s raises it",
-					ErrRefused, o.value, caps.PIDs, Setting)
+					ErrRefused, o.value, caps.PIDs, caps.Setting())
 			}
 		}
 	}

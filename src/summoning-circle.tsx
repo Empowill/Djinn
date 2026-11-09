@@ -2,7 +2,8 @@
 // account, with which model (tilasm L49 v2 mockup A). First the agents, each with its next step (agent-setup.tsx);
 // then every sign-in of every agent in the order of priority, ranked by drag and drop or Alt+Arrow, each with its
 // gauges, its state, the workers and the tasks waiting there, and where the Djinn runs; then one row per kind of
-// worker, global to Djinn (every project); last, the change of the open tasks' models at once. The one place where the
+// worker, global to Djinn (every project); then the change of the open tasks' models at once; last, the memory brake's
+// threshold on this machine (W28, decision Q22 B). The one place where the
 // Djinn's agent, model and account are chosen: the window's top has no selector of its own (W578). The lead in its
 // terminal keeps its recorded session; when the Djinn's row names another agent, its line starts the Djinn there.
 // Models come from the server (live agent discovery + shared internal/usage/prices.yaml table), never a hand-written UI list.
@@ -253,6 +254,7 @@ export function SummoningCircle({
   initialLead,
   onChoose,
   onAgents,
+  initialBrake,
 }: {
   initialRows?: WorkerSeat[];
   initialModels?: readonly CircleModel[];
@@ -269,6 +271,8 @@ export function SummoningCircle({
   initialLead?: { recorded?: Provider; driven: boolean };
   // The agents as the Circle reads them, at each check: the window's side panel follows them (its yellow dot, W578).
   onAgents?: (env: UiServiceGetEnvironmentResponse) => void;
+  // The memory brake's threshold, as a test gives it; else read from Djinn (LoadService.Get).
+  initialBrake?: Brake;
 }) {
   const djinn = useDjinn();
   const liveAgents = useAgents();
@@ -567,9 +571,117 @@ export function SummoningCircle({
               }}
             />
           </section>
+          <BrakeSection initial={initialBrake} />
         </div>
       </div>
     </div>
+  );
+}
+
+// Brake is the memory brake's threshold on this machine, as LoadService.Get tells it.
+export interface Brake {
+  // Under this percent of the machine's memory available, the brake freezes the worker that grows most outside the
+  // gates; 0: no brake.
+  readonly percent: number;
+  // djinn up --brake-memory, or DJINN_BRAKE_MEMORY, set it for this run: the Circle cannot change it.
+  readonly fixed: boolean;
+}
+
+// The brake's default threshold (decision Q22 B), as Djinn's machine.DefaultBrakeMemory.
+export const DEFAULT_BRAKE = 5;
+
+// The thresholds the Circle offers, 0 for no brake.
+const BRAKE_CHOICES: readonly number[] = [0, 3, 5, 8, 10, 15, 20];
+
+// brakeChoices are the thresholds offered, the one in effect among them even when djinn up set another.
+export function brakeChoices(current: number): number[] {
+  return BRAKE_CHOICES.includes(current)
+    ? [...BRAKE_CHOICES]
+    : [...BRAKE_CHOICES, current].sort((a, b) => a - b);
+}
+
+// brakeLabel names a threshold in the list: off, a percent, the default said.
+function brakeLabel(percent: number): string {
+  if (percent === 0) return t("summoning.brake_off");
+  const shown = t("summoning.brake_percent", { percent });
+  return percent === DEFAULT_BRAKE
+    ? t("summoning.brake_default", { percent: shown })
+    : shown;
+}
+
+// BrakeSection sets the memory brake's threshold (LoadService.SetBrake): Djinn applies it at once and keeps it for the
+// next launches. Unread (an older Djinn), the section is left out.
+export function BrakeSection({ initial }: { initial?: Brake }) {
+  const djinn = useDjinn();
+  const [brake, setBrake] = useState<Brake | undefined>(initial);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    if (initial || !djinn) return;
+    let live = true;
+    djinn.clients.load
+      .get({})
+      .then((res) => {
+        if (live)
+          setBrake({
+            percent: res.brakeMemoryPercent,
+            fixed: res.brakeMemoryFixed,
+          });
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [djinn, initial]);
+  if (!brake) return null;
+  const choose = (percent: number) => {
+    if (!djinn) return;
+    setBusy(true);
+    setError("");
+    djinn.clients.load
+      .setBrake({ percent })
+      .then((res) =>
+        setBrake({ percent: res.brakeMemoryPercent, fixed: false }),
+      )
+      .catch((err) => setError(message(err)))
+      .finally(() => setBusy(false));
+  };
+  const label = t("summoning.brake_label");
+  return (
+    <>
+      <h3 className="summoning-section-title">{t("summoning.brake_title")}</h3>
+      <p className="agent-setup-intro">{t("summoning.brake_intro")}</p>
+      <section className="config-box summoning-list">
+        <div className="setting-row summoning-row">
+          <div>
+            <strong>{label}</strong>
+            <p>
+              {brake.fixed
+                ? t("summoning.brake_fixed")
+                : t("summoning.brake_detail")}
+            </p>
+            {error && (
+              <p className="field-error" role="alert">
+                {error}
+              </p>
+            )}
+          </div>
+          <select
+            className="summoning-select"
+            aria-label={label}
+            value={String(brake.percent)}
+            disabled={busy || brake.fixed || !djinn}
+            onChange={(e) => choose(Number(e.target.value))}
+          >
+            {brakeChoices(brake.percent).map((p) => (
+              <option key={p} value={String(p)}>
+                {brakeLabel(p)}
+              </option>
+            ))}
+          </select>
+        </div>
+      </section>
+    </>
   );
 }
 
