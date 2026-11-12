@@ -37,8 +37,20 @@ func (c corrector) Start(ctx context.Context, spec Spec) (Worker, error) {
 // correctWith makes the fake agent correct as work says, the tasks' and Djinn's own workers', which run on the
 // project's provider, claude by default (Q95). The test sets it before any worker starts.
 func (in *integration) correctWith(work func(dir, prompt string) string) {
-	in.h.providers[planv1.Provider_PROVIDER_FAKE] = corrector{work: work}
-	in.h.providers[planv1.Provider_PROVIDER_CLAUDE] = corrector{work: work}
+	in.mu.Lock()
+	in.work = work
+	in.mu.Unlock()
+}
+
+// correct is what the fake agents do first: correctWith's work, nothing until it is set.
+func (in *integration) correct(dir, prompt string) string {
+	in.mu.Lock()
+	work := in.work
+	in.mu.Unlock()
+	if work == nil {
+		return ""
+	}
+	return work(dir, prompt)
 }
 
 // correction is the correction worker that corrects task's work, once it has ended.
