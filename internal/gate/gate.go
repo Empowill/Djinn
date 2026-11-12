@@ -985,13 +985,18 @@ func (g *Gates) List() []State {
 	for name := range g.held {
 		alone[name] = true
 	}
+	first := map[string]*waiter{} // the first granted of each name's light commands; equal grant times (a coarse clock, Windows) go by arrival
 	for h := range g.shared {
 		if h.admission {
 			continue
 		}
-		s := get(h.name)
-		s.Shared++
-		if !alone[h.name] && (s.Holder == "" || h.since.Before(s.Since)) {
+		get(h.name).Shared++
+		if f := first[h.name]; f == nil || h.since.Before(f.since) || h.since.Equal(f.since) && h.seq < f.seq {
+			first[h.name] = h
+		}
+	}
+	for name, h := range first {
+		if s := get(name); !alone[name] {
 			s.Holder, s.HolderTaskID, s.Since, s.Until, s.Use = h.who, h.taskID, h.since, h.until, h.use
 		}
 	}

@@ -529,6 +529,36 @@ func TestShared(t *testing.T) {
 	await(t, after, "the light stack once the ifrit gives its gate back")()
 }
 
+// TestSharedFirstOnEqualTimes: light commands granted at the same instant, as Windows' coarse clock gives (PR #39),
+// list the first to arrive as the holder, whatever order the map gives them in.
+func TestSharedFirstOnEqualTimes(t *testing.T) {
+	t.Parallel()
+	box := calm()
+	box.setFree(64 * machine.GiB)
+	f := &tasks{rank: map[string]int{"W1": 0, "W2": 0, "W3": 0, "W4": 0}}
+	g := New(box, &measured{costs: map[string]machine.Cost{"go tool task lint": {Peak: 300 << 20}}}, f)
+	g.tick = 10 * time.Millisecond
+	var gives []func()
+	for _, id := range []string{"W1", "W2", "W3", "W4"} {
+		c, _ := run(t, g, "lint", id, "go tool task lint")
+		gives = append(gives, await(t, c, id+"'s lint"))
+	}
+	g.mu.Lock()
+	at := time.Now()
+	for w := range g.shared {
+		w.since = at
+	}
+	g.mu.Unlock()
+	for range 50 {
+		if l := g.List(); len(l) != 1 || l[0].HolderTaskID != "W1" || l[0].Shared != 4 {
+			t.Fatalf("list = %+v", l)
+		}
+	}
+	for _, give := range gives {
+		give()
+	}
+}
+
 // TestWaiting: Waiting says which gates a task waits for, held by another or kept by the pressure, until it gets
 // them or stops waiting; a holder waits for nothing, and a waiter outside any task is no task's.
 func TestWaiting(t *testing.T) {
