@@ -4,7 +4,8 @@
 // to it, Cmd/Ctrl+I opens it. A click or the focus going anywhere else folds it too, so the shortcut always opens it
 // focused. The draft stays with the wish, the flying carpet's with it. When the lead answers or tells a decision it
 // took alone (LeadService.Say: blocks of kind reply or decided), the eye comes to the socket and speaks in a bubble
-// held to the pill (Decision Q78 A, tilasm L13 v6).
+// held to the pill (Decision Q78 A, tilasm L13 v6), one sentence that fades 2 minutes after it shows (T70) unless the
+// pointer rests on it.
 import { Check, Clock, MessageSquare, Send, Terminal, X } from "lucide-react";
 import {
   type KeyboardEvent,
@@ -22,7 +23,10 @@ import { useClients, useOptionalData, useStore } from "./data/djinn";
 import {
   advanceLeadSay,
   bubblePlace,
+  leadSayLeftMs,
   leadSayQueue,
+  leadSayShown,
+  type LeadSayShown,
   readLastSent,
   readSeenIds,
   writeLastSent,
@@ -80,6 +84,26 @@ export function LeadMessage({
   const current = queue[0];
   useEyeSpeaking(queue.length > 0);
   const [bubbleOpen, setBubbleOpen] = useState(false);
+  // The front message fades, seen, 2 minutes after it shows; the pointer on the bubble holds it while it is read.
+  const [shown, setShown] = useState<LeadSayShown | undefined>();
+  const [hovered, setHovered] = useState(false);
+  const frontId = current?.id;
+  useEffect(() => {
+    setShown((prev) => leadSayShown(frontId, prev, Date.now()));
+  }, [frontId]);
+  useEffect(() => {
+    if (!shown || shown.id !== frontId || hovered) return;
+    const timer = setTimeout(
+      () => {
+        const next = new Set(seen);
+        next.add(shown.id);
+        setSeen(next);
+        writeSeenIds(next);
+      },
+      leadSayLeftMs(shown, Date.now()),
+    );
+    return () => clearTimeout(timer);
+  }, [shown, frontId, hovered, seen]);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const anchor = useRef<HTMLDivElement>(null);
   const [roomLeft, setRoomLeft] = useState(1024);
@@ -102,6 +126,7 @@ export function LeadMessage({
   useLayoutEffect(() => {
     if (!current) {
       setBubbleOpen(false);
+      setHovered(false);
       return;
     }
     const measure = () => {
@@ -250,10 +275,12 @@ export function LeadMessage({
             aria-live="polite"
             onMouseDown={(event) => event.preventDefault()}
             onMouseEnter={() => {
+              setHovered(true);
               if (hoverTimer.current) clearTimeout(hoverTimer.current);
               hoverTimer.current = setTimeout(() => setBubbleOpen(true), 150);
             }}
             onMouseLeave={() => {
+              setHovered(false);
               if (hoverTimer.current) clearTimeout(hoverTimer.current);
               hoverTimer.current = setTimeout(() => setBubbleOpen(false), 300);
             }}

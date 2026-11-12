@@ -309,6 +309,35 @@ export function advanceLeadSay<T extends Pick<LeadSayBlock, "id">>(
   return { seen: nextSeen, next: remaining[0], remaining };
 }
 
+// How long a message from the lead stays in the bubble once it shows (T70): an acknowledgement, then it fades. A faded
+// message is seen, so it never comes back at a reload.
+export const LEAD_SAY_SHOW_MS = 2 * 60 * 1000;
+
+// LeadSayShown is the message at the front of the bubble and when it showed, in ms since the epoch.
+export interface LeadSayShown {
+  id: string;
+  at: number;
+}
+
+// leadSayShown keeps when the front message showed while it stays at the front, and starts the clock of a new one.
+export function leadSayShown(
+  frontId: string | undefined,
+  shown: LeadSayShown | undefined,
+  nowMs: number,
+): LeadSayShown | undefined {
+  if (!frontId) return undefined;
+  return shown?.id === frontId ? shown : { id: frontId, at: nowMs };
+}
+
+// leadSayLeftMs is how long the shown message stays before it fades: 0 once its time has passed.
+export function leadSayLeftMs(
+  shown: LeadSayShown,
+  nowMs: number,
+  showMs = LEAD_SAY_SHOW_MS,
+): number {
+  return Math.max(0, shown.at + showMs - nowMs);
+}
+
 // bubblePlace places Bubble B to the left of the pill when closed and at least minSidePx (22rem = 352px) fits, else
 // above the composer.
 export function bubblePlace(

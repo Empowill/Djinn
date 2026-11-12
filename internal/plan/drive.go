@@ -34,7 +34,7 @@ const methodLeadBatch = "lead/batch"
 
 const (
 	// DrivenRulesVersion names the text of DrivenRules: every batch's session reads the version it got.
-	DrivenRulesVersion = "6"
+	DrivenRulesVersion = "7"
 	// batchEventsMax is the most events one batch takes; the others go to the next batch, at once.
 	batchEventsMax = 40
 	// JournalMax is how many of the latest batches of its wishes a batch's prompt carries at most.

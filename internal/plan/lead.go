@@ -357,9 +357,9 @@ func (s *LeadService) Tell(
 	return connect.NewResponse(&planv1.LeadServiceTellResponse{Waiting: waiting}), nil
 }
 
-// MaxLeadSayRunes is the longest text LeadService.Say puts in the window's bubble: a longer answer belongs in a
-// report block that the bubble names.
-const MaxLeadSayRunes = 600
+// MaxLeadSayRunes is the longest text LeadService.Say puts in the window's bubble: one sentence on one line, an
+// acknowledgement (T70). What is longer belongs in a question or a report block.
+const MaxLeadSayRunes = 160
 
 // Say puts a reply or a decision the lead took alone on the wish, as a block of kind "reply" or "decided" from the
 // lead: the wish's stream brings it to the window's bubble held to the Lamp pill.
@@ -374,10 +374,12 @@ func (s *LeadService) Say(
 	if text == "" {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("text: nothing to say"))
 	}
-	if n := utf8.RuneCountInString(text); n > MaxLeadSayRunes {
+	if n, lines := utf8.RuneCountInString(text), strings.Count(text, "\n")+1; n > MaxLeadSayRunes || lines > 1 {
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf(
-			"text is %d characters, at most %d fit in the window's bubble: shorten it, or write a report block (`djinn block put %s --kind report`) and name it here",
-			n, MaxLeadSayRunes, req.Msg.GetWishId()))
+			"the bubble takes one sentence, an acknowledgement: at most %d characters on one line, and this text has "+
+				"%d characters on %d lines; ask a question (`djinn question ask`) or write a block "+
+				"(`djinn block put %s --kind report`) for what is longer",
+			MaxLeadSayRunes, n, lines, req.Msg.GetWishId()))
 	}
 	kind := "reply"
 	if req.Msg.GetDecided() {
