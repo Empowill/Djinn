@@ -87,14 +87,22 @@ type tellBatcher struct {
 	pending map[string][]string // wishID -> lines
 	timers  map[string]*time.Timer
 	closed  bool
+	// inflight counts the paragraphs a timer took from pending and has not told yet: Flush waits for them, or it would
+	// return before a line already taken reaches the lead (W741). delivered wakes it, on mu.
+	inflight  int
+	delivered *sync.Cond
+	// taken runs once a timer took its lines, before it tells them: tests widen the race with it.
+	taken func()
 }
 
 func newTellBatcher(h *Harness) *tellBatcher {
-	return &tellBatcher{
+	b := &tellBatcher{
 		h:       h,
 		pending: make(map[string][]string),
 		timers:  make(map[string]*time.Timer),
 	}
+	b.delivered = sync.NewCond(&b.mu)
+	return b
 }
 
 func (b *tellBatcher) queue(wishID, line string) {
@@ -133,13 +141,24 @@ func (b *tellBatcher) flushWish(wishID string) {
 	}
 	lines := b.pending[wishID]
 	delete(b.pending, wishID)
-	b.mu.Unlock()
-
 	if len(lines) == 0 {
+		b.mu.Unlock()
 		return
 	}
-	paragraph := strings.Join(lines, "\n")
-	b.h.tellWish(wishID, paragraph)
+	b.inflight++
+	taken := b.taken
+	b.mu.Unlock()
+	defer func() {
+		b.mu.Lock()
+		b.inflight--
+		b.delivered.Broadcast()
+		b.mu.Unlock()
+	}()
+
+	if taken != nil {
+		taken()
+	}
+	b.h.tellWish(wishID, strings.Join(lines, "\n"))
 }
 
 func (b *tellBatcher) Flush(ctx context.Context) {
@@ -164,6 +183,12 @@ func (b *tellBatcher) Flush(ctx context.Context) {
 	for _, it := range items {
 		b.h.tellWish(it.wishID, it.paragraph)
 	}
+	// A timer may have taken its lines just before: they are told once Flush returns, as the lines it took itself.
+	b.mu.Lock()
+	for b.inflight > 0 {
+		b.delivered.Wait()
+	}
+	b.mu.Unlock()
 }
 
 func (b *tellBatcher) Close() {
@@ -177,7 +202,8 @@ func (b *tellBatcher) Close() {
 	b.mu.Unlock()
 }
 
-// FlushTell sends any pending batched messages to the leads immediately.
+// FlushTell sends any pending batched messages to the leads immediately, and returns once the lines a timer took
+// before it are told too.
 func (h *Harness) FlushTell(ctx context.Context) {
 	if h.batcher != nil {
 		h.batcher.Flush(ctx)

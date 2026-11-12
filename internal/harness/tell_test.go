@@ -185,3 +185,36 @@ func TestTellLeads(t *testing.T) {
 		}
 	})
 }
+
+// TestTellFlushWaitsTimer verifies FlushTell returns only once the lines its timer took before it reach the lead
+// (W741): the timer takes them, then tells them a little later; a Flush in between found nothing and returned.
+func TestTellFlushWaitsTimer(t *testing.T) {
+	t.Parallel()
+	lead := &leadListener{}
+	h := &Harness{tellDelay: time.Millisecond, tell: lead.tell}
+	b := newTellBatcher(h)
+	h.batcher = b
+	took, release := make(chan struct{}), make(chan struct{})
+	b.taken = func() {
+		close(took)
+		<-release
+	}
+
+	b.queue("wish", "Djinn: W1 failed.")
+	<-took // The timer holds the line, not told yet.
+	flushed := make(chan struct{})
+	go func() {
+		h.FlushTell(t.Context())
+		close(flushed)
+	}()
+	select {
+	case <-flushed:
+		t.Fatalf("FlushTell returned before the timer's line was told: %v", lead.all())
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(release)
+	<-flushed
+	if got := lead.all(); !slices.Equal(got, []string{"Djinn: W1 failed."}) {
+		t.Errorf("told %q, want the timer's line", got)
+	}
+}
