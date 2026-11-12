@@ -351,3 +351,50 @@ func TestCodexDecision(t *testing.T) {
 		})
 	}
 }
+
+// TestInvestigationWeb (W708): an investigation searches and reads the web in a project whose permissions keep the
+// network off, as a question worker does; a work task of the same project does not, and neither gets curl.
+func TestInvestigationWeb(t *testing.T) {
+	t.Parallel()
+	declared := &djinnv1.Permissions{Edit: true, Commands: []string{"go tool task test"}, Mode: djinnv1.Mode_MODE_LISTED}
+	settings := func(task *planv1.Task) (allow, deny []string) {
+		t.Helper()
+		readOnly, perms := taskPermissions(task, declared)
+		args := Claude{}.args(Spec{TaskID: "t1", Dir: t.TempDir(), ReadOnly: readOnly, Permissions: perms})
+		var s struct {
+			Permissions struct{ Allow, Deny []string }
+		}
+		if err := json.Unmarshal([]byte(args[slices.Index(args, "--settings")+1]), &s); err != nil {
+			t.Fatal(err)
+		}
+		return s.Permissions.Allow, s.Permissions.Deny
+	}
+	web := []string{"WebFetch", "WebSearch"}
+	investigation := &planv1.Task{Kind: planv1.TaskKind_TASK_KIND_INVESTIGATION, Access: planv1.TaskAccess_TASK_ACCESS_AGENTS}
+	allow, deny := settings(investigation)
+	for _, w := range web {
+		if !slices.Contains(allow, w) || slices.Contains(deny, w) {
+			t.Errorf("investigation: %s not allowed: allow %v, deny %v", w, allow, deny)
+		}
+	}
+	if !slices.Contains(allow, "Bash(go tool task test *)") || slices.ContainsFunc(allow, func(r string) bool {
+		return strings.HasPrefix(r, "Bash(curl")
+	}) {
+		t.Errorf("investigation: commands not the project's: %v", allow)
+	}
+	work := &planv1.Task{Kind: planv1.TaskKind_TASK_KIND_WORK, Access: planv1.TaskAccess_TASK_ACCESS_AGENTS}
+	allow, deny = settings(work)
+	for _, w := range web {
+		if slices.Contains(allow, w) || !slices.Contains(deny, w) {
+			t.Errorf("work task: %s not denied: allow %v, deny %v", w, allow, deny)
+		}
+	}
+	if declared.GetNetwork() {
+		t.Error("the project's declared permissions were changed")
+	}
+	// The agent's own configuration (NATIVE) gets nothing from Djinn, an investigation's neither.
+	native := &planv1.Task{Kind: planv1.TaskKind_TASK_KIND_INVESTIGATION, Access: planv1.TaskAccess_TASK_ACCESS_NATIVE}
+	if _, perms := taskPermissions(native, declared); perms != nil {
+		t.Errorf("native investigation: permissions %v, want none", perms)
+	}
+}

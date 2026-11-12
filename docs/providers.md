@@ -140,6 +140,12 @@ the folder too, and its prompt, written for that agent, the context file's lines
 of Q06 refused (W5). Verified on 2026-10-20 with claude 2.1.304 in `dontAsk`: a quoted line that starts with `#` is
 refused, a `#` after a command on its line passes, `--context-file` passes.
 
+**An investigation** (`--kind investigation`) gets the access these rules give its project, and the web on top
+(`withWeb`, W708): it searches and fetches pages as a question worker does (`WebFetch` and `WebSearch`, `read_url(*)`
+and `search_web`, `networkAccess`), even where the project's permissions keep the network off. Its commands stay the
+project's, so a command that reaches the network (`curl`) is still refused; a work task of the same project gets
+neither. Under the agent's own configuration (`NATIVE`) Djinn passes nothing, an investigation's neither.
+
 **What counts as agent configuration** (rule 4), at the root of the project's folder, file names compared without
 regard to case: for every agent, `AGENTS.md` and an `.agents` folder; for Claude, `CLAUDE.md`, `CLAUDE.local.md`,
 `.claude/CLAUDE.md`, `.claude/settings.json`, `.claude/settings.local.json`; for Codex, `AGENTS.override.md` and a

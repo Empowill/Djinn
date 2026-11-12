@@ -516,8 +516,7 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 		}
 		r.setChecks(settings)
 	}
-	readOnly, perms := accessSpec(t.GetAccess(), prep.declared)
-	perms = withCommit(t, perms)
+	readOnly, perms := taskPermissions(t, prep.declared)
 	line := restartedLine
 	switch by {
 	case byLimit:
