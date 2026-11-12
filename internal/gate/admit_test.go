@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -276,15 +277,22 @@ func TestAdmission(t *testing.T) {
 		m := &measured{costs: map[string]machine.Cost{}}
 		g := New(calm(), m, f)
 		g.tick = 10 * time.Millisecond
+		var reads atomic.Int32
 		g.Measure(10*time.Millisecond, func(int) (machine.Group, error) {
+			reads.Add(1)
 			return machine.Group{Processes: 2, CPU: 2 * time.Second, Memory: 300 << 20}, nil
 		})
 		shell := child(t)
 		await(t, func() <-chan func() { c, _ := admit(t, g, "W1", "npm run build", shell.Process.Pid); return c }(), "the admission")
-		time.Sleep(50 * time.Millisecond) // Read more than once.
-		end(shell)
+		// Read twice whole, its cost needs it: a third reading started, the second has been counted. A sleep of a
+		// few ticks is not enough on a loaded Windows runner (PR #39).
 		deadline := time.Now().Add(5 * time.Second)
-		for g.Held("W1") != nil && time.Now().Before(deadline) {
+		for reads.Load() < 3 && time.Now().Before(deadline) {
+			time.Sleep(10 * time.Millisecond)
+		}
+		end(shell)
+		// The run is recorded once the admission is given back, after Held stops naming it.
+		for (g.Held("W1") != nil || len(m.recorded()) == 0) && time.Now().Before(deadline) {
 			time.Sleep(10 * time.Millisecond)
 		}
 		if g.Held("W1") != nil {
