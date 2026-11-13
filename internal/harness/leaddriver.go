@@ -104,7 +104,7 @@ func (d *LeadDriver) Overflowing() bool { return d.overflow.Load() }
 
 // LeadDriver is the driver of the lead of h's Djinn, on wishes: h's Claude, its processes tracked.
 func (h *Harness) LeadDriver(wishes *plan.Wishes, changed func()) *LeadDriver {
-	d := &LeadDriver{Wishes: wishes, Home: h.home, Changed: changed, Now: h.now, Providers: h.providers, accounts: h}
+	d := &LeadDriver{Wishes: wishes, Home: h.home, Changed: changed, Now: h.now, Providers: h.providerMap(), accounts: h}
 	if h.children != nil {
 		d.Track = h.children.tracker("lead", "lead")
 	}

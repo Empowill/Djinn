@@ -155,7 +155,7 @@ func (h *Harness) continuable(ctx context.Context, t *planv1.Task, running bool)
 	if t.GetProvider() == planv1.Provider_PROVIDER_WATCH {
 		return refuse("is a watcher, which has no session: spawn it again")
 	}
-	if _, ok := h.providers[t.GetProvider()]; !ok {
+	if _, ok := h.provider(t.GetProvider()); !ok {
 		return refuse("runs %s, which is not available", short(t.GetProvider()))
 	}
 	providerChanged := t.GetPriorProvider() != planv1.Provider_PROVIDER_UNSPECIFIED && t.GetPriorProvider() != t.GetProvider()

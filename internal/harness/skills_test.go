@@ -156,7 +156,7 @@ func TestSummonAtLaunch(t *testing.T) {
 
 	// The harness links the source's folder, under both folders, for the worker's whole life.
 	probe := linkProbe{specs: make(chan probed, 1)}
-	e.h.providers[planv1.Provider_PROVIDER_FAKE] = probe
+	e.h.setProvider(planv1.Provider_PROVIDER_FAKE, probe)
 	task, events := spawn(planv1.Provider_PROVIDER_FAKE)
 	got := <-probe.specs
 	if got.spec.SkillsDir != skillsDir(home, task.GetId()) || len(got.spec.Skills) != 1 || got.spec.Skills[0].Dir != src {
@@ -183,7 +183,7 @@ func TestSummonAtLaunch(t *testing.T) {
 		{planv1.Provider_PROVIDER_CODEX, Codex{Command: os.Args[0]}, "codex"},
 	} {
 		env, argsFile, inputFile := fake{provider: c.name, fixture: "success", end: "eof"}.env(t)
-		e.h.providers[c.kind] = withEnv{c.provider, env}
+		e.h.setProvider(c.kind, withEnv{c.provider, env})
 		task, _ := spawn(c.kind)
 		args, _ := os.ReadFile(argsFile)
 		input, _ := os.ReadFile(inputFile)

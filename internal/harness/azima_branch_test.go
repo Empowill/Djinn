@@ -146,7 +146,7 @@ func TestNameAzimaBranch(t *testing.T) {
 	t.Run("adopts wish branch then pushes per azima", func(t *testing.T) {
 		t.Parallel()
 		e, _, wishID, projectID, repo := uncheckedDew(t)
-		e.h.providers[planv1.Provider_PROVIDER_FAKE] = corrector{work: func(dir, prompt string) string {
+		e.h.setProvider(planv1.Provider_PROVIDER_FAKE, corrector{work: func(dir, prompt string) string {
 			name, ok := strings.CutPrefix(prompt, "file ")
 			if !ok {
 				return ""
@@ -160,7 +160,7 @@ func TestNameAzimaBranch(t *testing.T) {
 				}
 			}
 			return "text Committed " + name + "."
-		}}
+		}})
 		main, _ := git(t.Context(), repo, "rev-parse", "refs/heads/main")
 		if _, err := e.wishes.SetIntegration(t.Context(), connect.NewRequest(&planv1.WishServiceSetIntegrationRequest{
 			WishId: wishID, ProjectId: projectID, Branch: dewBranch, CreateBranch: true,

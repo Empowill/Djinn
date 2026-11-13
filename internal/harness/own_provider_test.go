@@ -16,7 +16,7 @@ func (in *integration) ownProvider(t *testing.T, settings string, work func(dir,
 	writeFile(t, in.home, filepath.Join("projects", in.projectID, "settings.txtpb"),
 		"provider: PROVIDER_CLAUDE\nmodel: \""+ownModel+"\"\n"+settings)
 	in.correctWith(work)
-	in.h.providers[planv1.Provider_PROVIDER_ANTIGRAVITY] = corrector{work: work}
+	in.h.setProvider(planv1.Provider_PROVIDER_ANTIGRAVITY, corrector{work: work})
 }
 
 // ownModel is the project's model in the tests of Djinn's own workers.

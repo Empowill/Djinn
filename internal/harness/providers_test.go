@@ -863,7 +863,7 @@ func TestProviderMissing(t *testing.T) {
 func TestSpawnMissingProvider(t *testing.T) {
 	t.Parallel()
 	e := up(t, t.TempDir())
-	e.h.providers[planv1.Provider_PROVIDER_CODEX] = Codex{Command: "codex-djinn-missing"}
+	e.h.setProvider(planv1.Provider_PROVIDER_CODEX, Codex{Command: "codex-djinn-missing"})
 	wishID, _ := e.wish(t, t.TempDir())
 	_, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
 		WishId: wishID, Title: "Try codex", Provider: planv1.Provider_PROVIDER_CODEX,
@@ -899,7 +899,7 @@ func TestSpawnOutsideProject(t *testing.T) {
 	home := t.TempDir()
 	e := up(t, home)
 	rec := recorder{specs: make(chan Spec, 1)}
-	e.h.providers[planv1.Provider_PROVIDER_CLAUDE] = rec
+	e.h.setProvider(planv1.Provider_PROVIDER_CLAUDE, rec)
 	wish, err := e.wishes.Make(t.Context(), connect.NewRequest(&planv1.WishServiceMakeRequest{Title: "Read a document"}))
 	if err != nil {
 		t.Fatal(err)

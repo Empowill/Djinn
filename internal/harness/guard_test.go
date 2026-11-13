@@ -197,7 +197,7 @@ func TestGitGuard(t *testing.T) {
 		home := t.TempDir()
 		e := up(t, home)
 		rec := recorder{specs: make(chan Spec, 1)}
-		e.h.providers[planv1.Provider_PROVIDER_FAKE] = rec
+		e.h.setProvider(planv1.Provider_PROVIDER_FAKE, rec)
 		wishID, _ := e.wish(t, gitRepo(t))
 		task := e.spawn(t, wishID, "say hello")
 		spec := <-rec.specs

@@ -661,7 +661,7 @@ func (h *Harness) launchPlannedWithPreemption(ctx context.Context, t *planv1.Tas
 	if dispatch.Resuming(t) {
 		return h.relaunch(ctx, t, preemptedCode)
 	}
-	provider, ok := h.providers[t.GetProvider()]
+	provider, ok := h.provider(t.GetProvider())
 	if !ok {
 		h.failPlanned(ctx, t, fmt.Sprintf("provider %s is not available", t.GetProvider()))
 		return nil

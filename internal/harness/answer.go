@@ -454,7 +454,7 @@ func (h *Harness) applyAnswer(r *run, q *planv1.Question) bool {
 // budget. The caller owns the run's task.
 func (h *Harness) again(r *run) error {
 	t := r.task
-	provider, ok := h.providers[t.GetProvider()]
+	provider, ok := h.provider(t.GetProvider())
 	if !ok {
 		return fmt.Errorf("provider %s is not available", t.GetProvider())
 	}

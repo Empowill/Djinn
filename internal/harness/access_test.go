@@ -194,7 +194,7 @@ func TestAskToEdit(t *testing.T) {
 	t.Run("unable_to_read", func(t *testing.T) {
 		t.Parallel()
 		e := up(t, t.TempDir())
-		e.h.providers[planv1.Provider_PROVIDER_ANTIGRAVITY] = Antigravity{Command: "djinn-no-such-agy"}
+		e.h.setProvider(planv1.Provider_PROVIDER_ANTIGRAVITY, Antigravity{Command: "djinn-no-such-agy"})
 		wishID, _ := e.wish(t, folder(t))
 		res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
 			WishId: wishID, Title: "Edit with agy", Provider: planv1.Provider_PROVIDER_ANTIGRAVITY,
@@ -273,7 +273,7 @@ func TestSpawnAccess(t *testing.T) {
 	t.Parallel()
 	e := up(t, t.TempDir())
 	rec := recorder{specs: make(chan Spec, 1)}
-	e.h.providers[planv1.Provider_PROVIDER_CLAUDE] = rec
+	e.h.setProvider(planv1.Provider_PROVIDER_CLAUDE, rec)
 	spawn := func(dir string) (*planv1.Task, Spec) {
 		t.Helper()
 		wishID, _ := e.wish(t, dir)
@@ -332,7 +332,7 @@ func TestWishAllow(t *testing.T) {
 	t.Parallel()
 	e := up(t, t.TempDir())
 	rec := recorder{specs: make(chan Spec, 1)}
-	e.h.providers[planv1.Provider_PROVIDER_CLAUDE] = rec
+	e.h.setProvider(planv1.Provider_PROVIDER_CLAUDE, rec)
 	dir := folder(t)
 	writeFile(t, dir, ".agents/permissions.txtpb", "edit: false\ncommands: \"ls\"\n")
 	wishID, projectID := e.wish(t, dir)
@@ -396,7 +396,7 @@ func TestWishAllow(t *testing.T) {
 	}
 
 	// An allowance on a folder outside Git without configuration: no question, the fake edits.
-	e.h.providers[planv1.Provider_PROVIDER_CLAUDE] = Fake{}
+	e.h.setProvider(planv1.Provider_PROVIDER_CLAUDE, Fake{})
 	plain := folder(t)
 	wishID, _ = e.wish(t, plain)
 	allow(planv1.Allowance_ALLOWANCE_EDIT)

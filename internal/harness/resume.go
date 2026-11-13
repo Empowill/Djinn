@@ -347,7 +347,7 @@ func (h *Harness) relaunch(ctx context.Context, t *planv1.Task, preemptedCode ..
 		// No resume spent.
 	}
 	t.EndTime = nil
-	provider, ok := h.providers[t.GetProvider()]
+	provider, ok := h.provider(t.GetProvider())
 	if !ok {
 		h.failPlanned(ctx, t, fmt.Sprintf("provider %s is not available", t.GetProvider()))
 		return nil

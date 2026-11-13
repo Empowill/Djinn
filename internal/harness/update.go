@@ -440,7 +440,7 @@ func (h *Harness) UpdateModels(ctx context.Context, procedure string, req *planv
 	if p == planv1.Provider_PROVIDER_UNSPECIFIED || p == planv1.Provider_PROVIDER_WATCH {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("give --provider (claude, codex or antigravity) or a known --model"))
 	}
-	if _, ok := h.providers[p]; !ok && !plan.ValidWorkerProvider(p) {
+	if _, ok := h.provider(p); !ok && !plan.ValidWorkerProvider(p) {
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("provider %s is not available", short(p)))
 	}
 

@@ -26,6 +26,11 @@ the code does not say by itself; remove one when a change makes it false.
   under `h.mu` (W182: a data race under `-race`). *Do:* a new reader outside the pump reads `r.shown`; a test that
   changes what the scheduler sees replaces `r.shown` (`shownAs`), once the worker said its session. *Where:*
   `internal/harness/harness.go`.
+- **The probe of quotas reads the agents while a test sets one.** `Schedule` starts the probe, which reads the
+  harness's agents by kind at once, in its own goroutine; a test that wrote `h.providers` after `up` raced it, and
+  `-race` then failed every test running beside (W37: ~150 red from 14 races). *Do:* read an agent with
+  `h.provider`, set or drop one in a test with `h.setProvider` (nil drops it), never the map. *Where:*
+  `internal/harness/harness.go`, `internal/harness/quota.go`.
 - **`jq` is slow in test fakes.** jq 1.6 costs ~57 ms a run: a fake `gh`/`glab` that runs it per call made a test
   last 1.5 s (W148). *Do:* run jq once per command over all its data files (`input_filename` before each line) and
   cache the answers, or answer in Go with no jq at all. *Where:* `internal/harness/babysit_pr_test.go`,

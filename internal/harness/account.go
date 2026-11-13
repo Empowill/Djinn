@@ -171,7 +171,8 @@ func (h *Harness) accountOptions(provider planv1.Provider) []AccountOption {
 		}
 		// No quota at all: a reading with no window, or with none, an agent that tells none. A failed probe is no
 		// reading: a Claude sign-in whose probe fails is not unlimited, its quota only unknown.
-		_, tells := h.providers[provider].(UsageProber)
+		agent, _ := h.provider(provider)
+		_, tells := agent.(UsageProber)
 		out[i].Detected = !read && !tells || read && q.FiveHour == nil && q.SevenDay == nil
 		switch s.Unlimited {
 		case planv1.UnlimitedSetting_UNLIMITED_SETTING_FORCED:
