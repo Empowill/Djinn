@@ -153,6 +153,7 @@ type Harness struct {
 
 	// The workers' health (health.go), judged by the scheduler's pass: guarded by sched.
 	accountOf AccountFunc                // nil: no agent's account is read
+	nameMax   func(string) int           // the file system's longest name (session_name.go); nil: not checked
 	accounts  map[accountKey]accountSeen // each sign-in's account, as last read
 
 	// The sign-ins the workers run on (account.go).
@@ -1653,6 +1654,9 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 	}
 	if account != nil && agentOf(t) == planv1.Provider_PROVIDER_CLAUDE && !spec.ReadOnly {
 		spec.MemoryDir = h.memoryDir(spec.Dir)
+	}
+	if !r.watcher {
+		text += h.sessionUnkept(t, name, spec.Dir)
 	}
 	now := h.now()
 	nowPb := timestamppb.New(now)

@@ -90,7 +90,8 @@ count.
   settings name missing from the repository; the setup that failed its last run; a skill whose header Djinn cannot
   read, or whose wish template, inbox source or babysit it cannot use; a summoned skill no longer found; an inbox
   source this machine has not decided on, plugged in or said no to; a change on the reference branch that waits for
-  your look.
+  your look; a folder where Claude Code cannot keep the sessions of the project's workers, its name too long for its
+  file system (see [restarts and updates](#restarts-and-updates)).
 - **Warnings**: a field of djinn.yaml Djinn does not know, ignored; a second djinn.yaml, not read.
 - **Information**: a field a newer Djinn knows, ignored; your copy on another branch than the reference branch, which
   does not change the configuration Djinn reads, nor where its workers start; a source plugged in that no skill declares any more; a line of a skill's

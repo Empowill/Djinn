@@ -108,6 +108,8 @@ const (
 	ProjectNoticeTopic_PROJECT_NOTICE_TOPIC_SOURCE ProjectNoticeTopic = 6
 	// A change of the configuration on the reference branch, from the journal of changes (ConfigChange).
 	ProjectNoticeTopic_PROJECT_NOTICE_TOPIC_CHANGE ProjectNoticeTopic = 7
+	// Where the agent keeps its workers' sessions: Claude Code's folder of transcripts, named after a worker's folder.
+	ProjectNoticeTopic_PROJECT_NOTICE_TOPIC_SESSION ProjectNoticeTopic = 8
 )
 
 // Enum value maps for ProjectNoticeTopic.
@@ -121,6 +123,7 @@ var (
 		5: "PROJECT_NOTICE_TOPIC_BRANCH",
 		6: "PROJECT_NOTICE_TOPIC_SOURCE",
 		7: "PROJECT_NOTICE_TOPIC_CHANGE",
+		8: "PROJECT_NOTICE_TOPIC_SESSION",
 	}
 	ProjectNoticeTopic_value = map[string]int32{
 		"PROJECT_NOTICE_TOPIC_UNSPECIFIED": 0,
@@ -131,6 +134,7 @@ var (
 		"PROJECT_NOTICE_TOPIC_BRANCH":      5,
 		"PROJECT_NOTICE_TOPIC_SOURCE":      6,
 		"PROJECT_NOTICE_TOPIC_CHANGE":      7,
+		"PROJECT_NOTICE_TOPIC_SESSION":     8,
 	}
 )
 
@@ -29946,7 +29950,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x1fPROJECT_NOTICE_KIND_UNSPECIFIED\x10\x00\x12\x1e\n" +
 	"\x1aPROJECT_NOTICE_KIND_TO_FIX\x10\x01\x12#\n" +
 	"\x1fPROJECT_NOTICE_KIND_INFORMATION\x10\x02\x12\x1f\n" +
-	"\x1bPROJECT_NOTICE_KIND_WARNING\x10\x03*\xa6\x02\n" +
+	"\x1bPROJECT_NOTICE_KIND_WARNING\x10\x03*\xc8\x02\n" +
 	"\x12ProjectNoticeTopic\x12$\n" +
 	" PROJECT_NOTICE_TOPIC_UNSPECIFIED\x10\x00\x12!\n" +
 	"\x1dPROJECT_NOTICE_TOPIC_SETTINGS\x10\x01\x12$\n" +
@@ -29955,7 +29959,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x1aPROJECT_NOTICE_TOPIC_SETUP\x10\x04\x12\x1f\n" +
 	"\x1bPROJECT_NOTICE_TOPIC_BRANCH\x10\x05\x12\x1f\n" +
 	"\x1bPROJECT_NOTICE_TOPIC_SOURCE\x10\x06\x12\x1f\n" +
-	"\x1bPROJECT_NOTICE_TOPIC_CHANGE\x10\a*\xaf\x02\n" +
+	"\x1bPROJECT_NOTICE_TOPIC_CHANGE\x10\a\x12 \n" +
+	"\x1cPROJECT_NOTICE_TOPIC_SESSION\x10\b*\xaf\x02\n" +
 	"\x13ProjectNoticeAction\x12%\n" +
 	"!PROJECT_NOTICE_ACTION_UNSPECIFIED\x10\x00\x12\"\n" +
 	"\x1ePROJECT_NOTICE_ACTION_FIX_FILE\x10\x01\x12%\n" +

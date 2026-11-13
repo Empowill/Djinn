@@ -66,6 +66,7 @@ type options struct {
 	pages           *Pages
 	language        string
 	home            string
+	nameMax         func(string) int
 	watchers        SpawnWatcher
 	workers         WishWorkers
 	answered        []AnswerHook
@@ -174,6 +175,12 @@ func WithOverlaps(overlaps Overlaps) Option {
 	return func(o *options) { o.overlaps = overlaps }
 }
 
+// WithNameMax lets the project view check that Claude Code can keep the sessions of each project's workers, with the
+// file system's longest name nameMax measures (fsx.NameMax).
+func WithNameMax(nameMax func(string) int) Option {
+	return func(o *options) { o.nameMax = nameMax }
+}
+
 // Handlers returns the Connect handlers of the plan services, by path prefix.
 func Handlers(s *store.Store, opts ...Option) map[string]http.Handler {
 	var o options
@@ -182,7 +189,7 @@ func Handlers(s *store.Store, opts ...Option) map[string]http.Handler {
 	}
 	out := map[string]http.Handler{}
 	opt := connect.WithInterceptors(WorkerGuard, Validate)
-	p, h := planv1connect.NewProjectServiceHandler(&Projects{Store: s, Home: o.home, Pusher: o.pusher}, opt)
+	p, h := planv1connect.NewProjectServiceHandler(&Projects{Store: s, Home: o.home, Pusher: o.pusher, NameMax: o.nameMax}, opt)
 	out[p] = h
 	wishes := &Wishes{Store: s, Leads: o.leads, Pages: o.pages, Language: o.language, Watchers: o.watchers,
 		Workers: o.workers, Home: o.home, Load: o.load, FillModels: o.fillModels, Clock: o.clock, IfritWaits: o.ifritWaits,
@@ -280,6 +287,9 @@ type Projects struct {
 	// Home is Djinn's data folder, which holds the developer's own settings of each project; empty: none are read.
 	Home   string
 	Pusher Pusher
+	// NameMax measures the longest file name the file system holding a path takes (fsx.NameMax); nil: Djinn does not
+	// check that Claude Code can keep its workers' sessions (sessionNotices).
+	NameMax func(string) int
 }
 
 // fillProject adds to project what is computed on every read, and returns what Djinn finds in its configuration:
