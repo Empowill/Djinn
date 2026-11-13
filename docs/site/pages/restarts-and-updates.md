@@ -71,6 +71,16 @@ or when it was already continued in a fork. It stays **Interrupted**, among the 
 [azima](#azima), never in what waits for you; **Mark done** closes it. A task whose worktree is gone tells the Djinn,
 which can start a new task from its context.
 
+### A session Claude Code cannot keep
+
+Claude Code keeps a worker's session in its own folder, in a folder named after the folder the worker runs in. Some
+file systems take short names only: eCryptfs, an encrypted home folder on Linux, takes 143 characters. Past that
+length, Claude Code writes nothing and says nothing, and a worker that stops cannot resume its session: it starts over
+on a new one, told what came before. Djinn measures the longest name the file system takes, and says it twice: the
+worker's start line says its session is not kept, and the project's configuration lists it under To fix, with the
+length and the limit. A project's worktrees live in Djinn's data folder: move it to a shorter path, or Claude Code's
+folder to another file system.
+
 ### Nothing left behind
 
 Killing Djinn leaves nothing running behind it: its workers, watchers and checks, and the commands its workers run,

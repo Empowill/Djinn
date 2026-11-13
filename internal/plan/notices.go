@@ -24,6 +24,7 @@ const (
 	topicSetup       = planv1.ProjectNoticeTopic_PROJECT_NOTICE_TOPIC_SETUP
 	topicBranch      = planv1.ProjectNoticeTopic_PROJECT_NOTICE_TOPIC_BRANCH
 	topicSource      = planv1.ProjectNoticeTopic_PROJECT_NOTICE_TOPIC_SOURCE
+	topicSession     = planv1.ProjectNoticeTopic_PROJECT_NOTICE_TOPIC_SESSION
 
 	fixFile      = planv1.ProjectNoticeAction_PROJECT_NOTICE_ACTION_FIX_FILE
 	plugSource   = planv1.ProjectNoticeAction_PROJECT_NOTICE_ACTION_PLUG_SOURCE
@@ -33,8 +34,8 @@ const (
 )
 
 // projectNoticesWith are what Djinn finds in project's configuration on this machine: its settings files, its
-// permissions, its djinn.yaml, its reference branch, its setup's last run, its skills and the sources this machine has
-// not decided on. The things to fix come first, then the warnings, then the information, each in that order.
+// permissions, its djinn.yaml, its reference branch, its setup's last run, where Claude Code would keep its workers'
+// sessions, its skills and the sources this machine has not decided on. The things to fix come first, then the warnings, then the information, each in that order.
 func (p *Projects) projectNoticesWith(
 	ctx context.Context, project *planv1.Project, config Config, files []settingsRead, settings Settings, wantRef bool,
 ) ([]*planv1.ProjectNotice, *planv1.ProjectReference) {
@@ -58,6 +59,7 @@ func (p *Projects) projectNoticesWith(
 			out = append(out, branch...)
 		}
 		out = append(out, setupNotices(project, settings.Setup, fileOf(settings.SetupFrom))...)
+		out = append(out, sessionNotices(p.Home, project, settings, p.NameMax)...)
 	}
 	skills, used := p.skillNoticesAndUsed(ctx, project, config)
 	out = append(out, skills...)

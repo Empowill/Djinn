@@ -110,6 +110,8 @@ enum ProjectNoticeTopic {
   PROJECT_NOTICE_TOPIC_SOURCE = 6;
   // A change of the configuration on the reference branch, from the journal of changes (ConfigChange).
   PROJECT_NOTICE_TOPIC_CHANGE = 7;
+  // Where the agent keeps its workers' sessions: Claude Code's folder of transcripts, named after a worker's folder.
+  PROJECT_NOTICE_TOPIC_SESSION = 8;
 }
 
 // ProjectNoticeAction is the one action that settles a project notice.

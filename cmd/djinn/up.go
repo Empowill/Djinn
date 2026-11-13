@@ -30,6 +30,7 @@ import (
 	"github.com/empowill/djinn/internal/backup"
 	"github.com/empowill/djinn/internal/cli"
 	"github.com/empowill/djinn/internal/demo"
+	"github.com/empowill/djinn/internal/fsx"
 	"github.com/empowill/djinn/internal/gate"
 	"github.com/empowill/djinn/internal/harness"
 	"github.com/empowill/djinn/internal/link"
@@ -272,6 +273,9 @@ func runUp(args []string) (restart bool, err error) {
 		// An outage Djinn suspects from its workers' and commands' errors is confirmed, and seen to end, by one HEAD
 		// to the provider's API host every 30 s, only while it is suspected (network.go).
 		harness.WithNetworkProbe(harness.ProbeHTTP),
+		// A Claude worker whose folder names a folder of transcripts longer than its file system takes keeps no
+		// session (W30 on eCryptfs): its start says so, as the project view's To fix does.
+		harness.WithNameMax(fsx.NameMax),
 	}
 	// Each Claude worker's Bash command that neither reads nor edits is admitted by the gates first (gate.Hook).
 	if exe, err := os.Executable(); err == nil {
@@ -553,7 +557,7 @@ func runUp(args []string) (restart bool, err error) {
 		plan.WithShowTilasm(showTilasm), plan.WithTilasmURL(tilasmURL),
 		plan.WithLoad(func() djinnv1.LoadNotch { return monitor.Policy().Notch }),
 		plan.WithLoadBroadcaster(&broadcastLoad), plan.WithLeadBroadcaster(&changeLead), plan.WithLeadFailed(leadFailed),
-		plan.WithIfritWaits(gates.IfritWaits), plan.WithOverlaps(workers.OverlapsBrief),
+		plan.WithIfritWaits(gates.IfritWaits), plan.WithOverlaps(workers.OverlapsBrief), plan.WithNameMax(fsx.NameMax),
 		// A tilasm goes on claude.ai by one short Claude call, a paid model run: under the paid gate, as a worker's.
 		plan.WithPublisher(&plan.Publisher{Home: home, Gate: func(ctx context.Context, taskID, what string) (func(), error) {
 			held, err := gates.Take(ctx, gate.Request{Name: "paid", TaskID: taskID, What: what, Timeout: plan.ArtifactTimeout + time.Minute}, nil)
