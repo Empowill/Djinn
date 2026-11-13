@@ -323,7 +323,8 @@ func (h *Harness) probeQuotas(ctx context.Context) {
 	}
 	for _, provider := range []planv1.Provider{planv1.Provider_PROVIDER_CLAUDE, planv1.Provider_PROVIDER_CODEX,
 		planv1.Provider_PROVIDER_ANTIGRAVITY} {
-		prober, ok := h.providers[provider].(UsageProber)
+		agent, _ := h.provider(provider)
+		prober, ok := agent.(UsageProber)
 		if !ok {
 			continue
 		}

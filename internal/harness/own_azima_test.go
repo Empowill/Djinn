@@ -17,7 +17,7 @@ import (
 
 // committing makes e's fake worker commit the file a prompt "file <name>" names, on its first line, in its worktree.
 func committing(e *env) {
-	e.h.providers[planv1.Provider_PROVIDER_FAKE] = corrector{work: func(dir, prompt string) string {
+	e.h.setProvider(planv1.Provider_PROVIDER_FAKE, corrector{work: func(dir, prompt string) string {
 		name, ok := strings.CutPrefix(prompt, "file ")
 		if !ok {
 			return ""
@@ -32,7 +32,7 @@ func committing(e *env) {
 			}
 		}
 		return "text Committed " + name + "."
-	}}
+	}})
 }
 
 // TestOwnAzima (Q268 B, review of PR #17): in a wish that pushes per azima, Djinn pushes the azimas' branches, never the

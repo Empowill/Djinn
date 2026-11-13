@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -66,9 +67,12 @@ func Providers() map[planv1.Provider]Provider {
 
 // Harness runs the tasks' workers and records what they say. Close it before the store.
 type Harness struct {
-	store     *store.Store
-	home      string
-	providers map[planv1.Provider]Provider
+	store *store.Store
+	home  string
+	// providers starts each agent's workers. The probe of quotas reads it from its own goroutine, and a test may set
+	// one after Schedule: read it by provider, set it by setProvider, under providersMu.
+	providers   map[planv1.Provider]Provider
+	providersMu sync.RWMutex
 
 	ctx    context.Context // cancelled by Close: every worker stops
 	cancel context.CancelFunc
@@ -370,6 +374,21 @@ func New(s *store.Store, home string, providers map[planv1.Provider]Provider, op
 		h.children = newChildren(filepath.Join(home, runDir), Grace)
 	}
 	return h
+}
+
+// provider is the agent that starts the workers of kind p, and whether there is one.
+func (h *Harness) provider(p planv1.Provider) (Provider, bool) {
+	h.providersMu.RLock()
+	defer h.providersMu.RUnlock()
+	provider, ok := h.providers[p]
+	return provider, ok
+}
+
+// providerMap is a copy of the agents by kind, for a reader that keeps them (the lead's driver).
+func (h *Harness) providerMap() map[planv1.Provider]Provider {
+	h.providersMu.RLock()
+	defer h.providersMu.RUnlock()
+	return maps.Clone(h.providers)
 }
 
 // defaultUninstalledDelay is how long a build waits uninstalled before Djinn asks to install and restart.
@@ -974,7 +993,7 @@ func (h *Harness) spawn(
 		}
 	}
 	task.Provider = kind
-	provider, ok := h.providers[kind]
+	provider, ok := h.provider(kind)
 	if !ok {
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("provider %s is not available", kind))
 	}
@@ -1575,7 +1594,7 @@ func (h *Harness) launch(
 	}
 	err = h.start(r, provider, spec, text)
 	if err != nil && r.light && questionWorker(task) && task.GetProvider() != planv1.Provider_PROVIDER_CLAUDE {
-		if claudeProvider, ok := h.providers[planv1.Provider_PROVIDER_CLAUDE]; ok {
+		if claudeProvider, ok := h.provider(planv1.Provider_PROVIDER_CLAUDE); ok {
 			origProvider := task.GetProvider()
 			task.Provider = planv1.Provider_PROVIDER_CLAUDE
 			task.Model = plan.DefaultQuestionModel

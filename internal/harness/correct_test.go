@@ -325,7 +325,7 @@ func TestCorrect(t *testing.T) {
 		lead := &leadListener{}
 		in.h.TellLeads(lead.tell)
 		w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
-		delete(in.h.providers, planv1.Provider_PROVIDER_CLAUDE) // The project's provider: its correction worker cannot start.
+		in.h.setProvider(planv1.Provider_PROVIDER_CLAUDE, nil) // The project's provider: its correction worker cannot start.
 
 		in.pass(t, 0)
 		got, texts := in.integration(t, w1)

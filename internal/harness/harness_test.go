@@ -674,3 +674,14 @@ func TestScratch(t *testing.T) {
 		t.Errorf("legacy home folder was touched: %v", err)
 	}
 }
+
+// setProvider sets the agent that starts the workers of kind p, or drops it when nil, while the harness runs.
+func (h *Harness) setProvider(p planv1.Provider, provider Provider) {
+	h.providersMu.Lock()
+	defer h.providersMu.Unlock()
+	if provider == nil {
+		delete(h.providers, p)
+		return
+	}
+	h.providers[p] = provider
+}

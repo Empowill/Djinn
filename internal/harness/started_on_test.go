@@ -105,7 +105,7 @@ func TestStartedOn(t *testing.T) {
 			t.Fatalf("W1 merged into %q, want T1's own branch", b1)
 		}
 
-		r.h.providers[planv1.Provider_PROVIDER_FAKE] = corrector{work: func(dir, prompt string) string {
+		r.h.setProvider(planv1.Provider_PROVIDER_FAKE, corrector{work: func(dir, prompt string) string {
 			name, ok := strings.CutPrefix(prompt, "file ")
 			if !ok {
 				return ""
@@ -125,7 +125,7 @@ func TestStartedOn(t *testing.T) {
 				}
 			}
 			return "text Committed " + name + "."
-		}}
+		}})
 		w3 := spawnPart(t, r.env, r.wishID, r.projectID, "", "w3.txt")
 		own := r.stored(t, w3.GetPartOf())
 		if !plan.IsAzima(own) || own.GetId() == t1.GetId() {

@@ -393,7 +393,7 @@ func TestReviewUncommitted(t *testing.T) {
 		{
 			name: "cannot_start",
 			run: func(t *testing.T, in *integration, w1 *planv1.Task, _ *planv1.Task, lead *leadListener) {
-				delete(in.h.providers, planv1.Provider_PROVIDER_CLAUDE) // The project's provider: its review worker cannot start.
+				in.h.setProvider(planv1.Provider_PROVIDER_CLAUDE, nil) // The project's provider: its review worker cannot start.
 				in.pass(t, 0)
 				got, texts := in.integration(t, w1)
 				if got.GetReviewedBy() != "" ||
