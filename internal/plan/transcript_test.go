@@ -59,9 +59,12 @@ func TestSessionNotices(t *testing.T) {
 			if !tc.want {
 				return
 			}
+			// The project keeps its folder with its links resolved, as a worker's process sees it: /private/var for
+			// macOS's /var, a long name for a short one on Windows.
+			want := add.Msg.GetProject().GetDirectory()
 			n := res.Msg.GetNotices()[i]
-			if n.GetKind() != planv1.ProjectNoticeKind_PROJECT_NOTICE_KIND_TO_FIX || n.GetSubject() != dir {
-				t.Errorf("notice %v, want a thing to fix on %s", noticeLines([]*planv1.ProjectNotice{n}), dir)
+			if n.GetKind() != planv1.ProjectNoticeKind_PROJECT_NOTICE_KIND_TO_FIX || n.GetSubject() != want {
+				t.Errorf("notice %v, want a thing to fix on %s", noticeLines([]*planv1.ProjectNotice{n}), want)
 			}
 			if !strings.Contains(n.GetDetail(), "takes 20 at most") || !strings.HasPrefix(n.GetText(), "Claude Code cannot save") {
 				t.Errorf("notice %q, detail %q: want the sentence and the limit", n.GetText(), n.GetDetail())
