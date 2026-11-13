@@ -325,28 +325,12 @@ export function ProjectPanel({
       {shown === undefined && !error && (
         <p className="muted-text">{t("common.loading")}</p>
       )}
-      {toFix.length + warnings.length > 0 && (
-        <section className={`config-box ${toFix.length > 0 ? "to-fix" : ""}`}>
-          <h3>
-            {toFix.length > 0 ? (
-              <Flame size={14} aria-hidden="true" />
-            ) : (
-              <TriangleAlert size={14} aria-hidden="true" />
-            )}
-            {t("project.to_fix_heading", {
-              count: toFix.length + warnings.length,
-            })}
-          </h3>
-          {[...toFix, ...warnings].map((n) => (
-            <NoticeLine
-              key={`${n.topic} ${n.subject} ${n.text}`}
-              notice={n}
-              busy={busy === n.subject}
-              onAct={(plug) => void act(n, plug)}
-            />
-          ))}
-        </section>
-      )}
+      <ToFixBox
+        toFix={toFix}
+        warnings={warnings}
+        busy={busy}
+        onAct={(n, plug) => void act(n, plug)}
+      />
       {project.git && shown && (
         <ReferenceBranch
           reference={shown.reference}
@@ -484,6 +468,46 @@ export function ProjectPanel({
         />
       </section>
     </ModalFrame>
+  );
+}
+
+// ToFixBox is To fix, first in a project's panel, only when something waits for you or Djinn warns: the things to fix in
+// red, then the warnings, quieter. Its heading counts the things to fix alone, as the gear and the inbox line do
+// (Project.to_fix, Q21): warnings only leave it without a count, under an amber sign.
+export function ToFixBox({
+  toFix,
+  warnings,
+  busy,
+  onAct,
+}: {
+  toFix: ProjectNotice[];
+  warnings: ProjectNotice[];
+  // The subject of the notice whose action runs, "" when none does.
+  busy: string;
+  onAct: (notice: ProjectNotice, plug?: boolean) => void;
+}) {
+  if (toFix.length + warnings.length === 0) return null;
+  return (
+    <section className={`config-box ${toFix.length > 0 ? "to-fix" : ""}`}>
+      <h3>
+        {toFix.length > 0 ? (
+          <Flame size={14} aria-hidden="true" />
+        ) : (
+          <TriangleAlert size={14} aria-hidden="true" />
+        )}
+        {toFix.length > 0
+          ? t("project.to_fix_heading", { count: toFix.length })
+          : t("project.to_fix_heading_warnings")}
+      </h3>
+      {[...toFix, ...warnings].map((n) => (
+        <NoticeLine
+          key={`${n.topic} ${n.subject} ${n.text}`}
+          notice={n}
+          busy={busy === n.subject}
+          onAct={(plug) => onAct(n, plug)}
+        />
+      ))}
+    </section>
   );
 }
 

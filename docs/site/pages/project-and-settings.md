@@ -82,7 +82,9 @@ file to correct, a source to decide on, a skill to unsummon, a reference branch 
 number of things to fix: while there is one, the project's gear in the side panel turns red with a small flame, its
 tooltip counts them, and the [inbox](#inbox) gives the project one line that opens its configuration. Information
 leaves the gear grey: you read it on opening the configuration. So does a warning, shown under To fix after the
-things to fix, with an amber sign and in quieter text: Djinn ignores something in a file and goes on without it.
+things to fix, with an amber sign and in quieter text: Djinn ignores something in a file and goes on without it. The
+heading of To fix counts the things to fix alone, as the gear and the inbox do; with only warnings, it carries no
+count.
 
 - **Things to fix**: a settings file, the permissions or the djinn.yaml Djinn cannot read; no reference branch found, or the one the
   settings name missing from the repository; the setup that failed its last run; a skill whose header Djinn cannot
