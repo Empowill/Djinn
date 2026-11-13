@@ -1,0 +1,90 @@
+{
+  "strictness": 2,
+  "commentTypes": ["logic", "syntax", "style"],
+  "autoReview": ["open"],
+  "ignorePatterns": "gen/**\nsrc/vendor/**\nlocales/*.json\npackage-lock.json\ngo.sum\nbuf.lock\n**/testdata/**\nwishicons/bank.json\ndocs/site/fonts/**\ndocs/screenshots/**\nbuild/**",
+  "rules": [
+    {
+      "id": "no-secret",
+      "rule": "No secret, ever: Djinn may pass a secret to a process, but never stores, logs or reads one. Flag a token, key or password written to the store, a log, a file, a plan block or a test fixture (CONTRIBUTING.md, Technical directions).",
+      "severity": "high"
+    },
+    {
+      "id": "tests-no-paid-model",
+      "rule": "Tests never call a model: providers replay recorded streams (docs/providers.md). Flag a test that starts a real claude, codex or agy, or reaches a provider's API.",
+      "scope": ["**/*_test.go", "tests/**", "e2e/**"],
+      "severity": "high"
+    },
+    {
+      "id": "tests-touch-own-processes",
+      "rule": "Tests touch only what they started: stop a process by its PID, never by name; never dial or write to the Djinn of the person running the tests (CONTRIBUTING.md, Djinn builds Djinn).",
+      "scope": ["**/*_test.go", "tests/**", "e2e/**", "tools/**"],
+      "severity": "high"
+    },
+    {
+      "id": "tests-shape",
+      "rule": "Go tests follow CONTRIBUTING.md, Writing tests: one TestFunction per function beside its source, cases in a t.Run table, t.Parallel() or a comment saying why not, no time.Sleep (a fake clock, a short tick or an event wait instead), under 2 s.",
+      "scope": ["**/*_test.go"],
+      "severity": "medium"
+    },
+    {
+      "id": "portable-tasks",
+      "rule": "Tasks are portable: no Unix-only tool in Taskfile.yml (write a small Go command in tools/ instead), {{exeExt}} for binaries; filepath and os.UserConfigDir in Go, path in Node.",
+      "scope": ["Taskfile.yml", "tools/**", "**/*.go"],
+      "severity": "medium"
+    },
+    {
+      "id": "protos-source-of-truth",
+      "rule": "Protos under api/ are the source of truth for the API, command line, storage and config; gen/** is generated from them by go tool task gen. A new command follows docs/cli-convention.md with no code per command, and its proto comment is its documentation.",
+      "scope": ["api/**", "internal/cli/**", "cmd/**"],
+      "severity": "medium"
+    },
+    {
+      "id": "smoke-not-field",
+      "rule": "What the lead adds to a wish's plan is smoke unless the code computes on it: a block, not a new proto field. Flag a new plan field that no code reads (CONTRIBUTING.md, The lamp and the smoke).",
+      "scope": ["api/plan/**"],
+      "severity": "medium"
+    },
+    {
+      "id": "agents-settings-from-agents",
+      "rule": "A file of one agent's own, such as .claude/settings.json, follows from .agents/: a change to it without the matching change under .agents/ is a hand edit that a test will refuse.",
+      "scope": [".claude/**"],
+      "severity": "medium"
+    },
+    {
+      "id": "ui-text-field",
+      "rule": "A field the developer types free text in is a TextField or a TextLine (src/text-field.tsx), never a controlled <textarea> or <input>; its owner keeps the text in useTyped or a store of its own and reads it with read() in a handler (AGENTS.md, Interface).",
+      "scope": ["src/**"],
+      "severity": "medium"
+    },
+    {
+      "id": "ui-list-stays-put",
+      "rule": "A list being read never moves under the reader: new items append below, a revision keeps an item's place, and the scroll stays anchored on what is on screen (src/scroll-anchor.ts).",
+      "scope": ["src/**"],
+      "severity": "medium"
+    },
+    {
+      "id": "ui-rounded-borders",
+      "rule": "A rounded element has a uniform border on all sides, or none: never a one-sided border or a thicker accent border on one side of a rounded card.",
+      "scope": ["src/**"],
+      "severity": "low"
+    },
+    {
+      "id": "ui-text-is-a-key",
+      "rule": "Every text a person reads is a key of locales/en.json, read with t() in the interface or locales.T in Go, translated in the same change; never a literal string in a component, and never a key built from a template literal.",
+      "scope": ["src/**", "internal/**"],
+      "severity": "medium"
+    },
+    {
+      "id": "english-no-internal-names",
+      "rule": "The repository is in English, with no company's internal names in code or docs; French belongs only in locales/fr.json.",
+      "severity": "medium"
+    },
+    {
+      "id": "dependency-license",
+      "rule": "A new Go module or npm package needs a license from the allowed list (MIT, BSD, ISC, Apache-2.0; MPL-2.0 only unmodified) and its name in the PR description; copied code is credited in docs/THIRD_PARTY_NOTICES.md (CONTRIBUTING.md, Licenses).",
+      "scope": ["go.mod", "**/go.mod", "package.json"],
+      "severity": "high"
+    }
+  ]
+}
