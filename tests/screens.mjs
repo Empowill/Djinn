@@ -146,6 +146,7 @@ export {
   ProjectSettings,
   ReferenceBranch,
   SkillLine,
+  ToFixBox,
   WatchCommands,
 } from "@/src/project-panel.tsx";
 export {

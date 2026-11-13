@@ -888,6 +888,7 @@
   "project.to_fix.one": "{count} chose à régler",
   "project.to_fix.other": "{count} choses à régler",
   "project.to_fix_heading": "À régler ({count})",
+  "project.to_fix_heading_warnings": "À régler",
   "project.watch_allow": "Autoriser",
   "project.watch_command": "Commande de guetteur à autoriser",
   "project.watch_commands": "Commandes de guetteur que vous autorisez",

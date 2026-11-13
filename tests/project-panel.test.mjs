@@ -407,6 +407,59 @@ test("a project's configuration says what to fix, its reference branch, each ski
     /<pre class="notice-detail">unknown field containers\.memroy_mib<\/pre><p class="notice-where">To fix in <span class="command"><code>\/tmp\/dolmen\/djinn\.yaml<\/code>/,
   );
 
+  // To fix counts what the gear and the inbox line count (Project.to_fix, Q21 B): the things to fix, never a warning,
+  // which shows under them without entering the count.
+  const warning = {
+    kind: s.ProjectNoticeKind.WARNING,
+    topic: s.ProjectNoticeTopic.SETTINGS,
+    subject: "djinn.yaml",
+    text: "Djinn ignores a field of the project's djinn.yaml it does not know: the rest of the file applies.",
+    detail: "",
+    action: s.ProjectNoticeAction.FIX_FILE,
+    file: "/tmp/dolmen/djinn.yaml",
+    command: "",
+  };
+  const error = {
+    ...warning,
+    kind: s.ProjectNoticeKind.TO_FIX,
+    subject: "settings.txtpb",
+    text: "Djinn cannot read the project's settings.",
+    file: "/tmp/dolmen/.agents/settings.txtpb",
+  };
+  const box = (notices) => {
+    const toFix = notices.filter((n) => n.kind === s.ProjectNoticeKind.TO_FIX);
+    const warnings = notices.filter(
+      (n) => n.kind === s.ProjectNoticeKind.WARNING,
+    );
+    return {
+      html: render(h(s.ToFixBox, { toFix, warnings, busy: "", onAct() {} })),
+      gear: render(
+        h(s.ProjectGear, {
+          project: { id: "p2", name: "dolmen", toFix: toFix.length },
+          onOpen() {},
+        }),
+      ),
+    };
+  };
+  const warned = box([warning]);
+  assert.match(
+    warned.html,
+    /^<section class="config-box "><h3><svg[^>]*lucide-triangle-alert[^]*?<\/svg>To fix<\/h3><div class="notice warning">/,
+  );
+  assert.doesNotMatch(warned.html, /\(\d+\)|lucide-flame/);
+  assert.match(warned.gear, /class="icon-button project-gear "/);
+  assert.doesNotMatch(warned.gear, /project-flame/);
+  const both = box([warning, error]);
+  assert.match(
+    both.html,
+    /^<section class="config-box to-fix"><h3><svg[^>]*lucide-flame[^]*?<\/svg>To fix \(1\)<\/h3><div class="notice to-fix">[^]*<div class="notice warning">/,
+  );
+  assert.match(
+    both.gear,
+    /class="icon-button project-gear hot" title="[^"]*1 thing to fix/,
+  );
+  assert.equal(box([]).html, "");
+
   const acted = [];
   const offered = render(
     h(s.NoticeLine, {

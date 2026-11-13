@@ -888,6 +888,7 @@
   "project.to_fix.one": "{count} thing to fix",
   "project.to_fix.other": "{count} things to fix",
   "project.to_fix_heading": "To fix ({count})",
+  "project.to_fix_heading_warnings": "To fix",
   "project.watch_allow": "Allow",
   "project.watch_command": "Watcher command to allow",
   "project.watch_commands": "Watcher commands you allow",
