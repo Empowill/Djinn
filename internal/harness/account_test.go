@@ -15,6 +15,7 @@ import (
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	uiv1 "github.com/empowill/djinn/gen/go/ui/v1"
+	"github.com/empowill/djinn/internal/fsx"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/testx"
 )
@@ -27,7 +28,9 @@ func signIns(t *testing.T, home string, settings *uiv1.Settings) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(home, "settings.json"), data, 0o600); err != nil {
+	// Atomic as Djinn writes it: a worker started meanwhile never reads a truncated file, which would say no
+	// sign-in is paused and start it on its own (PR #39).
+	if err := fsx.WriteAtomic(filepath.Join(home, "settings.json"), data, 0o600); err != nil {
 		t.Fatal(err)
 	}
 }

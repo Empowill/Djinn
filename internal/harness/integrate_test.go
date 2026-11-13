@@ -35,12 +35,13 @@ type integration struct {
 	behind    []string // of them, those not taken first, before the workers' (Q26): an install's
 	testCode  int      // what the test command exits with
 	testOut   string
-	afterTest func()                         // run once by the next test command, then forgotten
-	testWait  chan struct{}                  // the test command waits until it closes, the clock free meanwhile
-	testCut   int                            // the test commands whose context was cancelled while they waited
-	verdict   func(dir string) (string, int) // when set, what the test command says and exits with, from the files in dir
-	exits     map[string]int                 // what the other commands exit with, by their first word: setup, lint
-	forge     *fakeForge                     // answers gh and glab when set
+	afterTest func()                          // run once by the next test command, then forgotten
+	testWait  chan struct{}                   // the test command waits until it closes, the clock free meanwhile
+	testCut   int                             // the test commands whose context was cancelled while they waited
+	verdict   func(dir string) (string, int)  // when set, what the test command says and exits with, from the files in dir
+	exits     map[string]int                  // what the other commands exit with, by their first word: setup, lint
+	forge     *fakeForge                      // answers gh and glab when set
+	work      func(dir, prompt string) string // what the fake agent does first when set: correctWith
 }
 
 // integrating starts djinn up on a repository with app/README.md, app/gen/index.txt and app/src, a wish on it whose
@@ -49,7 +50,11 @@ type integration struct {
 func integrating(t *testing.T, opts ...Option) *integration {
 	t.Helper()
 	in := &integration{repo: gitRepoWith(t, map[string]string{"app/gen/index.txt": "\n", "app/src/.keep": ""}), now: time.Now()}
-	in.env = up(t, t.TempDir(), append([]Option{WithClock(in.clock), WithCommands(in.run), WithGates(in.gate), WithTick(20 * time.Millisecond)}, opts...)...)
+	// The fake agents correct as correctWith says: set before the harness starts, as its quota probe reads them.
+	providers := testProviders()
+	providers[planv1.Provider_PROVIDER_FAKE] = corrector{work: in.correct}
+	providers[planv1.Provider_PROVIDER_CLAUDE] = corrector{work: in.correct}
+	in.env = upWith(t, t.TempDir(), providers, append([]Option{WithClock(in.clock), WithCommands(in.run), WithGates(in.gate), WithTick(20 * time.Millisecond)}, opts...)...)
 	in.wishID, in.projectID = in.wish(t, filepath.Join(in.repo, "app"))
 	// The clock starts once the wish is made: the wish's time is the real one, and a task merged at the start
 	// time is pushed only when merged after the wish was made (lastPush). Made over a second after the start, under
