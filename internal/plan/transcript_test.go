@@ -1,9 +1,13 @@
 package plan
 
 import (
+	"fmt"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"connectrpc.com/connect"
@@ -64,6 +68,82 @@ func TestSessionNotices(t *testing.T) {
 			}
 			if res.Msg.GetProject().GetToFix() != 1 {
 				t.Errorf("to fix %d, want 1", res.Msg.GetProject().GetToFix())
+			}
+		})
+	}
+}
+
+// TestSessionNoticesGit (W38): in a Git project a worker runs in a worktree under Djinn's data folder, not in the
+// project's folder: the name checked is the one a worktree's path makes, the notice is on that worktree and asks to
+// move Djinn's data folder; a limit one short of that name says it, a limit of its length says nothing.
+func TestSessionNoticesGit(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name  string
+		short int
+		want  bool
+	}{
+		{"a limit one short of the worktree's name", 1, true},
+		{"a limit as long as the worktree's name", 0, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := t.Context()
+			home := t.TempDir()
+			var limit atomic.Int64
+			var asked sync.Map
+			c := serve(t, WithHome(home), WithNameMax(func(dir string) int {
+				asked.Store(dir, true)
+				return int(limit.Load())
+			}))
+			repo := filepath.Join(t.TempDir(), "repo")
+			if err := os.MkdirAll(filepath.Join(repo, ".git"), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			add, err := c.projects.Add(ctx, connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: repo}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			p := add.Msg.GetProject()
+			if !p.GetGit() {
+				t.Fatalf("project %v, want in Git", p)
+			}
+			worktree := filepath.Join(home, "projects", p.GetId(), "worktrees", sampleTaskID)
+			n := ClaudeSlugLen(worktree)
+			if n <= ClaudeSlugLen(p.GetDirectory()) {
+				t.Fatalf("worktree name %d, project's %d: the test needs the worktree's longer", n, ClaudeSlugLen(p.GetDirectory()))
+			}
+			limit.Store(int64(n - tc.short))
+			res, err := c.projects.Show(ctx, connect.NewRequest(&planv1.ProjectServiceShowRequest{Project: p.GetName()}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			asked.Range(func(k, _ any) bool {
+				if filepath.Base(k.(string)) != "projects" {
+					t.Errorf("limit measured on %s, want a sign-in folder's projects folder", k)
+				}
+				return true
+			})
+			i := slices.IndexFunc(res.Msg.GetNotices(), func(n *planv1.ProjectNotice) bool {
+				return n.GetTopic() == planv1.ProjectNoticeTopic_PROJECT_NOTICE_TOPIC_SESSION
+			})
+			if got := i >= 0; got != tc.want {
+				t.Fatalf("limit %d, name %d: notices %v, a session notice %v, want %v", n-tc.short, n,
+					noticeLines(res.Msg.GetNotices()), got, tc.want)
+			}
+			if !tc.want {
+				return
+			}
+			s := res.Msg.GetNotices()[i]
+			if s.GetSubject() != worktree {
+				t.Errorf("notice on %s, want the worktree %s", s.GetSubject(), worktree)
+			}
+			if !strings.Contains(s.GetText(), "Move Djinn's data folder") {
+				t.Errorf("notice %q, want it to move Djinn's data folder", s.GetText())
+			}
+			if want := fmt.Sprintf("named in %d characters", n); !strings.Contains(s.GetDetail(), "A worker runs in "+worktree+":") ||
+				!strings.Contains(s.GetDetail(), want) {
+				t.Errorf("detail %q, want the worktree and %q", s.GetDetail(), want)
 			}
 		})
 	}
