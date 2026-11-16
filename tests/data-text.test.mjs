@@ -96,7 +96,7 @@ test("an option's commands: between backticks, or a djinn command up to a comma 
   assert.deepEqual(s.commandParts("Olive"), [{ text: "Olive" }]);
 });
 
-const MR = "https://gitlab.com/empowill/app/-/merge_requests/123";
+const MR = "https://gitlab.com/acme/shop/-/merge_requests/123";
 const TILASM = "djinn://tilasm/01a130b1-398a-7072-be60-ce928cb7241e";
 
 test("a line's links: a web address or a djinn:// link, without the punctuation after it", () => {
@@ -150,7 +150,7 @@ test("a move's main link: the first of its title, context, recommendation and op
   assert.equal(
     s.mainLink({
       text: "Review MR !123 and take it out of draft",
-      context: `The task opened [!123](${MR}) as a draft; CI: https://gitlab.com/empowill/app/-/pipelines/9`,
+      context: `The task opened [!123](${MR}) as a draft; CI: https://gitlab.com/acme/shop/-/pipelines/9`,
       recommendation: "A: mark it ready",
       options: [],
     }),

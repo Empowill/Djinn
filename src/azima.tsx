@@ -111,7 +111,7 @@ const provers: Record<Prover, TextKey | null> = {
   [Prover.OTHER]: null,
 };
 
-// proverWord names who or what gives a proof: "a Mac", "Clément's review"; the needs' own words for none of them.
+// proverWord names who or what gives a proof: "a Mac", "Alice's review"; the needs' own words for none of them.
 function proverWord(prover: Prover, need: ProofNeed): string {
   if (prover === Prover.REVIEW && need.reviewer)
     return t("prover.review_by", { name: need.reviewer });

@@ -673,20 +673,20 @@ func TestSetBuild(t *testing.T) {
 		return out
 	}
 	s.SetBuild(nil) // Nothing to propose.
-	s.SetBuild(&uiv1.Build{ProjectId: "p", Branch: "feat/clement-port", WishTitle: "Clement's branches", Sha: "e60f8fc"})
+	s.SetBuild(&uiv1.Build{ProjectId: "p", Branch: "feat/mac-port", WishTitle: "Alice's branches", Sha: "e60f8fc"})
 	s.SetBuild(&uiv1.Build{ProjectId: "p", Branch: "feat/wails-go", Sha: "aaa", Running: true})
 	s.SetBuild(&uiv1.Build{ProjectId: "q", Branch: "feat/wails-go", Sha: "ccc"})
-	if got := shas(); !slices.Equal(got, []string{"feat/wails-go@aaa", "feat/clement-port@e60f8fc", "feat/wails-go@ccc"}) {
+	if got := shas(); !slices.Equal(got, []string{"feat/wails-go@aaa", "feat/mac-port@e60f8fc", "feat/wails-go@ccc"}) {
 		t.Errorf("builds = %v, want the running branch first, one per branch and project", got)
 	}
 	// W527: a branch that carries the running line on comes after it, before the parallel ones.
 	s.SetBuild(&uiv1.Build{ProjectId: "p", Branch: "feat/robustness", Sha: "bbb", Continues: "feat/wails-go"})
-	if got := shas(); !slices.Equal(got, []string{"feat/wails-go@aaa", "feat/robustness@bbb", "feat/clement-port@e60f8fc", "feat/wails-go@ccc"}) {
+	if got := shas(); !slices.Equal(got, []string{"feat/wails-go@aaa", "feat/robustness@bbb", "feat/mac-port@e60f8fc", "feat/wails-go@ccc"}) {
 		t.Errorf("builds = %v, want the line carried on second", got)
 	}
-	s.SetBuild(&uiv1.Build{ProjectId: "p", Branch: "feat/clement-port", Sha: "e70"})
-	if got := shas(); !slices.Equal(got, []string{"feat/wails-go@aaa", "feat/robustness@bbb", "feat/clement-port@e70", "feat/wails-go@ccc"}) {
-		t.Errorf("builds = %v, want the newer push of feat/clement-port in place of its last", got)
+	s.SetBuild(&uiv1.Build{ProjectId: "p", Branch: "feat/mac-port", Sha: "e70"})
+	if got := shas(); !slices.Equal(got, []string{"feat/wails-go@aaa", "feat/robustness@bbb", "feat/mac-port@e70", "feat/wails-go@ccc"}) {
+		t.Errorf("builds = %v, want the newer push of feat/mac-port in place of its last", got)
 	}
 	if _, err := s.Update(t.Context(), connect.NewRequest(&uiv1.UiServiceUpdateRequest{Build: "e70"})); err != nil {
 		t.Fatal(err)
@@ -709,8 +709,8 @@ func TestSetReadyBuild(t *testing.T) {
 	if ready() != nil {
 		t.Error("a version no longer waiting is named")
 	}
-	s.SetReadyBuild("local-g1", &uiv1.Build{Sha: "1", Branch: "feat/clement-port"})
-	if ready().GetBranch() != "feat/clement-port" {
+	s.SetReadyBuild("local-g1", &uiv1.Build{Sha: "1", Branch: "feat/mac-port"})
+	if ready().GetBranch() != "feat/mac-port" {
 		t.Errorf("ready build = %v", ready())
 	}
 	s.SetReady("local-g2", "", true)

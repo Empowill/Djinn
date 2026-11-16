@@ -23,7 +23,7 @@ import (
 )
 
 // leadCalls is djinn up with its tilasms, two wishes sharing codes, and the command line on it: Dew on three projects
-// (dolmen, terraform, djinn), Other on djinn.
+// (shop, infra, djinn), Other on djinn.
 type leadCalls struct {
 	*env
 	tilasms   planv1connect.TilasmServiceClient
@@ -50,7 +50,7 @@ func newLeadCalls(t *testing.T) *leadCalls {
 	l.tilasms = planv1connect.NewTilasmServiceClient(srv.Client(), srv.URL)
 	l.questions = planv1connect.NewQuestionServiceClient(srv.Client(), srv.URL)
 	root := t.TempDir()
-	for _, name := range []string{"dolmen", "terraform", "djinn"} {
+	for _, name := range []string{"shop", "infra", "djinn"} {
 		dir := filepath.Join(root, name)
 		if err := os.Mkdir(dir, 0o700); err != nil {
 			t.Fatal(err)
@@ -72,7 +72,7 @@ func newLeadCalls(t *testing.T) *leadCalls {
 		}
 		return w.Msg.GetWish().GetId()
 	}
-	l.dew = makeWish("Dew", "dolmen", "terraform", "djinn")
+	l.dew = makeWish("Dew", "shop", "infra", "djinn")
 	l.other = makeWish("Other", "djinn")
 	return l
 }
@@ -135,21 +135,21 @@ func TestLeadCallsProjects(t *testing.T) {
 	}
 	// The same spawn without --project-id: refused, naming the flag for each project.
 	l.refused(t, []string{"task", "spawn", l.dew, "--title", "Mockup of the accounts", "--later"},
-		"the wish has 3 projects: run it again with --project-id dolmen, --project-id terraform or --project-id djinn")
+		"the wish has 3 projects: run it again with --project-id shop, --project-id infra or --project-id djinn")
 	// A project no one has: the names it could be.
-	l.refused(t, []string{"task", "spawn", l.dew, "--title", "x", "--project-id", "dolmne"},
-		"--project-id: no project is named dolmne; expected one of dolmen, terraform, djinn, or a project's UUID")
+	l.refused(t, []string{"task", "spawn", l.dew, "--title", "x", "--project-id", "shpo"},
+		"--project-id: no project is named shpo; expected one of shop, infra, djinn, or a project's UUID")
 
 	// A part of an azima works in the azima's project.
-	l.passes(t, "task", "spawn", l.dew, "--title", "Patch the dead letters", "--kind", "azima", "--project-id", "terraform")
+	l.passes(t, "task", "spawn", l.dew, "--title", "Patch the dead letters", "--kind", "azima", "--project-id", "infra")
 	l.passes(t, "task", "spawn", l.dew, "--title", "The subscriber's role", "--part-of", "T1", "--later")
-	if got := l.task(t, l.dew, "W2").GetProjectId(); got != l.projects["terraform"] {
-		t.Errorf("a part of T1 works in %s, want T1's terraform (%s)", got, l.projects["terraform"])
+	if got := l.task(t, l.dew, "W2").GetProjectId(); got != l.projects["infra"] {
+		t.Errorf("a part of T1 works in %s, want T1's infra (%s)", got, l.projects["infra"])
 	}
 
 	// A project the wish lacks: refused, naming the wish's.
-	l.refused(t, []string{"task", "spawn", l.other, "--title", "x", "--project-id", "dolmen"},
-		"project dolmen is not one of the wish's projects (djinn)", "or run it again with --project-id djinn")
+	l.refused(t, []string{"task", "spawn", l.other, "--title", "x", "--project-id", "shop"},
+		"project shop is not one of the wish's projects (djinn)", "or run it again with --project-id djinn")
 }
 
 // TestLeadCallsCodes (W474): a task, a tilasm or a question given by code passes alone when it is unique, with
@@ -350,14 +350,14 @@ func TestLeadCallsGates(t *testing.T) {
 	t.Parallel()
 	l := newLeadCalls(t)
 	gates, err := l.project.Add(t.Context(), connect.NewRequest(&planv1.ProjectServiceAddRequest{
-		Directory: gitRepo(t), Name: "dolmen-git",
+		Directory: gitRepo(t), Name: "shop-git",
 	}))
 	if err != nil {
 		t.Fatal(err)
 	}
 	gitID := gates.Msg.GetProject().GetId()
 	w, err := l.wishes.Make(t.Context(), connect.NewRequest(&planv1.WishServiceMakeRequest{
-		Title: "Djinn gates", ProjectIds: []string{gitID, l.projects["terraform"], l.projects["djinn"]},
+		Title: "Djinn gates", ProjectIds: []string{gitID, l.projects["infra"], l.projects["djinn"]},
 	}))
 	if err != nil {
 		t.Fatal(err)
@@ -371,10 +371,10 @@ func TestLeadCallsGates(t *testing.T) {
 	}
 	// 00:29: "the wish has 3 projects: name one with --project-id", with no flag to add.
 	l.refused(t, []string{"task", "spawn", wish, "--kind", "azima", "--title", "Remote branches have a PR"},
-		"the wish has 3 projects: run it again with --project-id dolmen-git, --project-id terraform or --project-id djinn")
+		"the wish has 3 projects: run it again with --project-id shop-git, --project-id infra or --project-id djinn")
 
 	// W588's state at 00:29: done, merged into its azima's branch, which removed its worktree.
-	l.passes(t, "task", "spawn", wish, "--kind", "azima", "--title", "The job boarder has time", "--project-id", "dolmen-git")
+	l.passes(t, "task", "spawn", wish, "--kind", "azima", "--title", "The job boarder has time", "--project-id", "shop-git")
 	t2 := l.task(t, wish, "T2")
 	done := &planv1.Task{
 		Id: store.NewID(), WishId: wish, Code: "W1", Title: "!3014: drop the test that pins no local timeout",
@@ -390,12 +390,12 @@ func TestLeadCallsGates(t *testing.T) {
 	l.passes(t, "task", "spawn", wish, "--title", "!3014: answer the thread", "--part-of", "T2", "--after", "W1",
 		"--write-scopes", "gitlab-mr-3014-discussions", "--prompt", "text answered", "--later")
 	if got := l.task(t, wish, "W2").GetProjectId(); got != gitID {
-		t.Errorf("a part of T2 works in %s, want T2's dolmen-git (%s)", got, gitID)
+		t.Errorf("a part of T2 works in %s, want T2's shop-git (%s)", got, gitID)
 	}
 	// An azima part of another one takes its project too.
 	l.passes(t, "task", "spawn", wish, "--kind", "azima", "--title", "The review threads", "--part-of", "T2")
 	if got := l.task(t, wish, "T3").GetProjectId(); got != gitID {
-		t.Errorf("an azima part of T2 works in %s, want T2's dolmen-git (%s)", got, gitID)
+		t.Errorf("an azima part of T2 works in %s, want T2's shop-git (%s)", got, gitID)
 	}
 
 	// 00:28: "unknown flag --wish-id", "<task-id>: must be a valid UUID", then "has no worktree any more" with a

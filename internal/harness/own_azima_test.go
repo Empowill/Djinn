@@ -56,7 +56,7 @@ func TestOwnAzima(t *testing.T) {
 		if !plan.IsAzima(azima) || azima.GetTitle() != w1.GetTitle() || azima.GetCode() != "T1" || azima.GetProjectId() != in.projectID {
 			t.Fatalf("W1 part of %v, want an azima T1 titled %q in its project", azima, w1.GetTitle())
 		}
-		b1 := "djinn/T1-silae-w1-txt"
+		b1 := "djinn/T1-payroll-w1-txt"
 		if a := azima.GetAzima(); a.GetBranch() != b1 || a.GetCutFrom() != mainSha {
 			t.Errorf("T1 records %v, want %s cut from main's %s", a, b1, mainSha)
 		}

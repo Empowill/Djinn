@@ -174,7 +174,7 @@ var (
 
 // Provers says who or what gives the proof a box needs, from the words of its needs, in the order of the enum: a Mac,
 // a Windows machine, a review by a named person, a release, a real model, a person; something else when none of
-// them is named. reviewer is the person whose review it needs ("Clément's review").
+// them is named. reviewer is the person whose review it needs ("Alice's review").
 func Provers(needs string) (provers []planv1.Prover, reviewerName string) {
 	add := func(p planv1.Prover, ok bool) {
 		if ok {
@@ -203,7 +203,7 @@ func GivenByAPerson(n *planv1.ProofNeed) bool {
 	})
 }
 
-// ProverWord names who or what gives a proof, in the brief's words: "a Mac", "Clément's review".
+// ProverWord names who or what gives a proof, in the brief's words: "a Mac", "Alice's review".
 func ProverWord(p planv1.Prover, n *planv1.ProofNeed) string {
 	switch p {
 	case planv1.Prover_PROVER_MAC:
@@ -225,7 +225,7 @@ func ProverWord(p planv1.Prover, n *planv1.ProofNeed) string {
 	return clipLine(n.GetNeeds())
 }
 
-// NeedsWords says what an azima's proofs need, each giver once, in the order of the enum: "a Mac, Clément's review".
+// NeedsWords says what an azima's proofs need, each giver once, in the order of the enum: "a Mac, Alice's review".
 func NeedsWords(needs []*planv1.ProofNeed) string {
 	type word struct {
 		p    planv1.Prover

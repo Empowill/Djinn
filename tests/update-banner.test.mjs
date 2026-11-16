@@ -234,19 +234,14 @@ test("the update banner names the build against the running Djinn: what it adds,
       changesCount: 2,
     },
   );
-  const side = proposal(
-    "feat/clement-port",
-    "e60f8fc00000",
-    "Clément's branches",
-    {
-      tasks: ["W2"],
-      summaries: [{ code: "W2", title: "Port Clément's work", summary: "" }],
-      changes: ["port: Clément's work"],
-      changesCount: 1,
-      lacks: ["ui: the tasks tab", "ui: the diff", "harness: azimas"],
-      lacksCount: 3,
-    },
-  );
+  const side = proposal("feat/mac-port", "e60f8fc00000", "Alice's branches", {
+    tasks: ["W2"],
+    summaries: [{ code: "W2", title: "Port Alice's work", summary: "" }],
+    changes: ["port: Alice's work"],
+    changesCount: 1,
+    lacks: ["ui: the tasks tab", "ui: the diff", "harness: azimas"],
+    lacksCount: 3,
+  });
   const other = proposal("feat/x", "cccc2222dddd", "", {
     changes: ["fix"],
     changesCount: 1,
@@ -279,7 +274,7 @@ test("the update banner names the build against the running Djinn: what it adds,
   );
   assert.match(
     html,
-    /Builds of 2 other branches: feat\/clement-port, feat\/x<\/span><\/div><div class="update-banner-actions"><button type="button" class="update-banner-more" aria-expanded="false">Details<\/button><\/div>/,
+    /Builds of 2 other branches: feat\/mac-port, feat\/x<\/span><\/div><div class="update-banner-actions"><button type="button" class="update-banner-more" aria-expanded="false">Details<\/button><\/div>/,
   );
   assert.doesNotMatch(html, /e60f8fc0/);
   assert.equal(html.match(/<img/g).length, 1);
@@ -288,7 +283,7 @@ test("the update banner names the build against the running Djinn: what it adds,
   const others = banner({ builds: [mine, side, other] }, { open: ["others"] });
   assert.match(
     others,
-    /<div class="update-banner-others"><section class="update-banner-part"><div class="update-banner-head"><div class="update-banner-title" title="e60f8fc0 · feat\/clement-port · Clément&#x27;s branches · djinn\nadds 1 task · older than the running Djinn on 3 commits"><span class="update-banner-text">Build <code>e60f8fc0<\/code> of feat\/clement-port<span class="update-banner-quiet"> · Clément&#x27;s branches<\/span><span class="update-banner-quiet"> — adds 1 task · older than the running Djinn on 3 commits<\/span><\/span><\/div><div class="update-banner-actions"><button type="button" class="update-banner-primary">Install and restart<\/button>/,
+    /<div class="update-banner-others"><section class="update-banner-part"><div class="update-banner-head"><div class="update-banner-title" title="e60f8fc0 · feat\/mac-port · Alice&#x27;s branches · djinn\nadds 1 task · older than the running Djinn on 3 commits"><span class="update-banner-text">Build <code>e60f8fc0<\/code> of feat\/mac-port<span class="update-banner-quiet"> · Alice&#x27;s branches<\/span><span class="update-banner-quiet"> — adds 1 task · older than the running Djinn on 3 commits<\/span><\/span><\/div><div class="update-banner-actions"><button type="button" class="update-banner-primary">Install and restart<\/button>/,
   );
   assert.match(others, /— adds 1 commit<\/span>/);
   assert.equal(others.match(/class="update-banner-close"/g).length, 3);
@@ -296,7 +291,7 @@ test("the update banner names the build against the running Djinn: what it adds,
   const details = banner({ builds: [side] }, { open: ["others", side.sha] });
   assert.match(
     details,
-    /<strong>Since the running Djinn \(abcdef01\)<\/strong><ul class="update-banner-tasks"><li><div class="update-banner-task-line"><code>W2<\/code> Port Clément&#x27;s work<\/div><\/li><\/ul><details class="update-banner-commits"><summary>1 commit<\/summary><ul><li>port: Clément&#x27;s work<\/li><\/ul><\/details><details class="update-banner-commits update-banner-lacks"><summary>Older than the running Djinn on 3 commits<\/summary><ul><li>ui: the tasks tab<\/li>/,
+    /<strong>Since the running Djinn \(abcdef01\)<\/strong><ul class="update-banner-tasks"><li><div class="update-banner-task-line"><code>W2<\/code> Port Alice&#x27;s work<\/div><\/li><\/ul><details class="update-banner-commits"><summary>1 commit<\/summary><ul><li>port: Alice&#x27;s work<\/li><\/ul><\/details><details class="update-banner-commits update-banner-lacks"><summary>Older than the running Djinn on 3 commits<\/summary><ul><li>ui: the tasks tab<\/li>/,
   );
   // A dismissed build goes, the others stay; all dismissed, no banner.
   assert.doesNotMatch(
@@ -312,11 +307,11 @@ test("the update banner names the build against the running Djinn: what it adds,
   const ready = banner({ ready: "local-ge60f8fc", readyBuild: side });
   assert.match(
     ready,
-    /<div class="update-banner-title" title="local-g abcdef0 → local-ge60f8fc\ne60f8fc0 · feat\/clement-port · Clément&#x27;s branches · djinn\nadds 1 task · older than the running Djinn on 3 commits">/,
+    /<div class="update-banner-title" title="local-g abcdef0 → local-ge60f8fc\ne60f8fc0 · feat\/mac-port · Alice&#x27;s branches · djinn\nadds 1 task · older than the running Djinn on 3 commits">/,
   );
   assert.match(
     ready,
-    /New Djinn ready: <code>e60f8fc0<\/code> of feat\/clement-port<span class="update-banner-quiet"> · Clément&#x27;s branches<\/span><span class="update-banner-quiet"> — adds 1 task · older than the running Djinn on 3 commits<\/span><\/span><\/div><div class="update-banner-actions"><button type="button" class="update-banner-primary">Update<\/button><button type="button" class="update-banner-more" aria-expanded="false">Details<\/button><button type="button" class="update-banner-close" aria-label="Dismiss" title="Dismiss">×<\/button>/,
+    /New Djinn ready: <code>e60f8fc0<\/code> of feat\/mac-port<span class="update-banner-quiet"> · Alice&#x27;s branches<\/span><span class="update-banner-quiet"> — adds 1 task · older than the running Djinn on 3 commits<\/span><\/span><\/div><div class="update-banner-actions"><button type="button" class="update-banner-primary">Update<\/button><button type="button" class="update-banner-more" aria-expanded="false">Details<\/button><button type="button" class="update-banner-close" aria-label="Dismiss" title="Dismiss">×<\/button>/,
   );
   assert.equal(s.readyKey("local-ge60f8fc"), "ready:local-ge60f8fc");
   assert.equal(
@@ -354,14 +349,14 @@ test("the update banner shows a build of the wish's moved branch as the update, 
     ...extra,
   });
   // The wish moved its integration from feat/wails-go, which the running Djinn was built from, to feat/robustness,
-  // cut at its tip: that build holds the running commit. feat/clement-port's does not.
+  // cut at its tip: that build holds the running commit. feat/mac-port's does not.
   const moved = proposal("feat/robustness", "bbbb3333cccc", "Orchestrator", {
     continues: "feat/wails-go",
   });
   const parallel = proposal(
-    "feat/clement-port",
+    "feat/mac-port",
     "e60f8fc00000",
-    "Clément's branches",
+    "Alice's branches",
     { lacks: ["ui: the diff"], lacksCount: 1 },
   );
   const html = s.renderToStaticMarkup(
@@ -386,7 +381,7 @@ test("the update banner shows a build of the wish's moved branch as the update, 
     /<span class="brand small">.*<span class="update-banner-text">Build <code>bbbb3333<\/code> of feat\/robustness, continuing feat\/wails-go<span class="update-banner-quiet"> · Orchestrator<\/span><span class="update-banner-quiet"> — adds 1 commit<\/span><\/span><\/div><div class="update-banner-actions"><button type="button" class="update-banner-primary">Install and restart<\/button>/,
   );
   // Only the parallel branch is another branch, folded.
-  assert.match(html, /A build of another branch: feat\/clement-port<\/span>/);
+  assert.match(html, /A build of another branch: feat\/mac-port<\/span>/);
   assert.doesNotMatch(html, /another branch[^<]*feat\/robustness/);
   assert.doesNotMatch(html, /e60f8fc0/);
   assert.equal(html.match(/<img/g).length, 1);

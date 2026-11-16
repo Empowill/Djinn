@@ -27,7 +27,7 @@ const (
 		" Do you want to proceed?\r\n" +
 		" \x1b[38;5;153m❯\x1b[39m 1. Yes\r\n" +
 		"   2. Yes, and don't ask again for djinn task list commands in\r\n" +
-		"      /Users/me/CODE/dolmen\r\n" +
+		"      /Users/me/CODE/shop\r\n" +
 		"   3. No, and tell Claude what to do differently (esc)\r\n\r\n" +
 		" \x1b[2mEsc to cancel · Tab to amend\x1b[22m\r\n"
 	codexApproval = "› Run the tests\r\n\r\n" +
@@ -57,7 +57,7 @@ func TestReadPrompt(t *testing.T) {
 		"claude approval": {claudeApproval, &Prompt{
 			Title: "Do you want to proceed?",
 			Lines: []string{"Bash command", "djinn task list --wish-id 01a11f56", "List the tasks of the wish"},
-			Options: []string{"Yes", "Yes, and don't ask again for djinn task list commands in /Users/me/CODE/dolmen",
+			Options: []string{"Yes", "Yes, and don't ask again for djinn task list commands in /Users/me/CODE/shop",
 				"No, and tell Claude what to do differently (esc)"},
 			Selected: 0,
 		}},

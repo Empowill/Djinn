@@ -976,7 +976,7 @@ func movingBrief(
 }
 
 // azimaBranchText says, for a wish that pushes per azima, the own branch of the azima t and where its pull or merge
-// request stands, as its card shows them: "branch `ET-4368-x`, pull request open: <url>".
+// request stands, as its card shows them: "branch `ABC-4368-x`, pull request open: <url>".
 func azimaBranchText(t *planv1.Task) string {
 	text := "branch `" + AzimaBranchName(t) + "`"
 	if t.GetAzima().GetNamed() {

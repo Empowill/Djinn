@@ -543,7 +543,7 @@ test("a task card shows no warning of the calls its permissions refused: they go
           id: "t1",
           code: "W1",
           wishId: "w1",
-          title: "Silae study",
+          title: "Payroll study",
           status: s.TaskStatus.DONE,
           ...task,
         },

@@ -479,7 +479,7 @@ which works like a wish's integration branch:
   stands recorded on the azima (`azima.main`).
 - **It lands in main.** Once its parts are committed and its branch pushed, Djinn proposes its pull request to main;
   your yes opens it, as a draft: a worker follows the project's own skill for opening one (a skill whose name says
-  open or create, and mr, pr or request, like `open-mr-empowill`), else Djinn runs `gh pr create` or `glab mr create`
+  open or create, and mr, pr or request, like `open-mr-acme`), else Djinn runs `gh pr create` or `glab mr create`
   itself. When it cannot, the lead reads why, and that you must open it. It targets main from the start and is never
   re-targeted; each push of the branch updates it. Its card shows it proposed, open or merged; merged, the azima is
   done.
@@ -492,8 +492,8 @@ which works like a wish's integration branch:
 A branch made before, stacked on the branch of the azima it depended on, keeps working as it is: its work merges into
 it, main is merged into it, and nothing of it is rewritten.
 
-**Naming an azima's branch.** A project whose branches must follow a convention (a ticket's key, `ET-1234-<slug>`, that
-its forge or its sync tools require) names each azima's branch: `djinn task update <azima> --branch ET-1234-the-fix`.
+**Naming an azima's branch.** A project whose branches must follow a convention (a ticket's key, `ABC-1234-<slug>`, that
+its forge or its sync tools require) names each azima's branch: `djinn task update <azima> --branch ABC-1234-the-fix`.
 A branch that exists is adopted, never cut again nor rewritten: Djinn records it with the main it lands in and the
 commit of main it was cut from, their merge base. Djinn fetches it first from the remote it pushes to: one only the
 remote holds, an open pull request's, is made from the remote's, with no upstream set, never from main; one here behind
@@ -522,16 +522,16 @@ why, and the lead hears it once, in one line: reopen the azima (for a deleted br
 drop the work (`djinn task done <task> --drop`). A live azima whose branch is there merges and pushes as above.
 
 **Switching a wish to per azima when its work already lives on the wish's branch.** A wish that pushed per wish, one
-azima carrying its subject, has that azima's work merged into the wish's integration branch, `ET-1234-the-fix`, perhaps
+azima carrying its subject, has that azima's work merged into the wish's integration branch, `ABC-1234-the-fix`, perhaps
 pushed and with a merge request open. Switching to per azima as it is would give the azima a new branch cut from main,
 the merged work left behind: Djinn refuses, naming it. Have the azima adopt the branch its work lives on, then switch:
 
 ```
-djinn task update T1 --branch ET-1234-the-fix
+djinn task update T1 --branch ABC-1234-the-fix
 djinn wish push-strategy <wish> --strategy azima
 ```
 
-Nothing is cut again or moved: the azima's work keeps merging into `ET-1234-the-fix`, main is merged into it by the
+Nothing is cut again or moved: the azima's work keeps merging into `ABC-1234-the-fix`, main is merged into it by the
 same rules, it is pushed as before, and the merge request already open on it is the azima's. While the azima's branch is
 the wish's integration branch, a correction of work of no azima merged before goes there too.
 

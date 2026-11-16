@@ -1,7 +1,7 @@
 package harness
 
 // Opening a request: a yes to Djinn's question "Open a pull request …?" opens it, as a draft. A project with a skill
-// of its own for opening one (dolmen's open-mr-empowill) gets a worker that follows it; any other gets gh pr create or
+// of its own for opening one (shop's open-mr-acme) gets a worker that follows it; any other gets gh pr create or
 // glab mr create from Djinn. When Djinn cannot, the lead hears that the developer must open it: never a yes noted and
 // nothing opened (wish Dew, 13/10/2026: three merge requests answered, none opened).
 
@@ -169,7 +169,7 @@ func createdURL(out string) (string, int) {
 }
 
 // openSkill is the project's own skill that opens a request: its name says open or create, and mr, pr or request
-// (dolmen's open-mr-empowill). "" when the project has none.
+// (shop's open-mr-acme). "" when the project has none.
 func openSkill(home string, project *planv1.Project) string {
 	for _, s := range plan.ProjectSkills(plan.ConfigDir(home, project)) {
 		words := strings.FieldsFunc(strings.ToLower(s.Name), func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) })

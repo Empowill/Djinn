@@ -44,7 +44,7 @@ func ProjectFlags(ctx context.Context, r store.Reader, projectIDs []string) stri
 	return OrList(out)
 }
 
-// ProjectNames are the names of the projects projectIDs, as a sentence lists them: "djinn, dolmen or terraform".
+// ProjectNames are the names of the projects projectIDs, as a sentence lists them: "djinn, shop or infra".
 func ProjectNames(ctx context.Context, r store.Reader, projectIDs []string) string {
 	var out []string
 	for _, id := range projectIDs {

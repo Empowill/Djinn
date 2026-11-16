@@ -519,10 +519,10 @@ test("a project with something to fix takes one line in the inbox, under the car
     /Inbox|inbox/,
   );
   const first =
-    "The skill dolmen-news offers an inbox source this machine has not decided on: plug it in for its items to come here, or unplug it to say no.";
+    "The skill shop-news offers an inbox source this machine has not decided on: plug it in for its items to come here, or unplug it to say no.";
   const html = await render([
     { id: "p1", name: "lamp", toFix: 0 },
-    { id: "p2", name: "dolmen", toFix: 2, firstFix: first },
+    { id: "p2", name: "shop", toFix: 2, firstFix: first },
   ]);
   assert.match(html, /<span class="count">1<\/span>/);
   assert.equal(html.split('inbox-project"').length - 1, 1);
@@ -532,7 +532,7 @@ test("a project with something to fix takes one line in the inbox, under the car
   );
   assert.match(
     html,
-    /<span class="inbox-kind">Project dolmen<\/span><span class="inbox-project-count">2 things to fix<\/span>/,
+    /<span class="inbox-kind">Project shop<\/span><span class="inbox-project-count">2 things to fix<\/span>/,
   );
   // The first thing to fix as Djinn says it, from the first paint: no sentence comes later to grow the line under the
   // reader. Then the button that opens the panel.
@@ -543,7 +543,7 @@ test("a project with something to fix takes one line in the inbox, under the car
   );
   // A project that says none: a sentence that sends to the panel.
   assert.match(
-    await render([{ id: "p2", name: "dolmen", toFix: 1 }]),
+    await render([{ id: "p2", name: "shop", toFix: 1 }]),
     /<p>Djinn waits for you on its configuration/,
   );
 });

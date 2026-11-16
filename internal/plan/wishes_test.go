@@ -571,7 +571,7 @@ func TestWishPushStrategy(t *testing.T) {
 		}
 
 		// 4. Work of an azima merged into the wish's integration branch.
-		t1 := &planv1.Task{Id: store.NewID(), WishId: wishID, Code: "T1", Kind: planv1.TaskKind_TASK_KIND_AZIMA, Title: "Silae"}
+		t1 := &planv1.Task{Id: store.NewID(), WishId: wishID, Code: "T1", Kind: planv1.TaskKind_TASK_KIND_AZIMA, Title: "Payroll"}
 		c.put(t, t1)
 		c.put(t, &planv1.Task{
 			Id:        store.NewID(),
@@ -581,7 +581,7 @@ func TestWishPushStrategy(t *testing.T) {
 			PartOf:    t1.GetId(),
 			Integration: &planv1.TaskIntegration{
 				State:  planv1.IntegrationState_INTEGRATION_STATE_COMMITTED,
-				Branch: "ET-4368-silae",
+				Branch: "ABC-4368-payroll",
 			},
 		})
 
@@ -593,9 +593,9 @@ func TestWishPushStrategy(t *testing.T) {
 		if err == nil {
 			t.Fatal("expected error switching push strategy with committed task, got nil")
 		}
-		const strands = "the work of W1 (T1) is merged into ET-4368-silae, its azima's goes to djinn/T1-silae"
+		const strands = "the work of W1 (T1) is merged into ABC-4368-payroll, its azima's goes to djinn/T1-payroll"
 		if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), strands) ||
-			!strings.Contains(err.Error(), "djinn task update T1 --branch ET-4368-silae") {
+			!strings.Contains(err.Error(), "djinn task update T1 --branch ABC-4368-payroll") {
 			t.Errorf("switch error = %v; want FailedPrecondition saying %q and how to adopt the branch", err, strands)
 		}
 
@@ -624,11 +624,11 @@ func TestWishPushStrategy(t *testing.T) {
 		}
 
 		// Once T1 adopts the branch its work lives on, nothing is stranded: the switch goes, and back too.
-		t1.Azima = &planv1.Azima{Branch: "ET-4368-silae", BaseBranch: "main", CutFrom: strings.Repeat("a", 40), Named: true}
+		t1.Azima = &planv1.Azima{Branch: "ABC-4368-payroll", BaseBranch: "main", CutFrom: strings.Repeat("a", 40), Named: true}
 		c.put(t, t1)
 		for _, s := range []planv1.PushStrategy{planv1.PushStrategy_PUSH_STRATEGY_AZIMA, planv1.PushStrategy_PUSH_STRATEGY_WISH} {
 			if _, err := c.wishes.SetIntegration(ctx, connect.NewRequest(&planv1.WishServiceSetIntegrationRequest{
-				WishId: wishID, Branch: "ET-4368-silae", PushStrategy: s.Enum(),
+				WishId: wishID, Branch: "ABC-4368-payroll", PushStrategy: s.Enum(),
 			})); err != nil {
 				t.Errorf("switch to %v once T1 adopted its branch: %v", s, err)
 			}

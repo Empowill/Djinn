@@ -151,10 +151,10 @@ test("an azima whose work is done awaits its proof: its own label and tone, what
     azima("T3", "The interface", s.AzimaState.AWAITING_PROOF, {
       proofNeeds: [
         need(
-          "Clément has reviewed the switch.",
-          "Clément's review",
+          "Alice has reviewed the switch.",
+          "Alice's review",
           [s.Prover.REVIEW],
-          "Clément",
+          "Alice",
         ),
       ],
     }),
@@ -232,9 +232,9 @@ test("an azima whose work is done awaits its proof: its own label and tone, what
   );
   assert.match(
     yourMove,
-    /status-badge tone-proof" title="Needs Clément&#x27;s review"><svg[^]*?<span>Clément&#x27;s review<\/span>/,
+    /status-badge tone-proof" title="Needs Alice&#x27;s review"><svg[^]*?<span>Alice&#x27;s review<\/span>/,
   );
-  assert.match(yourMove, /T3: Clément has reviewed the switch\./);
+  assert.match(yourMove, /T3: Alice has reviewed the switch\./);
   assert.doesNotMatch(plan, /The same scenario runs on macOS/);
   assert.match(
     plan,

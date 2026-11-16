@@ -3663,7 +3663,7 @@ export type ProofNeed = Message<"plan.v1.ProofNeed"> & {
   provers: Prover[];
 
   /**
-   * The person whose review it needs ("Clément's review"); empty for none.
+   * The person whose review it needs ("Alice's review"); empty for none.
    *
    * @generated from field: string reviewer = 4;
    */
@@ -13200,7 +13200,7 @@ export type TaskServiceUpdateRequest = Message<"plan.v1.TaskServiceUpdateRequest
 
   /**
    * An azima's own branch under the per-azima push strategy, named as the project's convention requires
-   * (ET-1234-<slug>): a branch that exists is adopted as it is, recorded with the main it lands in and the commit of
+   * (ABC-1234-<slug>): a branch that exists is adopted as it is, recorded with the main it lands in and the commit of
    * main it was cut from (their merge base); one only the remote holds is made from the remote's; one that does not
    * exist is cut from main under that name. Refused on a work task, while a merge runs into the azima's branch, and
    * when the branch here has diverged from the remote's.

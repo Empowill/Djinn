@@ -1051,8 +1051,8 @@ test("a question reads top-down: its title, what is at stake folded, its report,
 });
 
 test("a move's links are clickable in its title, context, recommendation and options; its main link is a button", () => {
-  const mr = "https://gitlab.com/empowill/app/-/merge_requests/123";
-  const ci = "https://gitlab.com/empowill/app/-/pipelines/9";
+  const mr = "https://gitlab.com/acme/shop/-/merge_requests/123";
+  const ci = "https://gitlab.com/acme/shop/-/pipelines/9";
   const tilasm = "djinn://tilasm/01a130b1-398a-7072-be60-ce928cb7241e";
   const question = {
     id: "q7",
@@ -1137,7 +1137,7 @@ test("a move's links are clickable in its title, context, recommendation and opt
 
 test("a link's click opens it and stops there: the option around it is not picked", () => {
   for (const href of [
-    "https://gitlab.com/empowill/app/-/merge_requests/123",
+    "https://gitlab.com/acme/shop/-/merge_requests/123",
     "djinn://tilasm/01a130b1-398a-7072-be60-ce928cb7241e",
   ]) {
     const link = live(s.Link, { href, className: "text-link", children: href });
