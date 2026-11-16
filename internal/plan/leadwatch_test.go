@@ -103,6 +103,21 @@ func leadWatchOnce(t *testing.T, s *LeadService, req *planv1.LeadServiceWatchReq
 	return res.Msg.GetText()
 }
 
+// waitWatching waits until a watch of w's lead waits.
+func waitWatching(t *testing.T, w *Wishes) {
+	t.Helper()
+	l := w.leadWatch()
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(time.Millisecond) {
+		l.mu.Lock()
+		watching := l.watching
+		l.mu.Unlock()
+		if watching > 0 {
+			return
+		}
+	}
+	t.Fatal("no watch waits")
+}
+
 // cursorOf is the cursor a digest prints.
 func cursorOf(t *testing.T, digest string) string {
 	t.Helper()
@@ -281,7 +296,7 @@ func TestLeadWatchFallbackLine(t *testing.T) {
 		w, s, leads := leadWatchFixture(t, planv1.Provider_PROVIDER_CLAUDE)
 		done := make(chan string)
 		go func() { done <- leadWatchOnce(t, s, &planv1.LeadServiceWatchRequest{}) }()
-		time.Sleep(20 * time.Millisecond)
+		waitWatching(t, w)
 		notify(t, w, planv1.LeadEventKind_LEAD_EVENT_KIND_ANSWER, "Q1", "Djinn: Q1 answered yes.")
 		got := <-done
 		if !strings.Contains(got, "Q1 answer") {
@@ -346,12 +361,55 @@ func TestLeadWatchFallbackLine(t *testing.T) {
 		go func() {
 			_, _ = s.Watch(ctx, connect.NewRequest(&planv1.LeadServiceWatchRequest{Timeout: durationpb.New(time.Minute)}))
 		}()
-		time.Sleep(20 * time.Millisecond)
+		// The watch waits before the event comes: one that starts after the line resets it, and gets its own line
+		// once it returns without a next watch.
+		waitWatching(t, w)
 		notify(t, w, planv1.LeadEventKind_LEAD_EVENT_KIND_FAILED, "W1", "Djinn: W1 failed")
 		if said := waitSaid(leads, 1); len(said) != 1 {
 			t.Errorf("typed %q to a codex lead, want the line", said)
 		}
 	})
+}
+
+// heldLeads holds the first line typed until release is closed, after it closes entered.
+type heldLeads struct {
+	*syncLeads
+	once             sync.Once
+	entered, release chan struct{}
+}
+
+func (h *heldLeads) Say(name, line string) error {
+	h.once.Do(func() {
+		close(h.entered)
+		<-h.release
+	})
+	return h.syncLeads.Say(name, line)
+}
+
+// TestLeadWatchOneLineWhileTyping: a check that runs while another one types the line types none. The first check
+// comes while a codex lead's watch waits; the watch returns meanwhile, and its own check comes after the grace.
+func TestLeadWatchOneLineWhileTyping(t *testing.T) {
+	t.Parallel()
+	w, s, leads := leadWatchFixture(t, planv1.Provider_PROVIDER_CODEX)
+	w.leadWatch().timing.quiet = 2 * quick.remind
+	held := &heldLeads{syncLeads: leads, entered: make(chan struct{}), release: make(chan struct{})}
+	w.Leads = held
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	go func() {
+		_, _ = s.Watch(ctx, connect.NewRequest(&planv1.LeadServiceWatchRequest{Timeout: durationpb.New(time.Minute)}))
+	}()
+	waitWatching(t, w)
+	notify(t, w, planv1.LeadEventKind_LEAD_EVENT_KIND_FAILED, "W1", "Djinn: W1 failed")
+	<-held.entered
+	time.Sleep(2*quick.remind + quick.grace + 4*quick.quiet)
+	close(held.release)
+	for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline) && len(leads.said()) == 0; {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if said := leads.said(); len(said) != 1 {
+		t.Errorf("typed %q, want the line once", said)
+	}
 }
 
 // TestLeadWatchAcknowledgedAnswer: an answer that waited for a lead stops waiting once the lead acknowledges it.
