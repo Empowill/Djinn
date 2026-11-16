@@ -77,7 +77,7 @@ func TestSummon(t *testing.T) {
 	skills := c.skills
 	app, infra := resolvedTempDir(t), resolvedTempDir(t)
 	src := writeSkill(t, app, SkillFolders[0], "babysit-mr", "description: Watch a merge request.\n")
-	writeSkill(t, infra, SkillFolders[1], "terraform", "description: Plan and apply.\n")
+	writeSkill(t, infra, SkillFolders[1], "deploy", "description: Plan and apply.\n")
 	for name, dir := range map[string]string{"app": app, "infra": infra} {
 		if _, err := c.projects.Add(t.Context(), connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: dir, Name: name})); err != nil {
 			t.Fatal(err)
@@ -126,8 +126,8 @@ func TestSummon(t *testing.T) {
 		})
 	}
 	// A project's own skill is never hidden by a summoned one.
-	writeSkill(t, app, SkillFolders[0], "terraform", "description: Another.\n")
-	if _, err := summon("app/terraform", "infra"); code(err) != connect.CodeAlreadyExists {
+	writeSkill(t, app, SkillFolders[0], "deploy", "description: Another.\n")
+	if _, err := summon("app/deploy", "infra"); code(err) != connect.CodeAlreadyExists {
 		t.Errorf("summon over an own skill = %v", err)
 	}
 
@@ -139,7 +139,7 @@ func TestSummon(t *testing.T) {
 		return res.Msg.GetSkills()
 	}
 	l := list()
-	if len(l) != 2 || l[0].GetName() != "terraform" || l[0].GetSource() != "" || l[1].GetSource() != "app/babysit-mr" || l[1].GetMissing() != "" {
+	if len(l) != 2 || l[0].GetName() != "deploy" || l[0].GetSource() != "" || l[1].GetSource() != "app/babysit-mr" || l[1].GetMissing() != "" {
 		t.Errorf("list = %v", l)
 	}
 
@@ -157,7 +157,7 @@ func TestSummon(t *testing.T) {
 	if _, err := skills.Unsummon(t.Context(), connect.NewRequest(&planv1.SkillServiceUnsummonRequest{Skill: "app/babysit-mr", From: "infra"})); err != nil {
 		t.Fatal(err)
 	}
-	if l = list(); len(l) != 1 || l[0].GetName() != "terraform" {
+	if l = list(); len(l) != 1 || l[0].GetName() != "deploy" {
 		t.Errorf("list after unsummon = %v", l)
 	}
 	_, err = skills.Unsummon(t.Context(), connect.NewRequest(&planv1.SkillServiceUnsummonRequest{Skill: "app/babysit-mr", From: "infra"}))
@@ -187,14 +187,14 @@ func tree(t *testing.T, dir string) string {
 	return out
 }
 
-// TestSkillFrontApart: a front matter that Claude Code reads but that breaks the YAML outside metadata, as dolmen's
+// TestSkillFrontApart: a front matter that Claude Code reads but that breaks the YAML outside metadata, as shop's
 // argument-hint lines do, is read all the same: metadata apart, and a warning that names the lines at fault. When
 // metadata itself breaks, the skill cannot be read.
 func TestSkillFrontApart(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	const source = "metadata:\n  djinn:\n    source:\n      watch: mentions --new\n"
-	notion := writeSkill(t, dir, SkillFolders[0], "notion-ticket", "name: notion-ticket\ndescription: Tickets.\n"+
+	notion := writeSkill(t, dir, SkillFolders[0], "file-ticket", "name: file-ticket\ndescription: Tickets.\n"+
 		"user-invocable: true\nargument-hint: [bug|improvement] [description]\nallowed-tools:\n- Read\n- Write\n"+source+
 		"also: [a] [b]\n")
 	src, err := ReadSource(notion)

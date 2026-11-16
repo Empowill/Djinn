@@ -189,13 +189,13 @@ func TestLookMerged(t *testing.T) {
 	// work is all in main, by its request.
 	t.Run("by its watcher", func(t *testing.T) {
 		t.Parallel()
-		const url = "https://gitlab.com/acme/dolmen/-/merge_requests/123"
+		const url = "https://gitlab.com/acme/shop/-/merge_requests/123"
 		forge := &fakeForge{views: map[string]string{"123": `{"iid":123,"state":"opened","web_url":"` + url + `"}`}}
-		e, queue, wishID, projectID := babysitWish(t, forge, babysitRepo(t, "git@gitlab.com:acme/dolmen.git", gitlabBabysit, ""))
+		e, queue, wishID, projectID := babysitWish(t, forge, babysitRepo(t, "git@gitlab.com:acme/shop.git", gitlabBabysit, ""))
 		azima := e.azima(t, wishID, "Open the MR")
 		opener := endTask(t, e, wishID, projectID, strings.Join([]string{
 			`tool Bash {"command":"glab mr create --draft --fill --yes"}`,
-			"result Creating draft merge request for w1 into main in acme/dolmen " + url,
+			"result Creating draft merge request for w1 into main in acme/shop " + url,
 			"text Draft MR opened.",
 		}, "\n"), azima.GetId())
 		if opener.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {

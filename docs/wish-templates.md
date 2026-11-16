@@ -84,12 +84,12 @@ watcher fails at start, and its error says what the project lacks, the commands 
 `djinn project allow` command that would let it run:
 
 ```
-dolmen lists no command its workers run without review (it has no .agents/permissions.txtpb, and a wish's allowance
-adds none), so it does not let them run "go run ./.agents/skills/babysit-mr-empowill/mrwatch -mr 2855 -watch …", and
-a watcher has no reviewer. No skill of dolmen declares it: one that does, under metadata.djinn.babysit or
+shop lists no command its workers run without review (it has no .agents/permissions.txtpb, and a wish's allowance
+adds none), so it does not let them run "go run ./.agents/skills/babysit-mr-acme/mrwatch -mr 58 -watch …", and
+a watcher has no reviewer. No skill of shop declares it: one that does, under metadata.djinn.babysit or
 metadata.djinn.wish (docs/wish-templates.md), lets Djinn run the command it builds from it. Or allow it for yourself
-in dolmen, in your own settings, never in the repository: djinn project allow dolmen --watch 'go run
-./.agents/skills/babysit-mr-empowill/mrwatch'
+in shop, in your own settings, never in the repository: djinn project allow shop --watch 'go run
+./.agents/skills/babysit-mr-acme/mrwatch'
 ```
 
 ## Djinn's own: babysit-pr, for GitHub
@@ -177,7 +177,7 @@ metadata:
   djinn:
     babysit:
       forge: gitlab
-      watch: "go run ./.agents/skills/babysit-mr-empowill/mrwatch -mr {mr} -watch -state {state}"
+      watch: "go run ./.agents/skills/babysit-mr-acme/mrwatch -mr {mr} -watch -state {state}"
       restart: true
       done_when: MERGED
 ```
@@ -201,7 +201,7 @@ opened, still open: the address its `gh pr create` or `glab mr create` printed, 
 project's repository; else the one open for the task's branch; else the one open for the wish's integration branch
 (`gh pr list --head`, `glab mr list --source-branch`). It spawns the watcher in the task's wish, part of the task's
 azima (`Task.babysit` holds the request), and tells the lead once: `Djinn: W5 opened MR !123: W7 babysits it; follow
-the skill babysit-mr-empowill each time it speaks.` A request that a task already babysits, or that the watcher of an
+the skill babysit-mr-acme each time it speaks.` A request that a task already babysits, or that the watcher of an
 open wish made from a template runs on, is not watched twice. Nor is one a watcher spawned by hand already watches,
 running or resuming in any wish of the project, on the declared command for that request (`{pr}` or `{mr}` filled,
 `{state}` any word, both trimmed): Djinn records the request on that watcher (`Task.babysit`, its done line with it),

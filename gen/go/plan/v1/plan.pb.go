@@ -8510,7 +8510,7 @@ type ProofNeed struct {
 	Needs string `protobuf:"bytes,2,opt,name=needs,proto3" json:"needs,omitempty"`
 	// Who or what gives the proof, read from the words of its needs, no model; at least one.
 	Provers []Prover `protobuf:"varint,3,rep,packed,name=provers,proto3,enum=plan.v1.Prover" json:"provers,omitempty"`
-	// The person whose review it needs ("Clément's review"); empty for none.
+	// The person whose review it needs ("Alice's review"); empty for none.
 	Reviewer      string `protobuf:"bytes,4,opt,name=reviewer,proto3" json:"reviewer,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -26080,7 +26080,7 @@ type TaskServiceUpdateRequest struct {
 	// Force clearing the integration record even if the task's branch holds unmerged commits.
 	Force *bool `protobuf:"varint,12,opt,name=force,proto3,oneof" json:"force,omitempty"`
 	// An azima's own branch under the per-azima push strategy, named as the project's convention requires
-	// (ET-1234-<slug>): a branch that exists is adopted as it is, recorded with the main it lands in and the commit of
+	// (ABC-1234-<slug>): a branch that exists is adopted as it is, recorded with the main it lands in and the commit of
 	// main it was cut from (their merge base); one only the remote holds is made from the remote's; one that does not
 	// exist is cut from main under that name. Refused on a work task, while a merge runs into the azima's branch, and
 	// when the branch here has diverged from the remote's.

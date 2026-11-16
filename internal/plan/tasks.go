@@ -122,7 +122,7 @@ var watchRequest = regexp.MustCompile(
 	`(?i)(?:--?(?:mr|pr)(?:=|\s+)|\b(?:mr|pr)(?:\s+view)?\s*[!#]?|babysit-(?:mr|pr)/\S+\s+|/(?:pull|(?:-/)?merge_requests)/|(?:^|[\s(\[])[!#])(\d+)\b`,
 )
 
-// watchRequestNumber extracts a pull or merge request number named in s (e.g. "-mr 2863", "MR !2863", "PR #40").
+// watchRequestNumber extracts a pull or merge request number named in s (e.g. "-mr 63", "MR !63", "PR #40").
 func watchRequestNumber(s string) int {
 	m := watchRequest.FindStringSubmatch(s)
 	if len(m) < 2 {

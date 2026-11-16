@@ -140,7 +140,7 @@ export function ifritGates(
 // expire time at the latest, or when it ends.
 export interface IfritWait {
   gate: string;
-  // Who holds it, as Djinn names them: "W12 (Front of dolmen): task run-back".
+  // Who holds it, as Djinn names them: "W12 (Front of shop): task run-back".
   holder: string;
   // When it is given back at the latest: the hour, "" when Djinn does not say.
   release: string;

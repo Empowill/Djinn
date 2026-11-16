@@ -468,7 +468,7 @@ test("the example of an account's name passes the rule the window and the server
     "Work",
     "Travail",
     "compte pro",
-    "toussaint@empowill.com",
+    "dev@example.com",
     "-pro",
     "\u00e9t\u00e9",
     "a".repeat(33),

@@ -90,9 +90,9 @@ test("a build committed is proposed, and installs only on update(sha)", async ()
               lacksCount: 1,
               auto: true,
             },
-            { branch: "feat/clement-port", sha: "e60" },
+            { branch: "feat/mac-port", sha: "e60" },
           ],
-          readyBuild: { branch: "feat/clement-port", sha: "e60" },
+          readyBuild: { branch: "feat/mac-port", sha: "e60" },
           installed: true,
           heldStart: 3,
           heldMemoryPercent: 95,
@@ -148,7 +148,7 @@ test("a build committed is proposed, and installs only on update(sha)", async ()
   });
   assert.deepEqual(
     state.builds.map((b) => b.branch),
-    ["feat/x", "feat/clement-port"],
+    ["feat/x", "feat/mac-port"],
   );
   assert.equal(state.readyBuild.sha, "e60");
   assert.equal(state.readyBuild.running, false);

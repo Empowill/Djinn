@@ -66,7 +66,7 @@ func TestContextWarnings(t *testing.T) {
 		},
 		{
 			name:    "a tilde fence",
-			context: "~~~\n# the dry run\ngo run ./cmd/stork migrate --dry-run\n~~~\n\nWhy: it writes nothing.",
+			context: "~~~\n# the dry run\ngo run ./cmd/tool migrate --dry-run\n~~~\n\nWhy: it writes nothing.",
 		},
 		{
 			name:    "an output block after the text holds no command",
@@ -94,12 +94,12 @@ func TestContextWarnings(t *testing.T) {
 		},
 		{
 			name:    "a path and a hash in sentences",
-			context: "The fix is in internal/plan/brief.go.\n\nIt landed at 5d254fef6.",
+			context: "The fix is in internal/plan/brief.go.\n\nIt landed at a1b2c3d4e.",
 			want:    []string{"lines 1, 3: a path or a hash in a sentence"},
 		},
 		{
 			name: "a hash in a table, a link, a word and a number",
-			context: "| Commit | Branch |\n|---|---|\n| 5d254fef6 | main |\n\nSee [the run](https://ci.example/runs/5d254fef6/a/b) " +
+			context: "| Commit | Branch |\n|---|---|\n| a1b2c3d4e | main |\n\nSee [the run](https://ci.example/runs/a1b2c3d4e/a/b) " +
 				"and https://git.example/x/commit/abcdef1234; facade and 1234567 are no hash.",
 		},
 		{

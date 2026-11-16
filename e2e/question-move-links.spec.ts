@@ -28,8 +28,8 @@ function djinn(...args: string[]): string {
   });
 }
 
-const MR = "https://gitlab.com/empowill/app/-/merge_requests/123";
-const CI = "https://gitlab.com/empowill/app/-/pipelines/9";
+const MR = "https://gitlab.com/acme/shop/-/merge_requests/123";
+const CI = "https://gitlab.com/acme/shop/-/pipelines/9";
 const READY = "glab mr update 123 --ready";
 const QUESTION = "Review MR !123 and take it out of draft";
 

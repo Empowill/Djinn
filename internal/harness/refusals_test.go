@@ -63,7 +63,7 @@ func TestDoneWithoutCommitAndRefusalsTellTheLead(t *testing.T) {
 	nativeID := wish.GetProjectIds()[0]
 
 	res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
-		WishId: wishID, ProjectId: gitID, Title: "Silae for bardahl: feasibility study",
+		WishId: wishID, ProjectId: gitID, Title: "Payroll for globex: feasibility study",
 		Prompt:   "text reading the scraper\ntext Feasible without the salary data: two questions for the developer.\nThe rest of the report.",
 		Provider: planv1.Provider_PROVIDER_FAKE,
 	}))
@@ -88,16 +88,16 @@ func TestDoneWithoutCommitAndRefusalsTellTheLead(t *testing.T) {
 	}
 
 	prompt := strings.Join([]string{
-		"refuse Bash cd cmd/integreat/scrap/silae && ls -la && wc -l *.go",
+		"refuse Bash cd cmd/sync/scrap/payroll && ls -la && wc -l *.go",
 		"refuse Bash R=/home/x/worktrees/w1; git -C $R log --oneline -15",
-		"refuse Bash ls -la /home/nyhu/dolmen_sensitive/secrets/",
-		"refuse Bash SILAE_CHECK=1 SILAE_CLIENT=bardahl task test-pkg PKG=./cmd/integreat/scrap/silae/...",
+		"refuse Bash ls -la /home/dev/shop_sensitive/secrets/",
+		"refuse Bash PAYROLL_CHECK=1 PAYROLL_CLIENT=globex task test-pkg PKG=./cmd/sync/scrap/payroll/...",
 		"refuse Bash gcloud config get-value project",
 		"refuse Bash djinn block put --help",
 		"text Half of the study: djinn was refused, the questions are below.",
 	}, "\n")
 	res2, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
-		WishId: wishID, ProjectId: nativeID, Title: "Silae study", Prompt: prompt, Provider: planv1.Provider_PROVIDER_FAKE,
+		WishId: wishID, ProjectId: nativeID, Title: "Payroll study", Prompt: prompt, Provider: planv1.Provider_PROVIDER_FAKE,
 	}))
 	if err != nil {
 		t.Fatal(err)
@@ -183,16 +183,16 @@ func TestDoneLine(t *testing.T) {
 func TestRefusedName(t *testing.T) {
 	t.Parallel()
 	for what, want := range map[string]string{
-		`Bash {"command":"cd cmd/silae && ls -la && wc -l *.go","description":"List"}`: "ls",
-		`Bash {"command":"R=/x/w1; git -C $R log --oneline"}`:                          "git",
-		`Bash {"command":"SILAE_CHECK=1 SILAE_CLIENT=bardahl task test-pkg"}`:          "task",
-		`Bash {"command":"/usr/bin/gcloud config get-value project"}`:                  "gcloud",
-		`Bash {"command":"djinn block put --help"}`:                                    "djinn",
-		`Bash {"command":"(cd app && npm test) | tail"}`:                               "npm",
-		`Edit {"file_path":"/x/a.go"}`:                                                 "Edit",
-		`Write notes.md`:                                                               "Write",
-		`commandExecution gcloud auth list (network)`:                                  "gcloud",
-		`read_file /home/u/.config/djinn/tilasms/01a1/v5/index.html`:                   "read_file",
+		`Bash {"command":"cd cmd/payroll && ls -la && wc -l *.go","description":"List"}`: "ls",
+		`Bash {"command":"R=/x/w1; git -C $R log --oneline"}`:                            "git",
+		`Bash {"command":"PAYROLL_CHECK=1 PAYROLL_CLIENT=globex task test-pkg"}`:         "task",
+		`Bash {"command":"/usr/bin/gcloud config get-value project"}`:                    "gcloud",
+		`Bash {"command":"djinn block put --help"}`:                                      "djinn",
+		`Bash {"command":"(cd app && npm test) | tail"}`:                                 "npm",
+		`Edit {"file_path":"/x/a.go"}`:                                                   "Edit",
+		`Write notes.md`:                                                                 "Write",
+		`commandExecution gcloud auth list (network)`:                                    "gcloud",
+		`read_file /home/u/.config/djinn/tilasms/01a1/v5/index.html`:                     "read_file",
 	} {
 		if got := refusedName(what); got != want {
 			t.Errorf("refusedName(%s) = %q, want %q", what, got, want)

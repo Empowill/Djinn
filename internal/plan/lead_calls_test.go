@@ -58,7 +58,7 @@ func newLeadCalls(t *testing.T) *leadCalls {
 	l.questions = planv1connect.NewQuestionServiceClient(srv.Client(), srv.URL)
 	projects := planv1connect.NewProjectServiceClient(srv.Client(), srv.URL)
 	root := t.TempDir()
-	for _, name := range []string{"dolmen", "djinn"} {
+	for _, name := range []string{"shop", "djinn"} {
 		dir := filepath.Join(root, name)
 		if err := os.Mkdir(dir, 0o700); err != nil {
 			t.Fatal(err)
@@ -72,11 +72,11 @@ func newLeadCalls(t *testing.T) *leadCalls {
 	return l
 }
 
-// wish makes a wish titled so, on dolmen.
+// wish makes a wish titled so, on shop.
 func (l *leadCalls) wish(t *testing.T, title string) string {
 	t.Helper()
 	w, err := l.wishes.Make(t.Context(), connect.NewRequest(&planv1.WishServiceMakeRequest{
-		Title: title, ProjectIds: []string{l.projects["dolmen"]},
+		Title: title, ProjectIds: []string{l.projects["shop"]},
 	}))
 	if err != nil {
 		t.Fatal(err)

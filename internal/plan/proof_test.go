@@ -65,9 +65,9 @@ func TestReadDoneWhen(t *testing.T) {
 		{
 			name: "a struck box no longer counts, as T03",
 			body: "## Done when\n- [x] It starts.\n- [ ] ~~No React file changed to get there.~~ Superseded by Q23.\n" +
-				"- [ ] Clément has reviewed the switch. (needs: Clément's review)\n",
+				"- [ ] Alice has reviewed the switch. (needs: Alice's review)\n",
 			found: true, checked: 1, unchecked: 1,
-			needs: [][2]string{{"Clément has reviewed the switch.", "Clément's review"}},
+			needs: [][2]string{{"Alice has reviewed the switch.", "Alice's review"}},
 		},
 		{
 			name: "needs inside a parenthesis that opens on something else, as T16, are work",
@@ -136,7 +136,7 @@ func TestProvers(t *testing.T) {
 	for needs, want := range map[string][]planv1.Prover{
 		"a Mac, and a person to compare the rendering with Linux": {mac, person},
 		"`go tool task check-window` on a Mac and on Windows":     {mac, windows},
-		"Clément's review": {review},
+		"Alice's review": {review},
 		"a published release, then a person on each system":                {release, person},
 		"a maintainer to push a `v*` tag; `release.yml` exists":            {release, person},
 		"a person and a real model":                                        {model, person},
@@ -155,7 +155,7 @@ func TestProvers(t *testing.T) {
 			}
 		})
 	}
-	if _, who := Provers("Clément's review"); who != "Clément" {
+	if _, who := Provers("Alice's review"); who != "Alice" {
 		t.Errorf("reviewer %q", who)
 	}
 	if _, who := Provers("a review of the layout"); who != "" {
@@ -165,11 +165,11 @@ func TestProvers(t *testing.T) {
 		provers, who := Provers(needs)
 		return &planv1.ProofNeed{Needs: needs, Provers: provers, Reviewer: who}
 	}
-	if got := NeedsWords([]*planv1.ProofNeed{n("a person and a real model"), n("Clément's review"), n("a Mac"),
-		n("after v1; nothing built")}); got != "a Mac, Clément's review, a real model, a person, after v1; nothing built" {
+	if got := NeedsWords([]*planv1.ProofNeed{n("a person and a real model"), n("Alice's review"), n("a Mac"),
+		n("after v1; nothing built")}); got != "a Mac, Alice's review, a real model, a person, after v1; nothing built" {
 		t.Errorf("words: %s", got)
 	}
-	if !GivenByAPerson(n("Clément's review")) || !GivenByAPerson(n("two people")) || GivenByAPerson(n("a Mac")) {
+	if !GivenByAPerson(n("Alice's review")) || !GivenByAPerson(n("two people")) || GivenByAPerson(n("a Mac")) {
 		t.Error("given by a person")
 	}
 }
@@ -206,9 +206,9 @@ func TestReadTaskItemNeeds(t *testing.T) {
 		},
 		{
 			name:      "tab indented task item",
-			line:      "\t- [ ] tab indented (needs: Clément's review)",
+			line:      "\t- [ ] tab indented (needs: Alice's review)",
 			wantBox:   "tab indented",
-			wantNeeds: "Clément's review",
+			wantNeeds: "Alice's review",
 			wantOK:    true,
 		},
 		{

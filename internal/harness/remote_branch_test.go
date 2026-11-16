@@ -189,7 +189,7 @@ func TestFollowRewrite(t *testing.T) {
 			told = append(told, ev.GetText())
 			return nil
 		})
-		const branch = "ET-3510-old-role-types"
+		const branch = "ABC-3510-old-role-types"
 		_, merged, pushed := rebasedByTask(t, r, branch)
 
 		r.pass(t, 0)
@@ -225,7 +225,7 @@ func TestFollowRewrite(t *testing.T) {
 	t.Run("a commit the task never held keeps them apart", func(t *testing.T) {
 		t.Parallel()
 		r := withRequests(t)
-		const branch = "ET-3510-old-role-types"
+		const branch = "ABC-3510-old-role-types"
 		_, merged, _ := rebasedByTask(t, r, branch)
 
 		// A commit lands on the local branch after W2 started from it: the rewrite never held it.
@@ -257,7 +257,7 @@ func TestPull(t *testing.T) {
 	t.Run("fast forwards from list", func(t *testing.T) {
 		t.Parallel()
 		r := withRequests(t)
-		const branch = "ET-77-pull"
+		const branch = "ABC-77-pull"
 		start := r.onRemote(t, r.fork, branch, "start.txt")
 		t1 := r.azima(t, r.wishID, "Pull")
 		if _, err := r.nameBranch(t, t1.GetId(), branch); err != nil {
@@ -294,7 +294,7 @@ func TestPull(t *testing.T) {
 			told = append(told, ev.GetText())
 			return nil
 		})
-		const branch = "ET-77-pull"
+		const branch = "ABC-77-pull"
 		start := r.onRemote(t, r.fork, branch, "start.txt")
 		t1 := r.azima(t, r.wishID, "Pull")
 		if _, err := r.nameBranch(t, t1.GetId(), branch); err != nil {

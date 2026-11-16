@@ -1,5 +1,5 @@
-// The ECharts options of the window's charts, built from a frame by code, never written by hand: what Will's lint
-// checked on a chart (dolmen dataviz-v2, L53, L59) holds here by construction, and tests/charts.test.mjs checks it.
+// The ECharts options of the window's charts, built from a frame by code, never written by hand: what the chart lint
+// checked on a chart (L53, L59) holds here by construction, and tests/charts.test.mjs checks it.
 // - Zero at the base of a value axis, unless the scale is logarithmic, which the axis then names.
 // - Six series at most: past six, the smallest fold into "Others", in a neutral colour.
 // - An absent value stays null, never 0: no bar, a gap in a line; "Others" is null where all it folds are.

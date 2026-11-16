@@ -21,8 +21,9 @@ import (
 	"github.com/empowill/djinn/internal/testx"
 )
 
-// dewBranch is the integration branch of wish Dew on 12/10/2026, named after its ticket as dolmen's gitlab-sync requires.
-const dewBranch = "ET-4368-silae-refused-read-leaves-columns-empty"
+// dewBranch is the integration branch of wish Dew on 12/10/2026, named after its ticket as the project's ticket
+// sync requires.
+const dewBranch = "ABC-4368-payroll-refused-read-leaves-columns-empty"
 
 // setAzimaStrategy sets the push strategy of wish to azima.
 func (in *integration) setAzimaStrategy(t *testing.T) {
@@ -61,7 +62,7 @@ func (e *env) nameBranch(t *testing.T, id, branch string) (*planv1.Task, error) 
 func spawnPart(t *testing.T, e *env, wishID, projectID, azima, name string) *planv1.Task {
 	t.Helper()
 	res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
-		WishId: wishID, ProjectId: projectID, PartOf: azima, Title: "Silae: " + name, Prompt: "file " + name,
+		WishId: wishID, ProjectId: projectID, PartOf: azima, Title: "Payroll: " + name, Prompt: "file " + name,
 		Provider: planv1.Provider_PROVIDER_FAKE,
 	}))
 	if err != nil {
@@ -138,9 +139,9 @@ func TestNameAzimaBranch(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
 
-	// Replays the switch of wish Dew (12/10/2026): in dolmen, a project naming no check, the wish pushed per wish into
+	// Replays the switch of wish Dew (12/10/2026): in shop, a project naming no check, the wish pushed per wish into
 	// its own branch, named after its ticket, where the work of its only azima T1 was merged. Switching it to per azima
-	// as it was would have cut T1 a new djinn/T1-silae from main, its work left behind: Djinn refuses, saying how to
+	// as it was would have cut T1 a new djinn/T1-payroll from main, its work left behind: Djinn refuses, saying how to
 	// keep it. T1 adopts the branch, as it is; the switch goes; T1's next work merges into that same branch, untested
 	// as before, never cut again nor moved.
 	t.Run("adopts wish branch then pushes per azima", func(t *testing.T) {
@@ -154,7 +155,7 @@ func TestNameAzimaBranch(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(dir, name), []byte(name+"\n"), 0o600); err != nil {
 				return "fail " + err.Error()
 			}
-			for _, args := range [][]string{{"add", name}, {"commit", "--quiet", "-m", "silae: " + name}} {
+			for _, args := range [][]string{{"add", name}, {"commit", "--quiet", "-m", "payroll: " + name}} {
 				if out, err := git(context.Background(), dir, args...); err != nil {
 					return "fail " + err.Error() + ": " + out
 				}
@@ -168,7 +169,7 @@ func TestNameAzimaBranch(t *testing.T) {
 			t.Fatal(err)
 		}
 		made, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
-			WishId: wishID, ProjectId: projectID, Title: "Silae", Kind: planv1.TaskKind_TASK_KIND_AZIMA,
+			WishId: wishID, ProjectId: projectID, Title: "Payroll", Kind: planv1.TaskKind_TASK_KIND_AZIMA,
 		}))
 		if err != nil {
 			t.Fatal(err)
@@ -245,17 +246,17 @@ func TestNameAzimaBranch(t *testing.T) {
 		t1 := in.azima(t, in.wishID, "One Alpha")
 		t2 := in.azima(t, in.wishID, "Two Beta")
 
-		named, err := in.nameBranch(t, t1.GetId(), "ET-1-one")
+		named, err := in.nameBranch(t, t1.GetId(), "ABC-1-one")
 		if err != nil {
 			t.Fatal(err)
 		}
-		if a := named.GetAzima(); a.GetBranch() != "ET-1-one" || a.GetCutFrom() != cut || a.GetBaseBranch() != in.branch || !a.GetNamed() {
-			t.Errorf("T1 named %v, want ET-1-one cut from %s, landing in %s", a, cut, in.branch)
+		if a := named.GetAzima(); a.GetBranch() != "ABC-1-one" || a.GetCutFrom() != cut || a.GetBaseBranch() != in.branch || !a.GetNamed() {
+			t.Errorf("T1 named %v, want ABC-1-one cut from %s, landing in %s", a, cut, in.branch)
 		}
-		if got := in.git(t, in.repo, "rev-parse", "refs/heads/ET-1-one"); got != cut {
-			t.Errorf("ET-1-one at %s, want main's %s", got, cut)
+		if got := in.git(t, in.repo, "rev-parse", "refs/heads/ABC-1-one"); got != cut {
+			t.Errorf("ABC-1-one at %s, want main's %s", got, cut)
 		}
-		if _, err := in.nameBranch(t, t1.GetId(), "ET-1-one"); err != nil {
+		if _, err := in.nameBranch(t, t1.GetId(), "ABC-1-one"); err != nil {
 			t.Errorf("naming it again: %v, want nothing to do", err)
 		}
 
@@ -265,7 +266,7 @@ func TestNameAzimaBranch(t *testing.T) {
 		}{
 			{t1.GetId(), in.branch, "is main", connect.CodeFailedPrecondition},
 			{t1.GetId(), "ET..1", "no valid branch name", connect.CodeInvalidArgument},
-			{t2.GetId(), "ET-1-one", "the branch of azima T1 already", connect.CodeFailedPrecondition},
+			{t2.GetId(), "ABC-1-one", "the branch of azima T1 already", connect.CodeFailedPrecondition},
 		} {
 			if _, err := in.nameBranch(t, c.id, c.branch); connect.CodeOf(err) != c.code || !strings.Contains(err.Error(), c.says) {
 				t.Errorf("naming %s: %v, want %v saying %q", c.branch, err, c.code, c.says)
@@ -276,11 +277,11 @@ func TestNameAzimaBranch(t *testing.T) {
 		merging := &planv1.Task{
 			Id: store.NewID(), WishId: in.wishID, ProjectId: in.projectID, Code: "W9", Title: "Merging", PartOf: t1.GetId(),
 			Status: planv1.TaskStatus_TASK_STATUS_DONE, CreateTime: timestamppb.Now(),
-			Integration: &planv1.TaskIntegration{State: planv1.IntegrationState_INTEGRATION_STATE_INTEGRATING, Branch: "ET-1-one"},
+			Integration: &planv1.TaskIntegration{State: planv1.IntegrationState_INTEGRATION_STATE_INTEGRATING, Branch: "ABC-1-one"},
 		}
 		putTask(t, in.db, merging, "merging")
-		if _, err := in.nameBranch(t, t1.GetId(), "ET-1-two"); connect.CodeOf(err) != connect.CodeFailedPrecondition ||
-			!strings.Contains(err.Error(), "the work of W9 is being merged into ET-1-one") {
+		if _, err := in.nameBranch(t, t1.GetId(), "ABC-1-two"); connect.CodeOf(err) != connect.CodeFailedPrecondition ||
+			!strings.Contains(err.Error(), "the work of W9 is being merged into ABC-1-one") {
 			t.Errorf("naming while W9 merges: %v, want refused naming the merge", err)
 		}
 		merging.Integration = nil
@@ -289,15 +290,15 @@ func TestNameAzimaBranch(t *testing.T) {
 		// T1's work merges into its named branch; renamed to a new branch then, that work would be left behind.
 		w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}, func(task *planv1.Task) { task.PartOf = t1.GetId() })
 		in.pass(t, 0)
-		if got := in.get(t, w1.GetId()).GetIntegration(); got.GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED || got.GetBranch() != "ET-1-one" {
-			t.Fatalf("W1's integration %v, want committed into ET-1-one", got)
+		if got := in.get(t, w1.GetId()).GetIntegration(); got.GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED || got.GetBranch() != "ABC-1-one" {
+			t.Fatalf("W1's integration %v, want committed into ABC-1-one", got)
 		}
-		if _, err := in.nameBranch(t, t1.GetId(), "ET-1-two"); connect.CodeOf(err) != connect.CodeFailedPrecondition ||
+		if _, err := in.nameBranch(t, t1.GetId(), "ABC-1-two"); connect.CodeOf(err) != connect.CodeFailedPrecondition ||
 			!strings.Contains(err.Error(), "holds commits "+in.branch+" lacks") {
 			t.Errorf("renaming a branch holding work: %v, want refused", err)
 		}
-		if _, err := git(t.Context(), in.repo, "rev-parse", "--verify", "--quiet", "refs/heads/ET-1-two"); err == nil {
-			t.Error("ET-1-two cut by a refused naming")
+		if _, err := git(t.Context(), in.repo, "rev-parse", "--verify", "--quiet", "refs/heads/ABC-1-two"); err == nil {
+			t.Error("ABC-1-two cut by a refused naming")
 		}
 	})
 
@@ -306,7 +307,7 @@ func TestNameAzimaBranch(t *testing.T) {
 	t.Run("from the remote", func(t *testing.T) {
 		t.Parallel()
 		r := withRequests(t)
-		const mr = "ET-4283-jest-sans-sentry"
+		const mr = "ABC-4283-jest-without-sentry"
 		request := r.onRemote(t, r.fork, mr, "jest.txt")
 		r.mainMoves(t)
 
@@ -343,7 +344,7 @@ func TestNameAzimaBranch(t *testing.T) {
 	t.Run("apart from the remote", func(t *testing.T) {
 		t.Parallel()
 		r := withRequests(t)
-		const apart, behind = "ET-3063-collab-signes", "hotfix-company-tenant-isolation"
+		const apart, behind = "ABC-3063-collab-signs", "hotfix-company-tenant-isolation"
 		r.onRemote(t, r.fork, apart, "collab.txt")
 		behindRemote := r.onRemote(t, r.fork, behind, "tenant.txt")
 		main := r.mainMoves(t)

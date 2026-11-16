@@ -160,10 +160,10 @@ func uncheckedDew(t *testing.T) (e *env, queue *leadQueue, wishID, projectID, re
 	t.Helper()
 	providers := testProviders()
 	providers[planv1.Provider_PROVIDER_FAKE] = corrector{work: func(dir, _ string) string {
-		if err := os.WriteFile(filepath.Join(dir, "silae.txt"), []byte("columns\n"), 0o600); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, "payroll.txt"), []byte("columns\n"), 0o600); err != nil {
 			return "fail " + err.Error()
 		}
-		for _, args := range [][]string{{"add", "silae.txt"}, {"commit", "--quiet", "-m", "silae: a refused read leaves its columns"}} {
+		for _, args := range [][]string{{"add", "payroll.txt"}, {"commit", "--quiet", "-m", "payroll: a refused read leaves its columns"}} {
 			if out, err := git(context.Background(), dir, args...); err != nil {
 				return "fail " + err.Error() + ": " + out
 			}
@@ -195,7 +195,7 @@ func uncheckedDew(t *testing.T) (e *env, queue *leadQueue, wishID, projectID, re
 func spawnDone(t *testing.T, e *env, wishID, projectID string) *planv1.Task {
 	t.Helper()
 	res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
-		WishId: wishID, ProjectId: projectID, Title: "Silae: a refused read leaves its columns",
+		WishId: wishID, ProjectId: projectID, Title: "Payroll: a refused read leaves its columns",
 		Prompt: "Leave the columns of a refused read.", Provider: planv1.Provider_PROVIDER_FAKE,
 	}))
 	if err != nil {
@@ -1034,7 +1034,7 @@ func TestIntegrate_WithoutChecks(t *testing.T) {
 		e, queue, wishID, projectID, repo := uncheckedDew(t)
 		main, _ := git(t.Context(), repo, "rev-parse", "refs/heads/main")
 		if _, err := e.wishes.SetIntegration(t.Context(), connect.NewRequest(&planv1.WishServiceSetIntegrationRequest{
-			WishId: wishID, ProjectId: projectID, Branch: "silae-skip-forbidden", CreateBranch: true,
+			WishId: wishID, ProjectId: projectID, Branch: "payroll-skip-forbidden", CreateBranch: true,
 			PushMode: planv1.PushMode_PUSH_MODE_ASK,
 		})); err != nil {
 			t.Fatal(err)
@@ -1044,7 +1044,7 @@ func TestIntegrate_WithoutChecks(t *testing.T) {
 			t.Fatalf("integration at the end %v, want pending", task.GetIntegration())
 		}
 		e.h.integratePass(t.Context())
-		integratedInto(t, e, queue, task, repo, "silae-skip-forbidden", main)
+		integratedInto(t, e, queue, task, repo, "payroll-skip-forbidden", main)
 	})
 
 	t.Run("main branch refused until set", func(t *testing.T) {
@@ -1079,7 +1079,7 @@ func TestIntegrate_WithoutChecks(t *testing.T) {
 			t.Fatalf("put back in line into main: %v, want refused saying %q", err, why)
 		}
 		if _, err := e.wishes.SetIntegration(t.Context(), connect.NewRequest(&planv1.WishServiceSetIntegrationRequest{
-			WishId: wishID, ProjectId: projectID, Branch: "silae-skip-forbidden", CreateBranch: true,
+			WishId: wishID, ProjectId: projectID, Branch: "payroll-skip-forbidden", CreateBranch: true,
 		})); err != nil {
 			t.Fatal(err)
 		}
@@ -1090,6 +1090,6 @@ func TestIntegrate_WithoutChecks(t *testing.T) {
 		queue.events = nil
 		queue.mu.Unlock()
 		e.h.integratePass(t.Context())
-		integratedInto(t, e, queue, task, repo, "silae-skip-forbidden", main)
+		integratedInto(t, e, queue, task, repo, "payroll-skip-forbidden", main)
 	})
 }

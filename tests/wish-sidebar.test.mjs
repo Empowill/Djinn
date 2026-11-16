@@ -306,7 +306,7 @@ test("a project's gear opens its panel; red with a small flame while it has some
         wishes: [],
         projects: [
           { id: "p1", name: "lamp", directory: "/tmp/lamp", toFix: 0 },
-          { id: "p2", name: "dolmen", directory: "/tmp/dolmen", toFix: 2 },
+          { id: "p2", name: "shop", directory: "/tmp/shop", toFix: 2 },
         ],
         selectedWishId: "",
         selectedProjectId: "",
@@ -326,9 +326,9 @@ test("a project's gear opens its panel; red with a small flame while it has some
   // Something to fix: red, a flame on its corner, the count in its tooltip and on the folder's.
   assert.match(
     html,
-    /<button class="icon-button project-gear hot" title="Configuration of dolmen: 2 things to fix" aria-label="Configuration of dolmen: 2 things to fix"><svg[^>]*lucide-settings[^]*?<\/svg><span class="project-flame" aria-hidden="true"><span class="project-flame-glyph"><svg[^>]*lucide-flame/,
+    /<button class="icon-button project-gear hot" title="Configuration of shop: 2 things to fix" aria-label="Configuration of shop: 2 things to fix"><svg[^>]*lucide-settings[^]*?<\/svg><span class="project-flame" aria-hidden="true"><span class="project-flame-glyph"><svg[^>]*lucide-flame/,
   );
-  assert.match(html, /title="\/tmp\/dolmen · 2 things to fix"/);
+  assert.match(html, /title="\/tmp\/shop · 2 things to fix"/);
   assert.equal(html.split('project-flame"').length - 1, 1);
   // Folded to the rail: no gear, the flame on the red project's folder alone.
   const rail = sidebar(true);
@@ -336,12 +336,12 @@ test("a project's gear opens its panel; red with a small flame while it has some
   assert.equal(rail.split('project-flame"').length - 1, 1);
   assert.match(
     rail,
-    /title="\/tmp\/dolmen · 2 things to fix"><span class="project-folder"><svg[^>]*lucide-folder-open[^]*?<\/svg><span class="project-flame"/,
+    /title="\/tmp\/shop · 2 things to fix"><span class="project-folder"><svg[^>]*lucide-folder-open[^]*?<\/svg><span class="project-flame"/,
   );
   // The gear opens the same panel as the name.
   const opened = [];
   s.ProjectGear({
-    project: { id: "p2", name: "dolmen", toFix: 2 },
+    project: { id: "p2", name: "shop", toFix: 2 },
     onOpen: (id) => opened.push(id),
   }).props.onClick();
   assert.deepEqual(opened, ["p2"]);

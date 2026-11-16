@@ -14,7 +14,7 @@ import (
 
 // TestCompare: a build is named by the branch and wish it comes from, and compared with the commit
 // the running Djinn was built from: the tasks merged since, by code and title, the commits it adds, and those it lacks
-// when it comes from another branch (W468: feat/clement-port's build, installed over a Djinn of feat/wails-go). A build
+// when it comes from another branch (W468: feat/mac-port's build, installed over a Djinn of feat/wails-go). A build
 // of another branch that holds the running commit carries the running line on (W527: the wish moved its integration
 // to feat/robustness, cut at feat/wails-go's tip); a parallel one does not.
 func TestCompare(t *testing.T) {
@@ -26,17 +26,17 @@ func TestCompare(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Two wishes, each with its integration branch: feat/wails-go, and feat/clement-port cut from it.
+	// Two wishes, each with its integration branch: feat/wails-go, and feat/mac-port cut from it.
 	in.git(t, in.repo, "branch", "feat/wails-go")
-	in.git(t, in.repo, "branch", "feat/clement-port")
-	clement, err := in.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{
-		Title: "Clément's branches", ProjectIds: []string{in.projectID},
+	in.git(t, in.repo, "branch", "feat/mac-port")
+	alice, err := in.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{
+		Title: "Alice's branches", ProjectIds: []string{in.projectID},
 	}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	clementID := clement.Msg.GetWish().GetId()
-	for wish, branch := range map[string]string{in.wishID: "feat/wails-go", clementID: "feat/clement-port"} {
+	aliceID := alice.Msg.GetWish().GetId()
+	for wish, branch := range map[string]string{in.wishID: "feat/wails-go", aliceID: "feat/mac-port"} {
 		if _, err := in.wishes.SetIntegration(ctx, connect.NewRequest(&planv1.WishServiceSetIntegrationRequest{
 			WishId: wish, ProjectId: in.projectID, Branch: branch,
 		})); err != nil {
@@ -67,7 +67,7 @@ func TestCompare(t *testing.T) {
 	}
 	_, running := merge(in.wishID, "W1", "feat/wails-go")
 	_, ahead := merge(in.wishID, "W3", "feat/wails-go")
-	work, side := merge(clementID, "W2", "feat/clement-port")
+	work, side := merge(aliceID, "W2", "feat/mac-port")
 	in.git(t, in.repo, "switch", "--quiet", "feat/wails-go")
 	in.h.version = "local-v0.1.0-3-g" + running[:8]
 
@@ -97,18 +97,18 @@ func TestCompare(t *testing.T) {
 	}
 
 	b, ok := in.h.DescribeVersion(ctx, "local-v0.1.0-5-g"+side[:8])
-	if !ok || b.Sha != side || b.Branch != "feat/clement-port" || b.WishID != clementID || b.WishTitle != "Clément's branches" ||
+	if !ok || b.Sha != side || b.Branch != "feat/mac-port" || b.WishID != aliceID || b.WishTitle != "Alice's branches" ||
 		b.Running || !slices.Equal(b.Tasks, []string{"W2"}) || !slices.Equal(b.Changes, []string{"Work of W2"}) ||
 		!slices.Equal(b.Lacks, []string{"Work of W1"}) || b.LacksCount != 1 || b.Continues != "" {
 		t.Errorf("the side branch's Djinn, ready: %+v, %v", b, ok)
 	}
 	// A commit no merge names: the branch whose history holds it.
-	if b, ok := in.h.DescribeVersion(ctx, "local-"+work[:7]); !ok || b.Branch != "feat/clement-port" {
+	if b, ok := in.h.DescribeVersion(ctx, "local-"+work[:7]); !ok || b.Branch != "feat/mac-port" {
 		t.Errorf("a task's commit: %+v, %v", b, ok)
 	}
 	// A release: its tag's commit.
 	in.git(t, in.repo, "tag", "-a", "-m", "v0.2.0", "v0.2.0", side)
-	if b, ok := in.h.DescribeVersion(ctx, "v0.2.0"); !ok || b.Sha != side || b.Branch != "feat/clement-port" {
+	if b, ok := in.h.DescribeVersion(ctx, "v0.2.0"); !ok || b.Sha != side || b.Branch != "feat/mac-port" {
 		t.Errorf("a release: %+v, %v", b, ok)
 	}
 	// A version no project holds, or a development build: not named, nothing compared. CI of PR #2: local-g<commit>,

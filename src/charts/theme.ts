@@ -3,7 +3,7 @@
 import { token } from "../theme";
 
 // The series' hues, in their fixed order: the first is the lead. Five, then "Others" in --chart-other: a chart never
-// shows more than six series (L53, Will's lint).
+// shows more than six series (L53, the chart lint).
 export const SERIES_TOKENS = [
   "chart-1",
   "chart-2",

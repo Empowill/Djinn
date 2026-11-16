@@ -671,7 +671,7 @@ func TestBriefAzimas(t *testing.T) {
 	t11 := azima("T11", "Windows", pending)
 	t11.ProofNeeds = []*planv1.ProofNeed{
 		{Box: "Opens on Windows 11.", Needs: "a Windows 11 machine", Provers: []planv1.Prover{planv1.Prover_PROVER_WINDOWS}},
-		{Box: "Reviewed.", Needs: "Clément's review", Provers: []planv1.Prover{planv1.Prover_PROVER_REVIEW}, Reviewer: "Clément"},
+		{Box: "Reviewed.", Needs: "Alice's review", Provers: []planv1.Prover{planv1.Prover_PROVER_REVIEW}, Reviewer: "Alice"},
 	}
 	t12 := azima("T12", "Updates", pending)
 	t12.ProofNeeds = []*planv1.ProofNeed{{Box: "Updated.", Needs: "a published release, then a person",
@@ -727,7 +727,7 @@ func TestBriefAzimas(t *testing.T) {
 		"- **T3** The window: ready, open, 0 of 1 parts done\n" +
 		"- **T4** The orchestrator: ready, in progress, 0 of 1 parts done, 1 running\n" +
 		"- **T13** Babysat: ready, watching (only a watcher runs), 1 of 2 parts done, 1 running\n" +
-		"- Work done, waiting for its proof: T11 needs a Windows machine, Clément's review; T12 needs a release, a person.\n" +
+		"- Work done, waiting for its proof: T11 needs a Windows machine, Alice's review; T12 needs a release, a person.\n" +
 		"- Done: T1 (merged into main), T2 (merged into master).\n" +
 		"- Drafts: T31 Spreading work — open with djinn task open T31 (explained by L01).\n"
 	if azimas != want {
@@ -769,7 +769,7 @@ func TestBriefAzimas(t *testing.T) {
 	}
 	for _, line := range []string{
 		"- **T3** The window: ready, open, 0 of 1 parts done; merged into main\n",
-		"T11 needs a Windows machine, Clément's review (merged into main);",
+		"T11 needs a Windows machine, Alice's review (merged into main);",
 		"- Every azima is merged into main: propose to the developer to grant the wish.\n",
 	} {
 		if !strings.Contains(brief.Moving, line) {
