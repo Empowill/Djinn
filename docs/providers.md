@@ -147,9 +147,8 @@ project's, so a command that reaches the network (`curl`) is still refused; a wo
 neither. Under the agent's own configuration (`NATIVE`) Djinn passes nothing, an investigation's neither. Claude
 reads the `.claude/settings.json` (and `settings.local.json`) of the folder it runs in on top of Djinn's settings, and
 a deny there wins over Djinn's allow: a project that denies `WebFetch` or `WebSearch` by its bare name cuts an
-investigation off the web, and its spawn says so, naming the file and the tools (`webDeniedNote`, W776). Djinn's own
-`.claude/settings.json` has no rule on either for that reason: it is what Djinn translates from its
-`.agents/permissions.txtpb`, the web's deny aside (L82, W773).
+investigation off the web. Djinn's own `.claude/settings.json` has no rule on either for that reason: it is what Djinn
+translates from its `.agents/permissions.txtpb`, the web's deny aside (L82, W773, W776).
 
 **What counts as agent configuration** (rule 4), at the root of the project's folder, file names compared without
 regard to case: for every agent, `AGENTS.md` and an `.agents` folder; for Claude, `CLAUDE.md`, `CLAUDE.local.md`,

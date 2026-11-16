@@ -12,7 +12,6 @@ import (
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
-	"google.golang.org/protobuf/proto"
 )
 
 // endedEvents are the events of kind ended the lead got about code.
@@ -236,43 +235,6 @@ func TestSpawnNoteSaysDjinnIsRefused(t *testing.T) {
 	}
 	if note := e.h.spawnNote(t.Context(), task); note != "" {
 		t.Errorf("note %q for an agent whose configuration Djinn cannot read", note)
-	}
-}
-
-// TestSpawnNoteSaysWebIsDenied: a claude investigation gets the web from Djinn, but a deny of WebFetch or WebSearch in
-// the claude settings of the folder it runs in wins over that allow (W776): the spawn says so, and which file denies
-// what. A work task, a rule on a domain, or settings that deny nothing say nothing.
-func TestSpawnNoteSaysWebIsDenied(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("USERPROFILE", home)
-	e := up(t, t.TempDir())
-	dir := folder(t)
-	writeFile(t, dir, ".agents/permissions.txtpb", "edit: true\n")
-	wishID, projectID := e.wish(t, dir)
-	task := &planv1.Task{
-		Code: "W1", WishId: wishID, ProjectId: projectID, Provider: planv1.Provider_PROVIDER_CLAUDE,
-		Kind: planv1.TaskKind_TASK_KIND_INVESTIGATION,
-	}
-	if note := e.h.spawnNote(t.Context(), task); note != "" {
-		t.Errorf("note %q without settings", note)
-	}
-	writeFile(t, dir, ".claude/settings.json", `{"permissions":{"deny":["WebFetch","WebSearch","Bash(git push *)"]}}`)
-	note := e.h.spawnNote(t.Context(), task)
-	if !strings.Contains(note, "W1 is an investigation Djinn gives the web") ||
-		!strings.Contains(note, ".claude/settings.json denies WebFetch and WebSearch") {
-		t.Errorf("note %q", note)
-	}
-	work := proto.CloneOf(task)
-	work.Kind = planv1.TaskKind_TASK_KIND_WORK
-	if note := e.h.spawnNote(t.Context(), work); note != "" {
-		t.Errorf("note %q for a work task", note)
-	}
-	writeFile(t, dir, ".claude/settings.json", `{"permissions":{"deny":["WebFetch(domain:example.com)"]}}`)
-	writeFile(t, dir, ".claude/settings.local.json", `{"permissions":{"deny":["WebSearch"]}}`)
-	note = e.h.spawnNote(t.Context(), task)
-	if !strings.Contains(note, ".claude/settings.local.json denies WebSearch") || strings.Contains(note, "settings.json") {
-		t.Errorf("note %q with WebSearch denied in the local settings", note)
 	}
 }
 
