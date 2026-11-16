@@ -25,8 +25,6 @@
     ],
     "defaultMode": "auto",
     "deny": [
-      "WebFetch",
-      "WebSearch",
       "Bash(git push *)",
       "PowerShell(git push *)"
     ]

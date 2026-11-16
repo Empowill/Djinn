@@ -12,10 +12,13 @@ import (
 	"strings"
 	"time"
 
+	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/dispatch"
 	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
+	"google.golang.org/protobuf/proto"
 )
 
 // A worker nobody approves anything for (incident W1 of wish Dew, 12/10/2026: access native in a project whose agent
@@ -222,7 +225,9 @@ func (h *Harness) finalNote(ctx context.Context, taskID string) string {
 
 // spawnNote says what the spawner of t should know of where it runs: with its agent's own configuration (access
 // native), a claude worker whose settings do not allow djinn cannot run it, nor report with it, and nobody approves
-// a call headless. "" when nothing is to say, or Djinn cannot tell (another agent's configuration).
+// a call headless; a claude investigation Djinn gives the web (withWeb) is refused it by a project's settings that deny
+// WebFetch or WebSearch, since a deny wins over an allow (W776). "" when nothing is to say, or Djinn cannot tell
+// (another agent's configuration).
 func (h *Harness) spawnNote(ctx context.Context, t *planv1.Task) string {
 	if t.GetProjectId() == "" || t.GetProvider() != planv1.Provider_PROVIDER_CLAUDE || light(t) || watching(t) {
 		return ""
@@ -232,9 +237,12 @@ func (h *Harness) spawnNote(ctx context.Context, t *planv1.Task) string {
 	if err1 != nil || err2 != nil {
 		return ""
 	}
-	access, _, err := decideAccess(h.home, project, t.GetProvider(), plan.AllowanceOf(wish, project.GetId()))
-	if err != nil || access != planv1.TaskAccess_TASK_ACCESS_NATIVE {
+	access, declared, err := decideAccess(h.home, project, t.GetProvider(), plan.AllowanceOf(wish, project.GetId()))
+	if err != nil {
 		return ""
+	}
+	if access != planv1.TaskAccess_TASK_ACCESS_NATIVE {
+		return webDeniedNote(t, project, access, declared)
 	}
 	home, _ := os.UserHomeDir()
 	if claudeAllowsDjinn(project.GetDirectory(), home) {
@@ -247,6 +255,59 @@ func (h *Harness) spawnNote(ctx context.Context, t *planv1.Task) string {
 	return fmt.Sprintf("%s runs with claude's own settings in %s (access native), which allow no djinn command: nobody "+
 		"approves a call headless, so it cannot report with djinn; %s --mode auto lets the agent judge its calls.",
 		t.GetCode(), project.GetName(), allow)
+}
+
+// webDeniedNote says that the investigation t, which Djinn gives the web under access, is refused it by the claude
+// settings of the folder it runs in (its worktree once it has one, else its project's), which deny WebFetch or
+// WebSearch: a deny wins over the allow Djinn passes. "" for any other task, or when nothing denies the web.
+func webDeniedNote(t *planv1.Task, project *planv1.Project, access planv1.TaskAccess, declared *djinnv1.Permissions) string {
+	if !dispatch.Investigation(t) {
+		return ""
+	}
+	at := proto.CloneOf(t)
+	at.Access = access
+	if _, perms := taskPermissions(at, declared); !perms.GetNetwork() {
+		return ""
+	}
+	dir := t.GetWorktree()
+	if dir == "" {
+		dir = project.GetDirectory()
+	}
+	var said []string
+	for _, f := range []string{"settings.json", "settings.local.json"} {
+		if names := claudeDeniesWeb(filepath.Join(dir, ".claude", f)); len(names) > 0 {
+			said = append(said, ".claude/"+f+" denies "+strings.Join(names, " and "))
+		}
+	}
+	if len(said) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%s is an investigation Djinn gives the web, but in %s %s, and a deny wins over Djinn's allow: "+
+		"it cannot search or read a page until that rule goes.", t.GetCode(), project.GetName(), strings.Join(said, "; "))
+}
+
+// claudeDeniesWeb is which of WebFetch and WebSearch the claude settings at path deny by their bare name, a rule
+// that refuses every call of the tool; none when the file is missing or not JSON.
+func claudeDeniesWeb(path string) []string {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var s struct {
+		Permissions struct {
+			Deny []string `json:"deny"`
+		} `json:"permissions"`
+	}
+	if json.Unmarshal(b, &s) != nil {
+		return nil
+	}
+	var names []string
+	for _, n := range []string{"WebFetch", "WebSearch"} {
+		if slices.Contains(s.Permissions.Deny, n) {
+			names = append(names, n)
+		}
+	}
+	return names
 }
 
 // claudeAllowsDjinn tells whether claude's settings, the project's in dir (the ones a worktree holds, not the local

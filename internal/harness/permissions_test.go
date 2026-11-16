@@ -225,7 +225,8 @@ func TestClaudePermissions(t *testing.T) {
 	})
 
 	// Djinn's own .agents/permissions.txtpb is valid, and .claude/settings.json, for a contributor who runs claude in
-	// the repository without Djinn, holds exactly what Djinn translates from it.
+	// the repository without Djinn, holds exactly what Djinn translates from it, but the web's deny: a worktree holds
+	// that file, and its deny would win over the web Djinn gives an investigation (W776).
 	t.Run("repo", func(t *testing.T) {
 		t.Parallel()
 		root := filepath.Join("..", "..")
@@ -236,7 +237,11 @@ func TestClaudePermissions(t *testing.T) {
 		if !p.GetEdit() || p.GetNetwork() || effectiveMode(p) != djinnv1.Mode_MODE_AUTO {
 			t.Errorf("Djinn's permissions: %v", p)
 		}
-		want, err := json.MarshalIndent(map[string]any{"permissions": claudePermissions(p)}, "", "  ")
+		rules := claudePermissions(p)
+		rules["deny"] = slices.DeleteFunc(rules["deny"].([]string), func(r string) bool {
+			return r == "WebFetch" || r == "WebSearch"
+		})
+		want, err := json.MarshalIndent(map[string]any{"permissions": rules}, "", "  ")
 		if err != nil {
 			t.Fatal(err)
 		}
