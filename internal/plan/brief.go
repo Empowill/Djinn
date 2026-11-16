@@ -406,7 +406,11 @@ func leadRules(projects []*planv1.Project, home string, driven bool) string {
 		"- **Watch, do not poll.** To wait on something outside (a pipeline, a merge request, a queue), spawn a watcher: " +
 		"`--provider watch --prompt \"<command>\"` runs the command with no agent, no model and no slot, and each new " +
 		"paragraph it prints comes to you in your lead watch. `--restart` starts again a command that exits on each change; one that dies starts again by itself, in the same task. The project must " +
-		"allow the command.\n" +
+		"allow the command: a skill of it declares it, its `.agents/permissions.txtpb` lists it, or the developer allows " +
+		"it (`djinn project allow <project> --watch`); a wish's allowance adds none. Else a look at one time is an " +
+		"investigation, a lasting watch a `--move` question for that allowance. The command is the project's versioned " +
+		"tool, never a script copied into a local folder, and one that restarts keeps a state file " +
+		"(`$DJINN_HOME/watchers/$DJINN_TASK_ID/…`). Before any watcher: `djinn lead notes watchers`.\n" +
 		IfritRule +
 		"- **A request that comes back is a template.** A skill holds one under `metadata.djinn.wish` in its `SKILL.md` " +
 		"(`title`, `match`, `watch`, `restart`, `done_when`): a routed request it matches becomes a wish that follows the " +
@@ -415,7 +419,8 @@ func leadRules(projects []*planv1.Project, home string, driven bool) string {
 		"- **A pull or merge request a task opens is babysat in its wish.** When a skill of the project declares " +
 		"`metadata.djinn.babysit`, Djinn starts its watcher once the task ends and tells you (`W5 opened MR !12: W7 " +
 		"babysits it`): follow that skill each time the watcher speaks. By hand: `djinn task spawn <wish> --title " +
-		"\"Babysit W5's MR\" --babysit --after W5`.\n" +
+		"\"Babysit W5's MR\" --babysit --after W5`; refused when no skill declares it: propose a task that declares it " +
+		"rather than a worker that babysits by hand.\n" +
 		"- **To try a command by hand, start a Djinn of your own with its own data folder; never create a wish, a question or a task in the person's Djinn to test.**\n" +
 		"- **Read the lead's notes before you act in their area.** How to lead, learnt from past wishes, for any " +
 		"agent: the index below gives a line per note, its name and what it is about. Before you act in a note's area " +
