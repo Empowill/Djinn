@@ -239,6 +239,11 @@ func (w *Wishes) checkLead() {
 	watched := l.watching > 0 && leadProvider(lead) != planv1.Provider_PROVIDER_CODEX
 	recent := now.Before(l.returned.Add(l.timing.grace))
 	retyped := !l.typed.IsZero() && now.Before(l.typed.Add(l.timing.retype))
+	was := l.typed
+	if !watched && !retyped && !recent {
+		// The line is claimed before it is typed: a check that runs while this one types finds it typed already.
+		l.typed = now
+	}
 	l.mu.Unlock()
 	if watched || retyped {
 		return
@@ -247,15 +252,25 @@ func (w *Wishes) checkLead() {
 		w.remindLead(0)
 		return
 	}
+	untyped := func() {
+		l.mu.Lock()
+		if l.typed.Equal(now) {
+			l.typed = was
+		}
+		l.mu.Unlock()
+	}
 	events, err := waitingEvents(ctx, w.Store)
 	if err != nil {
+		untyped()
 		logx.L().Error("remind the lead", "loop", "leadwatch", "err", err)
 		return
 	}
 	if len(events) == 0 {
+		untyped()
 		return
 	}
 	if err := w.Tell(ctx, "", WaitingLine(len(events))); err != nil {
+		untyped()
 		if !errors.Is(err, ErrNoLead) {
 			logx.L().Warn("remind the lead", "loop", "leadwatch", "err", err)
 		}
