@@ -52,7 +52,8 @@ ended for being silent, which is its normal state, nor for a budget: it runs as 
 A watcher's command runs with no one to review it, so Djinn checks it before it starts, and again when it resumes.
 Where a project lists the commands its workers may run, a watcher runs a command only when:
 
-- the project lists it among those commands, or the wish allows it;
+- the project lists it among those commands; a wish's allowance, to edit or to run on its own, adds none, and a
+  project with no list of its own lists nothing;
 - a skill of the project declares it, as a babysit or a wish template, and the command is the one Djinn builds from
   that declaration; or
 - you allowed it yourself, in the project's panel, under **Watcher commands you allow**: type the command, or its
@@ -61,6 +62,24 @@ Where a project lists the commands its workers may run, a watcher runs a command
 
 A command the project denies never runs, whatever else allows it. A refused watcher says why, and how to allow its
 command.
+
+## Setting a watcher right
+
+The Djinn reads the same rules before it spawns a watcher, so that it starts the first time:
+
+- **Who allows the command.** A skill's declaration, the project's list, or your own allowance. When none does, the
+  Djinn looks once through an investigation, whose agent runs its commands under review, or, for a watch that lasts,
+  asks you to allow the command for yourself, with the exact command to run in its question.
+- **The project's own tool.** The command is a program or a script of the repository, the one its skill names, so
+  that it changes with the skill. Never a script copied from a page or another Djinn into a folder of your machine:
+  nothing would keep it up to date, and nobody reviewed the copy.
+- **A state that survives.** A watcher's command starts again when it dies, and on each change when it exits each
+  time. It keeps what it already said in a file of the watcher's own folder, or it says it all again at each start.
+- **A babysit is declared.** Without a skill that declares one, there is no babysit watcher: the Djinn proposes to
+  declare it in the project's skill, rather than have a worker watch the request by hand, which costs a slot and
+  tokens each time.
+- **Commands to copy are plain.** A command the Djinn gives you to run uses straight quotes, never typographic ones,
+  which a shell would read as letters.
 
 ## Babysitting a pull request
 
@@ -142,8 +161,8 @@ the Djinn spawns a new one.
   makes the best watcher: each paragraph is news.
 - **Print the done line.** A watcher with nothing to end it runs as long as its wish; a babysit or a template ends on
   its done line.
-- **A refused command is not a bug.** Allow it in the project's panel, or list it in the project, and the watcher
-  starts.
+- **A refused command is not a bug.** Allow it in the project's panel, list it in the project, or declare it in one
+  of its skills, and the watcher starts.
 - **A watcher's done line grants nothing.** The wish waits for your yes.
 
 ## Read next

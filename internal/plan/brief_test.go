@@ -127,6 +127,9 @@ func TestBrief(t *testing.T) {
 		"`djinn task update <task>`",
 		"`djinn wish route \"<request>\" --wish-id <wish> --ask`", "`--provider watch --prompt \"<command>\"`",
 		"`--restart` starts again", "`metadata.djinn.wish`", "`djinn skill list`",
+		// T80: a watcher set right the first time: who allows its command, its tool, its state, the note to read.
+		"`djinn project allow <project> --watch`); a wish's allowance adds none", "never a script copied into a local folder",
+		"`djinn lead notes watchers`", "refused when no skill declares it: propose a task that declares it",
 		// The decisions say who took them, and what they led to.
 		"- 💬 **Q01** Which store? → A: SQLite", ", by the developer; led to W2\n", "- 📌 **No CGO** (block ", "), by the lead\n",
 		"`--decision Q03`", "--icon 🔐",
