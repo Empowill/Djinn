@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"regexp"
 	"slices"
 	"strconv"
@@ -156,11 +157,59 @@ func (h *Harness) keepUp(ctx context.Context, wish *planv1.Wish, projectID strin
 		!slices.ContainsFunc(lines, func(l mainLine) bool { return l.branch == branch }) {
 		lines = slices.Insert(lines, 0, mainLine{wish: wish, project: project, branch: branch})
 	}
+	h.fetchLines(ctx, lines, settings, now)
 	for _, l := range lines {
 		if ctx.Err() != nil {
 			return
 		}
 		h.keepLineUp(ctx, l, settings, now, fetched)
+	}
+}
+
+// fetchLines fetches together the branches of lines, in one project, that look at main in this pass (lineDue), one
+// command by remote, before each line catches up with its remote's branch (catchUp): ten azimas' branches cost one
+// fetch, not ten. Only branches this repository saw on the remote join: one the remote lacks would fail the whole
+// command. Fetched, each is marked so in the pass, and catchUp reads it as fetched; when the command fails, catchUp
+// fetches each alone, as before. Nothing out of an integration pass, nor while the network is down.
+func (h *Harness) fetchLines(ctx context.Context, lines []mainLine, settings plan.Settings, now bool) {
+	memo := passMemoOf(ctx)
+	if memo == nil || len(lines) < 2 || h.netHolds() {
+		return
+	}
+	repo := lines[0].project.GetDirectory()
+	branches := map[string][]string{} // by remote, the line branches to fetch
+	targets := map[string][]string{}  // by remote, the remote's names of those branches
+	for _, l := range lines {
+		state := h.lineState(ctx, l)
+		if state.GetCorrectedBy() != "" || !lineDue(h, state, settings, now) || memo.fetchedIn(repo, l.branch) {
+			continue
+		}
+		remote, target := pushTarget(ctx, repo, l.branch)
+		if remote == "" || commitOf(ctx, repo, "refs/remotes/"+remote+"/"+target) == "" {
+			continue
+		}
+		branches[remote] = append(branches[remote], l.branch)
+		targets[remote] = append(targets[remote], target)
+	}
+	for _, remote := range slices.Sorted(maps.Keys(branches)) {
+		if len(branches[remote]) < 2 {
+			continue // Alone, catchUp fetches it as before.
+		}
+		args := []string{"fetch", "--no-tags", "--quiet", remote}
+		for _, target := range targets[remote] {
+			args = append(args, "+refs/heads/"+target+":refs/remotes/"+remote+"/"+target)
+		}
+		fetching, cancel := context.WithTimeout(ctx, catchUpFetchTimeout)
+		_, err := git(fetching, repo, args...)
+		cancel()
+		if err != nil {
+			logx.L().Info("fetch the lines' branches together: each alone", "repo", repo, "remote", remote,
+				"branches", len(branches[remote]), "err", err)
+			continue
+		}
+		for _, branch := range branches[remote] {
+			memo.fetchDue(repo, branch) // Fetched: catchUp reads it as fetched in this pass.
+		}
 	}
 }
 
@@ -185,7 +234,7 @@ func (h *Harness) keepLineUp(ctx context.Context, l mainLine, settings plan.Sett
 	key := l.key()
 	// Main merged into a branch whose remote holds commits it lacks could not be pushed: the branch is brought up to
 	// the remote's first, as this repository last saw it, fetched when a look is due; or main waits (remote_branch.go).
-	due := now || state.GetCheckTime() == nil || h.now().Sub(state.GetCheckTime().AsTime()) >= settings.MergeMainEvery
+	due := lineDue(h, state, settings, now)
 	if why := h.catchUp(ctx, l.wish, repo, branch, due); why != "" {
 		h.editLine(ctx, l, func(m *planv1.WishMain) { m.Held = why })
 		return
@@ -214,7 +263,7 @@ func (h *Harness) keepLineUp(ctx context.Context, l mainLine, settings plan.Sett
 	case err == nil:
 		var ok bool
 		if err, ok = fetched[fetchedKey(repo, ref)]; !ok {
-			err = h.fetchMain(ctx, l.wish.GetId(), repo, ref)
+			err = h.fetchMainFresh(ctx, l.wish.GetId(), repo, ref, h.mainFresh(now))
 			fetched[fetchedKey(repo, ref)] = err
 		}
 	}
@@ -244,6 +293,12 @@ func (h *Harness) keepLineUp(ctx context.Context, l mainLine, settings plan.Sett
 	}
 	looked(func(*planv1.WishMain) {})
 	h.mergeMain(ctx, l, settings, shortRef(ref), mainSha, old, release, state.GetAttempts())
+}
+
+// lineDue tells whether a line standing as state says looks at main in this pass: now, never looked, or its pace
+// (mainEvery) past since its last look.
+func lineDue(h *Harness, state *planv1.WishMain, settings plan.Settings, now bool) bool {
+	return now || state.GetCheckTime() == nil || h.now().Sub(state.GetCheckTime().AsTime()) >= h.mainEvery(settings.MergeMainEvery)
 }
 
 // correctionOver tells whether c, a correction worker, is over: its work is committed, carries a question,
@@ -618,9 +673,10 @@ func (h *Harness) Reference(ctx context.Context, project *planv1.Project, name s
 // reTagClash matches git's error line when a tag fetch is rejected because it would clobber an existing local tag.
 var reTagClash = regexp.MustCompile(`!\s+\[rejected\]\s+(\S+)\s+->\s+(\S+)\s+\(would clobber existing tag\)`)
 
-// fetchMain fetches ref, the project's main branch as mainRef gives it, and the tags, from its remote into the
-// repository holding repo, with the person's own credentials and without ever prompting for them; a local branch
-// fetches nothing. Clashing tags are reported once on the wish wishID, without stopping the merge of main.
+// fetchMain fetches ref, the project's main branch as mainRef gives it, and the tags, in one command, from its remote
+// into the repository holding repo, with the person's own credentials and without ever prompting for them; a local
+// branch fetches nothing. Clashing tags are reported once on the wish wishID, without stopping the merge of main: git
+// then fails, main fetched all the same.
 func (h *Harness) fetchMain(ctx context.Context, wishID, repo, ref string) error {
 	remoteBranch, ok := strings.CutPrefix(ref, "refs/remotes/")
 	if !ok {
@@ -629,24 +685,22 @@ func (h *Harness) fetchMain(ctx context.Context, wishID, repo, ref string) error
 	remote, target, _ := strings.Cut(remoteBranch, "/")
 	ctx, cancel := context.WithTimeout(ctx, fetchTimeout)
 	defer cancel()
-	cmd, cancelFetch := gitx.Command(ctx, repo, "fetch", "--no-tags", remote, "+refs/heads/"+target+":"+ref)
+	cmd, cancelFetch := gitx.Command(ctx, repo, "fetch", "--tags", remote, "+refs/heads/"+target+":"+ref)
 	defer cancelFetch()
 	cmd.Env = append(cmd.Env, "LC_ALL=C")
 	var out bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &out
-	if err := cmd.Run(); err != nil {
-		h.netSign(planv1.Provider_PROVIDER_UNSPECIFIED, out.String(), false)
-		return fmt.Errorf("fetch %s from %s: %s", target, remote, cmp.Or(strings.TrimSpace(out.String()), err.Error()))
+	err := cmd.Run()
+	clashes := reTagClash.FindAllStringSubmatch(out.String(), -1)
+	if err != nil {
+		if len(clashes) == 0 || !onlyTagClashes(out.String()) {
+			h.netSign(planv1.Provider_PROVIDER_UNSPECIFIED, out.String(), false)
+			return fmt.Errorf("fetch %s from %s: %s", target, remote, cmp.Or(strings.TrimSpace(out.String()), err.Error()))
+		}
 	}
-	tagCmd, cancelTags := gitx.Command(ctx, repo, "fetch", "--tags", remote)
-	defer cancelTags()
-	tagCmd.Env = append(tagCmd.Env, "LC_ALL=C")
-	var tagOut bytes.Buffer
-	tagCmd.Stdout, tagCmd.Stderr = &tagOut, &tagOut
-	_ = tagCmd.Run()
 	if wishID != "" {
 		seen := make(map[string]bool)
-		for _, m := range reTagClash.FindAllStringSubmatch(tagOut.String(), -1) {
+		for _, m := range clashes {
 			tag := m[1]
 			if seen[tag] {
 				continue
@@ -658,6 +712,20 @@ func (h *Harness) fetchMain(ctx context.Context, wishID, repo, ref string) error
 		}
 	}
 	return nil
+}
+
+// onlyTagClashes tells whether the output of a fetch that failed refused nothing but tags that would clobber local
+// ones: no fatal error, no other ref rejected.
+func onlyTagClashes(out string) bool {
+	for line := range strings.Lines(out) {
+		switch {
+		case strings.HasPrefix(line, "fatal:"), strings.HasPrefix(line, "error:") && !strings.Contains(line, "some local refs"):
+			return false
+		case strings.HasPrefix(line, " ! ") && !reTagClash.MatchString(line):
+			return false
+		}
+	}
+	return true
 }
 
 // reportTagClash records once on wish wishID that the local tag differs from remote's, tolerating the clash.

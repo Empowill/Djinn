@@ -19,16 +19,17 @@ type Presence struct {
 	mu      sync.Mutex
 	last    time.Time
 	now     func() time.Time
-	touched func() // the harness looks at its ifrits again
+	touched func(before time.Time) // the harness hears it, before the developer's previous touch
 }
 
 // Touch says that the developer is there, now.
 func (p *Presence) Touch() {
 	p.mu.Lock()
+	before := p.last
 	p.last = p.now()
 	p.mu.Unlock()
 	if p.touched != nil {
-		p.touched()
+		p.touched(before)
 	}
 }
 

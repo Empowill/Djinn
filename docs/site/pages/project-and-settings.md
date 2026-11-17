@@ -184,8 +184,8 @@ reference branch is not fetched yet, is read in its folder.
 
 ### The watch on the reference branch
 
-Every five minutes, and after each of its pushes, Djinn fetches the reference branch of each project, that branch alone,
-and compares the digest of its agents folder, its Claude skills folder and its djinn.yaml with the one of its last look:
+Every fifteen minutes, Djinn fetches the reference branch of each project, with its tags, and after each of its pushes
+the reference branch of the project it pushed to; then it compares the digest of its agents folder, its Claude skills folder and its djinn.yaml with the one of its last look:
 nothing is read again while it has not moved. When it has, each commit that changed them becomes an entry of the
 project's journal of changes, told in sentences: a new check before a push, a setting changed, two more commands the
 workers may run, a new skill with a wish template. Past twenty commits in one look, the older ones are told together; a
@@ -197,6 +197,22 @@ mode), a skill's wish template or babysit is new or changed, or a source you plu
 command. Mark it **Seen**, in the journal or under To fix, or acknowledge it from the command line: the gear goes out.
 A new source asks through its own line, until you plug it in or say no. A new check, a skill's new instructions or a
 setting changed only show in the journal.
+
+### How often Djinn fetches
+
+Djinn fetches only what its work needs, and shares each fetch: a branch the watch, the merge of main or a worker's start
+fetched lately is not fetched again by another, and two of them asking at once share one fetch. Main comes with its tags
+in one fetch, and the branches of a wish's azimas that are due come together, one fetch for the lot; when that fetch
+fails, a branch the remote no longer holds say, each is fetched alone, as before.
+
+The pace follows your presence, never the hour of the day. Once you have touched nothing in Djinn for fifteen minutes
+(a key, a click or a scroll in the window, a command you type) and no worker runs, Djinn is idle: the watch looks
+every hour, and each wish keeps up with main every three hours at most. As soon as you come back, the window brought to
+the front or your first touch, Djinn looks at the configuration and at main at once, at most once every five minutes.
+
+A worker never starts from a stale branch, whatever the pace: before its worktree is made, Djinn fetches the branch it
+starts from unless it was fetched within the last minute, and workers that start together share that fetch. Merging
+work and pushing are not slowed either: they fetch what they need when they need it.
 
 ### A file Djinn cannot read
 

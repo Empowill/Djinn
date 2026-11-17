@@ -149,7 +149,7 @@ func (h *Harness) commitsInMain(
 			return nil
 		}
 		main, ref, err := mainRef(ctx, repo, settings.MainBranch)
-		if err != nil || !h.fetchedForMerged(ctx, wish, repo, ref, settings.MergeMainEvery, now, fetched) {
+		if err != nil || !h.fetchedForMerged(ctx, wish, repo, ref, h.mainEvery(settings.MergeMainEvery), now, fetched) {
 			return nil
 		}
 		var refs []string
@@ -201,7 +201,7 @@ func (h *Harness) fetchedForMerged(
 		if !now && seen && h.now().Sub(last) < every {
 			return false
 		}
-		err = h.fetchMain(ctx, wish.GetId(), repo, ref)
+		err = h.fetchMainFresh(ctx, wish.GetId(), repo, ref, h.mainFresh(now))
 		fetched[key] = err
 		h.mu.Lock()
 		h.mergedLooks[repo] = h.now()

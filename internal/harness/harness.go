@@ -132,7 +132,8 @@ type Harness struct {
 	integrateTick    time.Duration // a pass at least this often; 0: a minute
 	integrateKick    chan struct{} // wakes the integration
 	configKick       chan struct{} // wakes the watch of the configuration (WatchConfig)
-	configTick       time.Duration // a look at least this often; 0: plan.ConfigLookEvery
+	configTick       time.Duration // a look at every project this often; 0: plan.ConfigLookEvery
+	pace             fetchPace     // the pace of the fetches (fetch_pace.go)
 	configWatching   sync.Once
 	integrating      sync.Once
 	integrateDone    chan struct{}         // closed when the integration has stopped; nil until Integrate
@@ -152,7 +153,6 @@ type Harness struct {
 	pushWaits        map[string]bool       // by wish/project/branch: a push due waits for merges, said (repair.go); owned by the integration's pass
 	mainNow          atomic.Bool           // a release was found: the next pass looks at main whatever the cadence
 	toldApart        map[string]bool       // by wish and what was told the lead of a branch apart from its remote's (remote_branch.go), guarded by mu
-	referenceFetched map[string]time.Time  // by repository, when its reference branch was last fetched (fetchReference), guarded by mu
 	mergedLooks      map[string]time.Time  // by repository, when Djinn last fetched main to find azimas merged into it (merged.go), guarded by mu
 
 	// By forge repository (host/path), the branches it protects, as last read (push_reference.go): guarded by mu.
@@ -355,7 +355,7 @@ func New(s *store.Store, home string, providers map[planv1.Provider]Provider, op
 	h := &Harness{
 		store: s, home: home, providers: providers, ctx: ctx, cancel: cancel, runs: map[string]*run{},
 		tick: 2 * time.Second, kick: make(chan struct{}, 1), changed: make(chan struct{}),
-		integrateKick: make(chan struct{}, 1), configKick: make(chan struct{}, 1), tested: map[string]tested{}, mainTested: map[string]mainTested{}, pushWaits: map[string]bool{}, toldApart: map[string]bool{}, referenceFetched: map[string]time.Time{}, mergedLooks: map[string]time.Time{}, protectedLooks: map[string]protectedLook{},
+		integrateKick: make(chan struct{}, 1), configKick: make(chan struct{}, 1), tested: map[string]tested{}, mainTested: map[string]mainTested{}, pushWaits: map[string]bool{}, toldApart: map[string]bool{}, mergedLooks: map[string]time.Time{}, protectedLooks: map[string]protectedLook{},
 		pushJobs:  map[string]*pushJob{},
 		installed: map[string]string{}, preempted: map[string]string{}, rateHits: map[string]int{}, aliases: map[string]string{},
 		resident: map[string]uint64{},
@@ -366,7 +366,7 @@ func New(s *store.Store, home string, providers map[planv1.Provider]Provider, op
 	for _, o := range opts {
 		o(h)
 	}
-	h.presence = &Presence{now: h.now, touched: h.pokeIfrits}
+	h.presence = &Presence{now: h.now, touched: h.touched}
 	h.batcher = newTellBatcher(h)
 	dumps := ""
 	if home != "" {
@@ -1524,7 +1524,8 @@ func (h *Harness) launch(
 		case f != nil:
 			dir, err = correctionWorktree(ctx, project.GetDirectory(), task.GetWorktree(), task.GetBranch(), f)
 		default:
-			if sha, from, err = h.startPoint(ctx, project, r.from); err == nil {
+			// Never from a stale base, whatever the pace of the fetches (fetch_pace.go).
+			if sha, from, err = h.workerBase(ctx, project, r.from); err == nil {
 				if depWhy := h.dependenciesUnmergedIn(ctx, project.GetDirectory(), task, sha, cmp.Or(r.from, from)); depWhy != "" {
 					logx.L().Info("worktree not created: a dependency is not merged", "task", task.GetCode(), "why", depWhy)
 					_ = os.RemoveAll(skillsDir)

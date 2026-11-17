@@ -548,7 +548,7 @@ func (h *Harness) pushBranch(ctx context.Context, wish *planv1.Wish, project *pl
 		commitsText(count, nil), why))
 	unlock()
 	h.notify()
-	h.kickConfig() // the push may have moved the reference branch
+	h.kickConfig(project.GetId()) // the push may have moved its reference branch
 	if settings, err := plan.LoadSettings(h.home, project); err == nil && settings.Install != "" && h.built != nil {
 		b := h.build(ctx, wish, project, settings.Install, record, committed)
 		b.Auto = h.installsItself(ctx, project, settings, b)

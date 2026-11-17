@@ -469,7 +469,7 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 		dir = filepath.Join(t.GetWorktree(), filepath.FromSlash(prefix))
 		if _, err := os.Stat(dir); err != nil {
 			if by == byEnvReplay {
-				sha, _, err := h.startPoint(h.ctx, project, h.taskStartBranch(h.ctx, project, t))
+				sha, _, err := h.workerBase(h.ctx, project, h.taskStartBranch(h.ctx, project, t))
 				if err != nil {
 					return fmt.Errorf("create the worktree: %w", err)
 				}
@@ -483,7 +483,7 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 	case project.GetGit() && !r.light: // A question worker reads in the project's folder.
 		if by == byEnvReplay {
 			t.Worktree = worktreeDir(h.home, project.GetId(), t.GetId())
-			sha, _, err := h.startPoint(h.ctx, project, h.taskStartBranch(h.ctx, project, t))
+			sha, _, err := h.workerBase(h.ctx, project, h.taskStartBranch(h.ctx, project, t))
 			if err != nil {
 				return fmt.Errorf("create the worktree: %w", err)
 			}

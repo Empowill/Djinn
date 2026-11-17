@@ -2551,31 +2551,56 @@ const referenceFetchEvery = time.Minute
 const referenceFetchTimeout = 15 * time.Second
 
 // fetchReference fetches the reference branch of the repository holding repo, as mainRef names it from settings, from
-// its remote, when it was not fetched within referenceFetchEvery: what a worker starts from, and an azima's branch is cut
-// from, is the remote's branch, never what the copy last pulled. A failure is logged: the branch is then read as last
-// fetched.
+// its remote, with the tags, when it was not fetched within referenceFetchEvery by any loop (fetchFresh): what a worker
+// starts from, and an azima's branch is cut from, is the remote's branch, never what the copy last pulled, however
+// slow the pace of the other fetches (fetch_pace.go). Workers that start together share one fetch. A failure is
+// logged: the branch is then read as last fetched.
 func (h *Harness) fetchReference(ctx context.Context, repo string, settings plan.Settings) {
 	_, ref, err := mainRef(ctx, repo, settings.MainBranch)
-	remoteBranch, ok := strings.CutPrefix(ref, "refs/remotes/")
-	if err != nil || !ok {
+	if err != nil || !strings.HasPrefix(ref, "refs/remotes/") {
 		return
 	}
-	now := time.Now() // A pace of the network, not of the plan: the real clock.
-	h.mu.Lock()
-	due := now.Sub(h.referenceFetched[repo]) >= referenceFetchEvery
-	if due {
-		h.referenceFetched[repo] = now
-	}
-	h.mu.Unlock()
-	if !due {
-		return
-	}
-	remote, target, _ := strings.Cut(remoteBranch, "/")
 	fetching, cancel := context.WithTimeout(ctx, referenceFetchTimeout)
 	defer cancel()
-	if _, err := gitx.FetchBranch(fetching, repo, remote, target); err != nil {
-		logx.L().Warn("fetch the reference branch", "repo", repo, "ref", remoteBranch, "err", err)
+	if err := h.fetchMainFresh(fetching, "", repo, ref, referenceFetchEvery); err != nil {
+		logx.L().Warn("fetch the reference branch", "repo", repo, "ref", shortRef(ref), "err", err)
 	}
+}
+
+// freshBase fetches from, the branch a worker's worktree is about to start from in project, from the remote Djinn
+// pushes it to, when it was not fetched within referenceFetchEvery (fetchFresh): its start point (startPoint) then
+// reads the remote's branch as it is now. The reference branch is fetched by startPoint itself (fetchReference); a
+// branch the remote lacks fetches nothing more. A failure is logged: the branch is then read as last fetched.
+func (h *Harness) freshBase(ctx context.Context, project *planv1.Project, from string) {
+	repo := project.GetDirectory()
+	settings, err := plan.LoadSettings(h.home, project)
+	if err != nil || from == "" {
+		return
+	}
+	if main, _, err := mainRef(ctx, repo, settings.MainBranch); err == nil && strings.EqualFold(from, main) {
+		return
+	}
+	remote, target := pushTarget(ctx, repo, from)
+	if remote == "" {
+		return
+	}
+	ref := "refs/remotes/" + remote + "/" + target
+	fetching, cancel := context.WithTimeout(ctx, referenceFetchTimeout)
+	defer cancel()
+	err = h.fetchFresh(fetching, fetchedKey(repo, ref), referenceFetchEvery, func() error {
+		_, err := gitx.FetchBranch(fetching, repo, remote, target)
+		return err
+	})
+	if err != nil {
+		logx.L().Warn("fetch the branch a worker starts from", "repo", repo, "branch", remote+"/"+target, "err", err)
+	}
+}
+
+// workerBase is startPoint for a worker's worktree about to be made: from fetched first when it is not fresh
+// (freshBase).
+func (h *Harness) workerBase(ctx context.Context, project *planv1.Project, from string) (sha, shown string, err error) {
+	h.freshBase(ctx, project, from)
+	return h.startPoint(ctx, project, from)
 }
 
 // workerStartBranch is the branch a worker starts from, the one its work lands in (startPoint reads it): per wish, the

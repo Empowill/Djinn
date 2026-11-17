@@ -81,7 +81,8 @@ its work then reaches the remote, and main through a pull request.
 Each worker of the wish starts its worktree from the integration branch's tip, as it is when the worker starts: its
 start event names the branch and the commit, as in **from feat/invoice-pdf at 1a2b3c4d**. When the remote's copy of the
 branch holds commits yours lacks, and nothing of yours, the worker starts from the remote's, **from origin/main at
-1a2b3c4d**; the reference branch is fetched first, at most once a minute. A wish with no integration branch yet starts
+1a2b3c4d**; the branch the worker starts from is fetched first, unless it was within the last minute, even while
+Djinn fetches at its idle pace. A wish with no integration branch yet starts
 its workers from the reference branch, the remote's. Never from your copy: what it has checked out, and its changes not
 committed, stay out of every worktree. Under the per-azima strategy, an azima's work starts from the azima's own branch,
 cut from the remote's reference branch; see [Push strategy](#push-strategy).
@@ -107,8 +108,10 @@ show the work undone, and your next commit would undo it. When the branch moves:
 While the wish works on its branch, others merge into the project's main branch. In a project that names checks, Djinn
 keeps each active wish's branch up with main by itself, with no model:
 
-1. **It looks** at main at most every hour, fetching it from the remote with your own credentials. Your settings may
-   say how often, and which branch is main: by default the remote's default branch, else main, else master.
+1. **It looks** at main at most every hour, every three hours while you are away, fetching it from the remote with
+   your own credentials, unless Djinn fetched it lately for another look. Your settings may say how often, and which
+   branch is main: by default the remote's default branch, else main, else master. See how often Djinn fetches in
+   [Project and settings](#project-and-settings).
 2. **It merges** main in once main holds a **release** the branch lacks, a version tag; your settings may say at each
    commit instead, or never.
 3. **It checks** the merge as it checks a task's work, in its own worktree, and moves the branch when the checks pass.
@@ -127,7 +130,7 @@ their place. A merge needs no model; a model only settles a conflict, when there
 ## When the remote moved on
 
 A teammate may push to the branch too. Before Djinn merges work, or main, into a branch, main included, it fetches the
-remote's copy of that branch, then:
+remote's copy of that branch, the branches of a wish's azimas together in one fetch, then:
 
 - **The branch is behind the remote's**, holding nothing the remote lacks: Djinn brings it up to the remote's, a
   fast-forward, and merges the work on top. Your checkout of the branch follows when it is clean.

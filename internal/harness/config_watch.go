@@ -1,15 +1,11 @@
 package harness
 
 import (
-	"bytes"
 	"cmp"
 	"context"
-	"fmt"
-	"strings"
 	"time"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
-	"github.com/empowill/djinn/internal/gitx"
 	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
@@ -18,8 +14,13 @@ import (
 // WithConfigTick sets how often the watch of the configuration looks at each project's reference branch.
 func WithConfigTick(d time.Duration) Option { return func(h *Harness) { h.configTick = d } }
 
+// configPoll is how often the watch of the configuration asks itself whether a look is due (configPass): its pace
+// changes with the developer's presence (fetch_pace.go).
+const configPoll = time.Minute
+
 // WatchConfig starts the watch of the projects' configuration on their reference branch (plan.LookAtConfig): a look
-// at once, then every plan.ConfigLookEvery, and after each push of Djinn. djinn up calls it once; Close stops it.
+// at once, then every configEvery, and after each push of Djinn at the pushed project. djinn up calls it once; Close
+// stops it.
 func (h *Harness) WatchConfig() {
 	h.configWatching.Do(func() {
 		h.mu.Lock()
@@ -31,10 +32,10 @@ func (h *Harness) WatchConfig() {
 		go func() {
 			defer logx.Crash("config")
 			defer h.wg.Done()
-			tick := time.NewTicker(cmp.Or(h.configTick, plan.ConfigLookEvery))
+			tick := time.NewTicker(min(cmp.Or(h.configTick, plan.ConfigLookEvery), configPoll))
 			defer tick.Stop()
 			for {
-				h.lookAtConfigs(h.ctx)
+				h.configPass(h.ctx)
 				select {
 				case <-h.ctx.Done():
 					return
@@ -46,16 +47,52 @@ func (h *Harness) WatchConfig() {
 	})
 }
 
-// kickConfig asks the watch of the configuration for a look: Djinn pushed.
-func (h *Harness) kickConfig() {
+// kickConfig asks the watch of the configuration for a look at once: at the projects named, Djinn pushed there; at
+// every project when none is.
+func (h *Harness) kickConfig(projectIDs ...string) {
+	h.pace.mu.Lock()
+	if len(projectIDs) == 0 {
+		h.pace.configAll = true
+	}
+	for _, id := range projectIDs {
+		if h.pace.configAsk == nil {
+			h.pace.configAsk = map[string]bool{}
+		}
+		h.pace.configAsk[id] = true
+	}
+	h.pace.mu.Unlock()
 	select {
 	case h.configKick <- struct{}{}:
 	default:
 	}
 }
 
-// lookAtConfigs looks once at the reference branch of each project in Git.
-func (h *Harness) lookAtConfigs(ctx context.Context) {
+// configPass is one turn of the watch of the configuration: a look at every project when it is due (configEvery) or
+// asked, else at the projects asked (kickConfig), else nothing.
+func (h *Harness) configPass(ctx context.Context) {
+	every, now := h.configEvery(), h.now()
+	h.pace.mu.Lock()
+	asked, ask := h.pace.configAll, h.pace.configAsk
+	h.pace.configAll, h.pace.configAsk = false, nil
+	all := asked || h.pace.configLast.IsZero() || now.Sub(h.pace.configLast) >= every
+	if all {
+		h.pace.configLast = now
+	}
+	h.pace.mu.Unlock()
+	switch {
+	case all && !asked:
+		// The branch as fetched by any loop within half the pace: a look never reads it older than the pace.
+		h.lookAtConfigs(ctx, nil, every/2)
+	case all:
+		h.lookAtConfigs(ctx, nil, 0) // Asked: the developer is back, a push moved a branch; fetched whatever.
+	case len(ask) > 0:
+		h.lookAtConfigs(ctx, ask, 0)
+	}
+}
+
+// lookAtConfigs looks once at the reference branch of each project in Git, or only of those only names: fetched
+// unless it was within fresh (fetchFresh).
+func (h *Harness) lookAtConfigs(ctx context.Context, only map[string]bool, fresh time.Duration) {
 	projects, err := store.List[*planv1.Project](ctx, h.store, nil)
 	if err != nil {
 		logx.L().Error("read the projects", "loop", "config", "err", err)
@@ -65,32 +102,14 @@ func (h *Harness) lookAtConfigs(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
-		if !p.GetGit() || p.GetDirectory() == "" {
+		if !p.GetGit() || p.GetDirectory() == "" || only != nil && !only[p.GetId()] {
 			continue
 		}
-		if err := plan.LookAtConfig(ctx, h.store, h.home, p, fetchRef, h.now()); err != nil {
+		fetch := func(ctx context.Context, folder, ref string) error {
+			return h.fetchMainFresh(ctx, "", folder, ref, fresh)
+		}
+		if err := plan.LookAtConfig(ctx, h.store, h.home, p, fetch, h.now()); err != nil {
 			logx.L().Warn("look at the configuration", "loop", "config", "project", p.GetName(), "err", err)
 		}
 	}
-}
-
-// fetchRef fetches ref, a remote ref (refs/remotes/origin/main), alone and without its tags, into the repository
-// holding folder, with the person's own credentials and without ever prompting for them.
-func fetchRef(ctx context.Context, folder, ref string) error {
-	remoteBranch, ok := strings.CutPrefix(ref, "refs/remotes/")
-	if !ok {
-		return nil
-	}
-	remote, target, _ := strings.Cut(remoteBranch, "/")
-	ctx, cancel := context.WithTimeout(ctx, fetchTimeout)
-	defer cancel()
-	cmd, cancelFetch := gitx.Command(ctx, folder, "fetch", "--no-tags", "--quiet", remote, "+refs/heads/"+target+":"+ref)
-	defer cancelFetch()
-	cmd.Env = append(cmd.Env, "LC_ALL=C")
-	var out bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &out, &out
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("fetch %s from %s: %s", target, remote, cmp.Or(strings.TrimSpace(out.String()), err.Error()))
-	}
-	return nil
 }

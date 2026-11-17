@@ -518,6 +518,7 @@ func runUp(args []string) (restart bool, err error) {
 		return ""
 	}
 	workers.Integrate()
+	workers.PaceByPresence() // Away, Djinn fetches slower (fetch_pace.go).
 	workers.WatchConfig()
 	raise := make(chan struct{}, 1)
 	var url string // In browser mode, the page to open, token included.
@@ -733,7 +734,7 @@ func runUp(args []string) (restart bool, err error) {
 		fmt.Println("djinn: open", url)
 		err = <-served
 	default:
-		cfg := windowConfig{raise: raise, notices: notices, shortcuts: shortcuts, links: openLinks, quit: stop}
+		cfg := windowConfig{raise: raise, notices: notices, shortcuts: shortcuts, links: openLinks, quit: stop, back: workers.Back}
 		if transport == server.Wails {
 			cfg.assets = ui.FromWindow(server.WholeWrites(h))
 			// When the web process of the window's page ends (W353, W366), on Linux, it is logged with WebKit's state
