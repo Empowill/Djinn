@@ -1120,7 +1120,9 @@ func TestUpdateModelsAndClaudeRoundTrip(t *testing.T) {
 		}); err != nil {
 			t.Fatal(err)
 		}
-		watchTask := e.mustSpawn(t, wishID, "Watcher Task", "echo ok", &planv1.TaskServiceSpawnRequest{
+		// A watcher that lasts: one whose command ended is no longer open, neither updated nor skipped (W73: red on
+		// macOS).
+		watchTask := e.mustSpawn(t, wishID, "Watcher Task", watchCommand("wait"), &planv1.TaskServiceSpawnRequest{
 			Provider: planv1.Provider_PROVIDER_WATCH,
 		})
 
