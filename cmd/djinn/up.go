@@ -268,6 +268,15 @@ func runUp(args []string) (restart bool, err error) {
 	defer history.Flush(context.WithoutCancel(ctx))
 	// After a stop that was not clean or with the memory near full, or with --paused, no worker resumes (held.go).
 	hold := heldStart(ctx, paused, unclean, pausedMemory, monitor.Total(), history.LastMachine)
+	// The containers a past run of this Djinn left go in the background: its start never waits on docker, which may
+	// take long to answer (Docker Desktop not started, a Windows runner's daemon: W80). The first worker waits for it
+	// before it starts, so that none of its own containers goes with them.
+	leftovers := make(chan struct{})
+	go func() {
+		defer close(leftovers)
+		defer logx.Crash("remove leftover containers")
+		wrap.Remove(ctx, wrap.HomeLabel+"="+home)
+	}()
 	opts := []harness.Option{
 		harness.WithHistory(history),
 		harness.WithCapacity(monitor.Capacity),
@@ -276,7 +285,7 @@ func runUp(args []string) (restart bool, err error) {
 		harness.WithTotal(monitor.Total),
 		// Started from the Finder or a desktop menu, Djinn has a bare PATH (fromLauncher): before each start, its PATH
 		// gains the folders of the agents installed meanwhile.
-		harness.WithBeforeStart(beforeStart()),
+		harness.WithBeforeStart(afterLeftovers(ctx, leftovers, beforeStart())),
 		// While a task waits for its agent's usage limit, an account changed since lifts it (health.go).
 		harness.WithAccount(ui.Account),
 		// An outage Djinn suspects from its workers' and commands' errors is confirmed, and seen to end, by one HEAD
@@ -304,8 +313,7 @@ func runUp(args []string) (restart bool, err error) {
 		opts = append(opts, harness.WithMeasure(5*time.Second, machine.ReadWorker))
 	}
 	// A worker's containers count in its task's series and go once it ends; those a past run of this Djinn left go
-	// now, before any worker starts.
-	wrap.Remove(ctx, wrap.HomeLabel+"="+home)
+	// before any worker starts (leftovers).
 	containers := harness.Containers{Remove: wrap.Remove, Pause: wrap.Pause}
 	if machine.NotMeasured == "" {
 		containers.Read = func(taskID string) (machine.Group, error) {
@@ -1055,4 +1063,18 @@ func flagNames(flags *flag.FlagSet) []string {
 	var names []string
 	flags.Visit(func(f *flag.Flag) { names = append(names, f.Name) })
 	return names
+}
+
+// afterLeftovers is what runs before a worker starts: it waits until done is closed, the containers a past run left
+// removed, or ctx ends; then runs then, when not nil.
+func afterLeftovers(ctx context.Context, done <-chan struct{}, then func()) func() {
+	return func() {
+		select {
+		case <-done:
+		case <-ctx.Done():
+		}
+		if then != nil {
+			then()
+		}
+	}
 }

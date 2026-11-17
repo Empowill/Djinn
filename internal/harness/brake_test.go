@@ -271,9 +271,9 @@ func TestBrakeFreezesWhatEscapesTheGates(t *testing.T) {
 		}
 	}
 	bt.toldLines(t, w2.GetCode()+" interrupted by the memory brake")
-	if !bt.hasEvent(t, w2.GetId(), "resuming: memory brake: frozen 30 s, the memory stayed short") {
-		t.Errorf("W2's interruption event: %v", eventTexts(bt.storedEvents(t, w2.GetId())))
-	}
+	// The lead hears it as the worker is stopped; its event is stored once the run ends, a moment later.
+	interrupted := "resuming: memory brake: frozen 30 s, the memory stayed short"
+	waitFor(t, "W2's interruption event", func() bool { return bt.hasEvent(t, w2.GetId(), interrupted) })
 	bt.hold(w2.GetId(), 200) // What grew went with its worker.
 	// It waits for calm, the memory still short: resumed now, it would grow into it again (W25).
 	held := "waiting: memory brake: interrupted, it resumes after 1 min of calm (15% of memory available or more)"
