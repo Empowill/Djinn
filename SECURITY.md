@@ -5,9 +5,11 @@ code, your credentials or your system: please tell us privately before anyone el
 
 ## Report a vulnerability
 
-Use GitHub's private reporting: the **Security** tab of [Empowill/Djinn](https://github.com/Empowill/Djinn), then
-**Report a vulnerability** ([direct link](https://github.com/Empowill/Djinn/security/advisories/new)). Only the
-maintainers read it. Never open a public issue, a pull request or a discussion for a vulnerability.
+Write to [dev@empowill.com](mailto:dev@empowill.com). Only the maintainers read it. Never open a public issue, a
+pull request or a discussion for a vulnerability.
+
+GitHub's private reporting works too: the **Security** tab of [Empowill/Djinn](https://github.com/Empowill/Djinn),
+then **Report a vulnerability** ([direct link](https://github.com/Empowill/Djinn/security/advisories/new)).
 
 Say, as far as you know:
 

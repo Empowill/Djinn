@@ -389,13 +389,15 @@ has set for those who work on it are in [`docs/pitfalls.md`](docs/pitfalls.md). 
 - **Tasks live in [`plan/`](plan/README.md)**, one file each. The README checklist is the only
   tracker.
 - **Everyone follows the [code of conduct](CODE_OF_CONDUCT.md)**, in issues, pull requests and reviews.
-- **Every change is reviewed** by a maintainer.
+- **Every change is reviewed** by a maintainer: [nyhu](https://github.com/nyhu) today.
 - **Commits on `main` are signed.** The branch's protection requires signed commits: sign yours with an SSH or GPG
   key your GitHub account knows (`git config commit.gpgsign true`, and `gpg.format ssh` with `user.signingkey` for an
   SSH key; GitHub's "Signing commits" page has the steps). A pull request with unsigned commits can still be merged
   by squash, which GitHub signs.
-- **A bug goes in an issue**, through the bug form (Report a bug, at the top of the Grimoire, opens it): the version,
-  the system, the logs. A security flaw never does: see [`SECURITY.md`](SECURITY.md).
+- **Questions and bugs go in [GitHub issues](https://github.com/Empowill/Djinn/issues)**, the project's contact. A
+  bug goes through the bug form (Report a bug, at the top of the Grimoire, opens it): the version, the system, the
+  logs. A security flaw never does: write to [dev@empowill.com](mailto:dev@empowill.com) (see
+  [`SECURITY.md`](SECURITY.md)).
 - **Every change carries its documentation.** A change to what Djinn does (a feature, a concept, a screen, a command,
   a behaviour) updates the documentation site in the same change: its chapter or card in the Concepts tab of
   [`docs/site/index.html`](docs/site/index.html), a new card for a new concept. The Command line tab follows the

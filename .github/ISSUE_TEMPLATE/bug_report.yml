@@ -5,8 +5,8 @@ body:
   - type: markdown
     attributes:
       value: >-
-        Thank you for taking the time. A flaw that an attacker could use goes privately, through the
-        Security tab, never in a public issue. Before attaching a file, read it: logs name your projects'
+        Thank you for taking the time. A flaw that an attacker could use goes privately, to
+        dev@empowill.com, never in a public issue. Before attaching a file, read it: logs name your projects'
         folders and branches and your tasks' codes. Remove what you do not want public.
   - type: textarea
     id: what
