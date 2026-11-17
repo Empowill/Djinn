@@ -411,6 +411,9 @@ has set for those who work on it are in [`docs/pitfalls.md`](docs/pitfalls.md). 
   the macOS bundle and Launch Services, archive integrity, checksums (`SHA256SUMS`), and tests `install.sh` against
   the built release folder, keeping all assets as the run's artifacts (`gh run download`) without creating a tag,
   a release nor publishing assets.
+  A release that changes the store (a table, an indexed field) adds a database it wrote to
+  [`internal/plan/testdata/release`](internal/plan/testdata/release/README.md), which `TestEntities` opens with the
+  next code.
 - **Updating the model price table**: Model prices are maintained in `internal/usage/prices.yaml`, embedded into the binary. When a model's price changes or a new model is introduced:
   1. Edit `internal/usage/prices.yaml` and update the table `date` (`YYYY-MM-DD`).
   2. Each entry must specify `name` (as reported by provider streams, e.g. `claude-sonnet-5-5`, `gemini-3.8-flash-high`, `gpt-5.1-codex`), prices per million tokens (`input_cost_per_million`, `output_cost_per_million`, and where applicable `cache_read_cost_per_million`, `cache_write_cost_per_million`, `thinking_cost_per_million`), `source` (public URL), and `source_date` (`YYYY-MM-DD`).
