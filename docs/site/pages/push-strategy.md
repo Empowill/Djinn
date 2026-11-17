@@ -132,9 +132,9 @@ nothing is cut again. Ask the Djinn to do it.
 
 Work of no azima merged before stays in the wish's integration branch either way.
 
-> **Example.** A wish fixes ticket ET-1234 per wish, on the branch ET-1234-the-fix, its merge request open. A second
+> **Example.** A wish fixes ticket ABC-1234 per wish, on the branch ABC-1234-the-fix, its merge request open. A second
 > ticket joins the wish. You want two merge requests: the Djinn has azima T1, which carries the first ticket, adopt
-> ET-1234-the-fix, switches the wish to per azima, and makes T2 for the second ticket, on its own branch from main.
+> ABC-1234-the-fix, switches the wish to per azima, and makes T2 for the second ticket, on its own branch from main.
 
 ## Good to know
 

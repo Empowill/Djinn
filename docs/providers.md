@@ -136,7 +136,7 @@ a write in the project or beside the folder is refused. A Codex question worker 
 Codex's workspace-write sandbox would open its workspace, the project, with it; it revises with `--context`. A
 question worker that Claude runs in the place of an agent that could not start (Antigravity cannot run read-only) gets
 the folder too, and its prompt, written for that agent, the context file's lines in place of `--context`
-(`withContextFile`): W18 and W19 of wish Will 20 oct, on Claude after Antigravity, had neither and saw every revision
+(`withContextFile`): W18 and W19 of a wish on 20 oct, on Claude after Antigravity, had neither and saw every revision
 of Q06 refused (W5). Verified on 2026-10-20 with claude 2.1.304 in `dontAsk`: a quoted line that starts with `#` is
 refused, a `#` after a command on its line passes, `--context-file` passes.
 
@@ -486,8 +486,8 @@ expands `$DJINN_HOME`, `$DJINN_TASK_ID` and `$DJINN_WISH_ID` (or `${…}`) outsi
 watcher's own state folder reads as a lead writes it in a terminal:
 
 ```
-djinn task spawn <wish> --title "Watch !2855" --provider watch --restart \
-  --prompt 'mrwatch -mr 2855 -watch -state "$DJINN_HOME/watchers/$DJINN_TASK_ID/mr-2855"'
+djinn task spawn <wish> --title "Watch !58" --provider watch --restart \
+  --prompt 'mrwatch -mr 58 -watch -state "$DJINN_HOME/watchers/$DJINN_TASK_ID/mr-58"'
 ```
 
 Any other variable (`$HOME`) is refused at spawn: nothing would expand it. Write its value, or put it in single quotes

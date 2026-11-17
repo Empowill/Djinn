@@ -502,7 +502,7 @@ func reviseCall(code, wish, contextFile string) string {
 
 // withContextFile is the prompt of the investigator t, written for an agent that may not write (no context file),
 // for one that writes its context in contextFile: Claude, when it takes the place of an agent that could not start.
-// Claude refuses the inline --context of a question's shape: W18 and W19 of wish Will 20 oct, on Claude after
+// Claude refuses the inline --context of a question's shape: W18 and W19 of a wish on 20 oct, on Claude after
 // Antigravity could not run read-only, could not revise Q06 (W5).
 func withContextFile(prompt string, t *planv1.Task, contextFile string) string {
 	code, wish := t.GetQuestion(), t.GetWishId()

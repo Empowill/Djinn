@@ -709,13 +709,13 @@ func TestWatchCommandsSettings(t *testing.T) {
 	home := t.TempDir()
 	c := serve(t, WithHome(home))
 	dir := t.TempDir()
-	add, err := c.projects.Add(ctx, connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: dir, Name: "dolmen"}))
+	add, err := c.projects.Add(ctx, connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: dir, Name: "shop"}))
 	if err != nil {
 		t.Fatal(err)
 	}
 	devFile := DeveloperSettingsFile(home, add.Msg.GetProject().GetId())
 	allow := func(watch *string, revoke bool) (*planv1.ProjectServiceAllowResponse, error) {
-		res, err := c.projects.Allow(ctx, connect.NewRequest(&planv1.ProjectServiceAllowRequest{Project: "dolmen", Watch: watch, Revoke: revoke}))
+		res, err := c.projects.Allow(ctx, connect.NewRequest(&planv1.ProjectServiceAllowRequest{Project: "shop", Watch: watch, Revoke: revoke}))
 		if err != nil {
 			return nil, err
 		}
@@ -724,9 +724,9 @@ func TestWatchCommandsSettings(t *testing.T) {
 	if res, err := allow(nil, false); err != nil || len(res.GetWatchCommands()) != 0 || res.GetDeveloperFile() != devFile {
 		t.Errorf("none yet: %v, %v", res, err)
 	}
-	mrwatch := "go run ./.agents/skills/babysit-mr-empowill/mrwatch"
+	mrwatch := "go run ./.agents/skills/babysit-mr-acme/mrwatch"
 	for range 2 {
-		if res, err := allow(proto.String(" go  run ./.agents/skills/babysit-mr-empowill/mrwatch "), false); err != nil ||
+		if res, err := allow(proto.String(" go  run ./.agents/skills/babysit-mr-acme/mrwatch "), false); err != nil ||
 			!slices.Equal(res.GetWatchCommands(), []string{mrwatch}) {
 			t.Errorf("allowed: %v, %v; want it once, its words joined by one space", res, err)
 		}
@@ -734,7 +734,7 @@ func TestWatchCommandsSettings(t *testing.T) {
 	if res, err := allow(proto.String("glab mr view"), false); err != nil || len(res.GetWatchCommands()) != 2 {
 		t.Errorf("a second one: %v, %v", res, err)
 	}
-	show, err := c.projects.Show(ctx, connect.NewRequest(&planv1.ProjectServiceShowRequest{Project: "dolmen"}))
+	show, err := c.projects.Show(ctx, connect.NewRequest(&planv1.ProjectServiceShowRequest{Project: "shop"}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -765,13 +765,13 @@ func TestWatchCommandsSettings(t *testing.T) {
 		t.Errorf("the repository was touched: %v", err)
 	}
 	// An ifrit's serve commands (djinn project allow --serve), beside the watcher's.
-	serveRes, err := c.projects.Allow(ctx, connect.NewRequest(&planv1.ProjectServiceAllowRequest{Project: "dolmen", Serve: proto.String("npm  run dev")}))
+	serveRes, err := c.projects.Allow(ctx, connect.NewRequest(&planv1.ProjectServiceAllowRequest{Project: "shop", Serve: proto.String("npm  run dev")}))
 	if err != nil || !slices.Equal(serveRes.Msg.GetServeCommands(), []string{"npm run dev"}) ||
 		!slices.Equal(serveRes.Msg.GetWatchCommands(), []string{"glab mr view"}) {
 		t.Errorf("a serve command allowed: %v, %v", serveRes, err)
 	}
 	if _, err := c.projects.Allow(ctx, connect.NewRequest(&planv1.ProjectServiceAllowRequest{
-		Project: "dolmen", Serve: proto.String("npm run dev"), Watch: proto.String("glab mr view"),
+		Project: "shop", Serve: proto.String("npm run dev"), Watch: proto.String("glab mr view"),
 	})); code(err) != connect.CodeInvalidArgument {
 		t.Errorf("--serve and --watch at once: %v", err)
 	}
@@ -780,7 +780,7 @@ func TestWatchCommandsSettings(t *testing.T) {
 	}
 
 	writeSettings(t, filepath.Join(dir, SettingsFile), "watch_commands: \"rm -rf\"\n")
-	show, err = c.projects.Show(ctx, connect.NewRequest(&planv1.ProjectServiceShowRequest{Project: "dolmen"}))
+	show, err = c.projects.Show(ctx, connect.NewRequest(&planv1.ProjectServiceShowRequest{Project: "shop"}))
 	if err != nil || !slices.ContainsFunc(show.Msg.GetNotices(), func(n *planv1.ProjectNotice) bool {
 		return n.GetAction() == planv1.ProjectNoticeAction_PROJECT_NOTICE_ACTION_FIX_FILE &&
 			strings.Contains(n.GetDetail(), "watch_commands is ignored")

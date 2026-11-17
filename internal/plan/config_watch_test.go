@@ -62,7 +62,7 @@ func TestConfigLines(t *testing.T) {
 			"checks { name: \"lint\" command: \"go tool task lint\" when: CHECK_WHEN_COMMIT }\n" +
 			"checks { name: \"old\" command: \"make old\" when: CHECK_WHEN_PUSH }\n",
 		".agents/permissions.txtpb":          "commands: \"make\"\ncommands: \"go test\"\n",
-		".agents/skills/recette/SKILL.md":    skillMD("Recette.", "", "Do it.\n"),
+		".agents/skills/staging/SKILL.md":    skillMD("Staging.", "", "Do it.\n"),
 		".agents/skills/gone/SKILL.md":       skillMD("Gone.", "", ""),
 		".agents/skills/watcher/SKILL.md":    skillMD("Watch.", template, ""),
 		".agents/skills/inbox/SKILL.md":      skillMD("Inbox.", source, ""),
@@ -75,8 +75,8 @@ func TestConfigLines(t *testing.T) {
 			"checks { name: \"lint\" command: \"go tool task lint\" when: CHECK_WHEN_COMMIT when: CHECK_WHEN_PUSH }\n" +
 			"checks { name: \"e2e\" command: \"go tool task e2e\" when: CHECK_WHEN_PUSH }\n",
 		".agents/permissions.txtpb":          "commands: \"make\"\ncommands: \"curl\"\nedit: true\n",
-		".agents/skills/recette/SKILL.md":    skillMD("Recette.", "", "Do it twice.\n"),
-		".agents/skills/recette/run.sh":      "echo\n",
+		".agents/skills/staging/SKILL.md":    skillMD("Staging.", "", "Do it twice.\n"),
+		".agents/skills/staging/run.sh":      "echo\n",
 		".agents/skills/watcher/SKILL.md":    skillMD("Watch.", strings.ReplaceAll(template, "watch.sh", "watch2.sh"), ""),
 		".agents/skills/inbox/SKILL.md":      skillMD("Inbox.", strings.ReplaceAll(source, "inbox.sh", "inbox2.sh"), ""),
 		".agents/skills/quiet/SKILL.md":      skillMD("Quiet.", strings.ReplaceAll(source, "inbox.sh", "inbox2.sh"), ""),
@@ -99,7 +99,7 @@ func TestConfigLines(t *testing.T) {
 		"! The inbox source of the skill inbox, plugged in here, changes its watch.",
 		"! New skill open-pr, with a wish template (Babysit PR {pr}).",
 		"The inbox source of the skill quiet changes its watch.",
-		"The skill recette changes its instructions and its files run.sh.",
+		"The skill staging changes its instructions and its files run.sh.",
 		"! The wish template of the skill watcher changes its watch.",
 		"The skill gone is gone.",
 		"Other files of .agents change: .agents/notes.md.",
@@ -119,10 +119,10 @@ func TestConfigLines(t *testing.T) {
 		!slices.Contains(got, "The skill inbox is gone: its inbox source, plugged in here, no longer runs.") {
 		t.Errorf("to nothing: %q", got)
 	}
-	broken := configFolder(t, map[string]string{".agents/settings.txtpb": "nope {", ".agents/skills/recette/SKILL.md": "---\nmetadata: [\n---\n"})
+	broken := configFolder(t, map[string]string{".agents/settings.txtpb": "nope {", ".agents/skills/staging/SKILL.md": "---\nmetadata: [\n---\n"})
 	if got := lineTexts(configLines(old, broken, plugged)); !slices.Contains(got,
 		"Djinn can no longer read the team's settings: the project's tasks do not spawn until the file is fixed.") ||
-		!slices.Contains(got, "Djinn can no longer read the skill recette: it ignores its wish template, inbox source and babysit.") {
+		!slices.Contains(got, "Djinn can no longer read the skill staging: it ignores its wish template, inbox source and babysit.") {
 		t.Errorf("unreadable: %q", got)
 	}
 	if got := configLines(old, old, plugged); len(got) != 0 {

@@ -68,11 +68,11 @@ func refusedName(what string) string {
 	return clipRunes(tool, 40)
 }
 
-// shellAssignment is a variable set before a command: SILAE_CLIENT=bardahl task test-pkg.
+// shellAssignment is a variable set before a command: PAYROLL_CLIENT=globex task test-pkg.
 var shellAssignment = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*=`)
 
 // commandName is the name of the first command a shell line runs, past the variables it sets and the folders it goes
-// to: "cd silae && ls -la" runs ls, "R=/x; git -C $R log" git; "" when it runs none.
+// to: "cd payroll && ls -la" runs ls, "R=/x; git -C $R log" git; "" when it runs none.
 func commandName(line string) string {
 	segments := strings.FieldsFunc(line, func(c rune) bool { return strings.ContainsRune("&|;\n()", c) })
 	for _, s := range segments {

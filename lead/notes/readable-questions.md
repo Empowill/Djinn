@@ -27,32 +27,32 @@ you expect from me getting lost: that will not do at all!" (W575).
 The developer's example, a revised context (translated from French; the commands and options as they were):
 
 ````markdown
-Branch: ET-3510-old-role-types (local and on origin; commit 5d254fef6 at its head for ET-1624). Run git switch ET-3510-old-role-types, or a worktree on it, then from the repo root. 1) Dry-run migrate-system-roles (exists ONLY on the branch, writes nothing): go run ./cmd/stork migrate-system-roles --dry-run --pg_url="postgres://:@:/syn?sslmode=disable" . It lists the references (company, system role) and ends with a line: migrate-system-roles dry-run: N references to move, M system role rows to delete. 2) Dry-run cleanup-legacy-roles (…): go run ./cmd/stork cleanup-legacy-roles --dry-run --pg_url="…" . Last line: … If the dry runs find something (B): run the SAME commands again without --dry-run … Guard: never migrate-system-roles from main … A: dry runs done, 0 and 0; B: references found, migrations applied; C: we wait.
+Branch: ABC-3510-old-role-types (local and on origin; commit a1b2c3d4e at its head for ABC-1624). Run git switch ABC-3510-old-role-types, or a worktree on it, then from the repo root. 1) Dry-run migrate-system-roles (exists ONLY on the branch, writes nothing): go run ./cmd/tool migrate-system-roles --dry-run --pg_url="postgres://:@:/app?sslmode=disable" . It lists the references (company, system role) and ends with a line: migrate-system-roles dry-run: N references to move, M system role rows to delete. 2) Dry-run cleanup-legacy-roles (…): go run ./cmd/tool cleanup-legacy-roles --dry-run --pg_url="…" . Last line: … If the dry runs find something (B): run the SAME commands again without --dry-run … Guard: never migrate-system-roles from main … A: dry runs done, 0 and 0; B: references found, migrations applied; C: we wait.
 ````
 
 The same context in the shape (the why and the facts are illustrative):
 
 ````markdown
 ~~~sh
-# Branch ET-3510-old-role-types, head 5d254fef6 (ET-1624). From the repo root,
+# Branch ABC-3510-old-role-types, head a1b2c3d4e (ABC-1624). From the repo root,
 # on this branch only: the commands below do not exist on main.
-git switch ET-3510-old-role-types
+git switch ABC-3510-old-role-types
 
 # 1. Dry run, writes nothing: lists each reference (company, system role), then ends with
 #    "migrate-system-roles dry-run: N references to move, M system role rows to delete"
-go run ./cmd/stork migrate-system-roles --dry-run --pg_url="postgres://:@:/syn?sslmode=disable"
+go run ./cmd/tool migrate-system-roles --dry-run --pg_url="postgres://:@:/app?sslmode=disable"
 
 # 2. Dry run, writes nothing: its last line gives what it would remove
-go run ./cmd/stork cleanup-legacy-roles --dry-run --pg_url="postgres://:@:/syn?sslmode=disable"
+go run ./cmd/tool cleanup-legacy-roles --dry-run --pg_url="postgres://:@:/app?sslmode=disable"
 
 # 3. Only when step 1 or 2 counts more than 0 (answer B): the same commands, without the dry run
-go run ./cmd/stork migrate-system-roles --pg_url="postgres://:@:/syn?sslmode=disable"
-go run ./cmd/stork cleanup-legacy-roles --pg_url="postgres://:@:/syn?sslmode=disable"
+go run ./cmd/tool migrate-system-roles --pg_url="postgres://:@:/app?sslmode=disable"
+go run ./cmd/tool cleanup-legacy-roles --pg_url="postgres://:@:/app?sslmode=disable"
 ~~~
 
 **Why:** before the branch merges, the dry runs say whether the database still holds old role types to move.
 
-- Verified: the branch is on origin, its head carries the fix for ET-1624.
+- Verified: the branch is on origin, its head carries the fix for ABC-1624.
 - Not verified: what the database holds; only the dry runs on it tell.
 
 **Your answer**

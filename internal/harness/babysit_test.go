@@ -104,7 +104,7 @@ func babysitRepo(t *testing.T, remote, babysit, settings string) string {
 	return repo
 }
 
-// gitlabBabysit is how dolmen's babysit-mr-empowill declares its watcher, with a shell script in place of mrwatch.
+// gitlabBabysit is how shop's babysit-mr-acme declares its watcher, with a shell script in place of mrwatch.
 const gitlabBabysit = `      forge: gitlab
       watch: "sh .agents/skills/babysit-it/watch.sh {mr} {state}"
       restart: true
@@ -169,12 +169,12 @@ func TestBabysit(t *testing.T) {
 	// command restarts.
 	t.Run("what a task opens", func(t *testing.T) {
 		t.Parallel()
-		const url = "https://gitlab.com/acme/dolmen/-/merge_requests/123"
+		const url = "https://gitlab.com/acme/shop/-/merge_requests/123"
 		forge := &fakeForge{
 			views: map[string]string{"123": `{"iid":123,"state":"opened","web_url":"` + url + `"}`},
 			lists: map[string]string{"w2-": `[{"iid":123,"web_url":"` + url + `"}]`},
 		}
-		e, queue, wishID, projectID := babysitWish(t, forge, babysitRepo(t, "git@gitlab.com:acme/dolmen.git", gitlabBabysit, ""))
+		e, queue, wishID, projectID := babysitWish(t, forge, babysitRepo(t, "git@gitlab.com:acme/shop.git", gitlabBabysit, ""))
 		azima, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
 			WishId: wishID, ProjectId: projectID, Title: "Open the MR", Kind: planv1.TaskKind_TASK_KIND_AZIMA,
 		}))
@@ -183,7 +183,7 @@ func TestBabysit(t *testing.T) {
 		}
 		opener := endTask(t, e, wishID, projectID, strings.Join([]string{
 			`tool Bash {"command":"glab mr create --draft --fill --yes"}`,
-			"result Creating draft merge request for w1 into main in acme/dolmen " + url,
+			"result Creating draft merge request for w1 into main in acme/shop " + url,
 			"text Draft MR opened.",
 		}, "\n"), azima.Msg.GetTask().GetId())
 		if opener.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
@@ -263,12 +263,12 @@ func TestBabysit(t *testing.T) {
 	// nothing, and tells the lead nothing.
 	t.Run("off or undeclared", func(t *testing.T) {
 		t.Parallel()
-		const url = "https://gitlab.com/acme/dolmen/-/merge_requests/123"
+		const url = "https://gitlab.com/acme/shop/-/merge_requests/123"
 		for name, repo := range map[string]func() string{
 			"off": func() string {
-				return babysitRepo(t, "git@gitlab.com:acme/dolmen.git", gitlabBabysit, "babysit: false\n")
+				return babysitRepo(t, "git@gitlab.com:acme/shop.git", gitlabBabysit, "babysit: false\n")
 			},
-			"undeclared": func() string { return babysitRepo(t, "git@gitlab.com:acme/dolmen.git", "", "") },
+			"undeclared": func() string { return babysitRepo(t, "git@gitlab.com:acme/shop.git", "", "") },
 		} {
 			forge := &fakeForge{views: map[string]string{"123": `{"iid":123,"state":"opened","web_url":"` + url + `"}`}}
 			e, queue, wishID, projectID := babysitWish(t, forge, repo())
@@ -292,9 +292,9 @@ func TestBabysit(t *testing.T) {
 	// command; a project without a declaration refuses it at once.
 	t.Run("by hand", func(t *testing.T) {
 		t.Parallel()
-		const url = "https://gitlab.com/acme/dolmen/-/merge_requests/7"
+		const url = "https://gitlab.com/acme/shop/-/merge_requests/7"
 		forge := &fakeForge{views: map[string]string{"7": `{"iid":7,"state":"opened","web_url":"` + url + `"}`}}
-		e, _, wishID, projectID := babysitWish(t, forge, babysitRepo(t, "https://gitlab.com/acme/dolmen.git", gitlabBabysit, "babysit: false\n"))
+		e, _, wishID, projectID := babysitWish(t, forge, babysitRepo(t, "https://gitlab.com/acme/shop.git", gitlabBabysit, "babysit: false\n"))
 		opener, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
 			WishId: wishID, ProjectId: projectID, Title: "Open the MR", Provider: planv1.Provider_PROVIDER_FAKE,
 			Prompt: "wait\ntool Bash glab mr create --fill\nresult " + url,
@@ -327,7 +327,7 @@ func TestBabysit(t *testing.T) {
 			t.Errorf("command %q", prompt)
 		}
 
-		plain, _, wish2, _ := babysitWish(t, forge, babysitRepo(t, "https://gitlab.com/acme/dolmen.git", "", ""))
+		plain, _, wish2, _ := babysitWish(t, forge, babysitRepo(t, "https://gitlab.com/acme/shop.git", "", ""))
 		_, err = plain.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
 			WishId: wish2, Title: "Babysit", Babysit: true,
 		}))

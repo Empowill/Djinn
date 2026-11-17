@@ -50,14 +50,14 @@ async function shown(page: Page, title: string) {
   await page.getByRole("tab", { name: /^Tasks/ }).click();
   // Part of T1, W1 is no loose task: it shows in T1's card, opened by itself while its part runs.
   await expect(page.locator(".tasks-moving .wish-task")).toHaveCount(0);
-  const card = page.locator(".azima-card").filter({ hasText: "Silae" });
+  const card = page.locator(".azima-card").filter({ hasText: "Payroll" });
   await expect(card.locator(".azima-heading")).toHaveAttribute(
     "aria-expanded",
     "true",
   );
   const part = card.locator(".wish-task");
   await expect(part).toHaveCount(1);
-  await expect(part).toContainText("Silae feasibility study");
+  await expect(part).toContainText("Payroll feasibility study");
   await expect(part).toContainText("Running");
 }
 
@@ -69,14 +69,14 @@ test("a worker spawned from the command line part of a new azima shows and count
   page.on("pageerror", (err) => errors.push(err.message));
   const suffix = randomUUID().slice(0, 8);
   const folder = fs.realpathSync(
-    fs.mkdtempSync(path.join(process.env.DJINN_E2E_HOME!, "dolmen-")),
+    fs.mkdtempSync(path.join(process.env.DJINN_E2E_HOME!, "shop-")),
   );
   git(folder, "init", "--quiet", "-b", "main");
-  fs.writeFileSync(path.join(folder, "README.md"), "A dolmen.\n");
+  fs.writeFileSync(path.join(folder, "README.md"), "A shop.\n");
   git(folder, "add", ".");
-  git(folder, "commit", "--quiet", "-m", "A dolmen");
+  git(folder, "commit", "--quiet", "-m", "A shop");
   const projectId = JSON.parse(
-    djinn("project", "add", folder, "--name", `dolmen-${suffix}`, "--json"),
+    djinn("project", "add", folder, "--name", `shop-${suffix}`, "--json"),
   ).project.id as string;
 
   // The window is open before the wish is made.
@@ -114,7 +114,7 @@ test("a worker spawned from the command line part of a new azima shows and count
         "--kind",
         "azima",
         "--title",
-        "Silae",
+        "Payroll",
         "--description",
         "Can the file be made without the salaries?",
         "--project-id",
@@ -124,7 +124,7 @@ test("a worker spawned from the command line part of a new azima shows and count
     ).task as Task;
     expect(t1.code).toBe("T1");
     expect(fs.existsSync(path.join(folder, "plan"))).toBe(false);
-    const card = page.locator(".azima-card").filter({ hasText: "Silae" });
+    const card = page.locator(".azima-card").filter({ hasText: "Payroll" });
     await expect(card).toBeVisible();
     await expect(card.locator(".azima-heading")).toHaveAttribute(
       "aria-expanded",
@@ -154,7 +154,7 @@ test("a worker spawned from the command line part of a new azima shows and count
         "spawn",
         wishId,
         "--title",
-        "Silae feasibility study",
+        "Payroll feasibility study",
         "--provider",
         "fake",
         "--prompt",
@@ -170,7 +170,7 @@ test("a worker spawned from the command line part of a new azima shows and count
     await expect(
       page
         .locator(".tasks-moving .wish-task")
-        .filter({ hasText: "Silae feasibility study" }),
+        .filter({ hasText: "Payroll feasibility study" }),
     ).toBeVisible();
 
     // Grouping W1 into T1 from the command line moves it out of loose tasks and opens T1's card without a reload.
@@ -178,14 +178,16 @@ test("a worker spawned from the command line part of a new azima shows and count
     await expect(
       page
         .locator(".tasks-moving .wish-task")
-        .filter({ hasText: "Silae feasibility study" }),
+        .filter({ hasText: "Payroll feasibility study" }),
     ).toHaveCount(0);
     await expect(card.locator(".azima-heading")).toHaveAttribute(
       "aria-expanded",
       "true",
     );
     await expect(
-      card.locator(".wish-task").filter({ hasText: "Silae feasibility study" }),
+      card
+        .locator(".wish-task")
+        .filter({ hasText: "Payroll feasibility study" }),
     ).toBeVisible();
 
     await expect

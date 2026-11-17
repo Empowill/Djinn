@@ -44,7 +44,7 @@ A task that needs a push done before it can start (ask a review bot to review th
 threads citing a pushed commit) is spawned only once that push is done: when the pull request's watcher reports the
 new head, not before. Spawned earlier, part of the azima whose push it waits for, it deadlocks: an open part holds the
 azima's push, so the push waits for the task, and the task waits for the push. Spawned after the push, it is part of
-that azima like any task. W359, part of T30 to have CodeRabbit review dolmen !2990 again after W356 merged into it
+that azima like any task. W359, part of T30 to have CodeRabbit review shop !90 again after W356 merged into it
 (fe7d0c65), was spawned before the push: it held that push for its 20 minutes of watching, then ended with nothing
 done (05/11/2026).
 

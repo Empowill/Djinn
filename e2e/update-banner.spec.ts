@@ -22,15 +22,15 @@ const build = (init: MessageInitShape<typeof BuildSchema>) =>
     ...init,
   });
 
-// The update as Djinn would send it: the running Djinn's branch built ahead, Clément's branch built behind it, and
-// Clément's build already installed at the path.
+// The update as Djinn would send it: the running Djinn's branch built ahead, Alice's branch built behind it, and
+// Alice's build already installed at the path.
 const side = build({
-  wishTitle: "Clément's branches",
-  branch: "feat/clement-port",
+  wishTitle: "Alice's branches",
+  branch: "feat/mac-port",
   sha: "e60f8fc000000000",
   tasks: ["W2"],
-  summaries: [{ code: "W2", title: "Port Clément's work" }],
-  changes: ["port: Clément's work"],
+  summaries: [{ code: "W2", title: "Port Alice's work" }],
+  changes: ["port: Alice's work"],
   changesCount: 1,
   lacks: ["ui: the tasks tab", "ui: the diff", "harness: azimas"],
   lacksCount: 3,
@@ -92,13 +92,13 @@ test("the update banner names each build, unfolds what it holds, and its × dism
   // The newer Djinn ready, then the running branch's build, then the other branch's folded.
   await expect(parts).toHaveCount(3);
   await expect(parts.nth(0).locator(".update-banner-text")).toHaveText(
-    "New Djinn ready: e60f8fc0 of feat/clement-port · Clément's branches — adds 1 task · older than the running Djinn on 3 commits",
+    "New Djinn ready: e60f8fc0 of feat/mac-port · Alice's branches — adds 1 task · older than the running Djinn on 3 commits",
   );
   await expect(parts.nth(1).locator(".update-banner-text")).toHaveText(
     "Build aaaa1111 of feat/wails-go · Run Djinn on itself — adds 1 task",
   );
   await expect(parts.nth(2).locator(".update-banner-text")).toHaveText(
-    "A build of another branch: feat/clement-port",
+    "A build of another branch: feat/mac-port",
   );
   // Each part holds one line.
   for (const i of [0, 1, 2]) {
@@ -142,7 +142,7 @@ test("the update banner names each build, unfolds what it holds, and its × dism
   await parts.nth(0).getByRole("button", { name: "Details" }).click();
   const body = parts.nth(0).locator(".update-banner-body");
   await expect(body.locator(".update-banner-tasks")).toHaveText(
-    "W2 Port Clément's work",
+    "W2 Port Alice's work",
   );
   await body.getByText("Older than the running Djinn on 3 commits").click();
   await expect(body.locator(".update-banner-lacks li")).toHaveText([
@@ -154,7 +154,7 @@ test("the update banner names each build, unfolds what it holds, and its × dism
   await parts.nth(2).getByRole("button", { name: "Details" }).click();
   const other = banner.locator(".update-banner-others .update-banner-part");
   await expect(other.locator(".update-banner-text")).toHaveText(
-    "Build e60f8fc0 of feat/clement-port · Clément's branches — adds 1 task · older than the running Djinn on 3 commits",
+    "Build e60f8fc0 of feat/mac-port · Alice's branches — adds 1 task · older than the running Djinn on 3 commits",
   );
   await expect(
     other.getByRole("button", { name: "Install and restart" }),

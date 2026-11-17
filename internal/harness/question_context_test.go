@@ -39,7 +39,7 @@ func claudeRefuses(t *testing.T, command string) bool {
 // 16/10 at 20:01, in English: a # comment above each command of its code block, as QuestionShape asks.
 const w80Context = "~~~\n # What W67 removes: breather.go, flags.go, .env, CI\ngit show 7b998f57f --stat\n" +
 	" # Envoy routing: the oauth2 token route goes to hydra-public, not to breather\n" +
-	"git show origin/ET-3510-old-role-types:envoy.yaml\n~~~\n\n" +
+	"git show origin/ABC-3510-old-role-types:config.yaml\n~~~\n\n" +
 	"**Why**: HYDRA_PUBLIC_URL only fed a breather proxy, dead since July 2025.\n\n" +
 	"- **Role of the variable** (verified): breather relayed /oauth2/token to Hydra and kept the answer 2 min in Redis.\n" +
 	"- **Why it is dead** (verified): Hydra 2.3 does it alone, and envoy sends /oauth2/token straight to hydra-public.\n" +
@@ -163,7 +163,7 @@ func TestQuestionContextFile(t *testing.T) {
 		}
 	})
 
-	// W18 and W19 of wish Will 20 oct: the investigators of Q06, on Antigravity, which cannot run read-only, ran on
+	// W18 and W19 of a wish on 20 oct: the investigators of Q06, on Antigravity, which cannot run read-only, ran on
 	// Claude with the prompt written for Antigravity, no folder to write in, and saw each revision refused (W5).
 	t.Run("claude after antigravity", func(t *testing.T) {
 		t.Parallel()

@@ -1,4 +1,4 @@
-// The window's charts (src/charts): the rules of Will's chart lint (dolmen dataviz-v2, L53, L59) as tests on the
+// The window's charts (src/charts): the rules of the chart lint (L53, L59) as tests on the
 // options the builders make, the theme read from the CSS tokens, and a real render by ECharts' SVG renderer.
 // Run with `go tool task test-ui`.
 import test from "node:test";

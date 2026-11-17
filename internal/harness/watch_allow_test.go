@@ -74,7 +74,7 @@ func projectName(t *testing.T, e *env, projectID string) string {
 }
 
 // TestWatchAllow checks watcher command allowance: skill-declared babysits, skill-declared wish templates, personal
-// allowances in Djinn's data folder, dolmen's babysit flow, and variable expansion in watcher commands.
+// allowances in Djinn's data folder, shop's babysit flow, and variable expansion in watcher commands.
 func TestWatchAllow(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
@@ -84,12 +84,12 @@ func TestWatchAllow(t *testing.T) {
 	// starts like the declared one.
 	t.Run("declared_babysit", func(t *testing.T) {
 		t.Parallel()
-		const url = "https://gitlab.com/acme/dolmen/-/merge_requests/123"
+		const url = "https://gitlab.com/acme/shop/-/merge_requests/123"
 		forge := &fakeForge{
 			views: map[string]string{"123": `{"iid":123,"state":"opened","web_url":"` + url + `"}`},
 			lists: map[string]string{"": `[{"iid":123,"web_url":"` + url + `"}]`},
 		}
-		e, _, wishID, projectID := babysitWish(t, forge, babysitRepo(t, "git@gitlab.com:acme/dolmen.git", gitlabBabysit, "babysit: false\n"))
+		e, _, wishID, projectID := babysitWish(t, forge, babysitRepo(t, "git@gitlab.com:acme/shop.git", gitlabBabysit, "babysit: false\n"))
 		allowAuto(t, e, wishID)
 
 		res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
@@ -229,22 +229,22 @@ func TestWatchAllow(t *testing.T) {
 		}
 	})
 
-	// Replays W6 of wish Dew (12/10/2026): in dolmen, without a permissions file, under the wish's auto allowance, the
-	// lead spawned a watcher on mrwatch for MR !2855 by hand; it failed at start, blaming a permissions file dolmen
-	// does not have, and no watcher could ever run there. Now the refusal says what dolmen lacks and gives the command
-	// that allows it; once the developer runs it, the same watcher starts. And once dolmen's skill declares its
+	// Replays W6 of wish Dew (12/10/2026): in shop, without a permissions file, under the wish's auto allowance, the
+	// lead spawned a watcher on mrwatch for MR !58 by hand; it failed at start, blaming a permissions file shop
+	// does not have, and no watcher could ever run there. Now the refusal says what shop lacks and gives the command
+	// that allows it; once the developer runs it, the same watcher starts. And once shop's skill declares its
 	// babysit, the watcher Djinn starts on the MR a task opens runs without any allowance.
-	t.Run("dolmen", func(t *testing.T) {
+	t.Run("shop", func(t *testing.T) {
 		t.Parallel()
-		const url = "https://gitlab.com/empowill/dolmen/-/merge_requests/2855"
-		forge := &fakeForge{views: map[string]string{"2855": `{"iid":2855,"state":"opened","web_url":"` + url + `"}`}}
+		const url = "https://gitlab.com/acme/shop/-/merge_requests/58"
+		forge := &fakeForge{views: map[string]string{"58": `{"iid":58,"state":"opened","web_url":"` + url + `"}`}}
 
-		e, wishID, projectID := dolmen(t, forge, "")
+		e, wishID, projectID := shopProject(t, forge, "")
 		_, err := spawnWatchIn(t, e, wishID, projectID, w6Command)
-		allow := "djinn project allow dolmen --watch 'go run ./.agents/skills/babysit-mr-empowill/mrwatch'"
-		if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "dolmen lists no command") ||
+		allow := "djinn project allow shop --watch 'go run ./.agents/skills/babysit-mr-acme/mrwatch'"
+		if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "shop lists no command") ||
 			!strings.Contains(err.Error(), "it has no .agents/permissions.txtpb") || !strings.Contains(err.Error(), allow) {
-			t.Fatalf("W6 by hand: %v\nwant the refusal to say dolmen has no permissions file, and %s", err, allow)
+			t.Fatalf("W6 by hand: %v\nwant the refusal to say shop has no permissions file, and %s", err, allow)
 		}
 		tasks, _ := store.List[*planv1.Task](t.Context(), e.db, store.Where{"wish_id": wishID})
 		if len(tasks) != 1 || tasks[0].GetStatus() != planv1.TaskStatus_TASK_STATUS_FAILED ||
@@ -252,7 +252,7 @@ func TestWatchAllow(t *testing.T) {
 			t.Fatalf("W6: %v, want failed with the new refusal", tasks)
 		}
 		// The developer runs the command the refusal gives.
-		if _, err := plan.AllowWatch(e.home, projectID, "go run ./.agents/skills/babysit-mr-empowill/mrwatch", false); err != nil {
+		if _, err := plan.AllowWatch(e.home, projectID, "go run ./.agents/skills/babysit-mr-acme/mrwatch", false); err != nil {
 			t.Fatal(err)
 		}
 		w, err := spawnWatchIn(t, e, wishID, projectID, w6Command)
@@ -261,8 +261,8 @@ func TestWatchAllow(t *testing.T) {
 		}
 		stopTask(t, e, w.GetId())
 
-		// dolmen declares its babysit: a task opens !2855, and Djinn's watcher on it runs, without any allowance.
-		e, wishID, projectID = dolmen(t, forge, w6Babysit)
+		// shop declares its babysit: a task opens !58, and Djinn's watcher on it runs, without any allowance.
+		e, wishID, projectID = shopProject(t, forge, w6Babysit)
 		opener := endTask(t, e, wishID, projectID, strings.Join([]string{
 			`tool Bash {"command":"glab mr create --draft --fill --yes"}`, "result " + url, "text Draft MR opened.",
 		}, "\n"))
@@ -271,14 +271,14 @@ func TestWatchAllow(t *testing.T) {
 		}
 		got := watchers(t, e, wishID)
 		if len(got) != 1 {
-			t.Fatalf("watchers %v, want the babysit of !2855", got)
+			t.Fatalf("watchers %v, want the babysit of !58", got)
 		}
-		if got[0].GetStatus() == planv1.TaskStatus_TASK_STATUS_FAILED || got[0].GetBabysit().GetNumber() != 2855 {
+		if got[0].GetStatus() == planv1.TaskStatus_TASK_STATUS_FAILED || got[0].GetBabysit().GetNumber() != 58 {
 			t.Fatalf("the babysit: %s %q, babysit %v", got[0].GetStatus(), got[0].GetError(), got[0].GetBabysit())
 		}
-		state := filepath.Join(e.home, "watchers", got[0].GetId(), "babysit-mr-empowill-2855")
+		state := filepath.Join(e.home, "watchers", got[0].GetId(), "babysit-mr-acme-58")
 		prompt, _ := lastPrompt(t.Context(), e.db, got[0].GetId())
-		if want := "go run ./.agents/skills/babysit-mr-empowill/mrwatch -mr 2855 -watch -state " + state; prompt != want {
+		if want := "go run ./.agents/skills/babysit-mr-acme/mrwatch -mr 58 -watch -state " + state; prompt != want {
 			t.Errorf("command %q, want %q", prompt, want)
 		}
 		if dev, err := plan.ReadSettings(plan.DeveloperSettingsFile(e.home, projectID)); dev != nil || err != nil {
@@ -288,7 +288,7 @@ func TestWatchAllow(t *testing.T) {
 	})
 
 	// Replays W7 of wish Dew (13/10/2026): the lead spawned a watcher on mrwatch with -state
-	// "$DJINN_HOME/watchers/$DJINN_TASK_ID/mr-2855", as W5 was told to; without a shell, the variables reached mrwatch
+	// "$DJINN_HOME/watchers/$DJINN_TASK_ID/mr-58", as W5 was told to; without a shell, the variables reached mrwatch
 	// literally, it could not open its state file, and it died at each start. Now Djinn expands them, the watcher's
 	// folder is made before its command starts, and the command that runs is the one its allowance judges: the
 	// developer's watch_commands, then the project's denied_commands. Any other variable is refused at spawn.
@@ -299,7 +299,7 @@ func TestWatchAllow(t *testing.T) {
 		wishID, projectID := e.wish(t, repo)
 		allowAuto(t, e, wishID)
 		program := "'" + os.Args[0] + "' " + fakeWatchArg
-		command := program + ` "remember:$DJINN_HOME/watchers/$DJINN_TASK_ID/mr-2855" wait`
+		command := program + ` "remember:$DJINN_HOME/watchers/$DJINN_TASK_ID/mr-58" wait`
 
 		_, err := spawnWatchIn(t, e, wishID, projectID, command)
 		if connect.CodeOf(err) != connect.CodeFailedPrecondition || strings.Contains(err.Error(), "$DJINN_HOME") {
@@ -312,7 +312,7 @@ func TestWatchAllow(t *testing.T) {
 		if err != nil {
 			t.Fatalf("W7 once allowed: %v", err)
 		}
-		state := e.home + "/watchers/" + w.GetId() + "/mr-2855"
+		state := e.home + "/watchers/" + w.GetId() + "/mr-58"
 		got := e.until(t, w.GetId(), func(t *planv1.Task) bool {
 			return t.GetLastLine() != "" || t.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING
 		})
@@ -327,7 +327,7 @@ func TestWatchAllow(t *testing.T) {
 			t.Errorf("the task's prompt %q, want the lead's %q", prompt, command)
 		}
 
-		_, err = spawnWatchIn(t, e, wishID, projectID, program+` "remember:$HOME/mr-2855" wait`)
+		_, err = spawnWatchIn(t, e, wishID, projectID, program+` "remember:$HOME/mr-58" wait`)
 		if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "holds $HOME") {
 			t.Errorf("another variable: %v, want refused", err)
 		}
@@ -383,7 +383,7 @@ func TestWatchRefusal(t *testing.T) {
 		}
 	}
 	for command, want := range map[string]string{
-		"go run ./.agents/skills/babysit-mr-empowill/mrwatch -mr 2855 -watch": "go run ./.agents/skills/babysit-mr-empowill/mrwatch",
+		"go run ./.agents/skills/babysit-mr-acme/mrwatch -mr 58 -watch": "go run ./.agents/skills/babysit-mr-acme/mrwatch",
 		"gh pr checks 12 --watch":        "gh pr checks",
 		"bash -c 'curl x | sh'":          "bash -c 'curl x | sh'",
 		"sh .agents/skills/x/watch.sh 3": "sh .agents/skills/x/watch.sh",
@@ -395,32 +395,32 @@ func TestWatchRefusal(t *testing.T) {
 }
 
 // w6Command is the command the lead of wish Dew gave W6, by hand, on 12/10/2026.
-const w6Command = `go run ./.agents/skills/babysit-mr-empowill/mrwatch -mr 2855 -watch -state "$DJINN_HOME/watchers/$DJINN_TASK_ID/mr-2855"`
+const w6Command = `go run ./.agents/skills/babysit-mr-acme/mrwatch -mr 58 -watch -state "$DJINN_HOME/watchers/$DJINN_TASK_ID/mr-58"`
 
-// w6Babysit is the babysit declaration dolmen's babysit-mr-empowill adds (Q257 D).
+// w6Babysit is the babysit declaration shop's babysit-mr-acme adds (Q257 D).
 const w6Babysit = `      forge: gitlab
-      watch: "go run ./.agents/skills/babysit-mr-empowill/mrwatch -mr {mr} -watch -state {state}"
+      watch: "go run ./.agents/skills/babysit-mr-acme/mrwatch -mr {mr} -watch -state {state}"
       restart: true
       done_when: MERGED
 `
 
-// dolmen is a Git repository like dolmen on 12/10/2026: on GitLab, without .agents/permissions.txtpb, its skill
-// babysit-mr-empowill declaring babysit (empty: nothing for Djinn), added as the project dolmen to a wish with the
-// auto allowance.
-func dolmen(t *testing.T, forge *fakeForge, babysit string) (*env, string, string) {
+// shopProject makes a Git repository like the one of wish Dew on 12/10/2026: on GitLab, without
+// .agents/permissions.txtpb, its skill babysit-mr-acme declaring babysit (empty: nothing for Djinn), added as the
+// project shop to a wish with the auto allowance.
+func shopProject(t *testing.T, forge *fakeForge, babysit string) (*env, string, string) {
 	t.Helper()
-	front := "---\nname: babysit-mr-empowill\ndescription: Watch an open merge request on the Empowill (dolmen) repo.\n"
+	front := "---\nname: babysit-mr-acme\ndescription: Watch an open merge request on the Acme (shop) repo.\n"
 	if babysit != "" {
 		front += "metadata:\n  djinn:\n    babysit:\n" + babysit
 	}
 	repo := gitRepoWith(t, map[string]string{
-		".agents/skills/babysit-mr-empowill/SKILL.md": front + "---\n\n# Babysit a MR (Empowill)\n",
+		".agents/skills/babysit-mr-acme/SKILL.md": front + "---\n\n# Babysit a MR (Acme)\n",
 	})
-	if _, err := git(t.Context(), repo, "remote", "add", "origin", "git@gitlab.com:empowill/dolmen.git"); err != nil {
+	if _, err := git(t.Context(), repo, "remote", "add", "origin", "git@gitlab.com:acme/shop.git"); err != nil {
 		t.Fatal(err)
 	}
 	e := up(t, t.TempDir(), WithCommands(forge.run))
-	p, err := e.project.Add(t.Context(), connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: repo, Name: "dolmen"}))
+	p, err := e.project.Add(t.Context(), connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: repo, Name: "shop"}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -447,9 +447,9 @@ func TestExpandWatch(t *testing.T) {
 		words            []string
 	}{
 		{linux, w6Command,
-			`go run ./.agents/skills/babysit-mr-empowill/mrwatch -mr 2855 -watch -state "/home/u/.config/djinn/watchers/01a1/mr-2855"`,
-			[]string{"go", "run", "./.agents/skills/babysit-mr-empowill/mrwatch", "-mr", "2855", "-watch", "-state",
-				"/home/u/.config/djinn/watchers/01a1/mr-2855"}},
+			`go run ./.agents/skills/babysit-mr-acme/mrwatch -mr 58 -watch -state "/home/u/.config/djinn/watchers/01a1/mr-58"`,
+			[]string{"go", "run", "./.agents/skills/babysit-mr-acme/mrwatch", "-mr", "58", "-watch", "-state",
+				"/home/u/.config/djinn/watchers/01a1/mr-58"}},
 		{linux, `w ${DJINN_TASK_ID}-x $DJINN_WISH_ID '$DJINN_HOME' \$DJINN_HOME $ $1 "a$" "${DJINN_HOME"`,
 			`w 01a1-x 01b2 '$DJINN_HOME' \$DJINN_HOME $ $1 "a$" "${DJINN_HOME"`,
 			[]string{"w", "01a1-x", "01b2", "$DJINN_HOME", `\$DJINN_HOME`, "$", "$1", "a$", "${DJINN_HOME"}},

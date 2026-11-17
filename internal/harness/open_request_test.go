@@ -14,7 +14,7 @@ import (
 	"github.com/empowill/djinn/internal/testx"
 )
 
-const mrURL = "https://gitlab.com/acme/dolmen/-/merge_requests/41"
+const mrURL = "https://gitlab.com/acme/shop/-/merge_requests/41"
 
 // proposedMR replays wish Dew (13/10/2026) up to its question: a wish of a GitLab project pushes per azima, its azima
 // T1's part is committed and its branch pushed; the draft Djinn opens at the push fails (Q375), and Djinn asks to open
@@ -40,7 +40,7 @@ func proposedMR(t *testing.T, forge *fakeForge, settings string) (*integration, 
 			"generated: \"gen/**\"\ngenerate: \"gen\"\ntest: \"test\"\n"+settings)
 	}
 	in.setAzimaStrategy(t)
-	bare := filepath.Join(t.TempDir(), "gitlab.com", "acme", "dolmen.git")
+	bare := filepath.Join(t.TempDir(), "gitlab.com", "acme", "shop.git")
 	in.git(t, in.repo, "init", "--quiet", "--bare", bare)
 	in.git(t, in.repo, "remote", "add", "origin", bare)
 	in.git(t, in.repo, "push", "--quiet", "origin", in.branch)
@@ -144,10 +144,10 @@ func TestOpenRequest(t *testing.T) {
 		digestKeeps(t, q, did)
 
 		forge.mu.Lock()
-		forge.lists = map[string]string{branch: `[{"iid":12,"web_url":"https://gitlab.com/acme/dolmen/-/merge_requests/12"}]`}
+		forge.lists = map[string]string{branch: `[{"iid":12,"web_url":"https://gitlab.com/acme/shop/-/merge_requests/12"}]`}
 		forge.mu.Unlock()
 		did = in.answer(t, q, planv1.Choice_CHOICE_A)
-		if want := "MR !12 is open already: https://gitlab.com/acme/dolmen/-/merge_requests/12"; did != want {
+		if want := "MR !12 is open already: https://gitlab.com/acme/shop/-/merge_requests/12"; did != want {
 			t.Errorf("what Djinn did: %q, want %q", did, want)
 		}
 		if got := creates(forge); len(got) != 1 {
@@ -155,7 +155,7 @@ func TestOpenRequest(t *testing.T) {
 		}
 	})
 
-	// dolmen holds open-mr-acme, its house rules for a merge request (title, template, ticket link). A yes spawns a
+	// shop holds open-mr-acme, its house rules for a merge request (title, template, ticket link). A yes spawns a
 	// worker in the wish that opens it with that skill, from the azima's branch, pushing nothing; Djinn runs no glab
 	// mr create of its own.
 	t.Run("spawns worker with project skill", func(t *testing.T) {
@@ -212,9 +212,9 @@ func TestOpenSkill(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
 	for names, want := range map[string]string{
-		"babysit-mr-empowill,open-mr-empowill,review-mr-empowill": "open-mr-empowill",
-		"create-pull-request":                 "create-pull-request",
-		"babysit-pr,review-mr,open-dashboard": "",
+		"babysit-mr-acme,open-mr-acme,review-mr-acme": "open-mr-acme",
+		"create-pull-request":                         "create-pull-request",
+		"babysit-pr,review-mr,open-dashboard":         "",
 	} {
 		t.Run(names, func(t *testing.T) {
 			t.Parallel()

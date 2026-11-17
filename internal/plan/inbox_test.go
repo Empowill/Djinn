@@ -255,18 +255,18 @@ func TestKeepSourceRun(t *testing.T) {
 }
 
 // TestUnreadableSkill: a skill whose metadata breaks the YAML is no source of the inbox: the project's notices say
-// Djinn cannot read it, and why. One whose other key breaks it, as dolmen's argument-hint lines do, is an
+// Djinn cannot read it, and why. One whose other key breaks it, as shop's argument-hint lines do, is an
 // information only. Plugged in before it broke, it stays listed with why, to be unplugged.
 func TestUnreadableSkill(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
 	c := serve(t)
-	dolmen := &planv1.Project{Id: store.NewID(), Name: "dolmen", Directory: t.TempDir()}
-	agentSkill(t, dolmen.GetDirectory(), "notion-ticket", "argument-hint: [bug|improvement] [description]\n")
-	agentSkill(t, dolmen.GetDirectory(), "broken-meta", "metadata:\n  djinn: [\n")
-	agentSkill(t, dolmen.GetDirectory(), "bad-djinn", "metadata:\n  djinn: [wish]\n")
-	agentSkill(t, dolmen.GetDirectory(), "mentions", "metadata:\n  djinn:\n    source:\n      watch: mentions --new\n")
-	c.put(t, dolmen)
+	shop := &planv1.Project{Id: store.NewID(), Name: "shop", Directory: t.TempDir()}
+	agentSkill(t, shop.GetDirectory(), "file-ticket", "argument-hint: [bug|improvement] [description]\n")
+	agentSkill(t, shop.GetDirectory(), "broken-meta", "metadata:\n  djinn: [\n")
+	agentSkill(t, shop.GetDirectory(), "bad-djinn", "metadata:\n  djinn: [wish]\n")
+	agentSkill(t, shop.GetDirectory(), "mentions", "metadata:\n  djinn:\n    source:\n      watch: mentions --new\n")
+	c.put(t, shop)
 	listed := func() []string {
 		t.Helper()
 		res, err := c.inbox.Sources(ctx, connect.NewRequest(&planv1.InboxServiceSourcesRequest{}))
@@ -279,11 +279,11 @@ func TestUnreadableSkill(t *testing.T) {
 		}
 		return got
 	}
-	if got, want := listed(), []string{"dolmen/mentions false|"}; !slices.Equal(got, want) {
+	if got, want := listed(), []string{"shop/mentions false|"}; !slices.Equal(got, want) {
 		t.Errorf("listed %q, want %q", got, want)
 	}
 
-	show, err := c.projects.Show(ctx, connect.NewRequest(&planv1.ProjectServiceShowRequest{Project: "dolmen"}))
+	show, err := c.projects.Show(ctx, connect.NewRequest(&planv1.ProjectServiceShowRequest{Project: "shop"}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -303,7 +303,7 @@ func TestUnreadableSkill(t *testing.T) {
 		!strings.HasPrefix(unreadable[1], "broken-meta: SKILL.md: its front matter is not YAML: yaml: line ") {
 		t.Errorf("unreadable skills = %q", unreadable)
 	}
-	if !slices.Equal(warned, []string{"notion-ticket: SKILL.md: not YAML at line 4 (argument-hint: [bug|improvement] " +
+	if !slices.Equal(warned, []string{"file-ticket: SKILL.md: not YAML at line 4 (argument-hint: [bug|improvement] " +
 		"[description]): Djinn reads metadata apart; quoting the value fixes it"}) {
 		t.Errorf("skills read apart = %q", warned)
 	}
@@ -312,15 +312,15 @@ func TestUnreadableSkill(t *testing.T) {
 	if _, err := c.inbox.Plug(ctx, connect.NewRequest(&planv1.InboxServicePlugRequest{Source: "mentions"})); err != nil {
 		t.Fatal(err)
 	}
-	agentSkill(t, dolmen.GetDirectory(), "mentions", "metadata:\n  djinn:\n    source:\n      watch: [x\n")
+	agentSkill(t, shop.GetDirectory(), "mentions", "metadata:\n  djinn:\n    source:\n      watch: [x\n")
 	if got := listed(); len(got) != 1 ||
-		!strings.HasPrefix(got[0], "dolmen/mentions true|SKILL.md: its front matter is not YAML") {
+		!strings.HasPrefix(got[0], "shop/mentions true|SKILL.md: its front matter is not YAML") {
 		t.Errorf("listed %q", got)
 	}
-	if srcs, err := Sources(ctx, c.store, "", []*planv1.Project{dolmen}); err != nil || len(srcs) != 0 {
+	if srcs, err := Sources(ctx, c.store, "", []*planv1.Project{shop}); err != nil || len(srcs) != 0 {
 		t.Errorf("running %v, %v; want none", srcs, err)
 	}
-	unplug := &planv1.InboxServiceUnplugRequest{Source: "dolmen/mentions"}
+	unplug := &planv1.InboxServiceUnplugRequest{Source: "shop/mentions"}
 	if _, err := c.inbox.Unplug(ctx, connect.NewRequest(unplug)); err != nil {
 		t.Fatal(err)
 	}

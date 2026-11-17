@@ -7,7 +7,7 @@ type: feedback
 Claude Code refuses a Bash call where a quoted argument holds a line starting with `#`, indented or not, whatever
 Djinn allows: in don't-ask mode it reads "Permission to use Bash has been denied", like a missing rule. The shape of a
 question puts a `# …` comment above each command ([[readable-questions]]), so an inline `--context '…'` or
-`--context "…"` with a code block is refused. On 20/10/2026, in wish Will, the lead and the investigators W18 and W19
+`--context "…"` with a code block is refused. On 20/10/2026, in a wish, the lead and the investigators W18 and W19
 saw the revision of Q06 refused, three times each; the lead's transcripts count 26 such calls, 26 refused. The same
 revision through `--context-file` passed at once. Checked on 20/10/2026 with Claude Code 2.1.304 (W5): a line that
 starts with `#` is refused, a `#` after a command on its line passes, `--context-file` passes.

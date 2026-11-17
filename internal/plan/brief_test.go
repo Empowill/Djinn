@@ -127,6 +127,9 @@ func TestBrief(t *testing.T) {
 		"`djinn task update <task>`",
 		"`djinn wish route \"<request>\" --wish-id <wish> --ask`", "`--provider watch --prompt \"<command>\"`",
 		"`--restart` starts again", "`metadata.djinn.wish`", "`djinn skill list`",
+		// T80: a watcher set right the first time: who allows its command, its tool, its state, the note to read.
+		"`djinn project allow <project> --watch`); a wish's allowance adds none", "never a script copied into a local folder",
+		"`djinn lead notes watchers`", "refused when no skill declares it: propose a task that declares it",
 		// The decisions say who took them, and what they led to.
 		"- 💬 **Q01** Which store? → A: SQLite", ", by the developer; led to W2\n", "- 📌 **No CGO** (block ", "), by the lead\n",
 		"`--decision Q03`", "--icon 🔐",
@@ -531,17 +534,17 @@ func TestBuildBrief(t *testing.T) {
 		tasks: func(wishID string) []*planv1.Task {
 			start := timestamppb.New(time.Date(2026, 10, 16, 15, 0, 0, 0, time.UTC))
 			return []*planv1.Task{
-				{Id: store.NewID(), WishId: wishID, Code: "W12", Title: "Front of dolmen", Status: planv1.TaskStatus_TASK_STATUS_RUNNING,
+				{Id: store.NewID(), WishId: wishID, Code: "W12", Title: "Front of shop", Status: planv1.TaskStatus_TASK_STATUS_RUNNING,
 					Kind: planv1.TaskKind_TASK_KIND_IFRIT, Ifrit: &planv1.TaskIfrit{State: planv1.IfritState_IFRIT_STATE_WORKING}, StartTime: start},
-				{Id: store.NewID(), WishId: wishID, Code: "W13", Title: "Stack of dolmen", Status: planv1.TaskStatus_TASK_STATUS_STOPPED,
+				{Id: store.NewID(), WishId: wishID, Code: "W13", Title: "Stack of shop", Status: planv1.TaskStatus_TASK_STATUS_STOPPED,
 					Kind: planv1.TaskKind_TASK_KIND_IFRIT, Ifrit: &planv1.TaskIfrit{State: planv1.IfritState_IFRIT_STATE_OUT},
 					Error: "out: you left Djinn alone at 15:12", StartTime: start, EndTime: timestamppb.New(start.AsTime().Add(time.Hour))},
 				{Id: store.NewID(), WishId: wishID, Code: "W14", Title: "Cards", Status: planv1.TaskStatus_TASK_STATUS_RUNNING, StartTime: start},
 			}
 		},
 		want: []string{
-			"Front of dolmen (claude, ifrit, working, since",
-			"**W13** Stack of dolmen: an ifrit out: you left Djinn alone at 15:12, lit again by a message only at the developer's word",
+			"Front of shop (claude, ifrit, working, since",
+			"**W13** Stack of shop: an ifrit out: you left Djinn alone at 15:12, lit again by a message only at the developer's word",
 			"**W14** Cards (claude, since",
 		},
 	}} {
@@ -1274,9 +1277,9 @@ func TestBriefSaysWhoWaitsForTheIfrit(t *testing.T) {
 	}
 	wishID := made.Msg.GetWish().GetId()
 	start := timestamppb.New(time.Date(2026, 10, 16, 15, 0, 0, 0, time.UTC))
-	ifrit := &planv1.Task{Id: store.NewID(), WishId: wishID, Code: "W12", Title: "Front of dolmen", Status: planv1.TaskStatus_TASK_STATUS_RUNNING,
+	ifrit := &planv1.Task{Id: store.NewID(), WishId: wishID, Code: "W12", Title: "Front of shop", Status: planv1.TaskStatus_TASK_STATUS_RUNNING,
 		Kind: planv1.TaskKind_TASK_KIND_IFRIT, Ifrit: &planv1.TaskIfrit{State: planv1.IfritState_IFRIT_STATE_LISTENING}, StartTime: start}
-	other := &planv1.Task{Id: store.NewID(), WishId: wishID, Code: "W13", Title: "Back of dolmen", Status: planv1.TaskStatus_TASK_STATUS_RUNNING,
+	other := &planv1.Task{Id: store.NewID(), WishId: wishID, Code: "W13", Title: "Back of shop", Status: planv1.TaskStatus_TASK_STATUS_RUNNING,
 		Kind: planv1.TaskKind_TASK_KIND_IFRIT, Ifrit: &planv1.TaskIfrit{State: planv1.IfritState_IFRIT_STATE_LISTENING}, StartTime: start}
 	if err := c.store.Tx(ctx, func(tx *store.Tx) error {
 		for _, task := range []*planv1.Task{ifrit, other} {
@@ -1301,7 +1304,7 @@ func TestBriefSaysWhoWaitsForTheIfrit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(brief.Moving, "Front of dolmen (claude, ifrit, listening, since 2026-10-16 15:00 UTC)\n"+want) {
+	if !strings.Contains(brief.Moving, "Front of shop (claude, ifrit, listening, since 2026-10-16 15:00 UTC)\n"+want) {
 		t.Errorf("the wish's brief does not say who waits for W12:\n%s", brief.Moving)
 	}
 	if strings.Count(brief.Moving, "Waiting for the gates this ifrit holds") != 1 {
@@ -1311,7 +1314,7 @@ func TestBriefSaysWhoWaitsForTheIfrit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(global, "Front of dolmen (claude, ifrit, listening, since 2026-10-16 15:00 UTC)\n"+want) {
+	if !strings.Contains(global, "Front of shop (claude, ifrit, listening, since 2026-10-16 15:00 UTC)\n"+want) {
 		t.Errorf("the brief of the wishes does not say who waits for W12:\n%s", global)
 	}
 	if plain, err := BuildBrief(ctx, c.store, home, wishID); err != nil || strings.Contains(plain.Moving, "Waiting for the gates") {

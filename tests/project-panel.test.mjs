@@ -325,14 +325,14 @@ test("a project's reference branch is chosen from the remote's branches, and you
 test("a project's panel lists the watcher commands you allow", () => {
   const html = s.renderToStaticMarkup(
     h(s.WatchCommands, {
-      commands: ["go run ./.agents/skills/babysit-mr-empowill/mrwatch"],
+      commands: ["go run ./.agents/skills/babysit-mr-acme/mrwatch"],
       onAllow: async () => true,
       onRevoke() {},
     }),
   );
   assert.match(
     html,
-    /<div class="setting-row"><div><code>go run \.\/\.agents\/skills\/babysit-mr-empowill\/mrwatch<\/code><\/div><button type="button" class="button secondary">Take back<\/button><\/div>/,
+    /<div class="setting-row"><div><code>go run \.\/\.agents\/skills\/babysit-mr-acme\/mrwatch<\/code><\/div><button type="button" class="button secondary">Take back<\/button><\/div>/,
   );
   assert.match(html, /never in the repository/);
   assert.match(
@@ -359,11 +359,11 @@ test("a project's configuration says what to fix, its reference branch, each ski
       notice: {
         kind: s.ProjectNoticeKind.TO_FIX,
         topic: s.ProjectNoticeTopic.SKILL,
-        subject: "notion-ticket",
-        text: "Djinn cannot read the skill notion-ticket.",
+        subject: "file-ticket",
+        text: "Djinn cannot read the skill file-ticket.",
         detail: "yaml: line 3: did not find expected key",
         action: s.ProjectNoticeAction.FIX_FILE,
-        file: "/tmp/dolmen/.agents/skills/notion-ticket/SKILL.md",
+        file: "/tmp/shop/.agents/skills/file-ticket/SKILL.md",
         command: "",
       },
       busy: false,
@@ -373,11 +373,11 @@ test("a project's configuration says what to fix, its reference branch, each ski
   assert.match(unreadable, /^<div class="notice to-fix">/);
   assert.match(
     unreadable,
-    /<span>Djinn cannot read the skill notion-ticket\.<\/span><\/p><pre class="notice-detail">yaml: line 3: did not find expected key<\/pre>/,
+    /<span>Djinn cannot read the skill file-ticket\.<\/span><\/p><pre class="notice-detail">yaml: line 3: did not find expected key<\/pre>/,
   );
   assert.match(
     unreadable,
-    /To fix in <span class="command"><code>\/tmp\/dolmen\/\.agents\/skills\/notion-ticket\/SKILL\.md<\/code>/,
+    /To fix in <span class="command"><code>\/tmp\/shop\/\.agents\/skills\/file-ticket\/SKILL\.md<\/code>/,
   );
   assert.doesNotMatch(unreadable, /From a terminal/);
 
@@ -391,7 +391,7 @@ test("a project's configuration says what to fix, its reference branch, each ski
         text: "Djinn ignores a field of the project's djinn.yaml it does not know: the rest of the file applies.",
         detail: "unknown field containers.memroy_mib",
         action: s.ProjectNoticeAction.FIX_FILE,
-        file: "/tmp/dolmen/djinn.yaml",
+        file: "/tmp/shop/djinn.yaml",
         command: "",
       },
       busy: false,
@@ -404,7 +404,7 @@ test("a project's configuration says what to fix, its reference branch, each ski
   );
   assert.match(
     ignored,
-    /<pre class="notice-detail">unknown field containers\.memroy_mib<\/pre><p class="notice-where">To fix in <span class="command"><code>\/tmp\/dolmen\/djinn\.yaml<\/code>/,
+    /<pre class="notice-detail">unknown field containers\.memroy_mib<\/pre><p class="notice-where">To fix in <span class="command"><code>\/tmp\/shop\/djinn\.yaml<\/code>/,
   );
 
   // To fix counts what the gear and the inbox line count (Project.to_fix, Q21 B): the things to fix, never a warning,
@@ -416,7 +416,7 @@ test("a project's configuration says what to fix, its reference branch, each ski
     text: "Djinn ignores a field of the project's djinn.yaml it does not know: the rest of the file applies.",
     detail: "",
     action: s.ProjectNoticeAction.FIX_FILE,
-    file: "/tmp/dolmen/djinn.yaml",
+    file: "/tmp/shop/djinn.yaml",
     command: "",
   };
   const error = {
@@ -424,7 +424,7 @@ test("a project's configuration says what to fix, its reference branch, each ski
     kind: s.ProjectNoticeKind.TO_FIX,
     subject: "settings.txtpb",
     text: "Djinn cannot read the project's settings.",
-    file: "/tmp/dolmen/.agents/settings.txtpb",
+    file: "/tmp/shop/.agents/settings.txtpb",
   };
   const box = (notices) => {
     const toFix = notices.filter((n) => n.kind === s.ProjectNoticeKind.TO_FIX);
@@ -435,7 +435,7 @@ test("a project's configuration says what to fix, its reference branch, each ski
       html: render(h(s.ToFixBox, { toFix, warnings, busy: "", onAct() {} })),
       gear: render(
         h(s.ProjectGear, {
-          project: { id: "p2", name: "dolmen", toFix: toFix.length },
+          project: { id: "p2", name: "shop", toFix: toFix.length },
           onOpen() {},
         }),
       ),
@@ -598,9 +598,9 @@ test("a project's configuration says what to fix, its reference branch, each ski
         project,
         toFix: true,
         skill: {
-          name: "notion-ticket",
+          name: "file-ticket",
           source: "",
-          directory: "/tmp/djinn/.claude/skills/notion-ticket",
+          directory: "/tmp/djinn/.claude/skills/file-ticket",
           description: "",
           missing: "",
         },
@@ -609,13 +609,13 @@ test("a project's configuration says what to fix, its reference branch, each ski
     /<span class="config-from">\.claude\/skills<\/span>.*<p class="skill-role to-fix">Djinn cannot use all of it: see “To fix”\.<\/p>/,
   );
   const summoned = skill({
-    source: "dolmen/recette",
-    name: "recette",
-    directory: "/tmp/dolmen/.agents/skills/recette",
+    source: "shop/acceptance",
+    name: "acceptance",
+    directory: "/tmp/shop/.agents/skills/acceptance",
   });
   assert.match(
     summoned,
-    /<span class="badge muted">from dolmen\/recette<\/span>/,
+    /<span class="badge muted">from shop\/acceptance<\/span>/,
   );
   assert.doesNotMatch(summoned, /config-from/);
 
@@ -678,9 +678,9 @@ test("the journal of configuration changes says each change, and marks seen thos
     ...waiting,
     id: "c2",
     commit: "bf53c16bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-    title: "Change recette",
+    title: "Change acceptance",
     lines: [
-      { text: "The skill recette changes its instructions.", asks: false },
+      { text: "The skill acceptance changes its instructions.", asks: false },
     ],
   };
   const history = { ...applied, id: "c3", firstLook: true, commits: 3 };

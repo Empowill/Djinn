@@ -110,24 +110,24 @@ func TestChangeIntegrationBranch(t *testing.T) {
 	}
 	// A name the remote holds, an open merge request's branch: made from the remote's, its own commits kept, no
 	// upstream set (wish Dew, 13/10/2026: made from the integration branch, it lacked them, and nothing could be pushed).
-	git("switch", "-q", "-c", "ET-1-mr", "main")
+	git("switch", "-q", "-c", "ABC-1-mr", "main")
 	if err := os.WriteFile(filepath.Join(repo, "MR.md"), []byte("mr\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	git("add", ".")
 	git("commit", "-q", "-m", "On the merge request")
-	git("push", "-q", "origin", "ET-1-mr")
+	git("push", "-q", "origin", "ABC-1-mr")
 	mr := git("rev-parse", "HEAD")
 	git("switch", "-q", "main")
-	git("branch", "-D", "ET-1-mr")
-	if _, err := set("ET-1-mr", true); err != nil {
+	git("branch", "-D", "ABC-1-mr")
+	if _, err := set("ABC-1-mr", true); err != nil {
 		t.Fatal(err)
 	}
-	if got := git("rev-parse", "refs/heads/ET-1-mr"); got != mr {
-		t.Errorf("ET-1-mr made at %s, want the remote's %s", got, mr)
+	if got := git("rev-parse", "refs/heads/ABC-1-mr"); got != mr {
+		t.Errorf("ABC-1-mr made at %s, want the remote's %s", got, mr)
 	}
-	if out, err := exec.Command("git", "-C", repo, "config", "branch.ET-1-mr.merge").CombinedOutput(); err == nil {
-		t.Errorf("ET-1-mr tracks %s, want no upstream", out)
+	if out, err := exec.Command("git", "-C", repo, "config", "branch.ABC-1-mr.merge").CombinedOutput(); err == nil {
+		t.Errorf("ABC-1-mr tracks %s, want no upstream", out)
 	}
 	if _, err = set("feat/landing", false); err != nil {
 		t.Fatal(err)
@@ -232,17 +232,17 @@ func TestBriefSaysWhereWorkLands(t *testing.T) {
 			"work spawned with no azima gets an azima of its own, never `feat/rest`, which Djinn does not push per azima.\n",
 	}
 	// Per azima, each azima says its own branch and where its pull or merge request stands, as its card does.
-	const mr = "https://gitlab.example.com/dolmen/-/merge_requests/12"
+	const mr = "https://gitlab.example.com/shop/-/merge_requests/12"
 	c.put(t, &planv1.Task{
-		Id: store.NewID(), WishId: azimas.GetId(), ProjectId: ids[0], Code: "T1", Title: "Silae", Kind: planv1.TaskKind_TASK_KIND_AZIMA,
+		Id: store.NewID(), WishId: azimas.GetId(), ProjectId: ids[0], Code: "T1", Title: "Payroll", Kind: planv1.TaskKind_TASK_KIND_AZIMA,
 		Azima: &planv1.Azima{
-			Branch: "ET-4368-silae", BaseBranch: "main", CutFrom: strings.Repeat("a", 40), Named: true,
+			Branch: "ABC-4368-payroll", BaseBranch: "main", CutFrom: strings.Repeat("a", 40), Named: true,
 			Pr: &planv1.AzimaPr{Url: mr, State: planv1.AzimaPrState_AZIMA_PR_STATE_OPEN},
 		},
 	}, &planv1.Task{
 		Id: store.NewID(), WishId: azimas.GetId(), ProjectId: ids[0], Code: "T2", Title: "Other subject", Kind: planv1.TaskKind_TASK_KIND_AZIMA,
 	})
-	lines[azimas.GetId()+" T1"] = "- **T1** Silae: ready, open; branch `ET-4368-silae` (named), pull request open: " + mr + "\n"
+	lines[azimas.GetId()+" T1"] = "- **T1** Payroll: ready, open; branch `ABC-4368-payroll` (named), pull request open: " + mr + "\n"
 	lines[azimas.GetId()+" T2"] = "- **T2** Other subject: ready, open; branch `djinn/T2-other-subject`\n"
 	global, err := BuildGlobalBrief(ctx, c.store, home)
 	if err != nil {
