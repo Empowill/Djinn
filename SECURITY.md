@@ -41,3 +41,5 @@ In scope: the `djinn` binary and its window, its local server and command line, 
 Out of scope, to report to their own projects: the agents Djinn starts (Claude Code, Codex, Antigravity) and their
 models, Git and your forge (GitHub, GitLab), and the third-party libraries listed in
 [`docs/THIRD_PARTY_NOTICES.md`](docs/THIRD_PARTY_NOTICES.md), unless Djinn uses them unsafely.
+
+What Djinn sends outside your machine on its own is listed in the [user guide](docs/user-guide.md#what-leaves-your-machine).

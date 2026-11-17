@@ -892,6 +892,20 @@ over it: Djinn merges main into the wishes' branches instead, and proposes their
 
 `djinn backup` copies the data folder, even while Djinn runs: [backups](backup.md).
 
+## What leaves your machine
+
+Djinn has no telemetry and sends no crash report. On its own, it reaches the network for three things only:
+
+| What | Where | When | Turn it off |
+| ---- | ----- | ---- | ----------- |
+| A newer release | `api.github.com` (the releases of Empowill/Djinn) for a release binary or a build from a checkout; the first proxy of `go env GOPROXY` for one installed with `go install` | At start, then every 6 hours; it reads a version, and downloads only when you click **Update** or run `djinn update` | `djinn up --update-check=false`, or `DJINN_UPDATE_CHECK=off` in its environment: only a newer binary installed at its path is offered then |
+| A network probe | One `HEAD` request to the API host of the agent whose worker failed: `api.anthropic.com`, `api.openai.com` or `generativelanguage.googleapis.com` | Only after a worker's error that looks like a network outage, to tell when it ends | Not needed: no worker error, no probe |
+| A tilasm published on claude.ai | Your own Claude account, through Claude Code | Only when you click **Publish**; the first publish of each tilasm asks you first | Never click it |
+
+Everything else goes through the tools Djinn starts for you, under their own settings and accounts: the agents (Claude
+Code, Codex, Antigravity) talk to their providers, Git fetches and pushes your projects' remotes, and `gh` or `glab`
+open and watch pull requests. Each uses its own sign-in.
+
 ## When Djinn is stuck
 
 Djinn logs what it does in `logs/` of its data folder (`~/.config/djinn/logs` on Linux,
