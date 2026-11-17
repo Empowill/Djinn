@@ -2001,7 +2001,9 @@ func (AzimaState) EnumDescriptor() ([]byte, []int) {
 	return file_plan_v1_plan_proto_rawDescGZIP(), []int{28}
 }
 
-// AzimaPrState is where a pull request for an azima stands.
+// AzimaPrState is where a pull request for an azima stands. Once open, Djinn reads it on the forge again at each pass
+// of its integration, by its number, whatever the azima's parts do (a watcher that runs for good) and even when its
+// branch is gone (W81).
 type AzimaPrState int32
 
 const (
@@ -2009,6 +2011,9 @@ const (
 	AzimaPrState_AZIMA_PR_STATE_PROPOSED    AzimaPrState = 1
 	AzimaPrState_AZIMA_PR_STATE_OPEN        AzimaPrState = 2
 	AzimaPrState_AZIMA_PR_STATE_MERGED      AzimaPrState = 3
+	// Closed on the forge without being merged: the lead hears it once, and Djinn closes nothing; reopened, or another
+	// one opened for its branch, it is open again.
+	AzimaPrState_AZIMA_PR_STATE_CLOSED AzimaPrState = 4
 )
 
 // Enum value maps for AzimaPrState.
@@ -2018,12 +2023,14 @@ var (
 		1: "AZIMA_PR_STATE_PROPOSED",
 		2: "AZIMA_PR_STATE_OPEN",
 		3: "AZIMA_PR_STATE_MERGED",
+		4: "AZIMA_PR_STATE_CLOSED",
 	}
 	AzimaPrState_value = map[string]int32{
 		"AZIMA_PR_STATE_UNSPECIFIED": 0,
 		"AZIMA_PR_STATE_PROPOSED":    1,
 		"AZIMA_PR_STATE_OPEN":        2,
 		"AZIMA_PR_STATE_MERGED":      3,
+		"AZIMA_PR_STATE_CLOSED":      4,
 	}
 )
 
@@ -9201,7 +9208,7 @@ type AzimaPr struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The URL of the pull request.
 	Url string `protobuf:"bytes,1,opt,name=url,proto3" json:"url,omitempty"`
-	// Where the pull request stands: proposed, open, merged.
+	// Where the pull request stands: proposed, open, merged, closed without merging.
 	State         AzimaPrState `protobuf:"varint,2,opt,name=state,proto3,enum=plan.v1.AzimaPrState" json:"state,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -30161,12 +30168,13 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x10AZIMA_STATE_DONE\x10\x03\x12\x1e\n" +
 	"\x1aAZIMA_STATE_AWAITING_PROOF\x10\x04\x12\x15\n" +
 	"\x11AZIMA_STATE_DRAFT\x10\x05\x12\x18\n" +
-	"\x14AZIMA_STATE_WATCHING\x10\x06*\x7f\n" +
+	"\x14AZIMA_STATE_WATCHING\x10\x06*\x9a\x01\n" +
 	"\fAzimaPrState\x12\x1e\n" +
 	"\x1aAZIMA_PR_STATE_UNSPECIFIED\x10\x00\x12\x1b\n" +
 	"\x17AZIMA_PR_STATE_PROPOSED\x10\x01\x12\x17\n" +
 	"\x13AZIMA_PR_STATE_OPEN\x10\x02\x12\x19\n" +
-	"\x15AZIMA_PR_STATE_MERGED\x10\x03*]\n" +
+	"\x15AZIMA_PR_STATE_MERGED\x10\x03\x12\x19\n" +
+	"\x15AZIMA_PR_STATE_CLOSED\x10\x04*]\n" +
 	"\x06Closer\x12\x16\n" +
 	"\x12CLOSER_UNSPECIFIED\x10\x00\x12\x0f\n" +
 	"\vCLOSER_LEAD\x10\x01\x12\x14\n" +

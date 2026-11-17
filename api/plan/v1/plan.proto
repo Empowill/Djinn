@@ -2001,19 +2001,24 @@ enum AzimaState {
   AZIMA_STATE_WATCHING = 6;
 }
 
-// AzimaPrState is where a pull request for an azima stands.
+// AzimaPrState is where a pull request for an azima stands. Once open, Djinn reads it on the forge again at each pass
+// of its integration, by its number, whatever the azima's parts do (a watcher that runs for good) and even when its
+// branch is gone (W81).
 enum AzimaPrState {
   AZIMA_PR_STATE_UNSPECIFIED = 0;
   AZIMA_PR_STATE_PROPOSED = 1;
   AZIMA_PR_STATE_OPEN = 2;
   AZIMA_PR_STATE_MERGED = 3;
+  // Closed on the forge without being merged: the lead hears it once, and Djinn closes nothing; reopened, or another
+  // one opened for its branch, it is open again.
+  AZIMA_PR_STATE_CLOSED = 4;
 }
 
 // AzimaPr describes the pull request of an azima branch.
 message AzimaPr {
   // The URL of the pull request.
   string url = 1;
-  // Where the pull request stands: proposed, open, merged.
+  // Where the pull request stands: proposed, open, merged, closed without merging.
   AzimaPrState state = 2;
 }
 

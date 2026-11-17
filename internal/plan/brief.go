@@ -989,6 +989,8 @@ func azimaBranchText(t *planv1.Task) string {
 		text += ", pull request open"
 	case planv1.AzimaPrState_AZIMA_PR_STATE_MERGED:
 		text += ", pull request merged"
+	case planv1.AzimaPrState_AZIMA_PR_STATE_CLOSED:
+		text += ", pull request closed without merging"
 	}
 	if url := t.GetAzima().GetPr().GetUrl(); url != "" {
 		text += ": " + url

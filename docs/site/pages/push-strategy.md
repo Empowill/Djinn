@@ -93,10 +93,15 @@ wish gets no draft per azima: its one pull request is proposed when the wish set
 | --- | --- |
 | **PR proposed** | A task opens it by the project's skill, or Djinn could not open it, or asked you whether to. |
 | **PR open** | The request is open, as a draft at first; a click opens it on the forge. Each push of the branch updates it. |
-| **PR merged** | Merged into main: the azima is done. |
+| **PR merged** | Merged into main: the azima is done, once no part of it runs any more. |
+| **PR closed** | Closed on the forge without being merged: the Djinn hears it, and the azima stays open. |
 
 When the request can be merged and its checks are green, Djinn tells you: *Pull request #12 for T07 is ready to
 merge?* Merging is yours: Djinn only notes your answer, and marks the azima done once the forge says it is merged.
+Once open, the request is read on the forge again at each pass, by its number: a watcher that keeps running in the
+azima, or a branch the forge deleted at the merge, never leaves it shown open. Closed without being merged, Djinn
+closes nothing: the Djinn reopens it, has another one opened for the branch, or closes the azima if its work is
+dropped. Reopened, or another one opened, the card shows it open again.
 
 ### No azima waits for another
 

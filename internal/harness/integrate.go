@@ -2868,21 +2868,23 @@ func (h *Harness) queryGlabMR(ctx context.Context, repo, branch string) *forgePR
 // the integration back no longer (W504).
 const forgeTimeout = time.Minute
 
-// queryForgePR queries the forge (gh or glab) for branch's pull or merge request.
-func (h *Harness) queryForgePR(ctx context.Context, repo string, project *planv1.Project, branch string) *forgePR {
+// queryForgePR queries the forge (gh or glab) for the pull or merge request of ref: a branch, or its number.
+func (h *Harness) queryForgePR(ctx context.Context, repo string, project *planv1.Project, ref string) *forgePR {
 	ctx, cancel := context.WithTimeout(ctx, forgeTimeout)
 	defer cancel()
 	forge := detectForge(ctx, repo, project)
 	if forge == "glab" {
-		return h.queryGlabMR(ctx, repo, branch)
+		return h.queryGlabMR(ctx, repo, ref)
 	}
-	return h.queryGhPR(ctx, repo, branch)
+	return h.queryGhPR(ctx, repo, ref)
 }
 
 // azimaPRPass manages the PR lifecycle for all azimas of wish in project under azima push strategy: proposing to open
-// its PR to main, the ready-to-merge notification, and marking it merged; where it stands is recorded on the azima
-// (Azima.pr) for the window. The PR follows its branch: each push of the branch updates it, and it targets main from
-// the start, never re-targeted.
+// its PR to main, the ready-to-merge notification, marking it merged, and telling the lead once it is closed without
+// merging; where it stands is recorded on the azima (Azima.pr) for the window. The PR follows its branch: each push of
+// the branch updates it, and it targets main from the start, never re-targeted. One recorded open is read again by its
+// number at each pass, whatever its azima's parts do (a watcher that runs for good) and even once its branch is gone,
+// so that it never stays open in Djinn once merged or closed on the forge (W81).
 func (h *Harness) azimaPRPass(
 	ctx context.Context, wish *planv1.Wish, project *planv1.Project, settings plan.Settings,
 	allQuestions []*planv1.Question,
@@ -2901,25 +2903,37 @@ func (h *Harness) azimaPRPass(
 			return allQuestions
 		}
 		branch := azimaBranchName(azima)
-		if commitOf(ctx, repo, "refs/heads/"+branch) == "" {
-			continue
+		pr, followed := h.followedAzimaPR(ctx, project, azima)
+		if followed && pr == nil {
+			continue // The forge did not answer: it stays as recorded.
 		}
-		if !h.isBranchPushed(ctx, wish, project, branch) {
-			continue
-		}
-		if h.openAzimaDraft(ctx, wish, project, settings, azima, branch) {
-			continue
-		}
-		ok, parts := h.azimaPartsDoneAndGreen(ctx, wish.GetId(), azima.GetId())
-		if !ok {
-			continue
+		var ok bool
+		var parts []*planv1.Task
+		if followed {
+			ok, _ = h.azimaPartsDoneAndGreen(ctx, wish.GetId(), azima.GetId())
+		} else {
+			if commitOf(ctx, repo, "refs/heads/"+branch) == "" {
+				continue
+			}
+			if !h.isBranchPushed(ctx, wish, project, branch) {
+				continue
+			}
+			if h.openAzimaDraft(ctx, wish, project, settings, azima, branch) {
+				continue
+			}
+			if ok, parts = h.azimaPartsDoneAndGreen(ctx, wish.GetId(), azima.GetId()); !ok {
+				continue
+			}
+			pr = h.queryForgePR(ctx, repo, project, branch)
 		}
 		base := azimaPRBase(ctx, repo, settings, azima)
 
-		pr := h.queryForgePR(ctx, repo, project, branch)
 		if pr == nil {
 			if azima.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE || h.opening(ctx, wish.GetId(), project, branch) {
 				continue // A task opens it with the project's skill, or opened it and the forge lists it late: asked, a yes would open a second (W623, W624).
+			}
+			if azima.GetAzima().GetPr().GetState() == planv1.AzimaPrState_AZIMA_PR_STATE_CLOSED {
+				continue // The forge lists only open ones for its branch (glab): the closed one stays the lead's to settle.
 			}
 			proposed := hasQuestion(func(q *planv1.Question) bool {
 				return q.GetTaskId() == azima.GetId() && strings.Contains(strings.ToLower(q.GetText()), "pull request")
@@ -2950,7 +2964,7 @@ func (h *Harness) azimaPRPass(
 		switch pr.State {
 		case "OPEN":
 			h.recordAzimaPR(ctx, azima, &planv1.AzimaPr{Url: pr.URL, State: planv1.AzimaPrState_AZIMA_PR_STATE_OPEN})
-			if pr.Mergeable && pr.Green && azima.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+			if ok && pr.Mergeable && pr.Green && azima.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
 				if !hasQuestion(func(q *planv1.Question) bool {
 					return q.GetTaskId() == azima.GetId() && strings.Contains(strings.ToLower(q.GetText()), "ready to merge")
 				}) {
@@ -2970,14 +2984,14 @@ func (h *Harness) azimaPRPass(
 				}
 			}
 		case "MERGED":
-			// Found merged once its parts are done: its work is in main (merged.go), unless work was added since.
+			// Its work is in main (merged.go), unless work was added since or still runs: markMerged looks again.
 			if azima.GetAzima().GetPr().GetState() != planv1.AzimaPrState_AZIMA_PR_STATE_MERGED {
 				h.markMerged(ctx, azima.GetId(), &planv1.AzimaMerged{
 					Time: timestamppb.New(h.now()), RequestUrl: pr.URL, MainBranch: base,
 				})
 			}
 			h.recordAzimaPR(ctx, azima, &planv1.AzimaPr{Url: pr.URL, State: planv1.AzimaPrState_AZIMA_PR_STATE_MERGED})
-			if azima.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+			if azima.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE && !h.unfinishedParts(ctx, azima) {
 				_, err := h.Done(ctx, "/plan.v1.TaskService/Done", &planv1.TaskServiceDoneRequest{
 					TaskId: azima.GetId(),
 					By:     planv1.Closer_CLOSER_LEAD,
@@ -2988,9 +3002,63 @@ func (h *Harness) azimaPRPass(
 				}
 				azima.Status = planv1.TaskStatus_TASK_STATUS_DONE
 			}
+		case "CLOSED":
+			h.azimaPRClosed(ctx, project, azima, pr)
 		}
 	}
 	return allQuestions
+}
+
+// followedAzimaPR is the pull request recorded open for azima, as the forge says it stands now, read by its number:
+// its parts may run (a watcher that runs for good), its branch be gone (deleted once merged), it stays followed. nil
+// when the forge did not answer. followed is false when azima records none open: its branch finds it, once its parts
+// are done.
+func (h *Harness) followedAzimaPR(ctx context.Context, project *planv1.Project, azima *planv1.Task) (pr *forgePR, followed bool) {
+	recorded := azima.GetAzima().GetPr()
+	if recorded.GetState() != planv1.AzimaPrState_AZIMA_PR_STATE_OPEN {
+		return nil, false
+	}
+	m := requestURL.FindStringSubmatch(recorded.GetUrl())
+	if m == nil {
+		return nil, false
+	}
+	return h.queryForgePR(ctx, project.GetDirectory(), project, m[1]), true
+}
+
+// unfinishedParts tells whether azima has parts still to finish (plan.HasUnfinishedParts): a watcher that runs, work
+// added since its request merged. Djinn then leaves it open.
+func (h *Harness) unfinishedParts(ctx context.Context, azima *planv1.Task) bool {
+	tasks, err := store.List[*planv1.Task](ctx, h.store, store.Where{"wish_id": azima.GetWishId()})
+	return err != nil || plan.HasUnfinishedParts(azima.GetId(), tasks)
+}
+
+// azimaPRClosed records that the pull request of azima was closed on the forge without being merged, and tells the
+// lead, once: Djinn shows it closed and closes nothing (Q534 B); the lead reopens it, has another opened, or closes the
+// azima if its work is dropped.
+func (h *Harness) azimaPRClosed(ctx context.Context, project *planv1.Project, azima *planv1.Task, pr *forgePR) {
+	closed := &planv1.AzimaPr{Url: pr.URL, State: planv1.AzimaPrState_AZIMA_PR_STATE_CLOSED}
+	if proto.Equal(azima.GetAzima().GetPr(), closed) {
+		return
+	}
+	ctx = context.WithoutCancel(ctx)
+	name := requestName(forgeOf(ctx, project), pr.Number)
+	err := h.store.Tx(ctx, func(tx *store.Tx) error {
+		if err := editAzima(ctx, tx, azima.GetId(), func(e *planv1.Azima) { e.Pr = closed }); err != nil {
+			return err
+		}
+		return putEvents(ctx, tx, newEvent(azima.GetId(), Event{
+			Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: name + " closed without merging: " + pr.URL,
+		}))
+	})
+	if err != nil {
+		logx.L().Error("record a closed request", "azima", azima.GetCode(), "wish", azima.GetWishId(), "pr", pr.URL, "err", err)
+		return
+	}
+	h.notify()
+	h.tellLeadDetail(ctx, planv1.LeadEventKind_LEAD_EVENT_KIND_MOVE, azima.GetWishId(), azima.GetCode(),
+		fmt.Sprintf("%s: %s closed without merging, the azima stays open", azima.GetCode(), name),
+		fmt.Sprintf("The forge says %s is closed, not merged. Djinn shows it closed and closes nothing: reopen it, open "+
+			"another one for branch %s, or close the azima if its work is dropped.", pr.URL, azimaBranchName(azima)))
 }
 
 // recordAzimaPR records where the pull request of azima stands (Azima.pr), when it changed.
