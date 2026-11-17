@@ -330,7 +330,7 @@ func leadRules(projects []*planv1.Project, home string, driven bool) string {
 		"  - Example, 17/10: W160 (the Djinn's eye) and W174 (a click brings back a wish's first tab) ran side by " +
 		"side on `src/question-column.tsx`, which W154 also changed; both merges conflicted there, and W237 and W238 " +
 		"repaired them. W174 `--after W160`, W160 after W154, would have merged clean.\n" +
-		"  - When `djinn task spawn`, `djinn question launch` or `djinn plan launch` answers `W7 may overlap with: …`, " +
+		"  - When `djinn task spawn` or `djinn question launch` answers `W7 may overlap with: …`, " +
 		"read each reason (its branch diff, `--write-scopes`, or the paths, packages and specs named in both prompts) " +
 		"and place or fold the task at once (`djinn task depend <task> --after <other>` to put it after, or fold it " +
 		"into `<other>` and drop the duplicate; 17/10: W339 and W305 both edited `internal/plan/brief.go` and " +
