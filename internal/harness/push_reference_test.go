@@ -10,6 +10,7 @@ import (
 	"connectrpc.com/connect"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/store"
 	"github.com/empowill/djinn/internal/testx"
 )
 
@@ -76,6 +77,36 @@ func TestPushRefusesTheReferenceBranch(t *testing.T) {
 		}
 		if got := in.remoteTip(t, bare); got != old {
 			t.Fatalf("origin's %s at %s; want it at %s", in.branch, got, old)
+		}
+	})
+
+	// W62: two passes read the wish, the first starts its push apart, refused; the second starts its own once the
+	// first ended, with its copy of the wish read before the refusal. Under -race, the refusal was said twice.
+	t.Run("a push with the wish read before the last refusal", func(t *testing.T) {
+		t.Parallel()
+		in, bare := onReference(t)
+		old := in.remoteTip(t, bare)
+		stale, err := store.Get[*planv1.Wish](t.Context(), in.db, in.wishID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		project, err := store.Get[*planv1.Project](t.Context(), in.db, in.projectID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
+		in.pass(t, 0)
+		for range 2 {
+			if _, err := in.h.pushBranch(t.Context(), stale, project, in.branch, []*planv1.Task{w1}, "", false); !errors.Is(err, errProtectedPush) {
+				t.Errorf("push with the wish read before: %v; want the reference branch refused", err)
+			}
+		}
+		if got := in.remoteTip(t, bare); got != old {
+			t.Fatalf("origin's %s at %s; want it at %s", in.branch, got, old)
+		}
+		_, texts := in.integration(t, w1)
+		if refused := slices.DeleteFunc(slices.Clone(texts), func(s string) bool { return !strings.Contains(s, "never pushes") }); len(refused) != 1 {
+			t.Errorf("W1's events %q; want the refusal once", texts)
 		}
 	})
 
