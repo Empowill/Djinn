@@ -39,6 +39,9 @@ const (
 	// AddrFile holds the address of the running server, in the data directory: unix:///…/djinn.sock, or
 	// http://127.0.0.1:PORT/?token=… whose token the command line sends as a bearer token.
 	AddrFile = "server.addr"
+	// LockFile is the file djinn up holds locked while it runs, in the data directory (lockx): one djinn up per data
+	// directory, whatever its version or system.
+	LockFile = "djinn.lock"
 )
 
 // ListenUnix listens on the Unix socket at path, readable and writable by the owner only. A socket left by a

@@ -167,5 +167,6 @@ func fullHome(t *testing.T) (home string, s *store.Store, here string) {
 	writeFile(t, home, "logs/goroutines-20261012T000000.000000000Z.txt", "dump")
 	writeFile(t, home, "run/4242.json", `{"pid":4242}`)
 	writeFile(t, home, server.AddrFile, "http://127.0.0.1:1/?token=secret")
+	writeFile(t, home, server.LockFile, "")
 	return home, s, here
 }
