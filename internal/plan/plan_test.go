@@ -2,9 +2,11 @@ package plan
 
 import (
 	"cmp"
+	"compress/gzip"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -739,4 +741,124 @@ func TestProjectPush(t *testing.T) {
 			t.Errorf("after set strategy = %v from %v; want azima from developer", show2.Msg.GetStrategy(), show2.Msg.GetSource())
 		}
 	})
+}
+
+// TestEntities opens a database the previous release wrote (testdata/release/README.md) with this code: the
+// store migrates it, and every wish, task, question and block it held reads again as that release wrote it, through
+// the indexes the lists filter on. A write lands beside them, and the database opens again after it.
+func TestEntities(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	path := filepath.Join(t.TempDir(), store.File)
+	unzip(t, filepath.Join("testdata", "release", "v0.4.0.db.gz"), path)
+
+	db, err := store.Open(ctx, path, Entities()...)
+	if err != nil {
+		t.Fatalf("open the database of v0.4.0: %v", err)
+	}
+	projects, err := store.List[*planv1.Project](ctx, db, nil)
+	if err != nil || len(projects) != 1 || projects[0].GetName() != "fixture-project" {
+		t.Fatalf("projects: %v, %v", projects, err)
+	}
+	wishes, err := store.List[*planv1.Wish](ctx, db, nil)
+	if err != nil || len(wishes) != 1 {
+		t.Fatalf("wishes: %v, %v", wishes, err)
+	}
+	wish := wishes[0]
+	if wish.GetTitle() != "Read again by the next release" || wish.GetState() != planv1.WishState_WISH_STATE_ACTIVE ||
+		wish.GetRank() != 1 || !slices.Equal(wish.GetProjectIds(), []string{projects[0].GetId()}) {
+		t.Fatalf("the wish: %v", wish)
+	}
+	byWish := store.Where{"wish_id": wish.GetId()}
+
+	tasks, err := store.List[*planv1.Task](ctx, db, byWish)
+	if err != nil || len(tasks) != 2 {
+		t.Fatalf("tasks: %v, %v", tasks, err)
+	}
+	w1, w2 := tasks[0], tasks[1]
+	if w1.GetCode() != "W1" || w1.GetTitle() != "First task of the fixture" ||
+		w1.GetStatus() != planv1.TaskStatus_TASK_STATUS_FAILED || w1.GetError() != "start claude: claude not found in PATH" ||
+		w1.GetProjectId() != projects[0].GetId() {
+		t.Fatalf("W1: %v", w1)
+	}
+	if w2.GetCode() != "W2" || w2.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING ||
+		!slices.Equal(w2.GetDependsOn(), []string{w1.GetId()}) {
+		t.Fatalf("W2: %v", w2)
+	}
+
+	questions, err := store.List[*planv1.Question](ctx, db, byWish)
+	if err != nil || len(questions) != 3 {
+		t.Fatalf("questions: %v, %v", questions, err)
+	}
+	q1, q2, q3 := questions[0], questions[1], questions[2]
+	if q1.GetCode() != "Q01" || q1.GetText() != "Which way does the fixture go?" ||
+		!slices.Equal(q1.GetOptions(), []string{"Forward", "Backward"}) ||
+		q1.GetAnswer().GetChoice() != planv1.Choice_CHOICE_A || q1.GetAnswer().GetNote() != "Forward, as recommended." {
+		t.Fatalf("Q01: %v", q1)
+	}
+	if q2.GetCode() != "Q02" || q2.GetAnswer() != nil {
+		t.Fatalf("Q02: %v", q2)
+	}
+	if q3.GetCode() != "Q03" || q3.GetId() != w1.GetEditQuestionId() || q3.GetAnswer() != nil {
+		t.Fatalf("Q03, the edit question of W1 (%s): %v", w1.GetEditQuestionId(), q3)
+	}
+
+	blocks, err := store.List[*planv1.Block](ctx, db, byWish)
+	if err != nil {
+		t.Fatal(err)
+	}
+	i := slices.IndexFunc(blocks, func(b *planv1.Block) bool { return b.GetTitle() == "Written by v0.4.0" })
+	if i < 0 || blocks[i].GetKind() != "report" || blocks[i].GetContent() != "A block the next release reads again." {
+		t.Fatalf("blocks: %v", blocks)
+	}
+
+	// This code writes beside what v0.4.0 wrote, and opens the database again.
+	added := &planv1.Block{Id: store.NewID(), WishId: wish.GetId(), Kind: "report", Title: "Written by this code"}
+	if err := db.Tx(ctx, func(tx *store.Tx) error {
+		if err := tx.Journal("local", "/plan.v1.BlockService/Put", &planv1.BlockServicePutRequest{}); err != nil {
+			return err
+		}
+		return tx.Put(added)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	db, err = store.Open(ctx, path, Entities()...)
+	if err != nil {
+		t.Fatalf("open the database again: %v", err)
+	}
+	defer db.Close()
+	again, err := store.List[*planv1.Block](ctx, db, byWish)
+	if err != nil || len(again) != len(blocks)+1 || again[len(again)-1].GetTitle() != added.GetTitle() {
+		t.Fatalf("blocks after a write: %v, %v", again, err)
+	}
+	if tasks, err := store.List[*planv1.Task](ctx, db, byWish); err != nil || len(tasks) != 2 {
+		t.Fatalf("tasks after a write: %v, %v", tasks, err)
+	}
+}
+
+// unzip writes the gzipped file src to dst.
+func unzip(t *testing.T, src, dst string) {
+	t.Helper()
+	f, err := os.Open(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	z, err := gzip.NewReader(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := os.Create(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.Copy(out, z); err != nil {
+		t.Fatal(err)
+	}
+	if err := out.Close(); err != nil {
+		t.Fatal(err)
+	}
 }

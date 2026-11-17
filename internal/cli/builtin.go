@@ -110,6 +110,13 @@ address in the data folder, for the other commands.`,
 				"loopback server and its token), to measure what it spends its CPU and memory on; default " +
 				"$DJINN_PPROF (on or off), else off.",
 		},
+		{
+			Name: "--update-check", Type: "bool", Default: "true", Env: "DJINN_UPDATE_CHECK",
+			Help: "Look for a newer release of Djinn: at start, then every 6 hours, a release binary asks GitHub's API, " +
+				"one installed with go install the Go module proxy; nothing downloads before you click Update. Off, " +
+				"Djinn sends nothing on its own, and only a newer binary installed at its path is offered; default " +
+				"$DJINN_UPDATE_CHECK (on or off), else on.",
+		},
 	},
 }
 

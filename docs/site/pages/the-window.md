@@ -30,7 +30,8 @@ From top to bottom:
   **Connections & preferences**. A yellow dot on the Summoning Circle says that no session of the Djinn can start yet:
   no agent that leads is installed and signed in. It goes once one is. The Grimoire is a page of the window, like the Hourglass, never a dialog over it: its
   navigation shows beside its splash page from the first view, each page is read when you open it, and back and forward
-  move between the pages you read.
+  move between the pages you read. Report a bug, at the top of the Grimoire, opens the repository's bug form in your
+  browser.
 
 ### The wish bar
 

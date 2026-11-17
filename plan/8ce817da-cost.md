@@ -230,7 +230,7 @@ the context its task needs, no more.
 - **A new lead starts from it** (T13). *Since T21, every new lead, of any agent, gets one first message, the same for
   all: run `djinn wish brief <wish>`, then continue (`plan.StartLine`, written to `lead-first.md`); the brief opens
   with the wish and ends with the rules, and the system prompt file below is gone. What follows is the first way.*
-  `djinn wish resume <wish>` without a lead session wrote the two parts next
+  `djinn wish resume <wish>` (now `djinn lead resume`) without a lead session wrote the two parts next
   to the wish's page (`lead-rules.md`, `lead-brief.md` in the data folder) and runs, through the user's shell,
   `claude --session-id <new> --append-system-prompt-file <lead-rules.md> '<the moving part>'`. The session is
   recorded as the wish's lead once the terminal runs, so the next resume resumes it. `--append-system-prompt-file`
@@ -239,7 +239,7 @@ the context its task needs, no more.
   than 64 KiB any shell: the first message then asks to read `lead-brief.md`, with `--add-dir` on its folder.
   **Codex** (`codex '<brief>'`) and **Antigravity** (`agy -i '<brief>'`, verified in `agy --help` 1.3.0) take no
   system prompt at their command line: the whole brief is their first message, stable part first. Djinn cannot
-  choose their session ahead: a codex lead is recorded with `djinn wish set-lead`, an agy one is never resumed.
+  choose their session ahead: a codex lead is recorded with `djinn lead set`, an agy one is never resumed.
   *Supposed:* that interactive `codex` takes a prompt as its argument (codex is not installed here).
 - **Fork, on request only**: `djinn task spawn <wish> --fork W1` or `--from-lead` (`Task.fork_session`,
   `Task.fork_of`). Claude: `claude -p --resume <source> --fork-session --session-id <task>` (claude refuses

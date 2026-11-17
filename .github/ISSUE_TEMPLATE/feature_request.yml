@@ -1,0 +1,21 @@
+name: Suggest an improvement
+description: Something Djinn could do, or do better.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: need
+    attributes:
+      label: The need
+      description: What you were trying to do, and what got in the way.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What you suggest
+      description: How Djinn could answer it, if you have an idea. Another tool that does it well helps.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: What `djinn version` prints.

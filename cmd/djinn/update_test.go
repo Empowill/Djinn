@@ -151,6 +151,7 @@ func TestRunUpdate(t *testing.T) {
 	}{
 		{"a newer build installed", updateInstalled},
 		{"a newer release", updateFromRelease},
+		{"no release check", updateCheckOff},
 		{"no djinn runs", updateWithoutDjinn},
 		{"no person", updateNeedsAPerson},
 	} {
@@ -315,6 +316,43 @@ func updateInstalled(t *testing.T) {
 	if err := json.Unmarshal(b, &note); err != nil || note.Version != "" || len(note.Terminals) != 1 ||
 		note.Terminals[0].Name != lead {
 		t.Fatalf("the note after the update: %+v, %v", note, err)
+	}
+}
+
+// updateCheckOff runs a Djinn installed from a release with DJINN_UPDATE_CHECK=off while a newer release is served:
+// it never asks for it, and offers nothing.
+func updateCheckOff(t *testing.T) {
+	ctx := t.Context()
+	home := t.TempDir()
+	fake := newFakeRelease(t)
+	vs := withVersions(t, "v1.0.0", "v2.0.0")
+	djinnPath := filepath.Join(t.TempDir(), "djinn")
+	if err := os.WriteFile(djinnPath, vs[0], 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fake.publish(t, "v2.0.0", "djinn_test", vs[1], nil)
+	env := environ(home, t.TempDir(), "DJINN_TEST_RELEASE_API="+fake.srv.URL, "DJINN_TEST_RELEASE_ASSET=djinn_test",
+		"DJINN_UPDATE_CHECK=off")
+	_, errs := startInstalled(t, djinnPath, env)
+	ui, _ := clients(t, answering(t, home, errs.String))
+	watch, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	updates, err := ui.WatchUpdate(watch, connect.NewRequest(&uiv1.UiServiceWatchUpdateRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer updates.Close()
+	if !updates.Receive() || updates.Msg().GetCurrent() != "v1.0.0" {
+		t.Fatalf("at start: %v, %v", updates.Msg(), updates.Err())
+	}
+	// Twenty times the period of the check: a Djinn that looked would have looked by now.
+	time.Sleep(20 * releaseCheckForTests)
+	if checks, downloads := fake.counts(); checks != 0 || downloads != 0 {
+		t.Fatalf("with the check off, djinn looked at the release %d times and downloaded it %d times:\n%s", checks,
+			downloads, errs.String())
+	}
+	if r := updates.Msg().GetReady(); r != "" {
+		t.Fatalf("with the check off, %q is offered", r)
 	}
 }
 

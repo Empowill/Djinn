@@ -62,6 +62,7 @@ func runUp(args []string) (restart bool, err error) {
 		browser                                   bool
 		enlightenWorkers                          bool
 		profiles                                  bool
+		updateCheck                               bool
 		paused                                    bool
 		pausedMemory, brakeMemory                 int
 		port, maxWorkers, workerCPU, workerMemory int
@@ -75,6 +76,7 @@ func runUp(args []string) (restart bool, err error) {
 		"worker-memory-guard": &workerMemoryGuard,
 		"enlighten-workers":   &enlightenWorkers,
 		"pprof":               &profiles,
+		"update-check":        &updateCheck,
 		"ifrit-idle":          &ifritIdle,
 		"disk-trim-gb":        &diskTrim,
 		"disk-full-gb":        &diskFull,
@@ -101,6 +103,13 @@ func runUp(args []string) (restart bool, err error) {
 			return false, fmt.Errorf("DJINN_PPROF: %w", err)
 		}
 		profiles = on
+	}
+	if v := os.Getenv("DJINN_UPDATE_CHECK"); v != "" && !flagSet(flags, "update-check") {
+		on, err := onOff(v)
+		if err != nil {
+			return false, fmt.Errorf("DJINN_UPDATE_CHECK: %w", err)
+		}
+		updateCheck = on
 	}
 	if flags.NArg() > 0 {
 		return false, fmt.Errorf("unexpected argument %q", flags.Arg(0))
@@ -457,7 +466,7 @@ func runUp(args []string) (restart bool, err error) {
 	} else {
 		leadFailed = resumeLead(ctx, db, home, terminals, uiSvc, os.Stderr)
 	}
-	updates, err := newUpdater(version, uiSvc, terminals, leadNotes, stop)
+	updates, err := newUpdater(version, updateCheck, uiSvc, terminals, leadNotes, stop)
 	if err != nil {
 		return false, err
 	}

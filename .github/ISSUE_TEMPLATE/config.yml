@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/Empowill/Djinn/security/advisories/new
+    about: Privately, never in a public issue. SECURITY.md says what to include and what follows.
+  - name: Read the documentation
+    url: https://github.com/Empowill/Djinn/blob/main/docs/user-guide.md
+    about: The user guide, also in the window as the Grimoire.
