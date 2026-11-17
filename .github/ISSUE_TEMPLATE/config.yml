@@ -1,5 +1,5 @@
-# Questions and bugs go in issues: a question opens a blank one, a bug the bug form.
-blank_issues_enabled: true
+# No blank issue: a bug opens the bug form, a question or an idea the suggestion form.
+blank_issues_enabled: false
 contact_links:
   - name: Report a security vulnerability
     url: https://github.com/Empowill/Djinn/blob/main/SECURITY.md
