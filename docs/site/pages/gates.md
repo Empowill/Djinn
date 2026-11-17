@@ -144,6 +144,37 @@ measured to cost, whatever its name. Two light stacks, or two light paid runs, m
 same (see above); a command of another agent, or of your terminal, that goes through no gate is not held back by any.
 See [Project and settings](#project-and-settings).
 
+## Gates a project declares
+
+A project can declare its own gates in its .agents/djinn.yaml, beside the ceilings of its containers: a developer who
+clones it gets the same gates with nothing to set. Djinn reads the file on the project's reference branch at the last
+fetch, never in a task's folder, so a worker never changes what bounds it; a change counts from the next command.
+
+| Field | What it says |
+| --- | --- |
+| name | The gate's name, in lower case: neither commands nor the name of one of the project's checks. 8 gates at most. |
+| alone | The commands that rebuild what the workers share (the stack, its images): they hold the gate alone, whatever they cost. |
+| beside | The commands that use it: they share the gate, never while one holds it alone. |
+
+A pattern is words, compared word by word with the start of each part of a command (cut at and, or, semicolons, pipes
+and new lines), past the variables it sets and the wrappers env, time and nohup; a star stands for any words, as in
+docker compose star up. No regular expression and no shell: nothing runs. 32 patterns per gate at most.
+
+- **The gate is the project's.** It goes by name and project, stack@dolmen: another project's stack is another gate.
+  Typing djinn gate run stack in the project, or an ifrit serving with the gate stack, takes the same one.
+- **Alone is truly alone.** A command that holds a declared gate alone waits for those that share it, and one that
+  comes to share it after it goes behind it: it never starves. A task's own commands that share it keep none of its
+  own waiting: one may run the other.
+- **The project only tightens.** A declared gate adds waits between the project's commands; the machine's pressure,
+  its memory, the turn of the heavy commands and Djinn's merges first hold all the same.
+- **The worker reads which gate.** The reason it waits names the gate, its project and its file: stack (dolmen,
+  .agents/djinn.yaml) held by W81.
+- **A mistake costs one gate.** A gate that is not valid is left out on its own, and the project's view says which and
+  why; the other gates and the containers apply. A field Djinn does not know is ignored and said. A pattern of one word
+  is kept, and said: it takes every command of that program.
+- **You can turn one off on your machine.** djinn project gates shows the gates as Djinn applies them; djinn project
+  gates with off and the gate's name turns it off in your own settings file, never the repository's; on turns it back.
+
 ## Slots and gates
 
 A worker's own gate is in its slot. A gate held alone outside a running worker, by your terminal, the Djinn, a merge or
@@ -196,7 +227,8 @@ its task runs: an ended task that kept a run never closed does not draw a worker
 - **A gate's name does not keep light commands apart.** Two light stacks may start on the same ports, two light paid
   runs may spend at once: only a command measured heavy, or a lit ifrit, holds its gate alone. Outside a gate and an
   admission, a command does not wait for anyone, and nobody waits for it.
-- **Gate names are machine-wide.** The gate test of one project and the gate test of another are the same gate.
+- **Gate names are machine-wide,** unless the project declares them: the gate test of one project and the gate test of
+  another are the same gate.
 - **A heavy gate from your terminal takes a worker's slot.** Hold it for what you need, not longer.
 - **Keep commit checks fast.** They run on every task's merge, through their gates, before anything else may: a long
   one slows every wish. Put the long suite before the push.

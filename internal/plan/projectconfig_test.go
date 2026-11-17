@@ -1,6 +1,7 @@
 package plan
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -8,6 +9,7 @@ import (
 	"testing"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/proto"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 )
@@ -120,6 +122,8 @@ func TestDjinnYAMLNotices(t *testing.T) {
 			details: []string{"unknown field containers.pid", "unknown field workers"}},
 		{name: "both files", files: map[string]string{"djinn.yaml": "{}\n", ".agents/djinn.yaml": "{}\n"},
 			want: []string{"WARNING SETTINGS .agents/djinn.yaml FIX_FILE"}, details: []string{""}},
+		{name: "a gate left out", files: map[string]string{"djinn.yaml": "gates:\n  - name: commands\n  - name: stack\n"},
+			want: []string{"WARNING SETTINGS djinn.yaml FIX_FILE"}, details: []string{"gate commands: "}},
 		{name: "readable", files: map[string]string{"djinn.yaml": "containers: {pids: 32}\n"}},
 	}
 	for _, c := range cases {
@@ -195,5 +199,153 @@ func TestProjectConfigLines(t *testing.T) {
 	write(next, ".agents/djinn.yaml", "")
 	if lines := projectConfigLines(old, next); len(lines) != 1 || lines[0].GetText() != "Djinn's configuration changes in djinn.yaml." {
 		t.Errorf("changed: lines %v", lines)
+	}
+}
+
+// TestReadProjectGates (L17): each gate of a djinn.yaml is read and checked on its own. One that is not valid (a
+// reserved name, a pattern that starts with *, too many patterns, a wrong type, no name), named twice, or past the
+// eighth is left out, said with its name; the other gates and the containers apply. A field a gate does not know is
+// ignored and named (lease, before it is delivered). A pattern of one word is kept, and said.
+func TestReadProjectGates(t *testing.T) {
+	t.Parallel()
+	many := "[" + strings.TrimSuffix(strings.Repeat("go test, ", 33), ", ") + "]"
+	var nine strings.Builder
+	for i := range 9 {
+		fmt.Fprintf(&nine, "  - name: g%d\n", i)
+	}
+	cases := []struct {
+		name           string
+		yaml           string
+		gates          []string // name: alone | beside
+		dropped, broad []string // what each says, in part
+		unknown        []string
+		pids           uint32
+	}{
+		{name: "dolmen", yaml: "containers: {pids: 64}\ngates:\n  - name: stack\n    alone: [task run-back, docker compose * up]\n" +
+			"    beside: [task recette]\n    lease: 15m\n",
+			gates: []string{"stack: task run-back, docker compose * up | task recette"}, unknown: []string{"gates[0].lease"}, pids: 64},
+		{name: "reserved name", yaml: "containers: {pids: 64}\ngates:\n  - name: commands\n    alone: [go test]\n  - name: db\n    beside: [psql]\n",
+			gates: []string{"db:  | psql"}, dropped: []string{"gate commands: "}, broad: []string{`gate db: the pattern "psql"`}, pids: 64},
+		{name: "a pattern that starts with *", yaml: "gates:\n  - name: stack\n    alone: ['* up']\n",
+			dropped: []string{"gate stack: "}},
+		{name: "an empty pattern", yaml: "gates:\n  - name: stack\n    beside: ['']\n", dropped: []string{"gate stack: "}},
+		{name: "too many patterns", yaml: "gates:\n  - name: stack\n    alone: " + many + "\n", dropped: []string{"32 patterns"}},
+		{name: "a name in capitals", yaml: "gates:\n  - name: Stack\n", dropped: []string{"gate Stack: "}},
+		{name: "no name", yaml: "gates:\n  - alone: [task run-back]\n", dropped: []string{"gates[0]: a gate has a name"}},
+		{name: "a wrong type", yaml: "gates:\n  - name: stack\n    alone: task run-back\n  - name: db\n",
+			gates: []string{"db:  | "}, dropped: []string{"gate stack: "}},
+		{name: "declared twice", yaml: "gates:\n  - name: db\n    beside: [psql x]\n  - name: db\n",
+			gates: []string{"db:  | psql x"}, dropped: []string{"gate db: declared twice"}},
+		{name: "past eight", yaml: "gates:\n" + nine.String(),
+			gates:   []string{"g0:  | ", "g1:  | ", "g2:  | ", "g3:  | ", "g4:  | ", "g5:  | ", "g6:  | ", "g7:  | "},
+			dropped: []string{"gate g8: past the 8 gates"}},
+		{name: "not a list", yaml: "gates: stack\ncontainers: {pids: 64}\n", dropped: []string{"not a list"}, pids: 64},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "djinn.yaml"), []byte(c.yaml), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			read, err := ReadProjectConfig(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var gates []string
+			for _, g := range read.Config.GetGates() {
+				gates = append(gates, g.GetName()+": "+strings.Join(g.GetAlone(), ", ")+" | "+strings.Join(g.GetBeside(), ", "))
+			}
+			if !slices.Equal(gates, c.gates) {
+				t.Errorf("gates %q, want %q", gates, c.gates)
+			}
+			if read.Config.GetContainers().GetPids() != c.pids {
+				t.Errorf("containers %v, want pids %d", read.Config.GetContainers(), c.pids)
+			}
+			if !slices.Equal(read.Unknown, c.unknown) {
+				t.Errorf("unknown %q, want %q", read.Unknown, c.unknown)
+			}
+			for _, w := range []struct {
+				got, want []string
+				what      string
+			}{{read.Dropped, c.dropped, "dropped"}, {read.Broad, c.broad, "broad"}} {
+				if len(w.got) != len(w.want) {
+					t.Errorf("%s %q, want %q", w.what, w.got, w.want)
+					continue
+				}
+				for i := range w.got {
+					if !strings.Contains(w.got[i], w.want[i]) {
+						t.Errorf("%s %q, want it to say %q", w.what, w.got[i], w.want[i])
+					}
+				}
+			}
+		})
+	}
+}
+
+// TestProjectGates (L17): djinn project gates shows the gates a project declares as Djinn applies them on this
+// machine: one named as a check is left out, said; the developer turns one off for themselves, in their own file
+// only, and back on; a gate the project does not declare cannot be turned off; the repository's gates_off is ignored.
+func TestProjectGates(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	home := t.TempDir()
+	c := serve(t, WithHome(home))
+	dir := t.TempDir()
+	writeSettings(t, filepath.Join(dir, ".agents", "djinn.yaml"), "gates:\n  - name: stack\n    alone: [task run-back]\n"+
+		"    beside: [task recette]\n  - name: lint\n    alone: [task lint]\n  - name: db\n    beside: [psql]\n")
+	writeSettings(t, filepath.Join(dir, SettingsFile), "checks { name: \"lint\" command: \"task lint\" when: CHECK_WHEN_COMMIT }\ngates_off: \"db\"\n")
+	add, err := c.projects.Add(ctx, connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: dir, Name: "dolmen"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	gates := func(off, on *string) (*planv1.ProjectServiceGatesResponse, error) {
+		res, err := c.projects.Gates(ctx, connect.NewRequest(&planv1.ProjectServiceGatesRequest{Project: "dolmen", Off: off, On: on}))
+		if err != nil {
+			return nil, err
+		}
+		return res.Msg, nil
+	}
+	names := func(res *planv1.ProjectServiceGatesResponse) []string {
+		var out []string
+		for _, g := range res.GetGates() {
+			out = append(out, g.GetName())
+		}
+		return out
+	}
+	devFile := DeveloperSettingsFile(home, add.Msg.GetProject().GetId())
+	res, err := gates(nil, nil)
+	if err != nil || !slices.Equal(names(res), []string{"stack", "db"}) || res.GetFile() != ".agents/djinn.yaml" ||
+		res.GetDeveloperFile() != devFile || len(res.GetGatesOff()) != 0 {
+		t.Fatalf("shown: %v, %v", res, err)
+	}
+	if !slices.ContainsFunc(res.GetWarnings(), func(w string) bool { return strings.HasPrefix(w, "gate lint: the name of one of the project's checks") }) ||
+		!slices.ContainsFunc(res.GetWarnings(), func(w string) bool { return strings.HasPrefix(w, `gate db: the pattern "psql"`) }) {
+		t.Errorf("warnings %q", res.GetWarnings())
+	}
+	if res, err := gates(proto.String("stack"), nil); err != nil || !slices.Equal(names(res), []string{"db"}) ||
+		!slices.Equal(res.GetGatesOff(), []string{"stack"}) {
+		t.Errorf("stack off: %v, %v", res, err)
+	}
+	if dev, err := ReadSettings(devFile); err != nil || !slices.Equal(dev.GetGatesOff(), []string{"stack"}) {
+		t.Errorf("the developer's file: %v, %v", dev, err)
+	}
+	if _, err := gates(proto.String("e2e"), nil); code(err) != connect.CodeFailedPrecondition {
+		t.Errorf("a gate the project does not declare, off: %v", err)
+	}
+	if _, err := gates(proto.String("db"), proto.String("stack")); code(err) != connect.CodeInvalidArgument {
+		t.Errorf("--off and --on at once: %v", err)
+	}
+	if res, err := gates(nil, proto.String("stack")); err != nil || !slices.Equal(names(res), []string{"stack", "db"}) {
+		t.Errorf("stack back on: %v, %v", res, err)
+	}
+	if _, err := gates(nil, proto.String("stack")); code(err) != connect.CodeFailedPrecondition {
+		t.Errorf("on twice: %v", err)
+	}
+	show, err := c.projects.Show(ctx, connect.NewRequest(&planv1.ProjectServiceShowRequest{Project: "dolmen"}))
+	if err != nil || !slices.ContainsFunc(show.Msg.GetNotices(), func(n *planv1.ProjectNotice) bool {
+		return strings.Contains(n.GetDetail(), "gates_off is ignored")
+	}) {
+		t.Errorf("the repository's gates_off is not said ignored: %v", err)
 	}
 }

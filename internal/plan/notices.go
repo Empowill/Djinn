@@ -160,8 +160,8 @@ func permissionNotices(config Config) []*planv1.ProjectNotice {
 }
 
 // projectConfigNotices are what Djinn finds in the project's djinn.yaml, where it reads its configuration (config): a
-// file it cannot read is to fix, its configuration not applied; a field it does not know, and a second file it does not
-// read, are warnings, the rest of the file applied (Q21).
+// file it cannot read is to fix, its configuration not applied; a field it does not know, a second file it does not
+// read, and a gate left out are warnings, the rest of the file applied (Q21, L17).
 func projectConfigNotices(config Config) []*planv1.ProjectNotice {
 	read, err := ReadProjectConfig(config.Dir)
 	if read.File == "" {
@@ -186,6 +186,13 @@ func projectConfigNotices(config Config) []*planv1.ProjectNotice {
 			Text: "Djinn ignores a field of the project's " + read.File + " it does not know: the rest of the file " +
 				"applies.",
 			Detail: "unknown field " + u,
+		})
+	}
+	for _, d := range read.Dropped {
+		out = append(out, &planv1.ProjectNotice{
+			Kind: warning, Topic: topicSettings, Subject: read.File, Action: fixFile, File: file,
+			Text:   "Djinn leaves out a gate of the project's " + read.File + ": the other gates and the rest of the file apply.",
+			Detail: d,
 		})
 	}
 	if read.Ignored != "" {

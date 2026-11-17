@@ -404,6 +404,19 @@ func runUp(args []string) (restart bool, err error) {
 		_, name, _ := machine.Project(ctx, db, taskID, dir)
 		return name
 	})
+	// The gates a project declares in its djinn.yaml, read on its reference branch at each command (L17).
+	gates.Declare(func(taskID, dir string) gate.Declared {
+		id, name, _ := machine.Project(ctx, db, taskID, dir)
+		if id == "" {
+			return gate.Declared{}
+		}
+		project, err := store.Get[*planv1.Project](ctx, db, id)
+		if err != nil {
+			return gate.Declared{}
+		}
+		read := workers.ProjectGates(project)
+		return gate.Declared{Project: name, File: read.File, Gates: read.Gates}
+	})
 	seriesRec := machine.NewSeriesRecorder(monitor, machine.ReadWorker)
 	seriesRec.Keep(history)
 	seriesRec.WriteAbove(float64(pausedMemory))

@@ -6,6 +6,7 @@
 
 import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
+import { file_buf_validate_validate } from "../../buf/validate/validate_pb";
 import type { Containers } from "./containers_pb";
 import { file_djinn_v1_containers } from "./containers_pb";
 import type { Message } from "@bufbuild/protobuf";
@@ -14,18 +15,27 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file djinn/v1/project_config.proto.
  */
 export const file_djinn_v1_project_config: GenFile = /*@__PURE__*/
-  fileDesc("Ch1kamlubi92MS9wcm9qZWN0X2NvbmZpZy5wcm90bxIIZGppbm4udjEiOQoNUHJvamVjdENvbmZpZxIoCgpjb250YWluZXJzGAEgASgLMhQuZGppbm4udjEuQ29udGFpbmVyc0KWAQoMY29tLmRqaW5uLnYxQhJQcm9qZWN0Q29uZmlnUHJvdG9QAVoxZ2l0aHViLmNvbS9lbXBvd2lsbC9kamlubi9nZW4vZ28vZGppbm4vdjE7ZGppbm52MaICA0RYWKoCCERqaW5uLlYxygIIRGppbm5cVjHiAhREamlublxWMVxHUEJNZXRhZGF0YeoCCURqaW5uOjpWMWIGcHJvdG8z", [file_djinn_v1_containers]);
+  fileDesc("Ch1kamlubi92MS9wcm9qZWN0X2NvbmZpZy5wcm90bxIIZGppbm4udjEiaQoNUHJvamVjdENvbmZpZxIoCgpjb250YWluZXJzGAEgASgLMhQuZGppbm4udjEuQ29udGFpbmVycxIuCgVnYXRlcxgCIAMoCzIVLmRqaW5uLnYxLlByb2plY3RHYXRlQgi6SAWSAQIQCCKsAgoLUHJvamVjdEdhdGUSNQoEbmFtZRgBIAEoCUInukgkciIyFl5bYS16XVthLXowLTktXXswLDM5fSRaCGNvbW1hbmRzEi4KBWFsb25lGAIgAygJQh+6SBySARkiF3IVEAEYyAEyDl5bXipcc11bXlxuXSokEi8KBmJlc2lkZRgDIAMoCUIfukgckgEZIhdyFRABGMgBMg5eW14qXHNdW15cbl0qJDqEAbpIgAEafgoVcHJvamVjdF9nYXRlLnBhdHRlcm5zEjlhIGdhdGUgaGFzIDMyIHBhdHRlcm5zIGF0IG1vc3QsIGFsb25lIGFuZCBiZXNpZGUgdG9nZXRoZXIaKnNpemUodGhpcy5hbG9uZSkgKyBzaXplKHRoaXMuYmVzaWRlKSA8PSAzMkKWAQoMY29tLmRqaW5uLnYxQhJQcm9qZWN0Q29uZmlnUHJvdG9QAVoxZ2l0aHViLmNvbS9lbXBvd2lsbC9kamlubi9nZW4vZ28vZGppbm4vdjE7ZGppbm52MaICA0RYWKoCCERqaW5uLlYxygIIRGppbm5cVjHiAhREamlublxWMVxHUEJNZXRhZGF0YeoCCURqaW5uOjpWMWIGcHJvdG8z", [file_buf_validate_validate, file_djinn_v1_containers]);
 
 /**
  * ProjectConfig is what a project tells Djinn, in YAML: djinn.yaml at its root, else .agents/djinn.yaml. Djinn reads
  * it on the reference branch, as the permissions are, so that a worker never changes what bounds it; outside Git,
  * without a remote, or before the reference branch is fetched, in the project's folder. With both files, the root's
- * is read and Djinn warns that the other is not. A field this message does not know refuses the file: Djinn then
- * holds its defaults, and says the file and the field. Without the file, Djinn's defaults.
+ * is read and Djinn warns that the other is not. A field this message does not know is ignored, and Djinn says the
+ * file and the field: the rest of the file applies (Q21). A file that does not read, or a value out of its bounds,
+ * leaves the whole file out, said once: Djinn holds its defaults and goes on. A gate that is not valid is left out on
+ * its own, said with its name: the other gates and the containers apply. Without the file, Djinn's defaults.
  *
  *   containers:
  *     memory_mib: 8192
  *     pids: 2048
+ *   gates:
+ *     - name: stack
+ *       alone:
+ *         - task run-back
+ *         - docker compose * up
+ *       beside:
+ *         - task recette
  *
  * @generated from message djinn.v1.ProjectConfig
  */
@@ -36,6 +46,16 @@ export type ProjectConfig = Message<"djinn.v1.ProjectConfig"> & {
    * @generated from field: djinn.v1.Containers containers = 1;
    */
   containers?: Containers | undefined;
+
+  /**
+   * The gates the project declares, 8 at most: what of its commands waits for what. They only add waits between the
+   * project's own commands; the machine's bounds (its pressure, its memory, the turn of the heavy commands, Djinn's
+   * merges first) hold for every command, declared or not. A developer turns one off on their machine with djinn
+   * project gates --off.
+   *
+   * @generated from field: repeated djinn.v1.ProjectGate gates = 2;
+   */
+  gates: ProjectGate[];
 };
 
 /**
@@ -44,4 +64,48 @@ export type ProjectConfig = Message<"djinn.v1.ProjectConfig"> & {
  */
 export const ProjectConfigSchema: GenMessage<ProjectConfig> = /*@__PURE__*/
   messageDesc(file_djinn_v1_project_config, 0);
+
+/**
+ * ProjectGate is a gate a project declares in its djinn.yaml: the commands of its workers that rebuild a shared
+ * resource (alone) and those that use it (beside). It goes by name@project: the stack of one project is not
+ * another's. A worker's command that a pattern names takes the gate before it runs, through the admission hook; djinn
+ * gate run with the gate's name, in the project, takes the same gate. Its patterns are words, compared word by word
+ * with the start of each part of the command (cut at &&, ||, ;, | and new lines), past the variables it sets and the
+ * wrappers env, time, nohup: * stands for zero or more words, and the rest of the command follows freely. No regular
+ * expression, no shell, no file: nothing runs. A command two patterns name takes the first gate that names it, alone
+ * before beside.
+ *
+ * @generated from message djinn.v1.ProjectGate
+ */
+export type ProjectGate = Message<"djinn.v1.ProjectGate"> & {
+  /**
+   * Name of the gate, in lower case: neither commands, Djinn's name for its admissions, nor the name of one of the
+   * project's checks.
+   *
+   * @generated from field: string name = 1;
+   */
+  name: string;
+
+  /**
+   * The commands that hold the gate alone, whatever they cost: one at a time, and with none of those beside it.
+   *
+   * @generated from field: repeated string alone = 2;
+   */
+  alone: string[];
+
+  /**
+   * The commands that share the gate: together, never while one holds it alone. One that comes after a command that
+   * waits to hold it alone goes behind it.
+   *
+   * @generated from field: repeated string beside = 3;
+   */
+  beside: string[];
+};
+
+/**
+ * Describes the message djinn.v1.ProjectGate.
+ * Use `create(ProjectGateSchema)` to create a new message.
+ */
+export const ProjectGateSchema: GenMessage<ProjectGate> = /*@__PURE__*/
+  messageDesc(file_djinn_v1_project_config, 1);
 

@@ -94,6 +94,8 @@ const (
 	ProjectServicePushStrategyProcedure = "/plan.v1.ProjectService/PushStrategy"
 	// ProjectServiceAllowProcedure is the fully-qualified name of the ProjectService's Allow RPC.
 	ProjectServiceAllowProcedure = "/plan.v1.ProjectService/Allow"
+	// ProjectServiceGatesProcedure is the fully-qualified name of the ProjectService's Gates RPC.
+	ProjectServiceGatesProcedure = "/plan.v1.ProjectService/Gates"
 	// ProjectServiceForgetSyncProcedure is the fully-qualified name of the ProjectService's ForgetSync
 	// RPC.
 	ProjectServiceForgetSyncProcedure = "/plan.v1.ProjectService/ForgetSync"
@@ -701,6 +703,9 @@ type ProjectServiceClient interface {
 	// yourself, besides those its .agents/permissions.txtpb lists: kept in your own settings file, never in the
 	// repository.
 	Allow(context.Context, *connect.Request[v1.ProjectServiceAllowRequest]) (*connect.Response[v1.ProjectServiceAllowResponse], error)
+	// Show the gates the project declares in its djinn.yaml, as Djinn applies them on this machine, or turn one off
+	// (--off) or back on (--on) for yourself: kept in your own settings file, never in the repository.
+	Gates(context.Context, *connect.Request[v1.ProjectServiceGatesRequest]) (*connect.Response[v1.ProjectServiceGatesResponse], error)
 	// Forget the sync of a branch with nothing to push, such as a done azima's whose work landed in main: the project's
 	// syncs leave it out until it gets a new commit. Nothing is deleted, locally or on the remote.
 	ForgetSync(context.Context, *connect.Request[v1.ProjectServiceForgetSyncRequest]) (*connect.Response[v1.ProjectServiceForgetSyncResponse], error)
@@ -777,6 +782,12 @@ func NewProjectServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(projectServiceMethods.ByName("Allow")),
 			connect.WithClientOptions(opts...),
 		),
+		gates: connect.NewClient[v1.ProjectServiceGatesRequest, v1.ProjectServiceGatesResponse](
+			httpClient,
+			baseURL+ProjectServiceGatesProcedure,
+			connect.WithSchema(projectServiceMethods.ByName("Gates")),
+			connect.WithClientOptions(opts...),
+		),
 		forgetSync: connect.NewClient[v1.ProjectServiceForgetSyncRequest, v1.ProjectServiceForgetSyncResponse](
 			httpClient,
 			baseURL+ProjectServiceForgetSyncProcedure,
@@ -820,6 +831,7 @@ type projectServiceClient struct {
 	setPush      *connect.Client[v1.ProjectServiceSetPushRequest, v1.ProjectServiceSetPushResponse]
 	pushStrategy *connect.Client[v1.ProjectServicePushStrategyRequest, v1.ProjectServicePushStrategyResponse]
 	allow        *connect.Client[v1.ProjectServiceAllowRequest, v1.ProjectServiceAllowResponse]
+	gates        *connect.Client[v1.ProjectServiceGatesRequest, v1.ProjectServiceGatesResponse]
 	forgetSync   *connect.Client[v1.ProjectServiceForgetSyncRequest, v1.ProjectServiceForgetSyncResponse]
 	pull         *connect.Client[v1.ProjectServicePullRequest, v1.ProjectServicePullResponse]
 	branches     *connect.Client[v1.ProjectServiceBranchesRequest, v1.ProjectServiceBranchesResponse]
@@ -860,6 +872,11 @@ func (c *projectServiceClient) PushStrategy(ctx context.Context, req *connect.Re
 // Allow calls plan.v1.ProjectService.Allow.
 func (c *projectServiceClient) Allow(ctx context.Context, req *connect.Request[v1.ProjectServiceAllowRequest]) (*connect.Response[v1.ProjectServiceAllowResponse], error) {
 	return c.allow.CallUnary(ctx, req)
+}
+
+// Gates calls plan.v1.ProjectService.Gates.
+func (c *projectServiceClient) Gates(ctx context.Context, req *connect.Request[v1.ProjectServiceGatesRequest]) (*connect.Response[v1.ProjectServiceGatesResponse], error) {
+	return c.gates.CallUnary(ctx, req)
 }
 
 // ForgetSync calls plan.v1.ProjectService.ForgetSync.
@@ -906,6 +923,9 @@ type ProjectServiceHandler interface {
 	// yourself, besides those its .agents/permissions.txtpb lists: kept in your own settings file, never in the
 	// repository.
 	Allow(context.Context, *connect.Request[v1.ProjectServiceAllowRequest]) (*connect.Response[v1.ProjectServiceAllowResponse], error)
+	// Show the gates the project declares in its djinn.yaml, as Djinn applies them on this machine, or turn one off
+	// (--off) or back on (--on) for yourself: kept in your own settings file, never in the repository.
+	Gates(context.Context, *connect.Request[v1.ProjectServiceGatesRequest]) (*connect.Response[v1.ProjectServiceGatesResponse], error)
 	// Forget the sync of a branch with nothing to push, such as a done azima's whose work landed in main: the project's
 	// syncs leave it out until it gets a new commit. Nothing is deleted, locally or on the remote.
 	ForgetSync(context.Context, *connect.Request[v1.ProjectServiceForgetSyncRequest]) (*connect.Response[v1.ProjectServiceForgetSyncResponse], error)
@@ -978,6 +998,12 @@ func NewProjectServiceHandler(svc ProjectServiceHandler, opts ...connect.Handler
 		connect.WithSchema(projectServiceMethods.ByName("Allow")),
 		connect.WithHandlerOptions(opts...),
 	)
+	projectServiceGatesHandler := connect.NewUnaryHandler(
+		ProjectServiceGatesProcedure,
+		svc.Gates,
+		connect.WithSchema(projectServiceMethods.ByName("Gates")),
+		connect.WithHandlerOptions(opts...),
+	)
 	projectServiceForgetSyncHandler := connect.NewUnaryHandler(
 		ProjectServiceForgetSyncProcedure,
 		svc.ForgetSync,
@@ -1025,6 +1051,8 @@ func NewProjectServiceHandler(svc ProjectServiceHandler, opts ...connect.Handler
 			projectServicePushStrategyHandler.ServeHTTP(w, r)
 		case ProjectServiceAllowProcedure:
 			projectServiceAllowHandler.ServeHTTP(w, r)
+		case ProjectServiceGatesProcedure:
+			projectServiceGatesHandler.ServeHTTP(w, r)
 		case ProjectServiceForgetSyncProcedure:
 			projectServiceForgetSyncHandler.ServeHTTP(w, r)
 		case ProjectServicePullProcedure:
@@ -1070,6 +1098,10 @@ func (UnimplementedProjectServiceHandler) PushStrategy(context.Context, *connect
 
 func (UnimplementedProjectServiceHandler) Allow(context.Context, *connect.Request[v1.ProjectServiceAllowRequest]) (*connect.Response[v1.ProjectServiceAllowResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.ProjectService.Allow is not implemented"))
+}
+
+func (UnimplementedProjectServiceHandler) Gates(context.Context, *connect.Request[v1.ProjectServiceGatesRequest]) (*connect.Response[v1.ProjectServiceGatesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.ProjectService.Gates is not implemented"))
 }
 
 func (UnimplementedProjectServiceHandler) ForgetSync(context.Context, *connect.Request[v1.ProjectServiceForgetSyncRequest]) (*connect.Response[v1.ProjectServiceForgetSyncResponse], error) {

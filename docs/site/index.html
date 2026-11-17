@@ -336,6 +336,18 @@
                   <code>djinn gate history --minutes 360</code> gives the last 6 hours, each hold with its task's kind, beside
                   the workers' runs.
                 </p>
+                <p>
+                  A project declares its own gates in its <code>.agents/djinn.yaml</code>, read on its reference branch, never
+                  in a task's folder: a gate's <code>alone</code> patterns name the commands that rebuild what the workers
+                  share, its <code>beside</code> patterns those that use it. Each pattern is words that start a part of the
+                  command, <code>*</code> standing for any words: <code>docker compose * up</code>. A worker's command that
+                  one names takes the gate before it runs, under the project's name, <code>stack@dolmen</code>, and so does
+                  <code>djinn gate run stack</code> typed in the project. Held alone, it waits for those that share it too,
+                  and one that comes to share it after it goes behind it; the machine's bounds hold all the same. The
+                  reason a worker reads names the gate, its project and its file. A gate that is not valid is left out on
+                  its own, said in the project's view; <code>djinn project gates --off stack</code> turns one off on your
+                  machine only.
+                </p>
               </article>
               <article class="card word" id="word-machine">
                 <h3><a href="#machine-and-load">The machine</a></h3>

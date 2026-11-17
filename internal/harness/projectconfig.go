@@ -49,3 +49,13 @@ func warnProjectConfig(project *planv1.Project, key, msg string, args ...any) {
 	}
 	logx.L().Warn(msg, append([]any{"project", project.GetId()}, args...)...)
 }
+
+// ProjectGates are the gates project declares in its djinn.yaml, as Djinn applies them on this machine
+// (plan.LoadProjectGates): what is wrong in the declaration, a gate left out, a pattern of one word, is warned once.
+func (h *Harness) ProjectGates(project *planv1.Project) plan.ProjectGates {
+	read := plan.LoadProjectGates(h.home, project)
+	for _, w := range read.Warnings {
+		warnProjectConfig(project, project.GetId()+"\x00gates\x00"+w, "Djinn's gates: "+w, "file", read.File)
+	}
+	return read
+}
