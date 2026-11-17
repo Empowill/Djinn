@@ -222,11 +222,11 @@ test("the Hourglass reads its measures while it shows, and leaving it stops them
     await expect(
       sections.first().locator(".resource-disk .resource-disk-bar"),
     ).toBeVisible();
-    await page.locator("#hourglass-tab-gates").click();
-    await expect(page.locator(".gates-tab")).toBeVisible();
     await expect
       .poll(() => reads.series, { timeout: 12_000 })
       .toBeGreaterThan(1);
+    await page.locator("#hourglass-tab-gates").click();
+    await expect(page.locator(".gates-tab")).toBeVisible();
     await expect
       .poll(() => reads.commands, { timeout: 12_000 })
       .toBeGreaterThan(0);
