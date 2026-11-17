@@ -15,7 +15,6 @@ import (
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/plan"
-	"github.com/empowill/djinn/internal/store"
 )
 
 // errProtectedPush says that Djinn refused to push a protected branch, the project's reference branch or a branch its
@@ -54,17 +53,14 @@ func (h *Harness) refuseProtected(
 	if note == "" {
 		return nil
 	}
-	// The wish as stored now, under pushMu: the push that ran just before, with an older copy, refused it already.
-	if fresh, err := store.Get[*planv1.Wish](ctx, h.store, wish.GetId()); err == nil {
-		wish = fresh
-	}
-	if cur := pushState(wish, project.GetId()).GetRun(); cur.GetBranch() != branch ||
-		cur.GetStage() != planv1.PushStage_PUSH_STAGE_FAILED || cur.GetNote() != note {
+	// The run as stored, read in the transaction that records the refusal: not as wish says it, a copy the pass read
+	// before it started this push, maybe before the push just before this one refused it already (W62).
+	if was := run.swap(ctx, planv1.PushStage_PUSH_STAGE_FAILED, "", note); was.GetBranch() != branch ||
+		was.GetStage() != planv1.PushStage_PUSH_STAGE_FAILED || was.GetNote() != note {
 		h.pushSteps(ctx, committed, "integration: "+note)
 		logx.L().Warn("push refused: protected branch", "loop", "push", "wish", wish.GetId(), "project", project.GetId(),
 			"branch", branch, "target", target)
 	}
-	run.set(ctx, planv1.PushStage_PUSH_STAGE_FAILED, "", note)
 	return fmt.Errorf("%w: %s", errProtectedPush, note)
 }
 
