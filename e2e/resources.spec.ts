@@ -15,11 +15,14 @@ import path from "node:path";
 
 import {
   CommandServiceListResponseSchema,
+  GateMode,
+  GateServiceHistoryRequestSchema,
+  GateServiceHistoryResponseSchema,
   GateServiceListResponseSchema,
   MachineServiceSeriesRequestSchema,
   MachineServiceSeriesResponseSchema,
 } from "../gen/ts/machine/v1/machine_pb";
-import { Provider } from "../gen/ts/plan/v1/plan_pb";
+import { Provider, TaskKind } from "../gen/ts/plan/v1/plan_pb";
 import { portable } from "./portable";
 
 portable();
@@ -146,6 +149,81 @@ function since(taskId: string, wishId: string, title: string, at: number) {
   return full;
 }
 
+// The history of the gates over the window asked, ending at now: W1's code held lint twice and holds it still, an
+// investigation and a mockup shared test, a terminal held e2e outside any task, W1's command was admitted after 3 s;
+// W1 and a watcher run, the investigation and the mockup ran.
+function gateHistory(taskId: string, now: number, minutes: number) {
+  const min = 60_000;
+  const ts = (ago: number) => timestampFromMs(now - ago);
+  const hold = (
+    gate: string,
+    code: string,
+    kind: TaskKind,
+    asked: number,
+    grant: number,
+    release: number | null,
+    extra = {},
+  ) => ({
+    gate,
+    command: `go tool task ${gate}`,
+    project: "oil",
+    taskId: code === "W1" ? taskId : code ? `task-${code}` : "",
+    taskCode: code,
+    taskKind: kind,
+    askedTime: ts(asked),
+    grantTime: ts(grant),
+    releaseTime: release === null ? undefined : ts(release),
+    ...extra,
+  });
+  return create(GateServiceHistoryResponseSchema, {
+    startTime: ts(minutes * min),
+    readTime: ts(0),
+    intervals: [
+      hold("e2e", "", TaskKind.UNSPECIFIED, 50 * min, 50 * min, 45 * min, {
+        outside: true,
+      }),
+      hold("lint", "W1", TaskKind.WORK, 40 * min, 38 * min, 30 * min),
+      hold("test", "W3", TaskKind.INVESTIGATION, 25 * min, 25 * min, 12 * min),
+      hold("test", "W4", TaskKind.MOCKUP, 20 * min, 12 * min, 5 * min),
+      hold(
+        "commands",
+        "W1",
+        TaskKind.WORK,
+        10 * min,
+        10 * min - 3_000,
+        9 * min,
+        {
+          mode: GateMode.SHARED,
+        },
+      ),
+      hold("lint", "W1", TaskKind.WORK, 4 * min, 3 * min, null),
+    ],
+    runs: [
+      {
+        taskId: "task-W2",
+        code: "W2",
+        kind: TaskKind.WATCHER,
+        startTime: ts(60 * min),
+      },
+      { taskId, code: "W1", kind: TaskKind.WORK, startTime: ts(55 * min) },
+      {
+        taskId: "task-W3",
+        code: "W3",
+        kind: TaskKind.INVESTIGATION,
+        startTime: ts(30 * min),
+        endTime: ts(10 * min),
+      },
+      {
+        taskId: "task-W4",
+        code: "W4",
+        kind: TaskKind.MOCKUP,
+        startTime: ts(22 * min),
+        endTime: ts(4 * min),
+      },
+    ],
+  });
+}
+
 const cost = (
   projectId: string,
   command: string,
@@ -210,6 +288,23 @@ async function routeResources(
       ),
     }),
   );
+  // The history of the gates, over the window the tab asks.
+  await page.route("**/machine.v1.GateService/History", (route) => {
+    const ask = fromBinary(
+      GateServiceHistoryRequestSchema,
+      route.request().postDataBuffer() ?? new Uint8Array(),
+    );
+    return route.fulfill({
+      status: 200,
+      contentType: "application/proto",
+      body: Buffer.from(
+        toBinary(
+          GateServiceHistoryResponseSchema,
+          gateHistory(taskId, Date.now(), ask.minutes || 60),
+        ),
+      ),
+    });
+  });
   // The commands of every project, one at rest among them.
   await page.route("**/machine.v1.CommandService/List", (route) =>
     route.fulfill({
@@ -414,8 +509,55 @@ test("the resources panel: values on hover and keys, live samples, and a worker'
   await expect(gates.locator("#gate-lint")).toContainText(
     "a holder outside any task",
   );
-  // The last hour: W1's band on lint.
-  await expect(gates.locator(".gates-band")).toHaveCount(1);
+  // The lanes of the last hour: one per named gate, W1's bands on lint in the workers' blue, the mockup's on test.
+  const flow = gates.locator(".gates-flow");
+  await expect(flow.locator(".gates-flow-name")).toHaveText([
+    "Running",
+    "e2e",
+    "lint",
+    "test",
+  ]);
+  await expect(flow.locator(".gates-band")).toHaveCount(5);
+  await expect(flow.locator(".gates-band.gk-work")).toHaveCount(2);
+  await expect(flow.locator(".gates-band.gk-mock")).toHaveText("W4");
+  // The admissions of the workers' commands come in their own lane, last, when asked.
+  await flow.getByRole("button", { name: "With admissions" }).click();
+  await expect(flow.locator(".gates-band")).toHaveCount(6);
+  await expect(flow.locator(".gates-flow-name").last()).toHaveText("commands");
+  await flow.getByRole("button", { name: "Named gates" }).click();
+  // Pointed at, the lanes say who runs, holds and waits at that moment.
+  const tracks = (await flow.locator(".gates-flow-tracks").boundingBox())!;
+  await page.mouse.move(tracks.x + tracks.width * 0.75, tracks.y + 30);
+  await expect(flow.locator(".gates-flow-readout")).toContainText(
+    "workers run",
+  );
+  if (process.env.RESOURCE_SHOTS)
+    await flow.screenshot({
+      path: path.join(shots, "hourglass-gates-lanes-hover-dark.png"),
+    });
+  await page.mouse.move(0, 0);
+  await expect(flow.locator(".gates-flow-readout")).toHaveCount(0);
+  // The Sankey: the named gates only.
+  const sankey = gates.locator(".gates-sankey");
+  await expect(sankey.locator(".gates-sankey-node text")).toContainText([
+    "Workers 2",
+    "lint 2",
+  ]);
+  await expect(sankey.locator("svg")).not.toContainText("commands");
+  if (process.env.RESOURCE_SHOTS)
+    await sankey.screenshot({
+      path: path.join(shots, "hourglass-gates-sankey-dark.png"),
+    });
+  // A day: the history is read over 24 hours.
+  const day = page.waitForRequest("**/machine.v1.GateService/History");
+  await flow.getByRole("button", { name: "24 h" }).click();
+  expect(
+    fromBinary(
+      GateServiceHistoryRequestSchema,
+      (await day).postDataBuffer() ?? new Uint8Array(),
+    ).minutes,
+  ).toBe(1440);
+  await flow.getByRole("button", { name: "1 h" }).click();
   // The commands of every project, the most total time first; the top one marked.
   await expect(gates.locator(".gates-command-name code")).toHaveText([
     "go tool task e2e",
@@ -544,6 +686,9 @@ test("the resources panel: values on hover and keys, live samples, and a worker'
     await page.screenshot({
       path: path.join(shots, "hourglass-gates-tab-light.png"),
       fullPage: true,
+    });
+    await page.locator(".gates-sankey").screenshot({
+      path: path.join(shots, "hourglass-gates-sankey-light.png"),
     });
     await page.locator("#hourglass-tab-machine").click();
     await panel.getByRole("tab", { name: "Resources" }).click();

@@ -739,6 +739,8 @@ test("every class of the stylesheets is used by a component", () => {
     /^work-/, // wish-task.tsx: work-${work.tone}, where a task's work stands
     /^wish-duo-[slem]$/, // wish-icon.tsx: wish-duo-${duo}, the colours of a wish icon of the bank
     /^lucide$/, // lucide-react's icons carry it (styles.css sizes them in rem)
+    /^gk-(?:work|inv|mock|watch|ifrit|other|out)$/, // gates-flow.tsx: gk-${group}, a task kind's colour
+    /^go-(?:now|short|long)$/, // gates-flow.tsx: go-${outcome}, what a gate's request waited
   ];
   const components = fs
     .readdirSync(root, { recursive: true })
