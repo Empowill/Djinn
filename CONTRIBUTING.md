@@ -388,6 +388,7 @@ has set for those who work on it are in [`docs/pitfalls.md`](docs/pitfalls.md). 
 
 - **Tasks live in [`plan/`](plan/README.md)**, one file each. The README checklist is the only
   tracker.
+- **Everyone follows the [code of conduct](CODE_OF_CONDUCT.md)**, in issues, pull requests and reviews.
 - **Every change is reviewed** by a maintainer.
 - **Commits on `main` are signed.** The branch's protection requires signed commits: sign yours with an SSH or GPG
   key your GitHub account knows (`git config commit.gpgsign true`, and `gpg.format ssh` with `user.signingkey` for an
