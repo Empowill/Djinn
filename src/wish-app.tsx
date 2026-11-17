@@ -42,7 +42,8 @@ import { HOURGLASS, Hourglass } from "./hourglass";
 import { HeldGates } from "./ifrit";
 import { language, t } from "./i18n";
 import { EmptyState } from "./empty-art";
-import { platformShortcut, TooltipButton } from "./tooltip";
+import { platformShortcut, TooltipButton, TooltipLabel } from "./tooltip";
+import { useDjinnVersion, versionLines } from "./version";
 import { useInboxCount } from "./inbox";
 import { ProjectPanel } from "./project-panel";
 import { CIRCLE, SummoningCircle } from "./summoning-circle";
@@ -102,6 +103,8 @@ function store(key: string, value: string) {
 
 export function WishApp() {
   const djinn = useDjinn()!;
+  const version = useDjinnVersion();
+  const [versionName = "", ...versionDetail] = versionLines(version);
   const clients = useClients();
   const data = useStore();
   const wishes = useData((s) => s.wishes);
@@ -500,7 +503,16 @@ export function WishApp() {
         <div className="sidebar-brand">
           <div className="sidebar-brand-main">
             <Brand small={collapsed} eye />
-            {!collapsed && <span className="version-tag">EARLY ACCESS</span>}
+            {/* Under the pointer, the tag says the running Djinn's version and where it comes from (L10 A). */}
+            {!collapsed && (
+              <TooltipLabel
+                className="version-tag"
+                tooltip={versionName}
+                detail={versionDetail}
+              >
+                EARLY ACCESS
+              </TooltipLabel>
+            )}
           </div>
           <TooltipButton
             type="button"
@@ -566,22 +578,33 @@ export function WishApp() {
             importDisabled={!loaded}
           />
           <div className="sidebar-bottom">
-            <button
+            {/* The version, discreet, at the foot of the menu (L10 B); whole, with where it comes from, in the tooltip,
+                the only place it shows when the menu is folded. */}
+            <TooltipButton
               className="profile"
               onClick={() => setModal("settings")}
-              title={t("app.connections_preferences")}
+              label={t("app.connections_preferences")}
+              detail={versionLines(version)}
             >
               <span className="profile-avatar">C</span>
               {!collapsed && (
                 <>
                   <span>
                     {t("app.personal_space")}
-                    <small>{t("app.local_app")}</small>
+                    <small>
+                      {t("app.local_app")}
+                      {version && (
+                        <>
+                          {" · "}
+                          <span className="profile-version">{version}</span>
+                        </>
+                      )}
+                    </small>
                   </span>
                   <Settings2 size={15} />
                 </>
               )}
-            </button>
+            </TooltipButton>
           </div>
         </div>
       </aside>

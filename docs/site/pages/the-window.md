@@ -116,6 +116,13 @@ The **personal space**, at the bottom of the side panel, keeps your own settings
 size and the Djinn's eye. Compact and Very compact shrink the whole window, its spacing with its text, to see more at
 once; Large grows it. The documentation opens in the window's theme and text size.
 
+**The version.** Below Personal space, **Local app** names the version of the running Djinn, in grey: v0.1.0 for a
+release, local- and its commit for a Djinn you installed from your checkout, dev for a development build. A long
+version ends in an ellipsis. The tooltip of the personal space gives it whole, with where it comes from: the release's
+tag, the commit of a local install, marked modified when its tree had changes not committed, or a development build.
+The **EARLY ACCESS** tag under the logo says the same under the pointer. With the side panel folded, the avatar's
+tooltip alone says it. Give it in a bug report.
+
 ## The flying carpet
 
 The flying carpet shows every active wish at a glance. Its head holds the load gauge and the Djinn's own control: its
