@@ -221,7 +221,6 @@ func UpdateWorkerDefaults(home string, p planv1.Provider, model string) ([]*plan
 	if home == "" {
 		return seats, nil
 	}
-	MigrateCircle(home)
 	err := changeSettings(home, func(settings *uiv1.Settings) error {
 		for _, seat := range seats {
 			settings.Circle = setCircleRowSlice(settings.Circle, seat)
@@ -234,27 +233,25 @@ func UpdateWorkerDefaults(home string, p planv1.Provider, model string) ([]*plan
 	return seats, nil
 }
 
-// MigrateCircle reads any legacy per-project provider/model settings from projects/*/settings.txtpb in home once,
-// seeds the Summoning Circle in settings.json for rows not yet configured, and drops those fields from the
-// per-project developer files.
-func MigrateCircle(home string) {
-	if home == "" {
-		return
-	}
+// migrateCircle runs migrateDeveloperSettingsFile on each developer's settings file of home (projects/*/settings.txtpb):
+// the migration "circle-from-project-settings" (Migrate). It goes on past a file it cannot migrate, and returns the
+// errors of them all.
+func migrateCircle(home string) error {
 	matches, err := filepath.Glob(filepath.Join(home, "projects", "*", "settings.txtpb"))
 	if err != nil {
-		return
+		return err
 	}
+	var errs []error
 	for _, devFile := range matches {
-		migrateDeveloperSettingsFile(home, devFile)
+		errs = append(errs, migrateDeveloperSettingsFile(home, devFile))
 	}
+	return errors.Join(errs...)
 }
 
-// ReadCircle returns the Summoning Circle rows in CircleRowOrder from settings.json in home after migrating any
-// legacy per-project settings. The lead row always carries a concrete provider and model ID; every other row carries
+// ReadCircle returns the Summoning Circle rows in CircleRowOrder from settings.json in home (djinn up moved the
+// legacy per-project settings there at start: Migrate). The lead row always carries a concrete provider and model ID; every other row carries
 // PROVIDER_UNSPECIFIED and "" when set to "Same as lead".
 func ReadCircle(home string) []*planv1.WorkerSeat {
-	MigrateCircle(home)
 	settings := readSettings(home)
 	byKind := make(map[planv1.WorkerKind]*planv1.WorkerSeat, len(settings.GetCircle()))
 	for _, r := range settings.GetCircle() {
@@ -312,12 +309,11 @@ func ReadCircle(home string) []*planv1.WorkerSeat {
 
 // ResolveWorkerSeat returns the effective provider and canonical model ID for kind from the Summoning Circle in home.
 // When the row is set to "Same as lead", it follows the lead's provider and model ID. explicit is true when the
-// circle or lead seat has been configured in settings.json (or migrated from a per-project developer file).
+// circle or lead seat has been configured in settings.json (or migrated from a per-project developer file at start).
 func ResolveWorkerSeat(home string, kind planv1.WorkerKind) (provider planv1.Provider, model string, explicit bool) {
 	if home == "" {
 		return planv1.Provider_PROVIDER_CLAUDE, "", false
 	}
-	MigrateCircle(home)
 	settings := readSettings(home)
 	for _, r := range settings.GetCircle() {
 		if r.GetKind() == kind && (r.GetProvider() != planv1.Provider_PROVIDER_UNSPECIFIED || r.GetModel() != "") {
@@ -972,7 +968,6 @@ func (s *LeadService) SetCircle(
 	ctx context.Context, req *connect.Request[planv1.LeadServiceSetCircleRequest],
 ) (*connect.Response[planv1.LeadServiceSetCircleResponse], error) {
 	home := s.Wishes.home()
-	MigrateCircle(home)
 	kind := req.Msg.GetKind()
 	if !slices.Contains(CircleRowOrder, kind) {
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("unknown worker kind %v", kind))

@@ -255,6 +255,9 @@ func runUp(args []string) (restart bool, err error) {
 	defer logx.Crash("djinn up")
 	down := logx.NewShutdown(logx.Folder(home))
 	defer down.End()
+	// The local settings this build reads in a new shape are migrated now, before any reads them; a migration that
+	// cannot apply is logged and tried again at the next start, never a failed start (docs/migrations.md).
+	plan.Migrate(home)
 	// Each stop names its source, which the log says (decision Q84): a signal, Ctrl+Q, the tray, an install.
 	ctx, stop, release := stopContext(context.Background(), nil)
 	defer release()

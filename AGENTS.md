@@ -30,6 +30,9 @@ repeat them.
   `CONTRIBUTING.md`, and name every new dependency in your change description.
 - **What you add to a wish's plan is smoke** unless the code computes on it: write a block, do
   not add a field.
+- **A migration of the local settings is the last resort**, after proto versioning, and only for a measured cost: it
+  runs at `djinn up`, is recorded in `settings.json`, is idempotent, and never fails the start. Read
+  [`docs/migrations.md`](docs/migrations.md) before you add one.
 - **Locate symbols and lines with `rg -n` or `grep -n` before reading a file.** Never page through a file with
   `view_file` 800 lines at a time: pass `StartLine` and `EndLine` (`<= 200` lines) around the match so the context
   stays below compaction.
