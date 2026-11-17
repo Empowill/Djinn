@@ -31,8 +31,8 @@ projects it touches, and a project is not necessarily a Git repository.
   configuration and index, both in Djinn's data folder. Djinn writes nothing into a project and
   commits nothing there, unless a mission explicitly does it as part of its work.
 - **Adding a project feels natural.** In the chat, "it is in ~/code/api" or "clone
-  github.com/acme/api" is enough: the lead calls `djinn project add <folder>` or
-  `djinn project clone <url>`, exactly as a person would. Both index the project in seconds, with
+  github.com/acme/api" is enough: the lead calls `djinn project add <folder>`, after
+  `git clone <url>` for a remote, exactly as a person would. It indexes the project in seconds, with
   no model call, and the mission picks it up at once. A folder that is not a Git repository is
   fine.
 - **An exported mission carries its plan, questions, decisions and journal**, never code and never
@@ -43,7 +43,11 @@ projects it touches, and a project is not necessarily a Git repository.
 - **The interface keeps its "add a project" screen**, simplified: by default it indexes everything
   at once, with nothing to choose. The indexing options open only for someone who asks for them.
   This changes `src/`: reviewed by the interface maintainer.
-- **One command takes you back to a wish.** `djinn wish resume <wish>` starts the lead on that
+- **One command takes you back to a wish.** *Since Q114 (11/10/2026) one lead drives every wish: `djinn lead resume`
+  takes it back (`--wish-id` focuses a wish), `djinn lead set` records its session, its terminal is `lead`, and an
+  export carries no lead. `djinn wish resume` and `djinn wish set-lead` are gone; what follows on a lead per wish is
+  how it began.*
+  `djinn wish resume <wish>` started the lead on that
   wish where it stopped: it resumes the lead's own agent session when the wish recorded one (the
   wish keeps the provider and the session ID, never a secret), and otherwise starts a new lead
   from a brief built out of the store (plan, open questions, decisions, journal). The wish's
@@ -75,10 +79,11 @@ projects it touches, and a project is not necessarily a Git repository.
   W1 done in a Git project's worktree, W2 done outside Git once its edit question was answered;
   `TestSpawnInGit`, `TestSpawnOutsideGit`)
 - [x] A session exported here imports on another machine and finds or asks for its projects.
-- [x] `djinn wish resume <wish>` takes the lead's own session back in the lead's terminal, starting Djinn if it
+- [x] `djinn lead resume` (`djinn wish resume <wish>` before Q114) takes the lead's own session back in the lead's
+  terminal, starting Djinn if it
   does not run, and attaches to it if it already runs.
-- [x] Without a lead session, `djinn wish resume` starts a new lead from a brief built out of the store (plan, open
-  questions, decisions, journal): `djinn wish brief`, T22.
+- [x] Without a lead session, `djinn lead resume` starts a new lead from a brief built out of the store (plan, open
+  questions, decisions, journal): `djinn brief` (`djinn wish brief` before Q114), T22.
 - [x] Three active wishes at most, as many paused as you like: a new wish beyond three is made paused; resuming one
   when three are active takes the third place and pauses the third wish; moving a paused wish among the three first
   makes it active there. (`TestThreeWishes`, `TestRank`)
@@ -99,7 +104,8 @@ projects it touches, and a project is not necessarily a Git repository.
   marked with its wish; a question answered there goes to its wish. (branch `w30-ui`: `src/flight-plan.tsx`,
   `tests/data-flight.test.mjs`, the flying carpet tests of `tests/screens.test.mjs`, `e2e/flight-plan.spec.ts`: two
   wishes, a question each, one answered from the merged view and read answered by `djinn question list`)
-- [x] Each wish shows its own lead: the wish shown brings its lead's terminal (`lead-<wish id>`) while it runs, else
+- [x] Each wish shows its own lead: the wish shown brings its lead's terminal (`lead-<wish id>`; since Q114 the one
+  `lead` terminal) while it runs, else
   the window's terminal; the flying carpet shows the window's. Switching back finds the same lead, its output kept.
   (`TestServiceList`, `tests/data-terminal.test.mjs`, e2e `lead-switch.spec.ts`: two wishes with a lead each and one
   without, switched from the side panel)
@@ -137,7 +143,11 @@ projects it touches, and a project is not necessarily a Git repository.
 - **The journal follows the wish**: a re-export carries the commands of the first machine, not the
   import itself, so files never nest.
 
-- **The lead is in the lamp**: `Wish.lead` (`Lead`: provider, session ID, folder), set by
+*Since Q114 (11/10/2026) one lead drives every wish: `djinn lead resume` takes it back (`--wish-id` focuses a wish),
+`djinn lead set` records its session, its terminal is `lead`, and an export carries no lead. `djinn wish resume` and
+`djinn wish set-lead` are gone; what follows on a lead per wish is how it began.*
+- **The lead is in the lamp**: `Wish.lead` (reserved since Q114: `djinn lead set` records the one lead) (`Lead`:
+  provider, session ID, folder), set by
   `djinn wish set-lead <wish> <session> [--provider codex] [--directory <folder>]` (the folder defaults to the
   wish's first project; never the home folder, nor a folder above it). Only Claude (`claude --resume <id>`) and Codex (`codex resume <id>`) can be resumed in a
   terminal; the session ID is a word (`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`), so the line goes through the user's
@@ -149,7 +159,8 @@ projects it touches, and a project is not necessarily a Git repository.
   running one to show its window (`UiService.Show`: restored, raised, focused; in browser mode it prints the page's
   address again) and exits 0. An address file nothing answers is from a crash: `djinn up` starts over it. Our own
   mechanism (the socket or the loopback address of `server.addr`), not the single instance of Wails.
-- **`djinn wish resume`** is marked `autostart`: without a djinn, the command line starts `djinn up` detached
+- **`djinn wish resume`** (`djinn lead resume` since Q114) is marked `autostart`: without a djinn, the command line
+  starts `djinn up` detached
   (its own session, output in `djinn.log`), waits for it, then calls it. The server opens the terminal
   `lead-<wish id>` running the resume line in the lead's folder, or attaches to it, and asks the window to show the
   wish and that terminal (`UiService.WatchShow`, replayed for a minute to a window that opens later).
@@ -188,7 +199,9 @@ projects it touches, and a project is not necessarily a Git repository.
   or granted and when. A ready wish adds a line to "Waiting for you", with `djinn wish grant <wish>`.
 
 - **A new lead from the brief**: `djinn wish brief <wish>` prints it (Djinn's rules and the projects' rules, then
-  where the wish stands; no model, no local path). `djinn wish resume <wish> [--provider codex|antigravity]` without a
+  where the wish stands; no model, no local path). `djinn wish resume <wish> [--provider codex|antigravity]` (`djinn
+  lead resume`
+  since Q114) without a
   lead session starts the agent on it in the wish's first project, else the first of Djinn's projects, never in the
   home folder; with no project nothing starts, and the error says to create one. A session recorded in the home
   folder is not resumed there (claude finds a session only from its folder): a new lead starts the same way. It runs

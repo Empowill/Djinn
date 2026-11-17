@@ -98,8 +98,9 @@ type updater struct {
 }
 
 // newUpdater returns the updater of a djinn of version. A development build never updates: workers rebuild it all the
-// time, and it is not the Djinn in use.
-func newUpdater(version string, svc *ui.Service, terms *terminal.Manager, leads *leadNote, stop func(string)) (*updater, error) {
+// time, and it is not the Djinn in use. Without releases (djinn up --update-check=false), it asks no server for a newer
+// release: it only offers a newer binary installed at its path, which reads no network.
+func newUpdater(version string, releases bool, svc *ui.Service, terms *terminal.Manager, leads *leadNote, stop func(string)) (*updater, error) {
 	if version == "dev" {
 		return nil, nil
 	}
@@ -111,12 +112,14 @@ func newUpdater(version string, svc *ui.Service, terms *terminal.Manager, leads 
 	if err != nil {
 		return nil, err
 	}
-	releases, err := releaseSource(version)
-	if err != nil {
-		return nil, err
+	var from source
+	if releases {
+		if from, err = releaseSource(version); err != nil {
+			return nil, err
+		}
 	}
 	return &updater{
-		exe: exe, version: version, ui: svc, terms: terms, leads: leads, stop: stop, releases: releases,
+		exe: exe, version: version, ui: svc, terms: terms, leads: leads, stop: stop, releases: from,
 		started: info, seen: info,
 	}, nil
 }

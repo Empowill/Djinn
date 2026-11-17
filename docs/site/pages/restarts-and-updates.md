@@ -213,6 +213,11 @@ Nothing downloads nor restarts without your click. The click stops Djinn as a qu
 nothing lost, and starts the newer one, which takes everything back as above. **Dismiss**, the ×, hides an item until
 another version comes.
 
+To look for a release, Djinn asks GitHub at start and then every six hours: it reads a version number, nothing
+more, and it is the only thing Djinn sends on its own besides a network probe after a worker's outage. Start Djinn
+with its update check turned off, a flag or a setting of its environment named in the user guide, and it asks
+nothing: only a newer Djinn installed where it runs from is offered.
+
 When an update fails, the banner says why, with **Try again**.
 
 ### For those who build Djinn
