@@ -24,6 +24,9 @@ repeat them.
   command, a behaviour. Rewrite its chapter or card in the documentation site (`docs/site/index.html`); a new concept
   gets its card. The Command line tab reads the command tree: keep a proto comment or a `cli.Builtins` entry true.
 - **Read [`docs/pitfalls.md`](docs/pitfalls.md) before you chase a failure**: the code's known traps, how to spot them.
+- **Any Djinn you start gets its own `DJINN_HOME` in `$DJINN_SCRATCH`**, under wine, in a container or over ssh too,
+  set on its command line (`Z:` before the path under wine): it inherits yours otherwise, the person's real data folder
+  (W80; see the pitfall on a Djinn started under wine in [`docs/pitfalls.md`](docs/pitfalls.md)).
 - **Write tests by the rules in [`CONTRIBUTING.md`](CONTRIBUTING.md#writing-tests).** Never call a paid model in a
   test: record a stream instead (`docs/providers.md`).
 - **A license check comes before any reuse** of third-party code: see the license section of
