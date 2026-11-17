@@ -34,7 +34,8 @@ T27; the inbox, the section from T28. Each section holds its part of it.
 - **Answering acts in the same transaction** (`Questions.Settle`, `Marks.Settle`), each change journaled as the
   command that would make it: filing puts a `request` block in the wish, and tells its lead (W52's path); a new wish
   is made with its projects and the request block, its option records the new wish, and its lead starts from the
-  brief in its own terminal (`lead-<wish>`), the request first (`plan.FirstLine`), shown in the window. The lead of
+  brief in its own terminal (`lead-<wish>`; since Q114 a new wish starts no lead of its own, the one lead takes it),
+  the request first (`plan.FirstLine`), shown in the window. The lead of
   the wish the request came to is told where it went (`plan.RoutedLine`). A route question answers once.
 - **Three wishes at most**: when full, the card offers the new wish paused (`ROUTE_KIND_QUEUE`, no lead started) or
   to pause the last active wish but the lead's own (`ROUTE_KIND_SWAP`).
