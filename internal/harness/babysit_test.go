@@ -30,6 +30,8 @@ type fakeForge struct {
 	checks map[string]string
 	// created is what gh pr create and glab mr create print; empty, they fail with it.
 	created string
+	// api is what gh api and glab api print, the branches the forge protects; empty, they fail.
+	api string
 }
 
 func (f *fakeForge) run(ctx context.Context, dir string, args []string) (string, int, error) {
@@ -39,6 +41,12 @@ func (f *fakeForge) run(ctx context.Context, dir string, args []string) (string,
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.calls = append(f.calls, strings.Join(args, " "))
+	if args[1] == "api" {
+		if f.api == "" {
+			return "fake forge: HTTP 404: Not Found", 1, nil
+		}
+		return f.api, 0, nil
+	}
 	switch strings.Join(args[1:3], " ") {
 	case "pr view", "mr view":
 		if out, ok := f.views[args[3]]; ok {

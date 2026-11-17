@@ -119,6 +119,9 @@ func sameRemote(a, b string) bool {
 	return ka != "" && ka == kb
 }
 
+// RemoteRepo splits a remote URL into its lowercase host and case-preserved repository path, as remoteRepo.
+func RemoteRepo(remote string) (host, path string) { return remoteRepo(remote) }
+
 // remoteRepo splits a remote URL into its lowercase host and case-preserved repository path.
 func remoteRepo(remote string) (host, path string) {
 	r := strings.TrimSpace(remote)

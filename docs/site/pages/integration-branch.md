@@ -67,7 +67,7 @@ The integration branch is the reference branch unless you choose another, main i
 merges a wish's checked work into main when main is its integration branch, but it never pushes main: the reference
 branch reaches the remote only through a merged pull or merge request. The push is refused, whatever the wish, its push
 strategy and the project, and the branch's line says how to give the wish a branch of its own; see
-[The reference branch is never pushed](#push-the-reference-branch-is-never-pushed).
+[A protected branch is never pushed](#push-a-protected-branch-is-never-pushed).
 
 In a project that names no check, Djinn never merges untested work into main: it merges only into a wish's own branch,
 untested. A wish there whose branch is main has its work left out of any branch; its tasks' events say why, and a task

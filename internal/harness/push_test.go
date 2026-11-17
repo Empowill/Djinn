@@ -24,7 +24,7 @@ import (
 // remote gives the repository a remote, origin, a bare repository in a temporary folder that holds the reference
 // branch and the integration branch as they are now, and returns its folder. A wish under the wish strategy that
 // integrates into the reference branch is given a branch of its own first, feat/wish, made from it and checked out:
-// Djinn never pushes the reference branch (refuseReference). Per azima, the wish's branch stays the reference branch:
+// Djinn never pushes the reference branch (refuseProtected). Per azima, the wish's branch stays the reference branch:
 // Djinn pushes only its azimas' branches.
 func (in *integration) remote(t *testing.T) string {
 	t.Helper()
