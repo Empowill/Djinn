@@ -22,6 +22,7 @@ import (
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	uiv1 "github.com/empowill/djinn/gen/go/ui/v1"
 	"github.com/empowill/djinn/internal/fsx"
+	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/store"
 )
 
@@ -483,9 +484,6 @@ func readSettingsFilesConfig(home string, project *planv1.Project, config Config
 		if f.path == "" {
 			continue
 		}
-		if !f.team {
-			migrateDeveloperSettingsFile(home, f.path)
-		}
 		read, name := f.path, f.path
 		if f.team {
 			// The team's file is read where Djinn reads the project's configuration: the reference branch's tree.
@@ -905,21 +903,30 @@ func ValidateQuestionModel(workerProvider, questionProvider planv1.Provider, mod
 
 var devModelLine = regexp.MustCompile(`(?m)^[ \t]*(provider|model|question_provider|question_model)[ \t]*:.*(?:\r?\n|$)`)
 
-// migrateDeveloperSettingsFile reads any legacy per-project provider/model choices from devFile once as the starting
-// value of the Summoning Circle in home, normalizing labels to canonical model IDs, then drops them from devFile.
-func migrateDeveloperSettingsFile(home, devFile string) {
-	if home == "" || devFile == "" {
-		return
-	}
+// migrateDeveloperSettingsFile moves the per-project provider/model choices of devFile, a developer's settings file,
+// to the Summoning Circle in home, for rows not configured yet, normalizing labels to canonical model IDs; then it drops
+// those lines from devFile. A value that cannot move (a provider or model this build refuses, or a question model whose
+// provider cannot run read-only) is dropped all the same, and so is every line once the circle is configured (a lead
+// seat or a row in settings.json): the circle chooses the workers' seats then, and the stale line only showed a wrong
+// provider in the project's settings (L20, Q56 A). No worker changes model. It returns an error, devFile left as it is,
+// when devFile cannot be read as settings (a secret, a removed key, a line protobuf refuses) or the circle cannot be
+// written. A file without those lines is not written: running it twice changes nothing.
+func migrateDeveloperSettingsFile(home, devFile string) error {
 	b, err := os.ReadFile(devFile)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
 	if err != nil {
-		return
+		return err
+	}
+	if !devModelLine.Match(b) {
+		return nil
 	}
 	if line, _ := secretIn(b); line > 0 {
-		return
+		return fmt.Errorf("%s: line %d looks like a secret", devFile, line)
 	}
-	if line, _ := removedKeyIn(b); line > 0 {
-		return
+	if line, key := removedKeyIn(b); line > 0 {
+		return fmt.Errorf("%s: line %d holds the removed key %s", devFile, line, key)
 	}
 	s := &planv1.ProjectSettings{}
 	normalized := normalizeInstallQuestions.ReplaceAllFunc(b, func(match []byte) []byte {
@@ -933,12 +940,15 @@ func migrateDeveloperSettingsFile(home, devFile string) {
 	})
 	opts := prototext.UnmarshalOptions{DiscardUnknown: true}
 	if err := opts.Unmarshal(normalized, s); err != nil {
-		return
+		return fmt.Errorf("%s: %w", devFile, err)
 	}
 	hasWorker := s.Provider != nil || s.Model != nil
 	hasQuestion := s.QuestionProvider != nil || s.QuestionModel != nil
-	if !hasWorker && !hasQuestion {
-		return
+	if circleConfigured(readSettings(home)) {
+		// The circle chooses every worker's seat already (ResolveWorkerSeat): the lines are dropped, and no worker
+		// changes model.
+		logx.L().Info("the stale seats of a project's settings are dropped: the circle is configured", "file", devFile)
+		hasWorker, hasQuestion = false, false
 	}
 
 	var workerProvider planv1.Provider
@@ -953,7 +963,9 @@ func migrateDeveloperSettingsFile(home, devFile string) {
 			workerModel = DefaultCircleModel(workerProvider)
 		}
 		if !ValidWorkerProvider(workerProvider) || ValidateProviderModel(workerProvider, workerModel) != nil {
-			return
+			logx.L().Info("a stale worker seat of a project's settings is dropped, not moved to the circle",
+				"file", devFile, "provider", s.GetProvider().String(), "model", s.GetModel())
+			hasWorker = false
 		}
 	}
 
@@ -976,46 +988,60 @@ func migrateDeveloperSettingsFile(home, devFile string) {
 			qModel = DefaultCircleModel(qProvider)
 		}
 		if !CanReadOnly(qProvider) || ValidateProviderModel(qProvider, qModel) != nil {
-			return
+			logx.L().Info("a stale question seat of a project's settings is dropped, not moved to the circle",
+				"file", devFile, "question_provider", s.GetQuestionProvider().String(), "question_model", s.GetQuestionModel())
+			hasQuestion = false
 		}
 	}
 
-	_ = changeSettings(home, func(settings *uiv1.Settings) error {
-		setIfMissing := func(kind planv1.WorkerKind, p planv1.Provider, m string) {
-			for _, row := range settings.Circle {
-				if row.GetKind() == kind && (row.GetProvider() != planv1.Provider_PROVIDER_UNSPECIFIED || row.GetModel() != "") {
-					return
+	if hasWorker || hasQuestion {
+		err := changeSettings(home, func(settings *uiv1.Settings) error {
+			setIfMissing := func(kind planv1.WorkerKind, p planv1.Provider, m string) {
+				for _, row := range settings.Circle {
+					if row.GetKind() == kind && (row.GetProvider() != planv1.Provider_PROVIDER_UNSPECIFIED || row.GetModel() != "") {
+						return
+					}
+				}
+				settings.Circle = setCircleRowSlice(settings.Circle, &planv1.WorkerSeat{
+					Kind:     kind,
+					Provider: p,
+					Model:    m,
+				})
+			}
+			if hasWorker {
+				for _, kind := range []planv1.WorkerKind{
+					planv1.WorkerKind_WORKER_KIND_INVESTIGATION,
+					planv1.WorkerKind_WORKER_KIND_MOCKUP,
+					planv1.WorkerKind_WORKER_KIND_IFRIT,
+					planv1.WorkerKind_WORKER_KIND_WORK,
+					planv1.WorkerKind_WORKER_KIND_CORRECTION,
+					planv1.WorkerKind_WORKER_KIND_REVIEW,
+				} {
+					if kind == planv1.WorkerKind_WORKER_KIND_IFRIT && !CanIfrit(workerProvider) {
+						continue
+					}
+					setIfMissing(kind, workerProvider, workerModel)
 				}
 			}
-			settings.Circle = setCircleRowSlice(settings.Circle, &planv1.WorkerSeat{
-				Kind:     kind,
-				Provider: p,
-				Model:    m,
-			})
-		}
-		if hasWorker {
-			for _, kind := range []planv1.WorkerKind{
-				planv1.WorkerKind_WORKER_KIND_INVESTIGATION,
-				planv1.WorkerKind_WORKER_KIND_MOCKUP,
-				planv1.WorkerKind_WORKER_KIND_IFRIT,
-				planv1.WorkerKind_WORKER_KIND_WORK,
-				planv1.WorkerKind_WORKER_KIND_CORRECTION,
-				planv1.WorkerKind_WORKER_KIND_REVIEW,
-			} {
-				if kind == planv1.WorkerKind_WORKER_KIND_IFRIT && !CanIfrit(workerProvider) {
-					continue
-				}
-				setIfMissing(kind, workerProvider, workerModel)
+			if hasQuestion {
+				setIfMissing(planv1.WorkerKind_WORKER_KIND_QUESTION, qProvider, qModel)
 			}
+			return nil
+		})
+		if err != nil {
+			// The lines stay: the circle did not take them, and the next start tries again.
+			return fmt.Errorf("write the circle: %w", err)
 		}
-		if hasQuestion {
-			setIfMissing(planv1.WorkerKind_WORKER_KIND_QUESTION, qProvider, qModel)
-		}
-		return nil
-	})
+	}
+	return fsx.WriteAtomic(devFile, devModelLine.ReplaceAll(b, nil), 0o600)
+}
 
-	stripped := devModelLine.ReplaceAll(b, nil)
-	_ = fsx.WriteAtomic(devFile, stripped, 0o600)
+// circleConfigured says whether settings choose the workers' seats themselves, so that ResolveWorkerSeat answers
+// explicit: a lead seat, or any row of the circle.
+func circleConfigured(settings *uiv1.Settings) bool {
+	lead := settings.GetLead()
+	return len(settings.GetCircle()) > 0 ||
+		lead != nil && (lead.GetProvider() != planv1.Provider_PROVIDER_UNSPECIFIED || lead.GetModel() != "")
 }
 
 // ResolveWishPushStrategy resolves the push strategy and its source for a wish, falling back to the project settings.

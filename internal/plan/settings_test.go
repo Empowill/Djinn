@@ -847,6 +847,7 @@ func TestProjectShow(t *testing.T) {
 	writeSettings(t, repoFile, "provider: PROVIDER_CLAUDE\nmodel: \"opus\"\nmax_budget_usd: 3\nbranch: \"djinn/{code}-{uuid8}\"\n"+
 		"generated: \"gen/**\"\ngenerated: \"docs/schema.json\"\ngenerate: \"go tool task gen\"\ntest: \"go tool task test\"\ncorrection_attempts: 3\ninstall: \"go tool task install\"\n")
 	writeSettings(t, devFile, "model: \"sonnet\"\nbranch: \"me/{slug}-{uuid8}\"\ntest: \"go tool task test-go\"\n")
+	Migrate(home) // djinn up moves the developer's legacy model to the circle.
 	if got, want := rows(show()), "provider=claude REPOSITORY, model=opus REPOSITORY, max_budget_usd=3 REPOSITORY, "+
 		"branch=me/{slug}-{uuid8} DEVELOPER, generated=gen/**,docs/schema.json REPOSITORY, generate=go tool task gen REPOSITORY, "+
 		"setup= DEFAULT, checks=test: go tool task test-go (commit) DEVELOPER, test_one= DEFAULT, correction_attempts=3 REPOSITORY, "+
@@ -1001,9 +1002,10 @@ func TestLeadCircleAndMigration(t *testing.T) {
 		}
 	}
 
-	// 2. Old per-project developer file with a human-readable label migrates once to canonical IDs and drops its model lines.
+	// 2. Old per-project developer file with a human-readable label migrates at start (Migrate), the circle not configured yet, to canonical IDs and drops its model lines.
 	devFile := DeveloperSettingsFile(home, "proj-1")
 	writeSettings(t, devFile, "provider: PROVIDER_ANTIGRAVITY\nmodel: \"Gemini 4 Argon (High)\"\nquestion_model: \"haiku\"\npush: PROJECT_PUSH_ON_DEMAND\n")
+	Migrate(home)
 
 	migRes, err := lead.GetCircle(ctx, connect.NewRequest(&planv1.LeadServiceGetCircleRequest{}))
 	if err != nil {

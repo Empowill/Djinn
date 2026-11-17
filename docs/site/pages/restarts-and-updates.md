@@ -274,6 +274,14 @@ run left are still marked interrupted, without their event when the task events 
 or the journal are; the lead is not told of the restart without its events or the journal; the Statistics tab
 answers on the other kinds, and a query of the missing one says it was not migrated.
 
+### The local settings
+
+Djinn's settings outside the database (the window's settings and your own project files) migrate at start too, each
+change once: Djinn notes it in its settings when it applied, and never runs it again. A change that cannot apply leaves
+that file as it was, writes a warning in the log, and is tried again at the next start; Djinn starts all the same. One
+of them drops the provider and model lines an older Djinn left in your project files: the Summoning Circle chooses
+every worker's agent and model now, and those lines only showed a wrong agent in the project's settings.
+
 ## Common mistakes
 
 - **Killing Djinn to fix a freeze.** Nothing is lost either way, but what Djinn was waiting on is lost with it: have

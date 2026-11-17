@@ -576,8 +576,12 @@ type Settings struct {
 	// available (LoadService.SetBrake, the Summoning Circle). Unset: 5. 0: no brake. djinn up --brake-memory, or
 	// DJINN_BRAKE_MEMORY, comes first.
 	BrakeMemoryPercent *uint32 `protobuf:"varint,17,opt,name=brake_memory_percent,json=brakeMemoryPercent,proto3,oneof" json:"brake_memory_percent,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	// The names of the migrations of the local settings djinn up has applied, in the order it applied them
+	// (plan.Migrate, docs/migrations.md). A name stays here once applied; a migration that could not apply is not here,
+	// and the next start tries it again.
+	Migrations    []string `protobuf:"bytes,18,rep,name=migrations,proto3" json:"migrations,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Settings) Reset() {
@@ -727,6 +731,13 @@ func (x *Settings) GetBrakeMemoryPercent() uint32 {
 		return *x.BrakeMemoryPercent
 	}
 	return 0
+}
+
+func (x *Settings) GetMigrations() []string {
+	if x != nil {
+		return x.Migrations
+	}
+	return nil
 }
 
 // SignInRef names a sign-in of an agent: its own (no account) or one of its accounts.
@@ -2759,7 +2770,7 @@ const file_ui_v1_ui_proto_rawDesc = "" +
 	"\x05chord\x18\x01 \x01(\tR\x05chord\x12#\n" +
 	"\rdefault_chord\x18\x02 \x01(\tR\fdefaultChord\x12\x1c\n" +
 	"\tavailable\x18\x03 \x01(\bR\tavailable\x12\x18\n" +
-	"\aproblem\x18\x04 \x01(\tR\aproblem\"\xa2\b\n" +
+	"\aproblem\x18\x04 \x01(\tR\aproblem\"\xc2\b\n" +
 	"\bSettings\x12\x1f\n" +
 	"\bshortcut\x18\x01 \x01(\tH\x00R\bshortcut\x88\x01\x01\x12,\n" +
 	"\x04load\x18\x02 \x01(\x0e2\x13.djinn.v1.LoadNotchH\x01R\x04load\x88\x01\x01\x12=\n" +
@@ -2782,7 +2793,10 @@ const file_ui_v1_ui_proto_rawDesc = "" +
 	"\x12unlimited_unforced\x18\x0e \x03(\v2\x10.ui.v1.SignInRefR\x11unlimitedUnforced\x12<\n" +
 	"\x18heavy_command_memory_mib\x18\x0f \x01(\rH\x05R\x15heavyCommandMemoryMib\x88\x01\x01\x12>\n" +
 	"\x19heavy_command_cpu_seconds\x18\x10 \x01(\rH\x06R\x16heavyCommandCpuSeconds\x88\x01\x01\x12>\n" +
-	"\x14brake_memory_percent\x18\x11 \x01(\rB\a\xbaH\x04*\x02\x18_H\aR\x12brakeMemoryPercent\x88\x01\x01B\v\n" +
+	"\x14brake_memory_percent\x18\x11 \x01(\rB\a\xbaH\x04*\x02\x18_H\aR\x12brakeMemoryPercent\x88\x01\x01\x12\x1e\n" +
+	"\n" +
+	"migrations\x18\x12 \x03(\tR\n" +
+	"migrationsB\v\n" +
 	"\t_shortcutB\a\n" +
 	"\x05_loadB\x15\n" +
 	"\x13_ifrit_idle_minutesB\x0e\n" +
