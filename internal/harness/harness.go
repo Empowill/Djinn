@@ -155,6 +155,9 @@ type Harness struct {
 	referenceFetched map[string]time.Time  // by repository, when its reference branch was last fetched (fetchReference), guarded by mu
 	mergedLooks      map[string]time.Time  // by repository, when Djinn last fetched main to find azimas merged into it (merged.go), guarded by mu
 
+	// By forge repository (host/path), the branches it protects, as last read (push_reference.go): guarded by mu.
+	protectedLooks map[string]protectedLook
+
 	// The workers' health (health.go), judged by the scheduler's pass: guarded by sched.
 	accountOf AccountFunc                // nil: no agent's account is read
 	nameMax   func(string) int           // the file system's longest name (session_name.go); nil: not checked
@@ -352,7 +355,7 @@ func New(s *store.Store, home string, providers map[planv1.Provider]Provider, op
 	h := &Harness{
 		store: s, home: home, providers: providers, ctx: ctx, cancel: cancel, runs: map[string]*run{},
 		tick: 2 * time.Second, kick: make(chan struct{}, 1), changed: make(chan struct{}),
-		integrateKick: make(chan struct{}, 1), configKick: make(chan struct{}, 1), tested: map[string]tested{}, mainTested: map[string]mainTested{}, pushWaits: map[string]bool{}, toldApart: map[string]bool{}, referenceFetched: map[string]time.Time{}, mergedLooks: map[string]time.Time{},
+		integrateKick: make(chan struct{}, 1), configKick: make(chan struct{}, 1), tested: map[string]tested{}, mainTested: map[string]mainTested{}, pushWaits: map[string]bool{}, toldApart: map[string]bool{}, referenceFetched: map[string]time.Time{}, mergedLooks: map[string]time.Time{}, protectedLooks: map[string]protectedLook{},
 		pushJobs:  map[string]*pushJob{},
 		installed: map[string]string{}, preempted: map[string]string{}, rateHits: map[string]int{}, aliases: map[string]string{},
 		resident: map[string]uint64{},

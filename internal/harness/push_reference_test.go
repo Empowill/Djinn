@@ -68,10 +68,10 @@ func TestPushRefusesTheReferenceBranch(t *testing.T) {
 		}
 
 		// Nor does the person's own push: the button, or djinn project push.
-		if _, err := in.h.Push(t.Context(), in.wishID, in.projectID, ""); !errors.Is(err, errReferencePush) {
+		if _, err := in.h.Push(t.Context(), in.wishID, in.projectID, ""); !errors.Is(err, errProtectedPush) {
 			t.Errorf("Push: %v; want the reference branch refused", err)
 		}
-		if _, err := in.h.Push(t.Context(), in.wishID, in.projectID, in.branch); !errors.Is(err, errReferencePush) {
+		if _, err := in.h.Push(t.Context(), in.wishID, in.projectID, in.branch); !errors.Is(err, errProtectedPush) {
 			t.Errorf("Push of %s: %v; want the reference branch refused", in.branch, err)
 		}
 		if got := in.remoteTip(t, bare); got != old {
@@ -92,7 +92,7 @@ func TestPushRefusesTheReferenceBranch(t *testing.T) {
 			t.Fatal(err)
 		}
 		in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
-		if _, err := in.h.Push(t.Context(), in.wishID, in.projectID, ""); !errors.Is(err, errReferencePush) ||
+		if _, err := in.h.Push(t.Context(), in.wishID, in.projectID, ""); !errors.Is(err, errProtectedPush) ||
 			!strings.Contains(err.Error(), "Djinn never pushes feat/x: feat/x goes to "+main+", the reference branch of app") {
 			t.Errorf("Push: %v; want feat/x refused, as it goes to %s", err, main)
 		}
@@ -123,4 +123,104 @@ func TestPushRefusesTheReferenceBranch(t *testing.T) {
 			t.Errorf("the push's run %v; want pushed", run)
 		}
 	})
+
+	// onForge is an integration whose wish has a branch of its own, feat/wish, a task's work merged into it, and whose
+	// origin is address on a forge, forge, that git reaches in a bare repository: its folder.
+	onForge := func(t *testing.T, address string, forge *fakeForge) (in *integration, bare string) {
+		t.Helper()
+		in = integrating(t)
+		bare = in.remote(t)
+		in.git(t, in.repo, "remote", "set-url", "origin", address)
+		in.git(t, in.repo, "config", "url."+bare+".insteadOf", address)
+		in.mu.Lock()
+		in.forge = forge
+		in.mu.Unlock()
+		azima := in.azima(t, in.wishID, "Letters") // Its work done, its branch is pushed at once.
+		in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}, func(task *planv1.Task) { task.PartOf = azima.GetId() })
+		return in, bare
+	}
+
+	t.Run("a branch the forge protects", func(t *testing.T) {
+		t.Parallel()
+		forge := &fakeForge{api: "main\nfeat/wish\n"}
+		in, bare := onForge(t, "https://github.com/acme/app.git", forge)
+		old := in.remoteTip(t, bare)
+		in.pass(t, 0)
+		if got := in.remoteTip(t, bare); got != old || in.tip(t) == old {
+			t.Fatalf("origin's %s at %s, from %s, the branch at %s; want it not pushed", in.branch, got, old, in.tip(t))
+		}
+		run := in.pushState(t).GetRun()
+		if run.GetStage() != planv1.PushStage_PUSH_STAGE_FAILED ||
+			!strings.HasPrefix(run.GetNote(), "Djinn never pushes feat/wish: github.com/acme/app protects feat/wish, which") {
+			t.Errorf("the push's run %v; want failed, its note naming the forge's protection", run)
+		}
+		look := []string{"gh api --hostname github.com --paginate repos/acme/app/branches?protected=true&per_page=100 --jq .[].name"}
+		if calls := forge.called(); !slices.Equal(calls, look) {
+			t.Errorf("forge calls %q; want %q", calls, look)
+		}
+
+		// The protection lifted, Djinn reads it again only once its last read is protectedLookEvery old.
+		forge.mu.Lock()
+		forge.api = "main\n"
+		forge.mu.Unlock()
+		if _, err := in.h.Push(t.Context(), in.wishID, in.projectID, ""); !errors.Is(err, errProtectedPush) {
+			t.Errorf("Push: %v; want feat/wish refused, as last read", err)
+		}
+		in.mu.Lock()
+		in.now = in.now.Add(protectedLookEvery)
+		in.mu.Unlock()
+		if _, err := in.h.Push(t.Context(), in.wishID, in.projectID, ""); err != nil {
+			t.Fatalf("Push: %v; want feat/wish pushed", err)
+		}
+		if got, tip := in.remoteTip(t, bare), in.tip(t); got != tip {
+			t.Errorf("origin's %s at %s; want it pushed at %s", in.branch, got, tip)
+		}
+		if calls := forge.called(); len(calls) != 2 {
+			t.Errorf("forge calls %q; want two reads", calls)
+		}
+	})
+
+	t.Run("a branch a GitLab wildcard protects", func(t *testing.T) {
+		t.Parallel()
+		forge := &fakeForge{api: `{"name":"main"}` + "\n" + `{"name":"feat/*"}` + "\n"}
+		in, bare := onForge(t, "git@gitlab.example.com:acme/app.git", forge)
+		old := in.remoteTip(t, bare)
+		if _, err := in.h.Push(t.Context(), in.wishID, in.projectID, ""); !errors.Is(err, errProtectedPush) ||
+			!strings.Contains(err.Error(), "gitlab.example.com/acme/app protects feat/wish") {
+			t.Errorf("Push: %v; want feat/wish refused, as feat/* protects it", err)
+		}
+		if got := in.remoteTip(t, bare); got != old {
+			t.Errorf("origin's %s at %s; want it at %s", in.branch, got, old)
+		}
+		look := []string{"glab api --hostname gitlab.example.com --paginate --output ndjson projects/acme%2Fapp/protected_branches?per_page=100"}
+		if calls := forge.called(); !slices.Equal(calls, look) {
+			t.Errorf("forge calls %q; want %q", calls, look)
+		}
+	})
+
+	t.Run("a forge Djinn cannot read", func(t *testing.T) {
+		t.Parallel()
+		in, bare := onForge(t, "https://github.com/acme/app.git", &fakeForge{}) // Its gh api fails.
+		in.pass(t, 0)
+		if got, tip := in.remoteTip(t, bare), in.tip(t); got != tip {
+			t.Fatalf("origin's %s at %s; want it pushed at %s; push %v", in.branch, got, tip, in.pushState(t))
+		}
+	})
+}
+
+// TestProtects: a branch is protected by its name, or by a GitLab wildcard whose * stands for any text.
+func TestProtects(t *testing.T) {
+	t.Parallel()
+	names := []string{"main", "release/*", "*-stable"}
+	for branch, want := range map[string]bool{
+		"main": true, "release/1.2": true, "release/a/b": true, "v2-stable": true,
+		"mains": false, "feat/main": false, "release": false, "v2-stable-x": false,
+	} {
+		if got := protects(names, branch); got != want {
+			t.Errorf("protects(%q, %q) = %v; want %v", names, branch, got, want)
+		}
+	}
+	if protects(nil, "main") {
+		t.Error("protects(nil, main); want false: nothing read, nothing protected")
+	}
 }

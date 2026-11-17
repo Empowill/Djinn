@@ -351,7 +351,7 @@ func (h *Harness) pushBranch(ctx context.Context, wish *planv1.Wish, project *pl
 		}
 		return nil, fmt.Errorf("repository %s has no remote", repo)
 	}
-	if err := h.refuseReference(ctx, wish, project, branch, target, committed, run); err != nil {
+	if err := h.refuseProtected(ctx, wish, project, remote, branch, target, committed, run); err != nil {
 		h.clearApproved(ctx, wish.GetId(), project.GetId(), approved)
 		return nil, err
 	}
@@ -1173,8 +1173,8 @@ func logPush(err error, args ...any) {
 	case errors.Is(err, errDiskFull):
 		logx.L().Info("push waits for disk space", append(append([]any{"loop", "push"}, args...), "err", err)...)
 		return
-	case errors.Is(err, errReferencePush):
-		return // Warned once by refuseReference: the push's line says it on each pass.
+	case errors.Is(err, errProtectedPush):
+		return // Warned once by refuseProtected: the push's line says it on each pass.
 	}
 	logx.L().Warn("push failed", append(append([]any{"loop", "push"}, args...), "err", err)...)
 }
