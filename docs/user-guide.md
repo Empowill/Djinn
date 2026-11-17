@@ -785,7 +785,11 @@ before: the folder it runs in becomes `.`, a worktree of Djinn `$WORKTREE`, a sc
 under `/tmp` `/tmp/*`, any other UUID `$ID`; a variable set for it keeps its name only (`GOFLAGS=*`); `sh -c '…'` is
 the command it runs; what only sets the shell up (`cd`, `export`, `echo`…), wrappers such as `time`, `nohup`, `env` or
 `timeout 600`, redirections and the filters a pipe ends with (`| tail -50`) are left out. Arguments stay: `go test
-./...` and `go test ./internal/gate` are two keys. A command never measured is given the median cost of the others of
+./...` and `go test ./internal/gate` are two keys. A here-document is a word of its command, `<<` and a digest of its
+body (`python3 - '<<d287bb7f'`): two inline scripts are two keys; a file `cat` or `tee` writes from one before the
+command that runs it is left out, and the commands after its body stay (W82: they were cut, and the keys `cat` and
+`python3 -` kept the peaks of whatever followed). A command that only reads or edits, `cat <<'EOF' > notes.md`
+among them, needs no admission; a substitution in a here-document whose delimiter is not quoted does. A command never measured is given the median cost of the others of
 its head in its project (`go test`, `go tool task lint`, `npm run build`, `npx playwright test`), else none. A cost
 kept under a command from before the keys were normalized is found too, and takes its key once counted again.
 

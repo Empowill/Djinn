@@ -73,6 +73,9 @@ would run it, made alike from one run to the next:
 - **What only sets up the shell is left out:** changing folder, exporting a variable, printing a line; so are the
   wrappers that change nothing it costs (time, nohup, env, a timeout), the redirections, and the filters a pipe ends
   with, such as keeping the last 50 lines.
+- **A script given inline,** in a here-document, is part of its command: two inline scripts are two commands, with two
+  costs, and one run again finds its cost. A file written that way before the command that runs it is left out, and
+  what runs after it stays.
 
 Arguments stay: the tests of a whole module and the tests of one package are two commands, with two costs.
 
@@ -86,7 +89,7 @@ A Claude worker does not have to name a gate. Before each command of its termina
 it:
 
 - **A command that reads or edits** goes at once: listing and reading files, searching them, editing and moving them,
-  git's status, log and diff, Djinn's own commands.
+  writing a file from a here-document, git's status, log and diff, Djinn's own commands.
 - **Any other** (tests, builds, package managers, scripts, interpreters, loops) waits for its **admission**, then
   runs exactly as the worker wrote it: its permissions judge it as before.
 

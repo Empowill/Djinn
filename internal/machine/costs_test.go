@@ -404,6 +404,39 @@ func TestPeaks_Key(t *testing.T) {
 	}
 }
 
+// TestPeaks_HereDocuments (W82): the keys cat and python3 - were kept with the peak of every command a here-document
+// ran with, the commands after its body counted in, every inline script under one key: 4 and 6.4 GiB. A short inline
+// script, or a file written by cat before what runs it, no longer finds them: it is costed as itself, or as the
+// others of its head.
+func TestPeaks_HereDocuments(t *testing.T) {
+	t.Parallel()
+	r := newCostsRig(t)
+	ctx := t.Context()
+	peaks := NewPeaks(r.db)
+	for command, peak := range map[string]uint64{
+		"cat": 4 << 30, "python3 -": 6 << 30, "python3 -I a.py": 40 << 20, "python3 -I b.py": 50 << 20,
+	} {
+		peaks.Record(ctx, &machinev1.CommandServiceRecordRequest{Directory: r.dir, Command: command, PeakMemoryBytes: peak, CpuSeconds: 1})
+	}
+	for command, want := range map[string]Cost{
+		// A python3 of 2 s, never measured: the median of the python3s.
+		"python3 - <<'EOF'\nimport json\nprint(json.dumps({}))\nEOF": {Peak: 50 << 20, CPU: time.Second, Head: "python3"},
+		// A script written by cat, then run: the script's cost.
+		"cd " + r.dir + " && cat <<'EOF' > x.py\nprint(1)\nEOF\npython3 -I a.py": {Peak: 40 << 20, CPU: time.Second},
+	} {
+		if got := peaks.Cost(ctx, "", r.dir, command); got != want {
+			t.Errorf("cost of %q = %+v, want %+v", command, got, want)
+		}
+	}
+	// What runs after a here-document is counted under its own key, not cat's.
+	peaks.Record(ctx, &machinev1.CommandServiceRecordRequest{
+		Directory: r.dir, Command: "cat <<'EOF' > n.md\nhi\nEOF\ngo test ./...", PeakMemoryBytes: 3 << 30, CpuSeconds: 1,
+	})
+	if got := peaks.Cost(ctx, "", r.dir, "go test ./..."); got.Peak != 3<<30 {
+		t.Errorf("go test after a here-document costs %+v", got)
+	}
+}
+
 // TestPeaks_Ask: each gate asked for a command counts a run asked, ended or not; a command never run shows asked
 // alone; outside any project nothing is counted.
 func TestPeaks_Ask(t *testing.T) {
