@@ -196,6 +196,7 @@
     "Merge being fixed by W6": "fix",
     "To review": "fix",
     "PR proposed": "waiting",
+    "PR closed": "waiting",
     Blocking: "waiting",
     "Needs you": "waiting",
     "Turn comments into work": "fix",

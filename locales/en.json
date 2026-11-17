@@ -135,6 +135,7 @@
   "azima.no_parts": "No work is part of it yet.",
   "azima.open_button": "Open this azima",
   "azima.opened_toast": "Azima {code} opened.",
+  "azima.pr_closed": "PR closed",
   "azima.pr_merged": "PR merged",
   "azima.pr_open": "PR open",
   "azima.pr_proposed": "PR proposed",

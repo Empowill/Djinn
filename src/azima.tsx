@@ -405,7 +405,9 @@ export const AzimaCard = memo(function AzimaCard({
       ? t("azima.pr_proposed")
       : pr.state === AzimaPrState.MERGED
         ? t("azima.pr_merged")
-        : t("azima.pr_open")
+        : pr.state === AzimaPrState.CLOSED
+          ? t("azima.pr_closed")
+          : t("azima.pr_open")
     : null;
 
   const hasActions = outOfSync || isPushed || isLanded || Boolean(prText);
