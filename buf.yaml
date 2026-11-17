@@ -5,9 +5,16 @@ modules:
   - path: api
 deps:
   - buf.build/bufbuild/protovalidate
+# go tool task lint runs both (lint-proto in Taskfile.yml); CONTRIBUTING.md says how to change a proto. STANDARD passes
+# whole: no exception to keep.
 lint:
   use:
     - STANDARD
+# Against the reference branch: a field's or an enum value's number, type, name and JSON name stay; a field or a value
+# deleted leaves its number and name reserved. A djinn of another version reads the same messages (the command line,
+# the window, a server just updated), the store keeps them as binary payloads, the settings as text: WIRE_JSON guards
+# all three. FILE, stricter, also refused a field deleted with its number reserved, and a message moved to another
+# file, which only generated code sees.
 breaking:
   use:
-    - FILE
+    - WIRE_JSON

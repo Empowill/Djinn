@@ -22,7 +22,10 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
+      # Two commits: buf breaking compares the protos with the commit before (see the lint below).
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
       - id: go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -61,7 +64,11 @@ jobs:
           path: ~/.cache/golangci-lint
           key: golangci-lint-${{ runner.os }}-${{ github.sha }}
           restore-keys: golangci-lint-${{ runner.os }}-
+      # buf breaking against the commit before: on a pull request, the checkout is the merge with main and its first
+      # parent main's tip, so the request's whole change is judged; on a push to main, the main it moved from.
       - run: go tool task lint
+        env:
+          BREAKING_AGAINST: HEAD^1
       # Go, interface and end-to-end tests (browser mode, headless Chromium), the three at once; the end-to-end on
       # two workers, two djinns (e2e/playwright.config.ts reads CI).
       - run: go tool task test
