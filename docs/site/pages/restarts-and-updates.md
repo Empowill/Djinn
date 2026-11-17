@@ -225,6 +225,18 @@ branches instead.
 A build Djinn proposes may also come as a question, **Install and restart**: your yes installs it, and the banner then
 offers to restart on it. See [Question and move](#question-and-move).
 
+### Going back to an older Djinn
+
+Djinn's database, djinn.db in its data folder, carries the number of its schema: the version of its tables, raised by
+each Djinn that adds a column or a table. A Djinn opens a database of its schema or an older one, raising it. It refuses
+a newer one, written by a newer Djinn, and writes nothing to it: it would save rows without the columns it does not
+know, and the newer Djinn, back on the same data, would then search them under stale values.
+
+So a Djinn installed over a newer one does not start, and says why: the schema of the database and the release that
+wrote it, the schema this Djinn knows, and what to do. Either install that release or a later one again, which opens
+the database as it was left; or restore a backup taken before the update (djinn backup restore), which loses what
+was done since. A backup carries the schema of the database it copies: a newer Djinn's backup is refused the same way.
+
 ## Common mistakes
 
 - **Killing Djinn to fix a freeze.** Nothing is lost either way, but what Djinn was waiting on is lost with it: have

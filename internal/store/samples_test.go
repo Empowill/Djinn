@@ -89,7 +89,7 @@ func TestSamples(t *testing.T) {
 		)`); err != nil {
 			t.Fatal(err)
 		}
-		if err := s2.migrate(ctx, nil); err != nil {
+		if err := s2.migrate(ctx, "", nil); err != nil {
 			t.Fatalf("migrate legacy sample table: %v", err)
 		}
 		cols := strs(t, s2, `SELECT name FROM pragma_table_info('sample')`)

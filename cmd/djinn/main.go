@@ -12,6 +12,7 @@ import (
 	"runtime/debug"
 
 	"github.com/empowill/djinn/internal/cli"
+	"github.com/empowill/djinn/internal/store"
 	"github.com/empowill/djinn/internal/ui"
 )
 
@@ -87,6 +88,8 @@ func runUpCommand(args []string) int {
 func main() {
 	version = moduleVersion(version)
 	ui.Develop = version == "dev"
+	// The database records the release that raised its schema; an older Djinn refusing it names both (W52).
+	store.Release = version
 	args := fromBundle(os.Args[1:])
 	// `djinn open <link>` is what the system runs for a djinn:// link clicked anywhere; without a link, as the menu entry
 	// of Linux runs it, it is djinn up.

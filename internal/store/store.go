@@ -62,7 +62,7 @@ func (s *Store) OnCommit(f func([]proto.Message)) {
 
 // Open opens the database file at path, creating it and its directory if needed, in WAL mode. An empty path
 // opens a database in memory, for tests. The tables of entities are created, and the columns they lack added;
-// nothing is ever dropped.
+// nothing is ever dropped. A database of a newer Schema is refused with a *NewerError, untouched (schema.go).
 //
 // Each entity is a message with a string id field. Its singular string fields named *_id are indexed, and each
 // (djinn.v1.unique) option becomes a unique index, ignoring case on text.
@@ -84,7 +84,7 @@ func Open(ctx context.Context, path string, entities ...proto.Message) (*Store, 
 	// One connection: an in-memory database lives in it, and writes are serialized without SQLITE_BUSY.
 	db.SetMaxOpenConns(1)
 	s := &Store{db: db, tables: map[protoreflect.FullName]*table{}}
-	if err := s.migrate(ctx, entities); err != nil {
+	if err := s.migrate(ctx, path, entities); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -105,8 +105,12 @@ func durability() string {
 // Close closes the database.
 func (s *Store) Close() error { return s.db.Close() }
 
-func (s *Store) migrate(ctx context.Context, entities []proto.Message) error {
+func (s *Store) migrate(ctx context.Context, path string, entities []proto.Message) error {
 	return s.tx(ctx, func(tx *sql.Tx) error {
+		have, err := s.guard(ctx, tx, path)
+		if err != nil {
+			return err
+		}
 		if _, err := tx.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS command (
 			seq INTEGER PRIMARY KEY AUTOINCREMENT,
 			id TEXT NOT NULL UNIQUE,
@@ -127,7 +131,7 @@ func (s *Store) migrate(ctx context.Context, entities []proto.Message) error {
 		if err := s.migrateIntervals(ctx, tx); err != nil {
 			return err
 		}
-		names := map[string]bool{"command": true, "sample": true, "gate_interval": true}
+		names := map[string]bool{"command": true, "sample": true, "gate_interval": true, schemaTable: true}
 		for _, e := range entities {
 			t, err := newTable(e.ProtoReflect().Descriptor())
 			if err != nil {
@@ -142,7 +146,7 @@ func (s *Store) migrate(ctx context.Context, entities []proto.Message) error {
 			}
 			s.tables[t.md.FullName()] = t
 		}
-		return nil
+		return raise(ctx, tx, have)
 	})
 }
 

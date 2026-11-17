@@ -232,7 +232,7 @@ func TestTable_unique(t *testing.T) {
 		if _, err := s.db.ExecContext(ctx, `CREATE UNIQUE INDEX "project_unique_name" ON "project" ("name")`); err != nil {
 			t.Fatal(err)
 		}
-		if err := s.migrate(ctx, []proto.Message{&planv1.Project{}, &planv1.Question{}}); err != nil {
+		if err := s.migrate(ctx, "", []proto.Message{&planv1.Project{}, &planv1.Question{}}); err != nil {
 			t.Fatalf("migrate replacing older index: %v", err)
 		}
 		sqls := strs(t, s, `SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'project_unique_name'`)
