@@ -80,3 +80,13 @@ func (m *passMemo) fetchDue(repo, branch string) bool {
 	m.fetched[key] = true
 	return due
 }
+
+// fetchedIn tells whether catchUp fetched branch of repo in this pass already.
+func (m *passMemo) fetchedIn(repo, branch string) bool {
+	if m == nil {
+		return false
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.fetched[repo+"\x00"+branch]
+}

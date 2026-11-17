@@ -119,7 +119,12 @@ func openWindow(ctx context.Context, cfg windowConfig) error {
 			KeyBindings: windowKeyBindings(runtime.GOOS, quit),
 		})
 		// No notification for the wish the window shows while it is in front: the developer sees it already.
-		window.OnWindowEvent(events.Common.WindowFocus, func(*application.WindowEvent) { notices.Focus(true) })
+		window.OnWindowEvent(events.Common.WindowFocus, func(*application.WindowEvent) {
+			notices.Focus(true)
+			if cfg.back != nil {
+				go cfg.back() // Back in front: a fresh look, off the window's thread.
+			}
+		})
 		for _, e := range []events.WindowEventType{events.Common.WindowLostFocus, events.Common.WindowHide, events.Common.WindowMinimise} {
 			window.OnWindowEvent(e, func(*application.WindowEvent) { notices.Focus(false) })
 		}

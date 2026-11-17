@@ -18,8 +18,9 @@ import (
 	"github.com/empowill/djinn/internal/store"
 )
 
-// The watch of the configuration on the reference branch: every ConfigLookEvery, and after each push of Djinn, the
-// harness fetches each project's reference branch alone, then LookAtConfig compares the digest of the .agents and
+// The watch of the configuration on the reference branch: every ConfigLookEvery (slower while the developer is away),
+// and after each push of Djinn at the project pushed, the harness fetches each project's reference branch, with its
+// tags, unless another loop fetched it lately; then LookAtConfig compares the digest of the .agents and
 // .claude/skills trees and of the root's djinn.yaml (ConfigFolders; the name of their folder in the cache) with the one
 // of its last look, kept in a ConfigWatch.
 // No git runs to read anything when it has not moved. When it has, each commit of the branch that changed those trees
@@ -28,8 +29,9 @@ import (
 // branch; one that gives the workers more, or changes what a skill makes or runs for Djinn, asks for your look: the
 // project's gear lights until you mark it seen.
 
-// ConfigLookEvery is how often Djinn looks at the reference branch of each project.
-const ConfigLookEvery = 5 * time.Minute
+// ConfigLookEvery is how often Djinn looks at the reference branch of each project while the developer is there; the
+// harness looks less often while they are away (W65).
+const ConfigLookEvery = 15 * time.Minute
 
 // Journal entries of the watch.
 const (
