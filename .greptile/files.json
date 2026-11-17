@@ -1,0 +1,41 @@
+{
+  "files": [
+    {
+      "path": "AGENTS.md",
+      "description": "Rules for any agent working on Djinn, and the interface rules (borders, lists that stay put, text fields)."
+    },
+    {
+      "path": "CONTRIBUTING.md",
+      "description": "The project's shape (the lamp and the smoke), its technical directions, how tests are written, how we work, dependencies and licenses."
+    },
+    {
+      "path": "README.md",
+      "description": "What Djinn is, and the limits no option turns off."
+    },
+    {
+      "path": "docs/pitfalls.md",
+      "description": "Known traps of the code, by area: Go tests and CI, interface, end-to-end specs, Windows and macOS, processes, permissions, store, window, releases.",
+      "scope": ["**/*.go", "src/**", "tests/**", "e2e/**", "Taskfile.yml", "tools/**"]
+    },
+    {
+      "path": "docs/cli-convention.md",
+      "description": "The command line convention: commands come from the protos, with no code per command.",
+      "scope": ["api/**", "internal/cli/**", "cmd/**"]
+    },
+    {
+      "path": "docs/providers.md",
+      "description": "Providers and workers: how a worker ends, what it may do, the order of decision of its rights, recorded streams for tests.",
+      "scope": ["internal/harness/**", "internal/dispatch/**", ".agents/**", ".claude/**"]
+    },
+    {
+      "path": "docs/transport.md",
+      "description": "How the window, the browser and the command line reach the server, with the measures behind the choice.",
+      "scope": ["internal/server/**", "internal/window/**", "src/data/**"]
+    },
+    {
+      "path": "docs/team-settings.md",
+      "description": "Team settings in .agents/: checks, integration, pushing, branch names; who wins between files.",
+      "scope": [".agents/**", "api/plan/**", "internal/harness/**"]
+    }
+  ]
+}
