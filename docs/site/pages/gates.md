@@ -164,7 +164,8 @@ shared.
 - **The project's configuration** lists the checks with how each last ran: on which commit, when, in how long, or why
   it failed.
 
-Djinn's command line lists, per command, what it cost: CPU time, peak memory, duration.
+Djinn's command line lists, per command, what it cost: CPU time, peak memory, duration. Its history of the gates
+gives the last hour of holds and runs, or the minutes you name, up to a week.
 Its list of gates marks a lit ifrit's gates with the time they go back at the latest, and the Djinn's brief says who
 waits on an ifrit, so that the Djinn offers you to end it.
 
@@ -181,6 +182,10 @@ Their history does not go: each gate and each admission held is kept in Djinn's 
 week**, and the Hourglass reads it again after a restart. It keeps when the holder asked, got and gave back the gate,
 whether it was a named gate or an admission, whether its command was heavy or never measured, what it waited for last
 and why, the most memory its holder used, and whether it took a slot outside a worker.
+
+The history of the gates reads it back over the window you ask, an hour by default, 6 hours or a day: each hold with
+the kind and code of its task, beside the runs of the workers over the same window. A run left open counts only while
+its task runs: an ended task that kept a run never closed does not draw a worker running ever since.
 
 ## Good to know
 

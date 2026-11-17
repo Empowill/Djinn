@@ -192,7 +192,7 @@ message MachineServiceShowResponse {
 }
 
 message MachineServiceSeriesRequest {
-  // Number of minutes of history to return (10, 30, 120, 1440, 10080; defaults to 30).
+  // Number of minutes of history to return (10, 30, 60, 120, 360, 1440, 10080; defaults to 30).
   int32 minutes = 1;
   // When set, only the points measured after it: the window reads the whole series once, then what came since, as
   // the samples arrive. The workers running and the gate intervals come whole each time.
@@ -311,6 +311,11 @@ message GateInterval {
   bool unmeasured = 13;
   // Held outside a running worker (a terminal, a lead, a script, Djinn's merges): it took a worker's slot.
   bool outside = 14;
+  // Kind of the task that held it (task_id), as GateService.History joins it; unset elsewhere, or when the task is
+  // gone.
+  plan.v1.TaskKind task_kind = 15;
+  // Short code of that task (e.g. W12), as GateService.History joins it; empty elsewhere, or when the task is gone.
+  string task_code = 16;
 }
 
 // How a gate is held.
@@ -377,6 +382,14 @@ service GateService {
   }
   // List the gates held or waited for.
   rpc List(GateServiceListRequest) returns (GateServiceListResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // The history of the gates over the last minutes, kept in the store for a week, a restart of Djinn included: every
+  // interval released in the window, then those held now, each with its task's kind and code; and the runs of the
+  // workers over the window, an open run only while its task runs. The Hourglass's Gates tab draws it over an hour, 6
+  // hours or a day.
+  rpc History(GateServiceHistoryRequest) returns (GateServiceHistoryResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option idempotency_level = NO_SIDE_EFFECTS;
   }
@@ -493,6 +506,43 @@ message GateServiceListRequest {}
 message GateServiceListResponse {
   // The gates held or waited for.
   repeated Gate gates = 1;
+}
+
+message GateServiceHistoryRequest {
+  // Minutes of history, up to a week (10080): the Gates tab asks 60, 360 or 1440. Not set: 60.
+  int32 minutes = 1 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 10080
+  }];
+  // When set, the intervals hold every admission of a worker's command; otherwise only those that waited a second or
+  // more or ran a heavy command, the many that pass at once left out.
+  bool all_admissions = 2;
+}
+
+message GateServiceHistoryResponse {
+  // Where the window starts: minutes before read_time.
+  google.protobuf.Timestamp start_time = 1;
+  // When Djinn read the history: where the window ends.
+  google.protobuf.Timestamp read_time = 2;
+  // The gate intervals released after start_time, the first released first, then those held now (no release_time).
+  repeated GateInterval intervals = 3;
+  // The runs of the workers that overlap the window, the first started first. A run with no end counts only while its
+  // task runs: an ended task's run left open is left out.
+  repeated WorkerRun runs = 4;
+}
+
+// WorkerRun is a run of a task's worker, from its start to its end.
+message WorkerRun {
+  // The task the worker runs.
+  string task_id = 1;
+  // Short code of the task (e.g. W12).
+  string code = 2;
+  // Kind of the task: work, investigation, mockup, ifrit, correction, review, watcher.
+  plan.v1.TaskKind kind = 3;
+  // When the run started.
+  google.protobuf.Timestamp start_time = 4;
+  // When the run ended; unset while it runs.
+  google.protobuf.Timestamp end_time = 5;
 }
 
 // CommandService keeps what the commands of each project cost. Djinn measures each command a worker runs through
