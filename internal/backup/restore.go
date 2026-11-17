@@ -24,6 +24,7 @@ import (
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/cli"
 	"github.com/empowill/djinn/internal/fsx"
+	"github.com/empowill/djinn/internal/lockx"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/server"
 	"github.com/empowill/djinn/internal/store"
@@ -52,6 +53,27 @@ type Restored struct {
 	Detached []string
 }
 
+// unheld returns ErrRunning when a djinn up holds the lock of the data folder home, even one whose address does not
+// answer here: starting, under wine, in a container (W86, Q52). It writes nothing: a folder without the lock file has
+// no djinn up that takes it. The lock is let go at once, as the folder is renamed aside, which Windows refuses while a
+// file in it is open.
+func unheld(home string) error {
+	path := filepath.Join(home, server.LockFile)
+	if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	lock, err := lockx.Hold(path)
+	if errors.Is(err, lockx.ErrHeld) {
+		return fmt.Errorf("%w (%s): a djinn up holds the folder, and does not answer at its address: it is starting, "+
+			"or runs where this one cannot reach it (under wine, in a container); stop it, then restore again",
+			ErrRunning, home)
+	}
+	if err != nil {
+		return fmt.Errorf("lock the data folder: %w", err)
+	}
+	return lock.Release()
+}
+
 // Restore puts the archive back as the data folder home, while no djinn runs on it. The previous folder is kept
 // aside, next to it; its worktrees move into the restored folder, at the same paths, so Git still finds them. A
 // project whose folder this machine lacks loses it, so that djinn project add attaches it, as after an import.
@@ -67,6 +89,9 @@ func restore(ctx context.Context, home, archive string, now time.Time, r fsx.Ren
 	if addr, err := server.ReadAddr(home); err == nil && cli.Alive(addr) {
 		return nil, fmt.Errorf("%w (%s): close its window, or stop djinn up (Ctrl+C where it runs, or end its "+
 			"process), then restore again", ErrRunning, home)
+	}
+	if err := unheld(home); err != nil {
+		return nil, err
 	}
 	if _, err := finish(home, r); err != nil {
 		return nil, fmt.Errorf("a restore was cut: %w", err)

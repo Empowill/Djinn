@@ -99,7 +99,8 @@ system lets it go when Djinn ends, cleanly or not. A second djinn up on the same
   other one, or give this one a data folder of its own with the DJINN_HOME variable.
 
 The lock holds whatever the version of the second Djinn, and between Linux and a Windows Djinn under wine. Once the
-first Djinn is gone the lock goes with it: an address it left is then a stop that was not clean, as below.
+first Djinn is gone the lock goes with it: an address it left is then a stop that was not clean, as below. A restore
+refuses a held folder the same way, before it touches anything: stop the Djinn that holds it, then restore again.
 
 ## The Djinn and the terminals
 
