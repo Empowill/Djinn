@@ -88,6 +88,19 @@ die with it. Djinn records each process it starts while it runs; should one surv
 it before it resumes any task, and the Djinn hears how many were stopped. Djinn never touches a process it did not
 start.
 
+### One Djinn per data folder
+
+A Djinn holds a lock on its data folder from its start to its stop, taken before it writes anything there; the
+system lets it go when Djinn ends, cleanly or not. A second djinn up on the same folder finds it held:
+
+- **The first Djinn answers.** The second brings its window to the front and ends.
+- **The first Djinn does not answer.** It is starting, or runs where the second cannot reach it: a Windows Djinn under
+  wine, one in a container. The second ends at once, its address, logs and database untouched, and says so: stop the
+  other one, or give this one a data folder of its own with the DJINN_HOME variable.
+
+The lock holds whatever the version of the second Djinn, and between Linux and a Windows Djinn under wine. Once the
+first Djinn is gone the lock goes with it: an address it left is then a stop that was not clean, as below.
+
 ## The Djinn and the terminals
 
 By default, Djinn drives the Djinn without a terminal: its journal is kept in Djinn's data folder, and any event waiting

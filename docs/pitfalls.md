@@ -334,6 +334,14 @@ the code does not say by itself; remove one when a change makes it false.
   names the mutex. No holder outside `Lock` means a self-deadlock: a stack where one function appears twice on its
   way to `Lock`. `logx.Lock` logs "lock waited" for the scheduler's lock. *Where:* `cmd/djinn/debug.go`,
   `internal/logx/logx.go`.
+- **A Djinn a worker starts under wine, in a container or over ssh takes the real data folder.** It inherits the
+  worker's `DJINN_HOME`; wine reads `/home/...` as `Z:\home\...`, the person's folder. W80's `wine64 djinn.exe up`
+  could not reach the Unix socket, took the folder for dead, rewrote `server.addr` and ran an unclean start beside the
+  live Djinn (W83). Since W86 `djinn up` holds `djinn.lock` in its data folder (fcntl OFD lock, `LockFileEx` on
+  Windows: wine maps it onto fcntl, never onto flock) and a second one ends before it writes. *Do:* give any Djinn you
+  start a `DJINN_HOME` under `$DJINN_SCRATCH` (`Z:$DJINN_SCRATCH/...` under wine), and `env -u DJINN_HOME -u
+  DJINN_WORKER_TOKEN -u DJINN_TASK_ID` around it. *Sign:* "another djinn up holds the data folder". *Where:*
+  `internal/lockx`, `cmd/djinn/up.go`.
 - **Profile a copy, never the real data.** `djinn up --pprof` (or `DJINN_PPROF=on`) serves `/debug/pprof/`. Copy the
   database with sqlite's backup API, not `cp` (WAL); in the copy, set every project `Git=false` and point its
   `Directory` at a missing folder (Git=false alone still let the push checks make a worktree in the real repository,

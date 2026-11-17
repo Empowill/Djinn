@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"net"
 	"net/http"
 	"os"
@@ -34,6 +35,7 @@ import (
 	"github.com/empowill/djinn/internal/gate"
 	"github.com/empowill/djinn/internal/harness"
 	"github.com/empowill/djinn/internal/link"
+	"github.com/empowill/djinn/internal/lockx"
 	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/machine"
 	"github.com/empowill/djinn/internal/plan"
@@ -185,22 +187,52 @@ func runUp(args []string) (restart bool, err error) {
 	if p, ok := machine.ReadBrake(home); ok && !brakeFixed {
 		brakeMemory = p
 	}
-	// One djinn per data directory: a second djinn up brings the first one's window to the front instead.
+	// A restore a stop cut between its renames left no data folder: it ends before anything creates one, the lock first.
+	var restored []string
+	finish := func() error {
+		did, err := backup.Finish(home)
+		restored = append(restored, did...)
+		if err != nil {
+			return fmt.Errorf("finish the restore a stop cut: %w", err)
+		}
+		return nil
+	}
+	if _, err := os.Stat(home); errors.Is(err, fs.ErrNotExist) {
+		if err := finish(); err != nil {
+			return false, err
+		}
+	}
+	// One djinn per data directory: a second djinn up brings the first one's window to the front instead. The lock
+	// comes before anything writes in the folder: a djinn up the address does not reach (one under wine, in a
+	// container, or one starting) holds it too, whatever its version (W86, tilasm L15).
+	lock, err := holdHome(home)
+	if errors.Is(err, lockx.ErrHeld) {
+		if addr, err := server.ReadAddr(home); err == nil && cli.Alive(addr) {
+			return false, showRunning(addr, flags)
+		}
+		return false, fmt.Errorf("another djinn up holds the data folder %s, and does not answer at its address: it is "+
+			"starting, or runs where this one cannot reach it (under wine, in a container); stop it, or give this one a "+
+			"data folder of its own (DJINN_HOME)", home)
+	}
+	if err != nil {
+		return false, fmt.Errorf("lock the data folder: %w", err)
+	}
+	defer lock.Release() //nolint:errcheck // Closing the file lets the lock go; the process ends it anyway.
 	unclean := false
 	if addr, err := server.ReadAddr(home); err == nil {
+		// A djinn up older than the lock may run on the folder still.
 		if cli.Alive(addr) {
 			return false, showRunning(addr, flags)
 		}
 		fmt.Fprintln(os.Stderr, "djinn: the last djinn up did not stop cleanly; starting again")
 		unclean = true
 	}
-	// A restore a stop cut between its renames left no data folder: it ends before anything creates one.
-	restored, restoreErr := backup.Finish(home)
+	finishErr := finish()
 	for _, line := range restored {
 		fmt.Fprintln(os.Stderr, "djinn:", line)
 	}
-	if restoreErr != nil {
-		return false, fmt.Errorf("finish the restore a stop cut: %w", restoreErr)
+	if finishErr != nil {
+		return false, finishErr
 	}
 	// What djinn up does goes to logs/djinn.log, rolled over (W511); its stop is followed step by step there, and a
 	// stop that hangs dumps its goroutines, then exits.
@@ -899,6 +931,15 @@ func answer(ctx context.Context, addr, questionID string, choice planv1.Choice) 
 		By: planv1.Closer_CLOSER_DEVELOPER,
 	}))
 	return err
+}
+
+// holdHome takes the lock of the data folder home, which it creates when missing: lockx.ErrHeld while another djinn up
+// runs on it.
+func holdHome(home string) (*lockx.Lock, error) {
+	if err := os.MkdirAll(home, 0o700); err != nil {
+		return nil, err
+	}
+	return lockx.Hold(filepath.Join(home, server.LockFile))
 }
 
 // ifritIdleFlag reads djinn up --ifrit-idle: a duration from 5 minutes to 4 hours, in whole minutes; 0 for none given.

@@ -177,7 +177,7 @@ func skipped(d fs.DirEntry) error {
 }
 
 // excluded tells whether a path of the data folder, relative and with slashes, stays out of a backup and out of a
-// restore: the database's own side files, the socket and the address of a running djinn, the logs of its
+// restore: the database's own side files, the socket, the address and the lock of a running djinn, the logs of its
 // processes and the log folder (logx), the record of the processes it runs, the logs of the ifrits' serves, the
 // worktrees and scratch folders, and any environment file.
 func excluded(rel string, dir bool) bool {
@@ -202,6 +202,7 @@ func excluded(rel string, dir bool) bool {
 		return false
 	}
 	return strings.HasPrefix(name, store.File+"-") || name == server.SocketFile || name == server.AddrFile ||
+		name == server.LockFile ||
 		strings.HasSuffix(name, ".log")
 }
 
