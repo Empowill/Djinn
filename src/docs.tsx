@@ -1,6 +1,7 @@
 import { memo, useState } from "react";
 
 import { language, t } from "./i18n";
+import { Link } from "./link";
 import { OperatingLoad } from "./operating-load";
 import { PageHeader } from "./page-header";
 import { shownTextSize } from "./text-size";
@@ -14,6 +15,10 @@ export const DocsPath = "/docs/";
 // never this.
 export const GRIMOIRE = "grimoire";
 
+// BugReport is where a bug is reported: the issue forms of Djinn's repository (.github/ISSUE_TEMPLATE), which ask for
+// the version, the system, a debug dump and the logs. A flaw goes to SECURITY.md instead, which the forms link.
+export const BugReport = "https://github.com/Empowill/Djinn/issues/new/choose";
+
 // Docs is the Grimoire as a page of the window, like the Hourglass: its header, then the site in the window's theme,
 // text size and language, its navigation shown from the first view. It is a page of djinn's own server, in a frame
 // that fills the page: each page of the book has its address there, and back and forward move between them.
@@ -25,7 +30,14 @@ export const Docs = memo(function Docs() {
   });
   return (
     <div className="wish-view grimoire">
-      <PageHeader middle={<OperatingLoad />}>
+      <PageHeader
+        middle={<OperatingLoad />}
+        actions={
+          <Link href={BugReport} className="button secondary page-header-action">
+            {t("docs.report_bug")}
+          </Link>
+        }
+      >
         <strong>{t("docs.title")}</strong>
       </PageHeader>
       <iframe className="grimoire-frame" title={t("docs.title")} src={src} />

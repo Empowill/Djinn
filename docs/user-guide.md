@@ -948,7 +948,9 @@ name your projects' folders and branches and your tasks' codes; nothing else of 
   Hourglass, in the window's theme and text size, its navigation in the window's language and beside its splash page
   from the first view: Introduction, Getting started, a page per concept, and the command line. Each page is read
   when you open it, and back and forward move between the pages you read (also served at `/docs/` while `djinn up`
-  runs).
+  runs). **Report a bug**, at its top, opens the issue forms of the repository in the browser: the bug form asks for
+  `djinn version`, the system, a `djinn debug dump` and the logs; a security flaw goes privately, as
+  [SECURITY.md](../SECURITY.md) says.
 - [Agent protocol](agent-protocol.md) · [Providers](providers.md) · [Adaptable wishes](adaptable-wishes.md) · [Worker memory](worker-memory.md)
 - The language follows the system (English or French); change it, the theme and the text size (Large, Default,
   Compact, Very compact: the whole window scales, its spacing with its text) in **Connections & preferences**.
