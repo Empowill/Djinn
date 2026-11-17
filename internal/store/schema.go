@@ -5,74 +5,55 @@ import (
 	"database/sql"
 	"fmt"
 	"time"
+
+	"github.com/empowill/djinn/internal/logx"
 )
 
 // Schema is the version of the database's tables this Djinn writes, kept in the database's user_version. Increment it
 // in the change that adds a column to a table, an entity's indexed field included, or a table: TestSchemaPinned fails
-// until it is. A Djinn opens a database of its schema or an older one, and raises it; it refuses a newer one, written by
-// a newer Djinn, before writing anything: it would write rows without the columns it does not know, and the newer
-// Djinn's indexed queries would then miss them or find them under a stale value (V5 of L08).
+// until it is. A Djinn opens a database of its schema or an older one, and raises it. A newer one, written by a newer
+// Djinn, it opens too, with a warning, and leaves its schema as it is: entities are protos, whose fields this Djinn
+// does not know it keeps and ignores, and the columns it lacks it adds; a migration never stops Djinn (Q42).
 const Schema = 1
 
 // Release is the version of this Djinn, such as v0.5.0, which the database records with the schema it raises to, and
-// which a refusal names. djinn sets it at start; empty, it is left out.
+// which the warning on a newer database names. djinn sets it at start; empty, it is left out.
 var Release string
-
-// NewerError is the error of Open on a database whose schema is newer than this Djinn's.
-type NewerError struct {
-	Path string
-	// Have is the database's schema, written by the Djinn By (empty when unknown); Know is this Djinn's, Release.
-	Have, Know  int
-	By, Release string
-}
-
-func (e *NewerError) Error() string {
-	by, this, install := "", "", "a newer Djinn"
-	if e.By != "" {
-		by, install = ", written by Djinn "+e.By, "Djinn "+e.By+" or later"
-	}
-	if e.Release != "" {
-		this = " (" + e.Release + ")"
-	}
-	where := "the database"
-	if e.Path != "" {
-		where += " " + e.Path
-	}
-	return fmt.Sprintf("%s has schema %d%s; this Djinn%s knows schema %d at most and leaves it untouched: "+
-		"install %s again, or restore a backup taken before that update (djinn backup restore)",
-		where, e.Have, by, this, e.Know, install)
-}
 
 // schemaTable records, for each schema a Djinn raised the database to, its release and when.
 const schemaTable = "store_schema"
 
-// guard refuses a database newer than Schema, and returns its schema. It runs first in the migration's transaction:
-// a refusal writes nothing.
-func (s *Store) guard(ctx context.Context, tx *sql.Tx, path string) (int, error) {
+// schema reads the database's schema. It never fails: a schema it cannot read, or a database newer than Schema,
+// is logged as a warning, and Djinn goes on (Q42).
+func (s *Store) schema(ctx context.Context, tx *sql.Tx, path string) int {
 	var have int
 	if err := tx.QueryRowContext(ctx, `PRAGMA user_version`).Scan(&have); err != nil {
-		return 0, fmt.Errorf("read the schema: %w", err)
+		logx.L().Warn("database schema unread", "path", path, "err", err)
+		return 0
 	}
 	if have <= Schema {
-		return have, nil
+		return have
 	}
-	e := &NewerError{Path: path, Have: have, Know: Schema, Release: Release}
+	var by string // The release that raised it, when it recorded one.
 	var n int
 	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?`,
-		schemaTable).Scan(&n); err != nil {
-		return 0, fmt.Errorf("read the schema: %w", err)
+		schemaTable).Scan(&n); err == nil && n > 0 {
+		_ = tx.QueryRowContext(ctx, `SELECT release FROM `+schemaTable+` WHERE version = ?`, have).Scan(&by)
 	}
-	if n > 0 {
-		err := tx.QueryRowContext(ctx, `SELECT release FROM `+schemaTable+` WHERE version = ?`, have).Scan(&e.By)
-		if err != nil && err != sql.ErrNoRows {
-			return 0, fmt.Errorf("read the schema: %w", err)
-		}
-	}
-	return have, e
+	logx.L().Warn("database written by a newer Djinn: opened anyway, its fields this Djinn does not know ignored",
+		"path", path, "schema", have, "by", by, "known", Schema, "release", Release)
+	return have
 }
 
-// raise marks the database with Schema once its tables are made, recording this release the first time.
-func raise(ctx context.Context, tx *sql.Tx, have int) error {
+// raise marks the database with Schema once its tables are made, recording this release the first time. A database of
+// a newer schema keeps its own. raise never fails Open: what it cannot record is a warning (Q42).
+func raise(ctx context.Context, tx *sql.Tx, path string, have int) {
+	if err := mark(ctx, tx, have); err != nil {
+		logx.L().Warn("database schema not recorded", "path", path, "err", err)
+	}
+}
+
+func mark(ctx context.Context, tx *sql.Tx, have int) error {
 	if _, err := tx.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS `+schemaTable+` (
 		version INTEGER PRIMARY KEY,
 		release TEXT NOT NULL,
@@ -80,7 +61,7 @@ func raise(ctx context.Context, tx *sql.Tx, have int) error {
 	)`); err != nil {
 		return fmt.Errorf("create the schema table: %w", err)
 	}
-	if have == Schema {
+	if have >= Schema {
 		return nil
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO `+schemaTable+` (version, release, at) VALUES (?, ?, ?)`,
