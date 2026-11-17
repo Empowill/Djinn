@@ -110,8 +110,8 @@ and why.
 **What it is told.** Besides its prompt, a worker that edits is told the project's checks, to run them before it ends,
 to commit its work before it ends, in the repository's style, leaving nothing not committed, to put its scratch files in
 its scratch folder, never in your home folder, never to make a wish, a
-question or a task in your Djinn to try something, and to ask you only for a decision or a move only a person can
-make.
+question or a task in your Djinn to try something, to give any Djinn it starts (under wine, in a container, over ssh)
+a data folder of its own in its scratch folder, and to ask you only for a decision or a move only a person can make.
 
 **Refused calls.** A call its permissions refuse, with no one to approve it, never reaches the window: the Djinn hears
 of it when the task ends, with the right that would allow it, and decides. When a new right is needed, it asks you.

@@ -1406,7 +1406,9 @@ func prepare(
 	return p, nil
 }
 
-const workerHandRule = "Write any scratch file, temporary data, screenshot, build output or test Djinn data folder in your scratch folder (`$DJINN_SCRATCH`), never in the home folder or `/tmp`. To try a command by hand, start a Djinn of your own with its own data folder in `$DJINN_SCRATCH`; never create a wish, a question or a task in the person's Djinn to test."
+// workerHandRule (W86, decision Q52): a Djinn a worker starts inherits its DJINN_HOME, the person's data folder; under
+// wine, in a container or over ssh too, where djinn up's lock may not reach (W80 took the real folder under wine).
+const workerHandRule = "Write any scratch file, temporary data, screenshot, build output or test Djinn data folder in your scratch folder (`$DJINN_SCRATCH`), never in the home folder or `/tmp`. To try a command by hand, start a Djinn of your own with its own data folder in `$DJINN_SCRATCH`; never create a wish, a question or a task in the person's Djinn to test. Any Djinn you start, under wine, in a container or over ssh too, gets its own `DJINN_HOME` in `$DJINN_SCRATCH` (`Z:` before the path under wine), set on its command line: it inherits yours otherwise, the person's real data folder."
 
 // workerCheckRule (Q246): what an agent can check, it checks; the developer runs no command to verify a worker's work.
 const workerCheckRule = "Never ask the developer for a check, a measure, a log to read, a CI result to look at or a command to run: do it yourself when you can; otherwise say in your final note what remains to verify, and the lead spawns a task for it or lets a watcher report it (a CI result comes from the PR's babysit watcher)."
