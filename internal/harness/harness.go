@@ -452,26 +452,23 @@ func (h *Harness) Recover(ctx context.Context) error {
 	h.sweepTemp(ctx)
 	h.cleanWarmLeftovers(ctx)
 	tasks, err := store.List[*planv1.Task](ctx, h.store, nil)
-	if err != nil {
+	if err := passes("read the tasks", err); err != nil {
 		return err
 	}
-	if err := h.recoverServes(ctx, tasks); err != nil {
-		return err
-	}
-	if err := h.rebuildTaskRunsFromJournal(ctx, tasks); err != nil {
-		return err
-	}
-	if err := h.migrateAzimas(ctx, tasks); err != nil {
-		return err
-	}
-	if err := h.migrateKinds(ctx, tasks); err != nil {
-		return err
-	}
-	if err := h.ungroupOrphans(ctx, tasks); err != nil {
-		return err
-	}
-	if err := h.migratePushes(ctx); err != nil {
-		return err
+	for _, step := range []struct {
+		name string
+		do   func() error
+	}{
+		{"stop the serves", func() error { return h.recoverServes(ctx, tasks) }},
+		{"rebuild the runs", func() error { return h.rebuildTaskRunsFromJournal(ctx, tasks) }},
+		{"mark the azimas", func() error { return h.migrateAzimas(ctx, tasks) }},
+		{"give the tasks their kind", func() error { return h.migrateKinds(ctx, tasks) }},
+		{"ungroup the orphans", func() error { return h.ungroupOrphans(ctx, tasks) }},
+		{"move the pushes", func() error { return h.migratePushes(ctx) }},
+	} {
+		if err := passes(step.name, step.do()); err != nil {
+			return err
+		}
 	}
 	if err := plan.KeepPromptSizes(ctx, h.store, tasks); err != nil {
 		logx.L().Warn("keep the prompt sizes read from the events", "err", err)
@@ -488,7 +485,7 @@ func (h *Harness) Recover(ctx context.Context) error {
 		}
 	}
 	lastStart, err := h.lastStart(ctx)
-	if err != nil {
+	if err := passes("read the last start", err); err != nil {
 		return err
 	}
 	var interrupted, heldWatchers, out []string
@@ -497,7 +494,7 @@ func (h *Harness) Recover(ctx context.Context) error {
 		case planv1.TaskStatus_TASK_STATUS_PENDING, planv1.TaskStatus_TASK_STATUS_RUNNING, planv1.TaskStatus_TASK_STATUS_PAUSED:
 		case planv1.TaskStatus_TASK_STATUS_INTERRUPTED:
 			if dispatch.Ifrit(t) { // Lit as the last djinn up ended: it comes back out, never resumed by itself.
-				if err := h.putOut(ctx, t); err != nil {
+				if err := passes("put out "+t.GetCode(), h.putOut(ctx, t)); err != nil {
 					return err
 				}
 				out = append(out, t.GetCode())
@@ -520,7 +517,7 @@ func (h *Harness) Recover(ctx context.Context) error {
 			continue
 		}
 		if dispatch.Ifrit(t) { // Lit as the last djinn up crashed: it comes back out.
-			if err := h.putOut(ctx, t); err != nil {
+			if err := passes("put out "+t.GetCode(), h.putOut(ctx, t)); err != nil {
 				return err
 			}
 			out = append(out, t.GetCode())
@@ -547,15 +544,18 @@ func (h *Harness) Recover(ctx context.Context) error {
 			if err := tx.Put(t); err != nil {
 				return err
 			}
-			return putEvents(ctx, tx, h.newEvent(t.GetId(), Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "interrupted: " + t.GetError()}))
+			// Without its events, the task is interrupted all the same: no worker runs it.
+			return passes("tell "+t.GetCode()+" interrupted",
+				putEvents(ctx, tx, h.newEvent(t.GetId(), Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "interrupted: " + t.GetError()})))
 		})
-		if err != nil {
+		if err := passes("interrupt "+t.GetCode(), err); err != nil {
 			return fmt.Errorf("recover task %s: %w", t.GetCode(), err)
 		}
 	}
 	var resumed, watchers []string
 	if h.resumeHeld == "" {
-		if resumed, watchers, err = h.queueInterrupted(ctx, tasks); err != nil {
+		resumed, watchers, err = h.queueInterrupted(ctx, tasks)
+		if err := passes("resume the interrupted", err); err != nil {
 			return err
 		}
 	} else {
@@ -569,11 +569,22 @@ func (h *Harness) Recover(ctx context.Context) error {
 	restart := &planv1.LeadEvent{Kind: planv1.LeadEventKind_LEAD_EVENT_KIND_RESTART,
 		Text: restartLine(h.version, h.resumeHeld, interrupted, resumed, watchers, heldWatchers, out, orphans,
 			cutPart(cut, integrating), lockedPart(locked))}
-	if err := plan.QueueLeadEvent(ctx, h.store, restart, h.now()); err != nil {
+	if err := passes("tell the lead", plan.QueueLeadEvent(ctx, h.store, restart, h.now())); err != nil {
 		return fmt.Errorf("tell the lead of the restart: %w", err)
 	}
 	h.recoverOutrun(ctx, tasks)
-	return h.recoverAzimas(ctx, tasks)
+	return passes("reopen the azimas", h.recoverAzimas(ctx, tasks))
+}
+
+// passes is nil for err of a part of the store not migrated at start (store.ErrUnmigrated), written as a warning: that
+// step of Recover passes its turn, the next start does it, and djinn up goes on (Q42). Another err is returned as is.
+func passes(step string, err error) error {
+	if errors.Is(err, store.ErrUnmigrated) {
+		logx.L().Warn("a step of the recovery passes its turn: a part of the database was not migrated", "step", step,
+			"err", err)
+		return nil
+	}
+	return err
 }
 
 // lastSeen is when the worker of t's run, left running by a djinn up that did not stop cleanly, was last seen at work:

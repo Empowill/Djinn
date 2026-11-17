@@ -255,6 +255,11 @@ why, while the rest reads and writes as usual. Without the journal, nothing can 
 journaled first; the rest still reads. The next start tries the step again, so once its cause is fixed, the part is
 back.
 
+What Djinn does as it starts skips the missing part the same way, each step with a warning: the workers the last
+run left are still marked interrupted, without their event when the task events are missing, but not when the tasks
+or the journal are; the lead is not told of the restart without its events or the journal; the Statistics tab
+answers on the other kinds, and a query of the missing one says it was not migrated.
+
 ## Common mistakes
 
 - **Killing Djinn to fix a freeze.** Nothing is lost either way, but what Djinn was waiting on is lost with it: have
