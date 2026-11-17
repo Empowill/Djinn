@@ -7,6 +7,7 @@ package plan.v1;
 import "buf/validate/validate.proto";
 import "djinn/v1/load.proto";
 import "djinn/v1/options.proto";
+import "djinn/v1/project_config.proto";
 import "google/protobuf/any.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
@@ -461,6 +462,16 @@ message ProjectSettings {
         min_len: 1
         max_len: 500
       }
+    }
+  }];
+  // The gates the project declares in its djinn.yaml (djinn.v1.ProjectGate) that the developer turns off on their
+  // machine, by name: one stack per worktree, say. A developer's own choice, read from their own file only (djinn
+  // project gates --off), like serve_commands: a repository declares its gates in its djinn.yaml. Not set: none.
+  repeated string gates_off = 30 [(buf.validate.field).repeated = {
+    max_items: 8
+    unique: true
+    items: {
+      string: {pattern: "^[a-z][a-z0-9-]{0,39}$"}
     }
   }];
 }
@@ -3043,6 +3054,12 @@ service ProjectService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
+  // Show the gates the project declares in its djinn.yaml, as Djinn applies them on this machine, or turn one off
+  // (--off) or back on (--on) for yourself: kept in your own settings file, never in the repository.
+  rpc Gates(ProjectServiceGatesRequest) returns (ProjectServiceGatesResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
   // Forget the sync of a branch with nothing to push, such as a done azima's whose work landed in main: the project's
   // syncs leave it out until it gets a new commit. Nothing is deleted, locally or on the remote.
   rpc ForgetSync(ProjectServiceForgetSyncRequest) returns (ProjectServiceForgetSyncResponse) {
@@ -3234,6 +3251,32 @@ message ProjectServiceAllowResponse {
   string developer_file = 2;
   // The serve commands you allow in the project, from your own settings file.
   repeated string serve_commands = 3;
+}
+
+message ProjectServiceGatesRequest {
+  // The project, by name (case ignored) or identifier.
+  string project = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.max_len = 100
+  ];
+  // A gate the project declares, to turn off on this machine. Neither this nor --on: show the gates.
+  optional string off = 2 [(buf.validate.field).string.pattern = "^[a-z][a-z0-9-]{0,39}$"];
+  // A gate you turned off, to turn back on; not with --off.
+  optional string on = 3 [(buf.validate.field).string.pattern = "^[a-z][a-z0-9-]{0,39}$"];
+}
+
+message ProjectServiceGatesResponse {
+  // The gates the project declares and Djinn applies on this machine, in the file's order: the valid ones, not turned
+  // off.
+  repeated djinn.v1.ProjectGate gates = 1;
+  // The file that declares them, relative to the project: djinn.yaml or .agents/djinn.yaml; empty when there is none.
+  string file = 2;
+  // The gates you turn off, from your own settings file.
+  repeated string gates_off = 3;
+  // Your settings file, in Djinn's data folder.
+  string developer_file = 4;
+  // What Djinn found wrong in the declaration: a gate left out, and why; a pattern of one word.
+  repeated string warnings = 5;
 }
 
 message ProjectServiceForgetSyncRequest {

@@ -210,6 +210,9 @@ type Settings struct {
 	// ServeCommands are the commands, or their starts, the developer lets an ifrit's serve run in the project besides
 	// those its .agents/permissions.txtpb lists: from their own file only.
 	ServeCommands []string
+	// GatesOff are the gates the project declares in its djinn.yaml that the developer turns off on their machine:
+	// from their own file only.
+	GatesOff []string
 	// InstallBuilds says whether a build of the running Djinn's line, once pushed, installs by itself (W554).
 	InstallBuilds bool
 	Warnings      []string
@@ -220,7 +223,7 @@ type Settings struct {
 	QuestionProviderFrom, QuestionModelFrom, QuestionBudgetFrom                                        planv1.SettingSource
 	MainBranchFrom, MergeMainFrom, MergeMainEveryFrom, InstallReleasesFrom, PushFrom, PushStrategyFrom planv1.SettingSource
 	InstallQuestionsFrom, BabysitFrom, WatchCommandsFrom, InstallBuildsFrom                            planv1.SettingSource
-	ServeCommandsFrom                                                                                  planv1.SettingSource
+	ServeCommandsFrom, GatesOffFrom                                                                    planv1.SettingSource
 }
 
 // CanReadOnly tells whether a provider can run a question worker (read-only).
@@ -281,7 +284,7 @@ func ResolveSettings(repo, dev *planv1.ProjectSettings) Settings {
 		PushStrategy:     planv1.PushStrategy_PUSH_STRATEGY_WISH,
 		InstallQuestions: DefaultInstallQuestions,
 		MainBranchFrom:   def, MergeMainFrom: def, MergeMainEveryFrom: def, InstallReleasesFrom: def, PushFrom: def, PushStrategyFrom: def,
-		InstallQuestionsFrom: def, Babysit: true, BabysitFrom: def, WatchCommandsFrom: def, ServeCommandsFrom: def, InstallBuilds: true, InstallBuildsFrom: def,
+		InstallQuestionsFrom: def, Babysit: true, BabysitFrom: def, WatchCommandsFrom: def, ServeCommandsFrom: def, GatesOffFrom: def, InstallBuilds: true, InstallBuildsFrom: def,
 	}
 	questionModel := false // a file set it
 	for _, f := range []struct {
@@ -372,6 +375,10 @@ func ResolveSettings(repo, dev *planv1.ProjectSettings) Settings {
 		}
 		if len(f.settings.GetServeCommands()) > 0 && f.from == planv1.SettingSource_SETTING_SOURCE_DEVELOPER {
 			s.ServeCommands, s.ServeCommandsFrom = f.settings.GetServeCommands(), f.from
+		}
+		// A repository declares its gates in its djinn.yaml: it never turns them off.
+		if len(f.settings.GetGatesOff()) > 0 && f.from == planv1.SettingSource_SETTING_SOURCE_DEVELOPER {
+			s.GatesOff, s.GatesOffFrom = f.settings.GetGatesOff(), f.from
 		}
 	}
 	effective := s.QuestionProvider
@@ -509,6 +516,11 @@ func readSettingsFilesConfig(home string, project *planv1.Project, config Config
 					"ignored: a developer allows a serve command in their own file (djinn project allow --serve), the " +
 					"repository lists its commands in .agents/permissions.txtpb"})
 			}
+			if len(f.settings.GetGatesOff()) > 0 {
+				f.warnings = append(f.warnings, settingsWarning{ignored: true, text: name + ": gates_off is " +
+					"ignored: a developer turns a gate off in their own file (djinn project gates --off), the " +
+					"repository declares its gates in its djinn.yaml"})
+			}
 		}
 		out = append(out, f)
 	}
@@ -550,6 +562,7 @@ func (s Settings) Rows() []*planv1.ProjectSetting {
 		{Name: "babysit", Value: strconv.FormatBool(s.Babysit), Source: s.BabysitFrom},
 		{Name: "watch_commands", Value: strings.Join(s.WatchCommands, "; "), Source: s.WatchCommandsFrom},
 		{Name: "serve_commands", Value: strings.Join(s.ServeCommands, "; "), Source: s.ServeCommandsFrom},
+		{Name: "gates_off", Value: strings.Join(s.GatesOff, ", "), Source: s.GatesOffFrom},
 	}
 }
 
@@ -683,6 +696,24 @@ func AllowServe(home, projectID, command string, revoke bool) ([]string, error) 
 		return allowIn(&s.ServeCommands, "serve", command, revoke)
 	})
 	return s.GetServeCommands(), err
+}
+
+// GatesOff turns the gate name off for the developer in the project, in their settings file in home, or back on
+// with on: the gates turned off then.
+func GatesOff(home, projectID, name string, on bool) ([]string, error) {
+	s, err := saveDeveloper(home, projectID, func(s *planv1.ProjectSettings) error {
+		at := slices.Index(s.GatesOff, name)
+		switch {
+		case on && at < 0:
+			return fmt.Errorf("you did not turn the gate %s off", name)
+		case on:
+			s.GatesOff = slices.Delete(s.GatesOff, at, at+1)
+		case at < 0:
+			s.GatesOff = append(s.GatesOff, name)
+		}
+		return nil
+	})
+	return s.GetGatesOff(), err
 }
 
 // allowIn adds command, its words joined by single spaces, to the commands of what (watcher, serve), or takes it

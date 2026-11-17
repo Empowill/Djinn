@@ -3,18 +3,69 @@ syntax = "proto3";
 // What a project tells Djinn about itself, in its own file.
 package djinn.v1;
 
+import "buf/validate/validate.proto";
 import "djinn/v1/containers.proto";
 
 // ProjectConfig is what a project tells Djinn, in YAML: djinn.yaml at its root, else .agents/djinn.yaml. Djinn reads
 // it on the reference branch, as the permissions are, so that a worker never changes what bounds it; outside Git,
 // without a remote, or before the reference branch is fetched, in the project's folder. With both files, the root's
-// is read and Djinn warns that the other is not. A field this message does not know refuses the file: Djinn then
-// holds its defaults, and says the file and the field. Without the file, Djinn's defaults.
+// is read and Djinn warns that the other is not. A field this message does not know is ignored, and Djinn says the
+// file and the field: the rest of the file applies (Q21). A file that does not read, or a value out of its bounds,
+// leaves the whole file out, said once: Djinn holds its defaults and goes on. A gate that is not valid is left out on
+// its own, said with its name: the other gates and the containers apply. Without the file, Djinn's defaults.
 //
 //   containers:
 //     memory_mib: 8192
 //     pids: 2048
+//   gates:
+//     - name: stack
+//       alone:
+//         - task run-back
+//         - docker compose * up
+//       beside:
+//         - task recette
 message ProjectConfig {
   // The runaway ceilings of the containers the project's workers start.
   Containers containers = 1;
+  // The gates the project declares, 8 at most: what of its commands waits for what. They only add waits between the
+  // project's own commands; the machine's bounds (its pressure, its memory, the turn of the heavy commands, Djinn's
+  // merges first) hold for every command, declared or not. A developer turns one off on their machine with djinn
+  // project gates --off.
+  repeated ProjectGate gates = 2 [(buf.validate.field).repeated.max_items = 8];
+}
+
+// ProjectGate is a gate a project declares in its djinn.yaml: the commands of its workers that rebuild a shared
+// resource (alone) and those that use it (beside). It goes by name@project: the stack of one project is not
+// another's. A worker's command that a pattern names takes the gate before it runs, through the admission hook; djinn
+// gate run with the gate's name, in the project, takes the same gate. Its patterns are words, compared word by word
+// with the start of each part of the command (cut at &&, ||, ;, | and new lines), past the variables it sets and the
+// wrappers env, time, nohup: * stands for zero or more words, and the rest of the command follows freely. No regular
+// expression, no shell, no file: nothing runs. A command two patterns name takes the first gate that names it, alone
+// before beside.
+message ProjectGate {
+  option (buf.validate.message).cel = {
+    id: "project_gate.patterns"
+    message: "a gate has 32 patterns at most, alone and beside together"
+    expression: "size(this.alone) + size(this.beside) <= 32"
+  };
+
+  // Name of the gate, in lower case: neither commands, Djinn's name for its admissions, nor the name of one of the
+  // project's checks.
+  string name = 1 [(buf.validate.field).string = {
+    pattern: "^[a-z][a-z0-9-]{0,39}$"
+    not_in: ["commands"]
+  }];
+  // The commands that hold the gate alone, whatever they cost: one at a time, and with none of those beside it.
+  repeated string alone = 2 [(buf.validate.field).repeated.items.string = {
+    min_len: 1
+    max_len: 200
+    pattern: "^[^*\\s][^\\n]*$"
+  }];
+  // The commands that share the gate: together, never while one holds it alone. One that comes after a command that
+  // waits to hold it alone goes behind it.
+  repeated string beside = 3 [(buf.validate.field).repeated.items.string = {
+    min_len: 1
+    max_len: 200
+    pattern: "^[^*\\s][^\\n]*$"
+  }];
 }

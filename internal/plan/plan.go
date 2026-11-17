@@ -3,6 +3,7 @@
 package plan
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -588,6 +589,51 @@ func (p *Projects) Allow(
 		return nil, Status(err)
 	}
 	return connect.NewResponse(out), nil
+}
+
+// Gates shows the gates a project declares in its djinn.yaml, as Djinn applies them on this machine, or turns one
+// off or back on for the developer: in their own settings file, never in the repository.
+func (p *Projects) Gates(
+	ctx context.Context, req *connect.Request[planv1.ProjectServiceGatesRequest],
+) (*connect.Response[planv1.ProjectServiceGatesResponse], error) {
+	project, err := ProjectNamed(ctx, p.Store, req.Msg.GetProject())
+	if err != nil {
+		return nil, Status(err)
+	}
+	if req.Msg.Off != nil && req.Msg.On != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("--off or --on: one gate at a time"))
+	}
+	if req.Msg.Off != nil || req.Msg.On != nil {
+		err = write(ctx, p.Store, req.Spec(), req.Msg, func(*store.Tx) error {
+			if req.Msg.Off != nil && !slices.ContainsFunc(declaredGates(p.Home, project), func(g *djinnv1.ProjectGate) bool {
+				return g.GetName() == req.Msg.GetOff()
+			}) {
+				return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("the project declares no gate %s", req.Msg.GetOff()))
+			}
+			if _, err := GatesOff(p.Home, project.GetId(), cmp.Or(req.Msg.GetOff(), req.Msg.GetOn()), req.Msg.On != nil); err != nil {
+				return connect.NewError(connect.CodeFailedPrecondition, err)
+			}
+			return nil
+		})
+		if err != nil {
+			return nil, Status(err)
+		}
+	}
+	gates := LoadProjectGates(p.Home, project)
+	return connect.NewResponse(&planv1.ProjectServiceGatesResponse{
+		Gates: gates.Gates, File: gates.File, GatesOff: gates.Off, Warnings: gates.Warnings,
+		DeveloperFile: DeveloperSettingsFile(p.Home, project.GetId()),
+	}), nil
+}
+
+// declaredGates are the valid gates project declares, those turned off among them.
+func declaredGates(home string, project *planv1.Project) []*djinnv1.ProjectGate {
+	dir := ConfigDir(home, project)
+	if dir == "" {
+		return nil
+	}
+	read, _ := ReadProjectConfig(dir)
+	return read.Config.GetGates()
 }
 
 // ForgetSync forgets the sync of a branch with nothing to push: the project's syncs leave it out until it moves.

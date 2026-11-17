@@ -146,7 +146,8 @@ type Gates struct {
 	track   func(pid int, taskID string) func() // told of a worker's command holding a gate (Track); nil: none
 
 	projectResolver func(taskID, dir string) string
-	log             Log // the intervals of the gates (Keep)
+	declared        func(taskID, dir string) Declared // the gates a project declares (Declare); nil: none
+	log             Log                               // the intervals of the gates (Keep)
 
 	mu     sync.Mutex
 	held   map[string]*waiter // the gates held alone, by name
@@ -163,6 +164,8 @@ type waiter struct {
 	shared                  bool                              // held with others: an admission, or a light command under a gate's name
 	admission               bool                              // an admission (Request.Shared): it goes by Commands, its process found (Find)
 	heavy                   bool                              // the command was measured heavy: it goes one at a time (Heavy)
+	exclusive               bool                              // held alone under a gate its project declares: it waits for those that share it too
+	label                   string                            // how a reason names the declared gate it is for, "stack (dolmen, .agents/djinn.yaml)"; "" for another
 	find                    func(skip func(pid int) bool) int // finds the admitted command's process (Request.Find)
 	lost                    bool                              // no process of its command was found; guarded by Gates.mu
 	pid                     int                               // the holder's process; 0 when unknown
@@ -273,6 +276,8 @@ type Request struct {
 	// for the heavy command of another task. It needs PID or Find: the admission is held until that process ends.
 	// A gate's name asked for a light command (What, not measured heavy) is shared the same way, without being asked:
 	// it waits only for one that holds its name alone (a heavy command, a lit ifrit) and a merge that goes first.
+	// A command a pattern of its project's gates names goes by that gate instead, name@project, alone or shared as
+	// the pattern says (Declare).
 	Shared bool
 	// Find, when PID is 0, finds the process of the admitted command, leaving out those skip says, once it starts:
 	// 0 while it is not found. The admission is given back when no process is found within a few seconds: its
@@ -336,7 +341,6 @@ func (g *Gates) Take(ctx context.Context, r Request, waiting func(why string)) (
 		who += ": " + what
 		if g.costs != nil {
 			cost = g.costs.Cost(ctx, taskID, r.Dir, what)
-			g.costs.Ask(ctx, name, taskID, r.Dir, what)
 		}
 	}
 	g.mu.Lock()
@@ -345,6 +349,18 @@ func (g *Gates) Take(ctx context.Context, r Request, waiting func(why string)) (
 	// A light command shares its gate's name (Q17 B): only a heavy one, a lit ifrit's server, or a holder that says
 	// not what it runs holds it alone.
 	shared := r.Shared || what != "" && !heavy && !ifrit
+	g.mu.Unlock()
+	// A gate the project declares: name@project, alone or shared as its patterns say; an ifrit's serve holds it alone.
+	full, alone, label, declared := g.declaredGate(Request{
+		TaskID: taskID, What: what, Dir: r.Dir, First: r.First, Shared: r.Shared,
+	}, name, shared)
+	if declared {
+		name, shared = full, !alone && !ifrit
+	}
+	if what != "" && g.costs != nil {
+		g.costs.Ask(ctx, name, taskID, r.Dir, what)
+	}
+	g.mu.Lock()
 	var proj string
 	if g.projectResolver != nil {
 		proj = g.projectResolver(taskID, r.Dir)
@@ -358,7 +374,7 @@ func (g *Gates) Take(ctx context.Context, r Request, waiting func(why string)) (
 	}
 	w := &waiter{
 		name: name, taskID: taskID, who: who, what: what, dir: r.Dir, project: proj, peak: cost.Peak, pid: r.PID, first: r.First,
-		shared: shared, admission: r.Shared, heavy: heavy, find: r.Find, unmeasured: what != "" && (cost.Peak == 0 && cost.CPU == 0 || cost.Head != ""),
+		shared: shared, admission: r.Shared, heavy: heavy, exclusive: declared && !shared, label: label, find: r.Find, unmeasured: what != "" && (cost.Peak == 0 && cost.CPU == 0 || cost.Head != ""),
 		waitCause: machinev1.GateWaitCause_GATE_WAIT_CAUSE_NONE,
 		ifrit:     ifrit, out: out, timeout: timeout, long: long, usual: usual, timed: timeout > 0, seq: g.seq,
 		asked:   time.Now(),
@@ -507,7 +523,7 @@ func (g *Gates) measured(w *waiter, why string) *machinev1.CommandServiceRecordR
 	return &machinev1.CommandServiceRecordRequest{
 		TaskId: w.taskID, Directory: w.dir, Command: w.what, CpuSeconds: w.cpu.Seconds(), Seconds: held.Seconds(),
 		PeakMemoryBytes: w.use.GetPeakMemoryBytes(), ExitCode: -1, WaitSeconds: w.since.Sub(w.asked).Seconds(),
-		HeldSeconds: held.Seconds(), Gate: Commands,
+		HeldSeconds: held.Seconds(), Gate: w.name,
 	}
 }
 
@@ -628,6 +644,11 @@ func (g *Gates) found(w *waiter) bool {
 			for h := range g.shared {
 				if h.pid == pid {
 					return true // Another admission's command.
+				}
+			}
+			for _, h := range g.held {
+				if h.pid == pid {
+					return true // One that holds a declared gate alone.
 				}
 			}
 			return false
@@ -796,12 +817,27 @@ func (g *Gates) pass(ctx context.Context) {
 	// for the turn of the heavy commands.
 	const heavyTurn = "\x00heavy"
 	merges, mergeWhy, mergeCause := map[string]int{}, map[string]string{}, map[string]string{}
+	// The first come of those that wait to hold a declared gate alone, by name: who comes after it to share it goes
+	// behind it.
+	aloneNext := map[string]*waiter{}
+	for _, w := range g.queue {
+		if o := aloneNext[w.name]; w.exclusive && (o == nil || w.seq < o.seq) {
+			aloneNext[w.name] = w
+		}
+	}
 	for _, w := range queue {
 		var why, cause string
 		var kind machinev1.GateWaitCause
 		h := g.held[w.name]
-		if w.admission {
+		if w.name == Commands {
 			h = nil
+		}
+		var sharer, ahead *waiter
+		if h == nil && w.exclusive {
+			sharer = g.sharer(w)
+		}
+		if a := aloneNext[w.name]; h == nil && w.shared && a != nil && a.seq < w.seq {
+			ahead = a
 		}
 		heavy := g.heavyHolder(w)
 		switch {
@@ -822,10 +858,16 @@ func (g *Gates) pass(ctx context.Context) {
 				}
 				why, cause = why+then, cause+then
 			}
+		case sharer != nil:
+			why = fmt.Sprintf("shared by %s, for %s", sharer.who, time.Since(sharer.since).Round(time.Second))
+			cause, kind = "shared by "+sharer.who, machinev1.GateWaitCause_GATE_WAIT_CAUSE_HELD
+		case ahead != nil:
+			why = "behind " + ahead.who + ", which waits to hold it alone"
+			cause, kind = "behind "+ahead.who, machinev1.GateWaitCause_GATE_WAIT_CAUSE_HELD
 		case pressure != "":
 			why = "the machine is under pressure: " + pressure
 			cause, kind = why, machinev1.GateWaitCause_GATE_WAIT_CAUSE_PRESSURE
-		case !w.first && !w.admission && merges[w.name] > 0:
+		case !w.first && w.name != Commands && merges[w.name] > 0:
 			why = "a merge or a push goes first: " + mergeWhy[w.name]
 			cause, kind = "merge first: "+mergeCause[w.name], machinev1.GateWaitCause_GATE_WAIT_CAUSE_MERGE_FIRST
 		case heavy != nil:
@@ -864,6 +906,9 @@ func (g *Gates) pass(ctx context.Context) {
 			}
 			why = "a merge or a push, served before the workers: " + why
 		}
+		if w.label != "" {
+			why = w.label + ": " + why // The worker reads which gate, of which project, declared where.
+		}
 		// The holder's time and the memory free change every second: tell the waiter only when the cause changes.
 		w.waitCause = kind
 		if cause != w.cause {
@@ -894,6 +939,19 @@ func (g *Gates) heavyHolder(w *waiter) *waiter {
 	}
 	for h := range g.shared {
 		look(h)
+	}
+	return found
+}
+
+// sharer is the first granted of those that share the declared gate w waits to hold alone, leaving out w's own task's:
+// one of its commands may run the other (a beside command whose script runs djinn gate run with the gate), and would
+// wait for itself. nil when none does. The caller holds g.mu.
+func (g *Gates) sharer(w *waiter) *waiter {
+	var found *waiter
+	for h := range g.shared {
+		if h.name == w.name && (w.taskID == "" || h.taskID != w.taskID) && (found == nil || h.since.Before(found.since)) {
+			found = h
+		}
 	}
 	return found
 }
@@ -987,7 +1045,7 @@ func (g *Gates) List() []State {
 	}
 	first := map[string]*waiter{} // the first granted of each name's light commands; equal grant times (a coarse clock, Windows) go by arrival
 	for h := range g.shared {
-		if h.admission {
+		if h.name == Commands {
 			continue
 		}
 		get(h.name).Shared++
@@ -1001,7 +1059,7 @@ func (g *Gates) List() []State {
 		}
 	}
 	for _, w := range g.queue {
-		if w.admission {
+		if w.name == Commands {
 			continue // An admission is no gate to list: Held and Waiting tell its task's.
 		}
 		s := get(w.name)
