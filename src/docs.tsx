@@ -33,7 +33,10 @@ export const Docs = memo(function Docs() {
       <PageHeader
         middle={<OperatingLoad />}
         actions={
-          <Link href={BugReport} className="button secondary page-header-action">
+          <Link
+            href={BugReport}
+            className="button secondary page-header-action"
+          >
             {t("docs.report_bug")}
           </Link>
         }
