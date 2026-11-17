@@ -17,8 +17,8 @@ var pinned = []string{
 	1: "e517e32093ba9b9f92ecbdd67fd42d8b566276618b694873285c80c301decd66",
 }
 
-// TestSchemaPinned fails when the tables of Djinn's database change without store.Schema: an older Djinn would open
-// the newer database and leave its new columns stale (V5 of L08, W52).
+// TestSchemaPinned fails when the tables of Djinn's database change without store.Schema: an older Djinn opening the
+// newer database would not know it, nor warn that it leaves the new columns stale (V5 of L08, W52, Q42).
 func TestSchemaPinned(t *testing.T) {
 	t.Parallel()
 	s, err := store.Open(t.Context(), "", plan.Entities()...)

@@ -233,14 +233,15 @@ offers to restart on it. See [Question and move](#question-and-move).
 ### Going back to an older Djinn
 
 Djinn's database, djinn.db in its data folder, carries the number of its schema: the version of its tables, raised by
-each Djinn that adds a column or a table. A Djinn opens a database of its schema or an older one, raising it. It refuses
-a newer one, written by a newer Djinn, and writes nothing to it: it would save rows without the columns it does not
-know, and the newer Djinn, back on the same data, would then search them under stale values.
+each Djinn that adds a column or a table. A Djinn opens a database of its schema or an older one, raising it. A newer
+one, written by a newer Djinn, it opens too, and goes on: it writes a warning in its log, with the schema of the
+database, the release that wrote it and the schema this Djinn knows, and leaves the database's schema as it is.
 
-So a Djinn installed over a newer one does not start, and says why: the schema of the database and the release that
-wrote it, the schema this Djinn knows, and what to do. Either install that release or a later one again, which opens
-the database as it was left; or restore a backup taken before the update (djinn backup restore), which loses what
-was done since. A backup carries the schema of the database it copies: a newer Djinn's backup is refused the same way.
+Djinn saves what it holds in a form made to change without breaking: a field this Djinn does not know is kept and
+ignored, a field it lacks reads empty. So going back to an older Djinn never forces you to reinstall a version. What
+the newer Djinn added may read stale until you install it again; to get the data of before the update back instead,
+restore a backup taken then (djinn backup restore), which loses what was done since. A schema Djinn cannot read or
+record is a warning too, never a stop.
 
 ## Common mistakes
 

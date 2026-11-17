@@ -88,7 +88,7 @@ func runUpCommand(args []string) int {
 func main() {
 	version = moduleVersion(version)
 	ui.Develop = version == "dev"
-	// The database records the release that raised its schema; an older Djinn refusing it names both (W52).
+	// The database records the release that raised its schema; an older Djinn opening it warns, naming both (W52, Q42).
 	store.Release = version
 	args := fromBundle(os.Args[1:])
 	// `djinn open <link>` is what the system runs for a djinn:// link clicked anywhere; without a link, as the menu entry

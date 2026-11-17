@@ -62,7 +62,7 @@ func (s *Store) OnCommit(f func([]proto.Message)) {
 
 // Open opens the database file at path, creating it and its directory if needed, in WAL mode. An empty path
 // opens a database in memory, for tests. The tables of entities are created, and the columns they lack added;
-// nothing is ever dropped. A database of a newer Schema is refused with a *NewerError, untouched (schema.go).
+// nothing is ever dropped. A database of a newer Schema opens too, with a warning (schema.go).
 //
 // Each entity is a message with a string id field. Its singular string fields named *_id are indexed, and each
 // (djinn.v1.unique) option becomes a unique index, ignoring case on text.
@@ -107,10 +107,7 @@ func (s *Store) Close() error { return s.db.Close() }
 
 func (s *Store) migrate(ctx context.Context, path string, entities []proto.Message) error {
 	return s.tx(ctx, func(tx *sql.Tx) error {
-		have, err := s.guard(ctx, tx, path)
-		if err != nil {
-			return err
-		}
+		have := s.schema(ctx, tx, path)
 		if _, err := tx.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS command (
 			seq INTEGER PRIMARY KEY AUTOINCREMENT,
 			id TEXT NOT NULL UNIQUE,
@@ -146,7 +143,8 @@ func (s *Store) migrate(ctx context.Context, path string, entities []proto.Messa
 			}
 			s.tables[t.md.FullName()] = t
 		}
-		return raise(ctx, tx, have)
+		raise(ctx, tx, path, have)
+		return nil
 	})
 }
 
