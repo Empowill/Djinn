@@ -48,7 +48,7 @@ func (s *Store) schema(ctx context.Context, tx *sql.Tx, path string) int {
 // raise marks the database with Schema once its tables are made, recording this release the first time. A database of
 // a newer schema keeps its own. raise never fails Open: what it cannot record is a warning (Q42).
 func raise(ctx context.Context, tx *sql.Tx, path string, have int) {
-	if err := mark(ctx, tx, have); err != nil {
+	if err := savepoint(ctx, tx, func() error { return mark(ctx, tx, have) }); err != nil {
 		logx.L().Warn("database schema not recorded", "path", path, "err", err)
 	}
 }

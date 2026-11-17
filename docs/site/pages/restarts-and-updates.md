@@ -243,6 +243,18 @@ the newer Djinn added may read stale until you install it again; to get the data
 restore a backup taken then (djinn backup restore), which loses what was done since. A schema Djinn cannot read or
 record is a warning too, never a stop.
 
+### A migration that fails
+
+At each start Djinn makes the parts of its database it lacks, one step per part: the journal of commands, the
+machine's samples, the gates' intervals, then each kind of thing it keeps (wishes, tasks, questions and the others),
+its table, columns and indexes. A step that fails, on a database hurt by hand or by a disk, is undone alone and
+written as a warning in the log, naming the part and why; Djinn starts all the same.
+
+Only that part is missing then: each use of it fails with an error that says it was not migrated at start, and
+why, while the rest reads and writes as usual. Without the journal, nothing can change, since every change is
+journaled first; the rest still reads. The next start tries the step again, so once its cause is fixed, the part is
+back.
+
 ## Common mistakes
 
 - **Killing Djinn to fix a freeze.** Nothing is lost either way, but what Djinn was waiting on is lost with it: have
