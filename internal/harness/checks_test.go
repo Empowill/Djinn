@@ -561,6 +561,8 @@ func TestHoldPush(t *testing.T) {
 		if w2ID == "" {
 			t.Fatalf("the push %v; want corrected by a worker", in.pushState(t))
 		}
+		// Stopped before its worker said its session, it would have none to resume (W73: red on CI).
+		in.follow(t, w2ID)("its worker said its session", saidSession(w2ID))
 
 		if _, err := in.tasks.Stop(t.Context(), connect.NewRequest(&planv1.TaskServiceStopRequest{TaskId: w2ID})); err != nil {
 			t.Fatal(err)
