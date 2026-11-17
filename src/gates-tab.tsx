@@ -1,9 +1,9 @@
 // The Gates tab of the Hourglass (hourglass.tsx, L05 v3 built on what exists, Q12 B): what the gates do now, read live
-// while the tab shows (GateService.List); the gates held in the last hour (MachineService.Series, its gate intervals);
+// while the tab shows (GateService.List); the gates over the last hour, 6 hours or day, one lane per gate under the
+// workers that run, then a Sankey of the named gates' requests (gates-flow.tsx, L13 v2 A, Q46 A: GateService.History);
 // what each command admitted under a gate costs, the costliest first (CommandService.List); and the waits for each
 // gate, over the recent runs the store keeps of each command (up to 200). A gate is a named lock: one command holds it
-// at a time, the others wait their turn. What waits for the gates' history in the store (I2) and for a command's
-// admission mode (I1) is not shown.
+// at a time, the others wait their turn. What waits for a command's admission mode (I1) is not shown.
 import { memo, useEffect, useMemo, useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 
@@ -12,25 +12,28 @@ import type {
   CommandRun,
   Gate,
   GateInterval,
-  MachineServiceSeriesResponse,
+  GateServiceHistoryResponse,
 } from "../gen/ts/machine/v1/machine_pb";
 import type { Task } from "../gen/ts/plan/v1/plan_pb";
 import { jump } from "./attention";
 import { duration } from "./consumption-panel";
 import { useDjinn } from "./data/djinn";
 import { date, dayText, secondText, span, useNow } from "./data/format";
-import { lastPointTime, mergeSeries, timeOf } from "./data/series";
+import { timeOf } from "./data/series";
+import {
+  GatesFlow,
+  GatesSankey,
+  PERIOD_EVERY,
+  type Period,
+} from "./gates-flow";
 import { t } from "./i18n";
 import { formatValue } from "./resource-chart";
 import { keepLive } from "./stillness";
 import "./gates-tab.css";
 
-// How often the gates are read while the tab shows, the hour of intervals, and the commands' costs.
+// How often the gates are read while the tab shows, and the commands' costs; the history's pace is its window's.
 const GATES_EVERY = 2_000;
-const SERIES_EVERY = 5_000;
 const COMMANDS_EVERY = 15_000;
-// The last hour, in minutes.
-const HOUR = 60;
 // A wait longer than this counts apart: the one a worker notices.
 const LONG_WAIT = 5;
 
@@ -120,6 +123,8 @@ export function gateWaits(costs: readonly CommandCost[]): GatesWaits[] {
     .sort((a, b) => b.holds - a.holds || a.gate.localeCompare(b.gate));
 }
 
+const EMPTY: GateInterval[] = [];
+
 // The tasks a gate's holder or a run names: their codes, and the way to them.
 type Tasks = ReadonlyMap<string, Task>;
 
@@ -129,7 +134,8 @@ export function GatesTab({
   onTask,
   initialGates = [],
   initialCommands = [],
-  initialSeries = null,
+  initialHistory = null,
+  initialPeriod = 60,
 }: {
   // The tasks of the active wishes, by id: a holder or a run says its task's code.
   tasks?: Tasks;
@@ -139,14 +145,18 @@ export function GatesTab({
   onTask?: (task: Task) => void;
   initialGates?: Gate[];
   initialCommands?: CommandCost[];
-  initialSeries?: MachineServiceSeriesResponse | null;
+  initialHistory?: GateServiceHistoryResponse | null;
+  initialPeriod?: Period;
 }) {
   const djinn = useDjinn();
   const [gates, setGates] = useState<Gate[]>(initialGates);
   const [costs, setCosts] = useState<CommandCost[]>(initialCommands);
-  const [series, setSeries] = useState<MachineServiceSeriesResponse | null>(
-    initialSeries,
+  const [history, setHistory] = useState<GateServiceHistoryResponse | null>(
+    initialHistory,
   );
+  // The window of the lanes and the Sankey, and whether the lanes show the admissions of the workers' commands.
+  const [period, setPeriod] = useState<Period>(initialPeriod);
+  const [admissions, setAdmissions] = useState(false);
   // The command whose runs show, by id.
   const [open, setOpen] = useState("");
 
@@ -166,30 +176,23 @@ export function GatesTab({
     };
   }, [djinn]);
 
-  // The last hour's gate intervals: the hour once, then what came since (the intervals are always the hour's).
+  // The history of the window, read whole each time: an hour every 5 s, 6 hours every 30 s, a day every minute.
   useEffect(() => {
     if (!djinn) return;
     let active = true;
-    let current: MachineServiceSeriesResponse | null = null;
     const read = async () => {
-      const since = current ? lastPointTime(current) : undefined;
-      const res = await djinn.clients.machine
-        .series({ minutes: HOUR, since })
+      const res = await djinn.clients.gates
+        .history({ minutes: period })
         .catch(() => null);
-      if (!active || !res) return;
-      current =
-        current && since
-          ? mergeSeries(current, res, Date.now() - HOUR * 60_000)
-          : res;
-      setSeries(current);
+      if (active && res) setHistory(res);
     };
     void read();
-    const stop = keepLive(() => void read(), SERIES_EVERY);
+    const stop = keepLive(() => void read(), PERIOD_EVERY[period]);
     return () => {
       active = false;
       stop();
     };
-  }, [djinn]);
+  }, [djinn, period]);
 
   useEffect(() => {
     if (!djinn) return;
@@ -212,7 +215,15 @@ export function GatesTab({
     [costs],
   );
 
-  // A band of the hour opens its command's runs in the table.
+  // The window drawn: the one the history was read over; until it is read, the one asked, ending when the tab opened.
+  const [opened] = useState(() => Date.now());
+  const end = history?.readTime ? timeOf(history.readTime) : opened;
+  const start = history?.startTime
+    ? timeOf(history.startTime)
+    : end - period * 60_000;
+  const intervals = history?.intervals ?? EMPTY;
+
+  // A band of the lanes opens its command's runs in the table.
   const pick = (g: GateInterval) => {
     const command = g.command.toLowerCase();
     const cost = sorted.find(
@@ -231,12 +242,18 @@ export function GatesTab({
     <div className="gates-tab">
       <GatesFigures costs={costs} />
       <GatesNow gates={gates} waits={waits} tasks={tasks} onWorker={onWorker} />
-      <GatesHour
-        intervals={series?.gates ?? []}
-        lastPoint={series ? timeOf(lastPointTime(series)) : 0}
-        tasks={tasks}
+      <GatesFlow
+        intervals={intervals}
+        runs={history?.runs ?? []}
+        start={start}
+        end={end}
+        period={period}
+        onPeriod={setPeriod}
+        admissions={admissions}
+        onAdmissions={setAdmissions}
         onPick={pick}
       />
+      <GatesSankey intervals={intervals} start={start} end={end} />
       <CommandTable
         costs={sorted}
         tasks={tasks}
@@ -457,117 +474,6 @@ const GatesNow = memo(function GatesNow({
           );
         })}
       </ul>
-    </section>
-  );
-});
-
-// The last hour: the gates held, one lane per overlap, the hatched part the wait, the plain part the hold; now on the
-// right. A band opens its command's runs in the table.
-const GatesHour = memo(function GatesHour({
-  intervals,
-  lastPoint,
-  tasks,
-  onPick,
-}: {
-  intervals: readonly GateInterval[];
-  // The newest point the series read: the hour ends there when it is not of today (a test's fixed clock).
-  lastPoint: number;
-  tasks?: Tasks;
-  onPick: (g: GateInterval) => void;
-}) {
-  const now = useNow(true, SERIES_EVERY);
-  const tMax =
-    lastPoint && Math.abs(now - lastPoint) > 24 * 3600 * 1000
-      ? lastPoint
-      : Math.max(now, lastPoint);
-  const tMin = tMax - HOUR * 60_000;
-  const lanes = useMemo(() => {
-    const visible = intervals
-      .filter((g) => {
-        const release = g.releaseTime ? timeOf(g.releaseTime) : tMax;
-        return g.grantTime && release >= tMin && timeOf(g.grantTime) <= tMax;
-      })
-      .sort((a, b) => timeOf(a.grantTime) - timeOf(b.grantTime));
-    const ends: number[] = [];
-    return visible.map((g) => {
-      const asked = timeOf(g.askedTime) || timeOf(g.grantTime);
-      const release = g.releaseTime ? timeOf(g.releaseTime) : tMax;
-      let lane = ends.findIndex((end) => end <= asked);
-      if (lane < 0) lane = ends.push(release) - 1;
-      else ends[lane] = release;
-      return { g, lane };
-    });
-  }, [intervals, tMin, tMax]);
-  const width = Math.max(1, tMax - tMin);
-  const at = (ms: number) =>
-    `${(Math.max(0, Math.min(1, (ms - tMin) / width)) * 100).toFixed(2)}%`;
-  const count = lanes.length ? Math.max(...lanes.map((x) => x.lane)) + 1 : 0;
-  return (
-    <section
-      className="statistics-card gates-card"
-      aria-label={t("gates.hour")}
-    >
-      <header>
-        <h3>{t("gates.hour")}</h3>
-      </header>
-      <p className="statistics-detail muted-text">{t("gates.hour_detail")}</p>
-      {lanes.length === 0 ? (
-        <p className="statistics-empty muted-text">{t("gates.hour_none")}</p>
-      ) : (
-        <>
-          <div
-            className="gates-lanes"
-            style={{ height: `${(count * 22) / 16}rem` }}
-            role="list"
-          >
-            {lanes.map(({ g, lane }, i) => {
-              const asked = timeOf(g.askedTime) || timeOf(g.grantTime);
-              const grant = timeOf(g.grantTime);
-              const release = g.releaseTime ? timeOf(g.releaseTime) : tMax;
-              const code = tasks?.get(g.taskId)?.code;
-              const label = t("consumption.gate_band", {
-                gate: g.gate,
-                command: g.command || "—",
-                project: g.project || "—",
-                wait: duration((grant - asked) / 1000),
-                held: duration((release - grant) / 1000),
-              });
-              return (
-                <button
-                  type="button"
-                  key={i}
-                  role="listitem"
-                  className="gates-band"
-                  title={label}
-                  aria-label={label}
-                  onClick={() => onPick(g)}
-                  style={{
-                    top: `${(lane * 22) / 16}rem`,
-                    left: at(asked),
-                    right: `calc(100% - ${at(release)})`,
-                  }}
-                >
-                  {grant > asked && (
-                    <span
-                      className="gates-band-wait"
-                      style={{
-                        width: `${(((grant - asked) / Math.max(1, release - asked)) * 100).toFixed(2)}%`,
-                      }}
-                    />
-                  )}
-                  <span className="gates-band-held">
-                    {code ? `${g.gate} · ${code}` : g.gate}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-          <div className="gates-axis" aria-hidden="true">
-            <span>{secondText(new Date(tMin))}</span>
-            <span>{secondText(new Date(tMax))}</span>
-          </div>
-        </>
-      )}
     </section>
   );
 });
