@@ -87,14 +87,23 @@ var gitReads = map[string]bool{
 var stripped = map[string]bool{"time": true, "nohup": true, "command": true, "builtin": true, "noglob": true, "env": true}
 
 // Plain says whether command only reads or edits, its every part being a command of readHeads or a reading git: it
-// passes with no admission. One it cannot read through, a substitution, a subshell, a find that runs or deletes, is
-// not plain.
+// passes with no admission. A here-document is data its command reads, cat <<'EOF' > notes.md writes a file (W82);
+// a substitution in its body runs, unless its delimiter is quoted. One it cannot read through, a substitution, a
+// subshell, a find that runs or deletes, is not plain.
 func Plain(command string) bool {
-	if strings.Contains(command, "$(") || strings.Contains(command, "`") || strings.Contains(command, "<(") ||
-		strings.Contains(command, ">(") {
+	code, docs := machine.HereDocs(command)
+	texts := []string{code}
+	for _, d := range docs {
+		if !d.Quoted {
+			texts = append(texts, d.Body)
+		}
+	}
+	if slices.ContainsFunc(texts, func(s string) bool {
+		return strings.Contains(s, "$(") || strings.Contains(s, "`") || strings.Contains(s, "<(") || strings.Contains(s, ">(")
+	}) {
 		return false
 	}
-	parts, ok := split(command)
+	parts, ok := split(code)
 	if !ok {
 		return false
 	}
@@ -152,8 +161,9 @@ func assignment(word string) bool {
 var errUnread = errors.New("unread")
 
 // split cuts command into its simple commands, each into its words, quotes removed: at ;, &, |, &&, || and new lines.
-// A redirection is left out with its target. ok is false for what it cannot read: an open quote, a group or a
-// subshell, a here-document.
+// A redirection is left out with its target, a here-document's operator with its delimiter: command comes without
+// their bodies (machine.HereDocs). ok is false for what it cannot read: an open quote, a group or a subshell, a
+// here-string.
 func split(command string) (parts [][]string, ok bool) {
 	var words []string
 	var word strings.Builder
@@ -207,15 +217,19 @@ func split(command string) (parts [][]string, ok bool) {
 				cut()
 			case c == '(' || c == ')' || c == '{' && !inWord || c == '}' && !inWord:
 				return errUnread
-			case c == '<' && strings.HasPrefix(command[i:], "<<"):
+			case c == '<' && strings.HasPrefix(command[i:], "<<<"):
 				return errUnread
 			case c == '>' || c == '<':
-				// A redirection: its target is no word of the command. 2>&1 and >&2 name no file.
+				// A redirection: its target is no word of the command. 2>&1 and >&2 name no file. A here-document's
+				// target is its delimiter.
 				if inWord && strings.Trim(word.String(), "0123456789") == "" {
 					word.Reset()
 					inWord = false
 				}
 				end()
+				if strings.HasPrefix(command[i:], "<<") {
+					i++
+				}
 				for i+1 < len(command) && (command[i+1] == '>' || command[i+1] == '&' || command[i+1] == '|') {
 					i++
 				}

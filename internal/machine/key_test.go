@@ -1,6 +1,7 @@
 package machine
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
@@ -34,7 +35,11 @@ func TestKey(t *testing.T) {
 		{"filters and redirections", "go test ./... 2>&1 | tail -50", "", "go test ./..."},
 		{"output to a file", "go test ./... > " + scratch + "/out.log 2>&1; echo EXIT=$?", "", "go test ./..."},
 		{"quotes kept where needed", `go test -run 'TestA|TestB' ./internal/gate`, "", `go test -run 'TestA|TestB' ./internal/gate`},
-		{"a here-document's body", "python3 - <<'EOF'\nprint(1)\nEOF", "", "python3 -"},
+		{"an inline script, its body's digest", "python3 - <<'EOF'\nprint(1)\nEOF", "", "python3 - '<<d287bb7f'"},
+		{"the commands after a here-document", "cat <<'EOF' > x.py\nprint(1)\nEOF\npython3 x.py && go test ./...", "", "python3 x.py && go test ./..."},
+		{"a here-document piped", "cat <<-EOF | python3 -\n\tprint(1)\n\tEOF", "", "cat '<<d287bb7f' | python3 -"},
+		{"a here-document written alone", "cat <<EOF > notes.md\nhi\nEOF", "", "cat '<<8f434346'"},
+		{"a here-string", "grep -c x <<< 'a b' && go vet ./...", "", "grep -c x && go vet ./..."},
 		{"only a set up", "cd " + worktree, "", "cd $WORKTREE"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
@@ -58,6 +63,15 @@ func TestKey(t *testing.T) {
 	if a != b {
 		t.Errorf("one command, two keys: %q and %q", a, b)
 	}
+	// Two inline scripts cost apart: two keys; one script run from two worktrees, one key (W82).
+	if a, b := Key("python3 - <<'EOF'\nprint(1)\nEOF"), Key("python3 - <<'EOF'\nprint(2)\nEOF"); a == b {
+		t.Errorf("two inline scripts share the key %q", a)
+	}
+	a = Key("python3 - <<EOF\nopen('"+worktree+"/x.json')\nEOF", worktree)
+	b = Key("python3 - <<EOF\nopen('"+other+"/x.json')\nEOF", other)
+	if a != b {
+		t.Errorf("one inline script, two keys: %q and %q", a, b)
+	}
 	// A long command is cut at a word, within KeyLength.
 	long := Key(strings.Repeat("word ", 100))
 	if len(long) > KeyLength || strings.HasSuffix(long, " ") || !strings.HasSuffix(long, "word") {
@@ -79,10 +93,36 @@ func TestHead(t *testing.T) {
 		"GOFLAGS=* go build ./cmd/djinn":           "go build",
 		"./bin/djinn-e2e up --data $DJINN_SCRATCH": "./bin/djinn-e2e up",
 		"python3 -I bench.py":                      "python3",
+		"python3 - '<<d287bb7f'":                   "python3",
+		"cat '<<8f434346' | python3":               "cat",
 		"":                                         "",
 	} {
 		if got := Head(key); got != want {
 			t.Errorf("Head(%q) = %q, want %q", key, got, want)
 		}
+	}
+}
+
+// TestHereDocs covers HereDocs: the bodies go apart, each with whether its delimiter was quoted, the commands around
+// them stay; <<- strips the tabs; a here-string, a quoted << or a comment opens no body.
+func TestHereDocs(t *testing.T) {
+	for _, c := range []struct {
+		name, command, code string
+		docs                []HereDoc
+	}{
+		{"none", "go test ./...", "go test ./...", nil},
+		{"quoted", "cat <<'EOF' > f\n$(x)\nEOF\nls", "cat <<'EOF' > f\nls", []HereDoc{{Body: "$(x)", Quoted: true}}},
+		{"unquoted, then a command on its line", "cat <<EOF | sh && ls\na\nb\nEOF", "cat <<EOF | sh && ls\n", []HereDoc{{Body: "a\nb"}}},
+		{"tabs stripped", "cat <<-\"END\"\n\ta\n\tEND\nls", "cat <<-\"END\"\nls", []HereDoc{{Body: "a", Quoted: true}}},
+		{"two on a line", "cat <<A; cat <<B\na\nA\nb\nB", "cat <<A; cat <<B\n", []HereDoc{{Body: "a"}, {Body: "b"}}},
+		{"no delimiter", "cat <<EOF\na", "cat <<EOF\n", []HereDoc{{Body: "a"}}},
+		{"here-string, quoted, comment", "grep x <<< y; echo '<<a' # <<b\nls", "grep x <<< y; echo '<<a' # <<b\nls", nil},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			code, docs := HereDocs(c.command)
+			if code != c.code || !slices.Equal(docs, c.docs) {
+				t.Errorf("HereDocs(%q) = %q, %+v; want %q, %+v", c.command, code, docs, c.code, c.docs)
+			}
+		})
 	}
 }
