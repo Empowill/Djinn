@@ -1,6 +1,7 @@
 // A push from the projects panel shows what it does (W489): its sync line spins while its push check runs (a check
 // that waits for a file), the same after a reload, then shows a check mark and leaves once the remote holds the
-// branch, its counts following the remote. Nothing is said as a toast. No model is called.
+// branch, its counts following the remote. Nothing is said as a toast. No model is called. The wish lands in a branch
+// of its own, feat/lamp: Djinn never pushes the reference branch, main (W50).
 import { expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -60,7 +61,8 @@ test("a push from the projects panel spins while its checks run, then its line f
   git(folder, "commit", "--quiet", "-m", "A brass lamp");
   git(folder, "init", "--quiet", "--bare", bare);
   git(folder, "remote", "add", "origin", bare);
-  git(folder, "push", "--quiet", "origin", "main");
+  git(folder, "switch", "--quiet", "-c", "feat/lamp");
+  git(folder, "push", "--quiet", "origin", "main", "feat/lamp");
   fs.writeFileSync(path.join(folder, "README.md"), "A brass lamp, polished.\n");
   git(folder, "commit", "--quiet", "-am", "Polish the lamp");
 
@@ -78,13 +80,14 @@ test("a push from the projects panel spins while its checks run, then its line f
       "--json",
     ),
   ).wish.id as string;
+  djinn("wish", "set-integration", wishId, "--branch", "feat/lamp");
   try {
     await page.goto(process.env.DJINN_URL!);
     const line = page
       .locator(".project-nav")
       .filter({ hasText: name })
       .locator(".sync-line")
-      .filter({ hasText: "main" });
+      .filter({ hasText: "feat/lamp" });
     await expect(line.locator(".sync-ahead")).toHaveText("↑1", {
       timeout: 15_000,
     });
@@ -108,8 +111,11 @@ test("a push from the projects panel spins while its checks run, then its line f
     });
     await expect(line.locator(".sync-ahead")).toHaveCount(0);
     await expect(line.locator(".sync-push")).toHaveCount(0);
-    expect(git(bare, "rev-parse", "main")).toBe(
-      git(folder, "rev-parse", "main"),
+    expect(git(bare, "rev-parse", "feat/lamp")).toBe(
+      git(folder, "rev-parse", "feat/lamp"),
+    );
+    expect(git(bare, "rev-parse", "main")).not.toBe(
+      git(folder, "rev-parse", "feat/lamp"),
     );
     await expect(line).toHaveCount(0, { timeout: 15_000 });
     await expect(page.locator(".toast")).toHaveCount(0);

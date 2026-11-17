@@ -1,6 +1,6 @@
 ---
 name: never-push-main
-description: Never push a project's protected branch (main on djinn; which branches are protected varies per project), not Djinn, not a worker, not asked of the lead, even with an admin token; per azima every djinn task is part of an azima
+description: Never push a project's protected branch (main on djinn; which branches are protected varies per project), not Djinn, not a worker, not asked of the lead, even with an admin token; Djinn refuses to push the reference branch (W50); per azima every djinn task is part of an azima
 type: feedback
 ---
 
@@ -21,8 +21,19 @@ own, with its pull request (see [[djinn-pushes]]). Still spawn every djinn task 
 a lead note included: a note, or any small change with no azima of its own, goes into an azima opened for it
 ("notes"), rather than one pull request per task.
 
+Djinn itself refuses to push a project's reference branch (W50): whatever the wish, its push strategy and the project,
+a push of that branch, or of a branch whose upstream is it, fails before its push checks, the branch's line and the
+tasks' events naming the wish and the command that gives it a branch of its own (`djinn wish set-integration <wish>
+--project-id <project> --branch <branch> --create-branch`). It reads the reference branch from the settings and the
+repository, not the forge: another branch the forge protects is not refused by Djinn. A wish under the wish strategy
+whose integration branch is main therefore never reaches the remote: give it a branch of its own, or switch it to the
+per-azima strategy, before its work piles up. A refused push on main is that configuration, not a bug to work around:
+never push main by hand to clear it.
+
 **Why:** decision Q256 (B) of the wish Dew 13 oct, tilasm L42: W363, a lead note spawned part of no azima, was merged
-into the local main of djinn on 05/11/2026 and never pushed, so main ran ahead of origin/main. The developer's answer,
+into the local main of djinn on 05/11/2026 and never pushed, so main ran ahead of origin/main. Tilasm L09 (W43): the
+wish Djinn gates integrated into main with the wish strategy, and Djinn pushed main ten times from 07/11/2026, with no
+pull request; decision Q34 (A) moved it to its own branch djinn/gates, and W50 added the refusal. The developer's answer,
 in English: "never push main! even though I have an admin token!"
 
 **How to apply:** spawn every djinn task with `--part-of` an azima, opening one first if none fits. If the local main

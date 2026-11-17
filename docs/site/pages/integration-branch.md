@@ -64,13 +64,17 @@ You can also ask the Djinn to change it, in its terminal or with **Write to the 
 ## Main is a branch like any other
 
 The integration branch is the reference branch unless you choose another, main included. In a project that names checks, Djinn
-merges a wish's checked work into main when main is its integration branch, and pushes main by the project's cadence.
+merges a wish's checked work into main when main is its integration branch, but it never pushes main: the reference
+branch reaches the remote only through a merged pull or merge request. The push is refused, whatever the wish, its push
+strategy and the project, and the branch's line says how to give the wish a branch of its own; see
+[The reference branch is never pushed](#push-the-reference-branch-is-never-pushed).
 
 In a project that names no check, Djinn never merges untested work into main: it merges only into a wish's own branch,
 untested. A wish there whose branch is main has its work left out of any branch; its tasks' events say why, and a task
 that comes after such work waits for it to reach the branch.
 
-If your team does not push straight to main, give the wish a branch of its own before its first task ends.
+Give the wish a branch of its own before its first task ends, or choose the per-azima [push strategy](#push-strategy):
+its work then reaches the remote, and main through a pull request.
 
 ## How workers use it
 
@@ -148,7 +152,8 @@ You can bring a branch up to its remote yourself: see [Pulling yourself](#push-p
 
 ## Good to know
 
-- **Check the chip before the first task ends.** A new wish lands its work in the reference branch, main by default.
+- **Check the chip before the first task ends.** A new wish lands its work in the reference branch, main by default,
+  which Djinn never pushes.
 - **Commit or put aside your changes.** A checkout of the integration branch with changes not committed holds every
   merge into it: the tasks show **Merging** and wait.
 - **Name a reference branch.** A wish in a project where Djinn finds none has nowhere to land until you name one.
