@@ -7,6 +7,8 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { importBigWish, removeBigWish } from "./bigwish";
 import { portable } from "./portable";
+import { create, toBinary } from "@bufbuild/protobuf";
+import { UiServiceWatchResponseSchema } from "../gen/ts/ui/v1/ui_pb";
 
 // Budgets in milliseconds, set from first measurements on Linux with margin:
 // open ~68 ms (budget 300 ms), tasks ~55 ms (budget 250 ms), decisions ~46 ms (budget 250 ms),
@@ -772,3 +774,128 @@ test.describe("wish render performance @render", () => {
     }
   });
 });
+
+// The version of the running Djinn, discreet (W61, L10): at the foot of the wishes' menu, Local app · <version> in mono,
+// cut by an ellipsis when long; whole, with where it comes from, in the tooltip of the personal space and under the
+// EARLY ACCESS tag; folded, in the avatar's tooltip alone. The update stream is replaced by one that names a release,
+// a local install with changes not committed, then a development build.
+// VERSION_SHOTS=1 writes screenshots, dark and light, to test-results/e2e/version-*.png.
+test("the version shows at the foot of the menu and in the tooltips of the personal space and of EARLY ACCESS", async ({
+  page,
+}) => {
+  const shots = path.join(__dirname, "../test-results/e2e");
+  const cases = [
+    { name: "release", version: "v0.1.0", origin: "release · tag v0.1.0" },
+    {
+      name: "local",
+      version: "local-v0.1.0-3-g1a2b3c4-dirty",
+      origin: "local install · commit 1a2b3c4, modified",
+    },
+    { name: "dev", version: "dev", origin: "development build" },
+  ];
+  const foot = page.locator(".profile small");
+  const tip = page.getByRole("tooltip");
+  for (const c of cases) {
+    const update = create(UiServiceWatchResponseSchema, {
+      update: { current: c.version },
+    });
+    await page.unroute("**/ui.v1.UiService/Watch");
+    await page.route("**/ui.v1.UiService/Watch", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/connect+proto",
+        body: connectStream(toBinary(UiServiceWatchResponseSchema, update)),
+      }),
+    );
+    for (const theme of process.env.VERSION_SHOTS
+      ? ["dark", "light"]
+      : ["dark"]) {
+      await page.goto(process.env.DJINN_URL!);
+      await page.evaluate((v) => localStorage.setItem("djinn.theme", v), theme);
+      await page.reload();
+      await expect(page.locator(".wish-app")).not.toHaveClass(
+        /sidebar-collapsed/,
+      );
+      await expect(foot).toHaveText(`Local app · ${c.version}`);
+      await expect(foot.locator(".profile-version")).toHaveCSS(
+        "font-family",
+        /Plex Mono/,
+      );
+      // The foot keeps one line: a long version ends in an ellipsis.
+      await expect(foot).toHaveCSS("text-overflow", "ellipsis");
+      const line = await foot.evaluate((el) => el.getBoundingClientRect());
+      expect(line.height).toBeLessThan(24);
+
+      await page.locator(".profile").hover();
+      await expect(tip).toHaveText(
+        `Connections & preferences` + `Djinn ${c.version}` + c.origin,
+      );
+      if (process.env.VERSION_SHOTS)
+        await page.screenshot({
+          path: path.join(shots, `version-foot-${c.name}-${theme}.png`),
+          clip: await sidebarClip(page),
+        });
+      await page.mouse.move(600, 300);
+      await expect(tip).toHaveCount(0);
+
+      await page.locator(".version-tag").hover();
+      await expect(tip).toHaveText(`Djinn ${c.version}` + c.origin);
+      if (process.env.VERSION_SHOTS)
+        await page.screenshot({
+          path: path.join(shots, `version-tag-${c.name}-${theme}.png`),
+          clip: await sidebarClip(page),
+        });
+      await page.mouse.move(600, 300);
+      await expect(tip).toHaveCount(0);
+    }
+  }
+  // The tag stays clear of the toggle, the side panel at its widest and at its narrowest unfolded (1300px and less).
+  for (const width of [1800, 1440, 1100, 830]) {
+    await page.setViewportSize({ width, height: 900 });
+    const tag = (await page.locator(".version-tag").boundingBox())!;
+    const toggle = (await page.locator(".sidebar-toggle").boundingBox())!;
+    expect(tag.x + tag.width, `at ${width}px`).toBeLessThan(toggle.x);
+    expect(tag.height, `at ${width}px`).toBeLessThan(24);
+  }
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  // Folded, only the avatar's tooltip says it.
+  await page.locator(".sidebar-toggle").click();
+  await expect(page.locator(".wish-app")).toHaveClass(/sidebar-collapsed/);
+  await expect(page.locator(".version-tag")).toHaveCount(0);
+  await expect(foot).toHaveCount(0);
+  // The toggle keeps the focus, and its own tooltip with it.
+  await page.locator(".sidebar-toggle").blur();
+  await page.locator(".profile").hover();
+  await expect(tip).toHaveText(
+    "Connections & preferencesDjinn devdevelopment build",
+  );
+  if (process.env.VERSION_SHOTS)
+    await page.screenshot({
+      path: path.join(shots, "version-folded-dev.png"),
+      clip: await sidebarClip(page),
+    });
+  await page.locator(".sidebar-toggle").click();
+  await expect(page.locator(".wish-app")).not.toHaveClass(/sidebar-collapsed/);
+  await page.evaluate(() => localStorage.removeItem("djinn.theme"));
+  await page.unroute("**/ui.v1.UiService/Watch");
+});
+
+// sidebarClip is the side panel and some room right of it, where the tooltips show.
+async function sidebarClip(page: Page) {
+  const box = (await page.locator(".sidebar").boundingBox())!;
+  return { x: 0, y: 0, width: box.width + 260, height: box.height };
+}
+
+// connectStream is a Connect server stream of one message, then its end, in the binary format the page reads.
+function connectStream(message: Uint8Array): Buffer {
+  const frame = (flags: number, body: Uint8Array) => {
+    const head = Buffer.alloc(5);
+    head.writeUInt8(flags, 0);
+    head.writeUInt32BE(body.length, 1);
+    return Buffer.concat([head, Buffer.from(body)]);
+  };
+  return Buffer.concat([
+    frame(0, message),
+    frame(2, new TextEncoder().encode("{}")),
+  ]);
+}

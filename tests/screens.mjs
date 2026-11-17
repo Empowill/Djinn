@@ -178,6 +178,7 @@ export {
 } from "@/src/wish-head.tsx";
 export { UpdateBannerView, readyKey } from "@/src/update-banner.tsx";
 export { platformShortcut } from "@/src/tooltip.tsx";
+export { localBuild, versionLines, versionOrigin } from "@/src/version.ts";
 export {
   digitKey,
   learnDigitKey,
