@@ -403,7 +403,8 @@ has set for those who work on it are in [`docs/pitfalls.md`](docs/pitfalls.md). 
   by squash, which GitHub signs.
 - **Questions and bugs go in [GitHub issues](https://github.com/Empowill/Djinn/issues)**, the project's contact. A
   bug goes through the bug form (Report a bug, at the top of the Grimoire, opens it): the version, the system, the
-  logs. A security flaw never does: write to [dev@empowill.com](mailto:dev@empowill.com) (see
+  logs. A question or an idea goes through the suggestion form (Ask a question or suggest an improvement): there is no
+  blank issue. A security flaw never goes in an issue: write to [dev@empowill.com](mailto:dev@empowill.com) (see
   [`SECURITY.md`](SECURITY.md)).
 - **Every change carries its documentation.** A change to what Djinn does (a feature, a concept, a screen, a command,
   a behaviour) updates the documentation site in the same change: its chapter or card in the Concepts tab of
