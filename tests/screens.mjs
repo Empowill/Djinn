@@ -236,6 +236,7 @@ export { ResourceChart } from "@/src/resource-chart.tsx";
 export {
   CommandService,
   DiskRisk,
+  GateMode,
   GateService,
   MachineService,
 } from "@/gen/ts/machine/v1/machine_pb.ts";
@@ -246,6 +247,18 @@ export {
   HourglassSections,
 } from "@/src/hourglass.tsx";
 export { GatesTab, gateWaits } from "@/src/gates-tab.tsx";
+export {
+  ADMISSIONS,
+  GatesFlow,
+  GatesSankey,
+  gateRows,
+  holdsOf,
+  inScope,
+  instant,
+  kindGroup,
+  sankeyFlows,
+  workerStrip,
+} from "@/src/gates-flow.tsx";
 export { Docs, GRIMOIRE } from "@/src/docs.tsx";
 export {
   TaskDiffView,
@@ -744,10 +757,10 @@ export function resources(s) {
       gate: "test",
     }),
   ];
-  // A djinn whose machine services count their reads: the series, the commands, the gates, the machine the status bar
-  // reads.
+  // A djinn whose machine services count their reads: the series, the commands, the gates and their history (each
+  // window asked), the machine the status bar reads.
   function hourglassDjinn() {
-    const reads = { series: 0, commands: 0, gates: 0 };
+    const reads = { series: 0, commands: 0, gates: 0, history: [] };
     const transport = s.createRouterTransport(({ service }) => {
       service(s.MachineService, {
         series: () => {
@@ -768,6 +781,15 @@ export function resources(s) {
         list: () => {
           reads.gates++;
           return { gates: [] };
+        },
+        history: (req) => {
+          reads.history.push(req.minutes);
+          return {
+            startTime: at(t3 - BigInt(req.minutes * 60)),
+            readTime: at(t3),
+            intervals: [lintGate],
+            runs: [],
+          };
         },
       });
       service(s.CommandService, {

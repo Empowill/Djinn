@@ -330,7 +330,9 @@
                   admitted first, measured, and, when heavy, takes its turn. Djinn's own checks to merge a task's work or
                   push a branch go before the workers' requests, and on a machine of more than one slot, one stays free for
                   them: what ends a task never waits behind workers. The Gates tab of the Hourglass shows who holds each gate now,
-                  who waits, and which command takes the most time. Each hold stays a week in Djinn's database, past a restart:
+                  who waits, and which command takes the most time; over the last hour, 6 hours or day, one lane per gate under
+                  the workers that run, each request coloured by its task's kind, hatched while it waits, plain while it holds,
+                  then a Sankey from task kinds to the named gates to their waits. Each hold stays a week in Djinn's database, past a restart:
                   <code>djinn gate history --minutes 360</code> gives the last 6 hours, each hold with its task's kind, beside
                   the workers' runs.
                 </p>

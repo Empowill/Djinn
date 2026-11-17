@@ -288,8 +288,15 @@ only while it shows: leave it, or fold its panel, and the reads stop. See [Machi
 - **Now**, read live while the tab shows: each gate held or waited for, who holds it and since when, what its holder
   uses, who waits, the next one first. A holder's or a waiter's code opens its row on the Machine tab. A free gate says
   its last hold.
-- **The last hour**: the gates held, hatched while a command waits, now on the right. Click a band to open its command
-  below. Djinn keeps these in memory: a restart forgets them.
+- **Gates and workers**, over the last hour, 6 hours or day: on top, the workers that run, stacked by their task's
+  kind, and a gold line of the requests waiting for a gate; under them, one lane per gate, each band a request, hatched
+  while it waits, plain while it holds, in its task's colour: blue for code, correction and review, then the
+  investigations, the mockups, the watchers, the ifrits, and grey outside a task. The named gates show by default;
+  **With admissions** adds the lane of the workers' commands admitted one by one. Point at a moment for who runs, holds
+  and waits then; click a band to open its command below. Djinn keeps this history a week, past a restart.
+- **The flows**: the named gates' requests of the same period, from their task's kind to their gate, then to what they
+  waited: at once, 1 to 5 seconds, longer. A flow's width is its number of requests. The admissions are left out: nine
+  requests in ten, nearly all at once, they would crush the rest.
 - **Commands admitted under a gate**: one line per command of a project, the most total time first (runs times mean
   duration), the top one marked as the one worth making faster, with its gate, peak memory, CPU time and wait. A line
   opens on its recent runs: when, which worker, duration, peak, CPU time, wait and exit code.
