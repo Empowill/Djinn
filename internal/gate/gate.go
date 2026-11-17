@@ -74,7 +74,7 @@ type Costs interface {
 }
 
 // Log keeps the intervals of the gates: Add one released, Since those released after cutoff, the first released
-// first. machine.Intervals keeps them in the store, for a week; without one, the last 2,000 stay in memory.
+// first. machine.Intervals keeps them in the store, for three months; without one, the last 2,000 stay in memory.
 type Log interface {
 	Add(ctx context.Context, iv *machinev1.GateInterval)
 	Since(ctx context.Context, cutoff time.Time) []*machinev1.GateInterval

@@ -796,7 +796,7 @@ minutes at least), or an hour when its command was never measured, the lead of i
 go tool task e2e has held gate e2e for 1h0m0s, its command never measured; nothing is taken back: see whether it
 hangs.`), and the task's events say it.
 
-Every gate and admission held is kept in Djinn's database a week as it is released, and survives a restart: when it
+Every gate and admission held is kept in Djinn's database three months as it is released, and survives a restart: when it
 was asked, granted and released, its mode (exclusive for a gate held alone, shared for an admission or a light command under a gate's name), whether its command
 was heavy or had no measured cost of its own, what it waited for last (another holder, the pressure, the memory, a
 merge first, a heavy command) and why, the highest memory its holder used, and whether it took a slot outside a

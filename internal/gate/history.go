@@ -30,7 +30,7 @@ func WithPast(past Past) HandlerOption { return func(s *service) { s.past = past
 
 // History gives the gate intervals released in the last minutes, then those held now, each with its task's kind and
 // code, and the runs of the workers over the same window (Runs). The intervals outlive a restart: the store keeps them
-// for a week (machine.Intervals).
+// for three months (machine.Intervals).
 func (s *service) History(
 	ctx context.Context, req *connect.Request[machinev1.GateServiceHistoryRequest],
 ) (*connect.Response[machinev1.GateServiceHistoryResponse], error) {

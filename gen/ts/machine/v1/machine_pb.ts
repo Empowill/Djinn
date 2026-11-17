@@ -2025,10 +2025,10 @@ export const GateService: GenService<{
     output: typeof GateServiceListResponseSchema;
   },
   /**
-   * The history of the gates over the last minutes, kept in the store for a week, a restart of Djinn included: every
-   * interval released in the window, then those held now, each with its task's kind and code; and the runs of the
-   * workers over the window, an open run only while its task runs. The Hourglass's Gates tab draws it over an hour, 6
-   * hours or a day.
+   * The history of the gates over the last minutes, kept in the store for three months, a restart of Djinn included:
+   * every interval released in the window, then those held now, each with its task's kind and code; and the runs of
+   * the workers over the window, an open run only while its task runs. The Hourglass's Gates tab draws it over an
+   * hour, 6 hours or a day.
    *
    * @generated from rpc machine.v1.GateService.History
    */

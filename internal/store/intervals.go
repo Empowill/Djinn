@@ -9,7 +9,7 @@ import (
 
 // Interval is a gate held, from its request to its release, kept as its holder saw it (machinev1.GateInterval, in
 // Data). Like a sample, it is an observation, not a change of the plan: kept apart from the journal and the entities,
-// no commit hook hears of it, and it goes after a week (PruneIntervals).
+// no commit hook hears of it, and it goes after three months (PruneIntervals, machine.IntervalRetention).
 type Interval struct {
 	Released time.Time
 	Data     []byte

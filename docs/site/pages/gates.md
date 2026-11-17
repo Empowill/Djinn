@@ -178,8 +178,8 @@ waits on an ifrit, so that the Djinn offers you to end it.
 Gates live in the running Djinn. A restart gives them all back: a command run through a gate goes on, saying its gate
 is lost, and the queue starts again from the commands that ask anew.
 
-Their history does not go: each gate and each admission held is kept in Djinn's database as it goes back, **for a
-week**, and the Hourglass reads it again after a restart. It keeps when the holder asked, got and gave back the gate,
+Their history does not go: each gate and each admission held is kept in Djinn's database as it goes back, **for
+three months**, and the Hourglass reads it again after a restart. It keeps when the holder asked, got and gave back the gate,
 whether it was a named gate or an admission, whether its command was heavy or never measured, what it waited for last
 and why, the most memory its holder used, and whether it took a slot outside a worker.
 

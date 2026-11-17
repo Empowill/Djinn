@@ -171,10 +171,10 @@ type GateServiceClient interface {
 	Hold(context.Context, *connect.Request[v1.GateServiceHoldRequest]) (*connect.ServerStreamForClient[v1.GateServiceHoldResponse], error)
 	// List the gates held or waited for.
 	List(context.Context, *connect.Request[v1.GateServiceListRequest]) (*connect.Response[v1.GateServiceListResponse], error)
-	// The history of the gates over the last minutes, kept in the store for a week, a restart of Djinn included: every
-	// interval released in the window, then those held now, each with its task's kind and code; and the runs of the
-	// workers over the window, an open run only while its task runs. The Hourglass's Gates tab draws it over an hour, 6
-	// hours or a day.
+	// The history of the gates over the last minutes, kept in the store for three months, a restart of Djinn included:
+	// every interval released in the window, then those held now, each with its task's kind and code; and the runs of
+	// the workers over the window, an open run only while its task runs. The Hourglass's Gates tab draws it over an
+	// hour, 6 hours or a day.
 	History(context.Context, *connect.Request[v1.GateServiceHistoryRequest]) (*connect.Response[v1.GateServiceHistoryResponse], error)
 	// Admit a command of a worker's Bash or Monitor before it runs (djinn gate hook, Claude's PreToolUse hook): the
 	// stream says why it waits, then that it is admitted, and ends; the command then runs as the worker wrote it. Djinn
@@ -259,10 +259,10 @@ type GateServiceHandler interface {
 	Hold(context.Context, *connect.Request[v1.GateServiceHoldRequest], *connect.ServerStream[v1.GateServiceHoldResponse]) error
 	// List the gates held or waited for.
 	List(context.Context, *connect.Request[v1.GateServiceListRequest]) (*connect.Response[v1.GateServiceListResponse], error)
-	// The history of the gates over the last minutes, kept in the store for a week, a restart of Djinn included: every
-	// interval released in the window, then those held now, each with its task's kind and code; and the runs of the
-	// workers over the window, an open run only while its task runs. The Hourglass's Gates tab draws it over an hour, 6
-	// hours or a day.
+	// The history of the gates over the last minutes, kept in the store for three months, a restart of Djinn included:
+	// every interval released in the window, then those held now, each with its task's kind and code; and the runs of
+	// the workers over the window, an open run only while its task runs. The Hourglass's Gates tab draws it over an
+	// hour, 6 hours or a day.
 	History(context.Context, *connect.Request[v1.GateServiceHistoryRequest]) (*connect.Response[v1.GateServiceHistoryResponse], error)
 	// Admit a command of a worker's Bash or Monitor before it runs (djinn gate hook, Claude's PreToolUse hook): the
 	// stream says why it waits, then that it is admitted, and ends; the command then runs as the worker wrote it. Djinn
