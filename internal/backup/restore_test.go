@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -15,6 +16,7 @@ import (
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/fsx"
+	"github.com/empowill/djinn/internal/lockx"
 	"github.com/empowill/djinn/internal/server"
 	"github.com/empowill/djinn/internal/store"
 )
@@ -153,6 +155,45 @@ func TestRestore(t *testing.T) {
 		ln.Close()
 		if _, err := Restore(ctx, home, archive, time.Now()); err != nil {
 			t.Fatal(err)
+		}
+	})
+
+	// A djinn up whose address does not answer here (under wine, in a container, starting) holds the folder's lock:
+	// the restore refuses it, writing nothing, then goes on once the lock is let go (W86, Q52). A macOS record lock
+	// conflicts across processes only.
+	t.Run("held lock", func(t *testing.T) {
+		t.Parallel()
+		if runtime.GOOS == "darwin" {
+			t.Skip("a record lock does not conflict within one process")
+		}
+		home := filepath.Join(t.TempDir(), "djinn")
+		writeFile(t, home, "state.json", "running")
+		writeFile(t, home, server.AddrFile, "http://127.0.0.1:1/?token=x")
+		lock, err := lockx.Hold(filepath.Join(home, server.LockFile))
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = Restore(ctx, home, archive, time.Now())
+		if !errors.Is(err, ErrRunning) || !strings.Contains(err.Error(), "under wine") {
+			lock.Release() //nolint:errcheck // The test fails already.
+			t.Fatalf("Restore = %v, want ErrRunning naming a djinn that does not answer", err)
+		}
+		if got := readFile(t, filepath.Join(home, "state.json")); got != "running" {
+			t.Errorf("the held folder changed: %q", got)
+		}
+		siblings, _ := os.ReadDir(filepath.Dir(home))
+		if len(siblings) != 1 {
+			t.Errorf("Restore left files next to the folder: %v", siblings)
+		}
+		if err := lock.Release(); err != nil {
+			t.Fatal(err)
+		}
+		out, err := Restore(ctx, home, archive, time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := readFile(t, filepath.Join(out.Aside, "state.json")); got != "running" {
+			t.Errorf("state aside = %q, want the old one", got)
 		}
 	})
 
