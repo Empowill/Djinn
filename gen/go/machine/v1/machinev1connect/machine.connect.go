@@ -47,6 +47,8 @@ const (
 	GateServiceHoldProcedure = "/machine.v1.GateService/Hold"
 	// GateServiceListProcedure is the fully-qualified name of the GateService's List RPC.
 	GateServiceListProcedure = "/machine.v1.GateService/List"
+	// GateServiceHistoryProcedure is the fully-qualified name of the GateService's History RPC.
+	GateServiceHistoryProcedure = "/machine.v1.GateService/History"
 	// GateServiceAdmitProcedure is the fully-qualified name of the GateService's Admit RPC.
 	GateServiceAdmitProcedure = "/machine.v1.GateService/Admit"
 	// CommandServiceListProcedure is the fully-qualified name of the CommandService's List RPC.
@@ -169,6 +171,11 @@ type GateServiceClient interface {
 	Hold(context.Context, *connect.Request[v1.GateServiceHoldRequest]) (*connect.ServerStreamForClient[v1.GateServiceHoldResponse], error)
 	// List the gates held or waited for.
 	List(context.Context, *connect.Request[v1.GateServiceListRequest]) (*connect.Response[v1.GateServiceListResponse], error)
+	// The history of the gates over the last minutes, kept in the store for a week, a restart of Djinn included: every
+	// interval released in the window, then those held now, each with its task's kind and code; and the runs of the
+	// workers over the window, an open run only while its task runs. The Hourglass's Gates tab draws it over an hour, 6
+	// hours or a day.
+	History(context.Context, *connect.Request[v1.GateServiceHistoryRequest]) (*connect.Response[v1.GateServiceHistoryResponse], error)
 	// Admit a command of a worker's Bash or Monitor before it runs (djinn gate hook, Claude's PreToolUse hook): the
 	// stream says why it waits, then that it is admitted, and ends; the command then runs as the worker wrote it. Djinn
 	// finds the shell that runs it among the agent's processes, and holds the admission, reading what it uses, until it
@@ -200,6 +207,13 @@ func NewGateServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
+		history: connect.NewClient[v1.GateServiceHistoryRequest, v1.GateServiceHistoryResponse](
+			httpClient,
+			baseURL+GateServiceHistoryProcedure,
+			connect.WithSchema(gateServiceMethods.ByName("History")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+			connect.WithClientOptions(opts...),
+		),
 		admit: connect.NewClient[v1.GateServiceAdmitRequest, v1.GateServiceAdmitResponse](
 			httpClient,
 			baseURL+GateServiceAdmitProcedure,
@@ -211,9 +225,10 @@ func NewGateServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 
 // gateServiceClient implements GateServiceClient.
 type gateServiceClient struct {
-	hold  *connect.Client[v1.GateServiceHoldRequest, v1.GateServiceHoldResponse]
-	list  *connect.Client[v1.GateServiceListRequest, v1.GateServiceListResponse]
-	admit *connect.Client[v1.GateServiceAdmitRequest, v1.GateServiceAdmitResponse]
+	hold    *connect.Client[v1.GateServiceHoldRequest, v1.GateServiceHoldResponse]
+	list    *connect.Client[v1.GateServiceListRequest, v1.GateServiceListResponse]
+	history *connect.Client[v1.GateServiceHistoryRequest, v1.GateServiceHistoryResponse]
+	admit   *connect.Client[v1.GateServiceAdmitRequest, v1.GateServiceAdmitResponse]
 }
 
 // Hold calls machine.v1.GateService.Hold.
@@ -224,6 +239,11 @@ func (c *gateServiceClient) Hold(ctx context.Context, req *connect.Request[v1.Ga
 // List calls machine.v1.GateService.List.
 func (c *gateServiceClient) List(ctx context.Context, req *connect.Request[v1.GateServiceListRequest]) (*connect.Response[v1.GateServiceListResponse], error) {
 	return c.list.CallUnary(ctx, req)
+}
+
+// History calls machine.v1.GateService.History.
+func (c *gateServiceClient) History(ctx context.Context, req *connect.Request[v1.GateServiceHistoryRequest]) (*connect.Response[v1.GateServiceHistoryResponse], error) {
+	return c.history.CallUnary(ctx, req)
 }
 
 // Admit calls machine.v1.GateService.Admit.
@@ -239,6 +259,11 @@ type GateServiceHandler interface {
 	Hold(context.Context, *connect.Request[v1.GateServiceHoldRequest], *connect.ServerStream[v1.GateServiceHoldResponse]) error
 	// List the gates held or waited for.
 	List(context.Context, *connect.Request[v1.GateServiceListRequest]) (*connect.Response[v1.GateServiceListResponse], error)
+	// The history of the gates over the last minutes, kept in the store for a week, a restart of Djinn included: every
+	// interval released in the window, then those held now, each with its task's kind and code; and the runs of the
+	// workers over the window, an open run only while its task runs. The Hourglass's Gates tab draws it over an hour, 6
+	// hours or a day.
+	History(context.Context, *connect.Request[v1.GateServiceHistoryRequest]) (*connect.Response[v1.GateServiceHistoryResponse], error)
 	// Admit a command of a worker's Bash or Monitor before it runs (djinn gate hook, Claude's PreToolUse hook): the
 	// stream says why it waits, then that it is admitted, and ends; the command then runs as the worker wrote it. Djinn
 	// finds the shell that runs it among the agent's processes, and holds the admission, reading what it uses, until it
@@ -266,6 +291,13 @@ func NewGateServiceHandler(svc GateServiceHandler, opts ...connect.HandlerOption
 		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
+	gateServiceHistoryHandler := connect.NewUnaryHandler(
+		GateServiceHistoryProcedure,
+		svc.History,
+		connect.WithSchema(gateServiceMethods.ByName("History")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+		connect.WithHandlerOptions(opts...),
+	)
 	gateServiceAdmitHandler := connect.NewServerStreamHandler(
 		GateServiceAdmitProcedure,
 		svc.Admit,
@@ -278,6 +310,8 @@ func NewGateServiceHandler(svc GateServiceHandler, opts ...connect.HandlerOption
 			gateServiceHoldHandler.ServeHTTP(w, r)
 		case GateServiceListProcedure:
 			gateServiceListHandler.ServeHTTP(w, r)
+		case GateServiceHistoryProcedure:
+			gateServiceHistoryHandler.ServeHTTP(w, r)
 		case GateServiceAdmitProcedure:
 			gateServiceAdmitHandler.ServeHTTP(w, r)
 		default:
@@ -295,6 +329,10 @@ func (UnimplementedGateServiceHandler) Hold(context.Context, *connect.Request[v1
 
 func (UnimplementedGateServiceHandler) List(context.Context, *connect.Request[v1.GateServiceListRequest]) (*connect.Response[v1.GateServiceListResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("machine.v1.GateService.List is not implemented"))
+}
+
+func (UnimplementedGateServiceHandler) History(context.Context, *connect.Request[v1.GateServiceHistoryRequest]) (*connect.Response[v1.GateServiceHistoryResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("machine.v1.GateService.History is not implemented"))
 }
 
 func (UnimplementedGateServiceHandler) Admit(context.Context, *connect.Request[v1.GateServiceAdmitRequest], *connect.ServerStream[v1.GateServiceAdmitResponse]) error {

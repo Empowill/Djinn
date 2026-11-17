@@ -149,8 +149,9 @@ func (s *service) Show(
 	return connect.NewResponse(&machinev1.MachineServiceShowResponse{Machine: out}), nil
 }
 
-// SeriesMinutes are the ranges a series may be asked for: 10 and 30 minutes, 2 hours, a day, a week.
-var SeriesMinutes = []int32{10, 30, 120, 24 * 60, 7 * 24 * 60}
+// SeriesMinutes are the ranges a series may be asked for: 10 and 30 minutes, an hour (the Gates tab), 2 and 6 hours, a
+// day, a week.
+var SeriesMinutes = []int32{10, 30, 60, 120, 6 * 60, 24 * 60, 7 * 24 * 60}
 
 func (s *service) Series(
 	ctx context.Context, req *connect.Request[machinev1.MachineServiceSeriesRequest],
