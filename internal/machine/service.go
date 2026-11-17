@@ -33,7 +33,7 @@ func WithSeriesWorkers(fn func(cutoff time.Time, gateIntervals []*machinev1.Gate
 }
 
 // WithSeriesIntervals sets the function returning the gate intervals released after cutoff, then those held now: every
-// admission when all is true (gate.Gates.Intervals, kept in the store for a week).
+// admission when all is true (gate.Gates.Intervals, kept in the store for three months).
 func WithSeriesIntervals(fn func(cutoff time.Time, all bool) []*machinev1.GateInterval) HandlerOption {
 	return func(s *service) { s.intervals = fn }
 }
