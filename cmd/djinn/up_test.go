@@ -345,11 +345,48 @@ func TestRunUp(t *testing.T) {
 		{"a crash holds the workers", upCrashHoldsTheWorkers},
 		{"--paused holds the workers once", upPausedHoldsTheWorkers},
 		{"memory near full holds the workers", upMemoryHoldsTheWorkers},
+		{"a docker that does not answer delays no start", upDockerSlowDelaysNoStart},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
 			c.run(t)
 		})
+	}
+}
+
+// upDockerSlowDelaysNoStart: the containers a past run left are removed in the background: a docker that does not
+// answer, as a Windows runner's daemon (W80), delays no start. djinn up answers while it still runs; with the removal
+// on the way, it would wait for its half minute first, past answering's deadline.
+func upDockerSlowDelaysNoStart(t *testing.T) {
+	home, bin := t.TempDir(), t.TempDir()
+	pidFile := filepath.Join(t.TempDir(), "docker.pid")
+	script := "#!/bin/sh\necho $$ > '" + pidFile + "'\nexec sleep 120\n"
+	if err := os.WriteFile(filepath.Join(bin, "docker"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if b, err := os.ReadFile(pidFile); err == nil {
+			if pid, err := strconv.Atoi(strings.TrimSpace(string(b))); err == nil {
+				_ = syscall.Kill(pid, syscall.SIGKILL)
+			}
+		}
+	})
+	up(t, home, environ(home, bin))
+	var b []byte
+	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+		if b, _ = os.ReadFile(pidFile); strings.HasSuffix(string(b), "\n") {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("djinn up never asked docker for the containers left")
+		}
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(b)))
+	if err != nil {
+		t.Fatalf("the fake docker's pid %q: %v", b, err)
+	}
+	if err := syscall.Kill(pid, 0); err != nil {
+		t.Fatalf("djinn up answered once docker had ended (%v): its start waited for it", err)
 	}
 }
 
