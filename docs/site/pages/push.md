@@ -92,7 +92,7 @@ While a push runs, the line follows it, whoever started it, you or Djinn:
 | A spinner, *Pushing feat/invoice-pdf to origin…* | Git pushes. |
 | A check mark, a few seconds | Pushed. |
 | A cross, *Push held: its push checks are red* | The checks failed: which, and the first lines of its output, on hover, with the correction Djinn started. |
-| A cross, *The push failed* | The remote refused it, in Git's words. |
+| A cross, *The push failed* | The remote refused it, in Git's words; or the branch is the project's reference branch, which Djinn never pushes. |
 | **up to date** | Nothing to push: the remote holds the branch already. |
 
 One push runs at a time; the other buttons wait meanwhile.
@@ -213,6 +213,26 @@ retry a correction, drop the work, or leave it waiting. The Djinn decides, and a
 > to the whole output of the red run.
 > W9 fixes the test, its work lands, the suite passes, and Djinn pushes the four commits. The wish's head reads
 > **Pushed feat/invoice-pdf to origin, 4 commits, just now**.
+
+## The reference branch is never pushed
+
+Djinn never pushes a project's reference branch, main on most projects (see
+[Project and settings](#project-and-settings)): it reaches the remote only through a merged pull or merge request.
+Whatever the wish, its push strategy and the project, a push of that branch, or of a branch whose upstream is it, is
+refused before its push checks run, the cadence's as your own. The branch's line shows the cross, **The push failed**,
+and on hover: *Djinn never pushes main: main is the reference branch of app, which reaches its remote only through a
+merged pull or merge request. The wish "Export invoices" integrates into it; give it a branch of its own, pushed and
+proposed as a pull request*, followed by the command that does it, the wish's set-integration command with a branch
+and the flag that creates it. The tasks whose work waits say it once in their events; each push due after that is
+refused again, with no new event.
+
+The work stays merged in your local main, checked. Give the wish a branch of its own, or choose the per-azima
+[push strategy](#push-strategy): each azima then lands in main through its own pull request.
+
+Djinn reads the reference branch from the project's settings and the repository, with no call to the forge: another
+branch the forge protects, a release branch for instance, is not refused by Djinn, and the forge refuses it or not.
+A forge's branch protection does not stop an admin: until 17/11/2026, a wish that integrated into main with the wish
+strategy had Djinn push main ten times since 07/11/2026, with no pull request, an admin's token letting each push pass.
 
 ## When the remote refuses
 

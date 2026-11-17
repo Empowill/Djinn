@@ -588,8 +588,8 @@ func TestHoldPush(t *testing.T) {
 		if state, hold := in.pushState(t), in.hold(t); hold.GetHeld() != "" || hold.GetCorrectedBy() != "" || state.GetQuestionId() != "" {
 			t.Errorf("after the push, the push still held: %v", state)
 		}
-		if qs := in.questions(t); len(qs) != 0 {
-			t.Errorf("questions %v; want none", qs)
+		if qs := slices.DeleteFunc(in.questions(t), pullRequestQuestion); len(qs) != 0 {
+			t.Errorf("questions %v; want none but the pull request's", qs)
 		}
 		tasks, err := store.List[*planv1.Task](t.Context(), in.db, store.Where{"wish_id": in.wishID})
 		if err != nil {
