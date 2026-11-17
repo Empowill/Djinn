@@ -152,7 +152,7 @@ test("the settings show the setup of the agents", async ({ page }) => {
     antigravity: ProviderState.MISSING,
   });
   await page.goto(process.env.DJINN_URL!);
-  await page.getByTitle("Connections & preferences").click();
+  await page.getByRole("button", { name: "Connections & preferences" }).click();
   const dialog = page.getByRole("dialog");
   await expect(
     row(page, "claude").getByText("Ready", { exact: true }),
