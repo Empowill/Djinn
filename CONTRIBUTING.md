@@ -177,6 +177,13 @@ has set for those who work on it are in [`docs/pitfalls.md`](docs/pitfalls.md). 
     them, and `go tool task e2e-native -- -run TestNativeSmokeGeometry` on the native window.
 - `go tool task lint`: every check (protos, Go, types, formatting), as CI runs it, with the Go and interface checks
   running side by side. `go tool task format` fixes what can be.
+  - Protos: `buf lint` (the STANDARD rules, [`buf.yaml`](buf.yaml)), then `buf breaking` against where your branch
+    left the reference branch (`git merge-base` with `origin/HEAD`, else `origin/main`, else `main`;
+    `BREAKING_AGAINST=<ref>` names another, CI the commit before). A djinn of another version reads the same messages,
+    the store keeps them as binary payloads and the settings as text, so a field or an enum value keeps its number,
+    type, name and JSON name, and one you delete leaves both reserved (`reserved 4; reserved "old_name";`). Djinn
+    checks it before it merges a task, CI on every pull request. A break you mean, rare, names its rule and file under
+    `breaking.ignore_only` in `buf.yaml`, and the change that reaches main takes it out.
   - Go: [golangci-lint](.golangci.yml), pinned in its own module (`tools/golangci/go.mod`): nothing to install. It
     formats (gofmt) and runs vet with the linters, on the headless build and on cmd/djinn with the `mcp` tag.
   - Interface: [ESLint](eslint.config.mjs) (typescript-eslint, @eslint-react, the rules of hooks); `tsc` checks the
