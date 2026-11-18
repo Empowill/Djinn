@@ -1827,6 +1827,12 @@ html[data-still] .operating-load * {
   .brand {
     font-size: 1.6875rem;
   }
+  /* The panel is narrower: a tighter tag keeps clear of the toggle (W115). Its size stays: on Linux a mono letter
+     takes 7px at 11px as at 12px, the advance rounded to the pixel. */
+  .version-tag {
+    letter-spacing: 0;
+    padding: 0.125rem 0.25rem;
+  }
   .new-mission {
     font-size: var(--font-size-body, 0.75rem);
   }
@@ -1898,6 +1904,10 @@ html[data-still] .operating-load * {
 @media (max-width: 1080px) {
   .app {
     --sidebar-width: 11.875rem;
+  }
+  /* Its narrowest unfolded: the brand takes the panel's padding only, so that the tag keeps clear of the toggle (W115). */
+  .sidebar-brand {
+    padding: 0;
   }
   .overview-content {
     padding: 0 1.875rem 1.5625rem;
