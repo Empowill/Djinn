@@ -15825,7 +15825,8 @@ export enum FreeRule {
   UNSPECIFIED = 0,
 
   /**
-   * Done or cancelled 30 days ago: its branch stays.
+   * Done 30 days ago with its work integrated (Q81): its branch stays. A task cancelled, dropped, failed or stopped
+   * is never freed by its age.
    *
    * @generated from enum value: FREE_RULE_AGE = 1;
    */

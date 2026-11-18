@@ -144,49 +144,54 @@ func (e *freeEnv) statusTexts(t *testing.T, task *planv1.Task) []string {
 	return out
 }
 
-// TestFreeAge (Q75): a task done or cancelled 31 days ago loses its worktree and scratch, its branch kept; one done 29
-// days ago keeps them.
+// committed marks a task done with its work committed into the integration branch.
+func committed(task *planv1.Task) {
+	task.Integration = &planv1.TaskIntegration{State: planv1.IntegrationState_INTEGRATION_STATE_COMMITTED, Branch: "djinn/payroll"}
+}
+
+// dropped marks a task done with its work dropped (done --drop): no integration left, closed with why.
+func dropped(task *planv1.Task) {
+	task.Closed = &planv1.Closure{Actor: planv1.Closer_CLOSER_LEAD, CreateTime: task.GetEndTime(), Note: "not needed"}
+}
+
+// TestFreeAge (Q75, Q81): a task done 31 days ago with its work integrated loses its worktree and scratch, its branch
+// kept; one done 29 days ago keeps them, until it turns 30 days old.
 func TestFreeAge(t *testing.T) {
 	t.Parallel()
 	e := newFreeEnv(t, planv1.WishState_WISH_STATE_ACTIVE)
 	day := 24 * time.Hour
-	young := e.task(t, "W1", planv1.TaskStatus_TASK_STATUS_DONE, 29*day, nil)
-	old := e.task(t, "W2", planv1.TaskStatus_TASK_STATUS_DONE, 31*day, nil)
-	cancelled := e.task(t, "W3", planv1.TaskStatus_TASK_STATUS_CANCELLED, 31*day, nil)
-	failed := e.task(t, "W4", planv1.TaskStatus_TASK_STATUS_FAILED, 31*day, nil)
+	young := e.task(t, "W1", planv1.TaskStatus_TASK_STATUS_DONE, 29*day, committed)
+	old := e.task(t, "W2", planv1.TaskStatus_TASK_STATUS_DONE, 31*day, committed)
 
 	e.h.freePass(t.Context())
 
-	for _, kept := range []*planv1.Task{young, failed} {
-		if !exists(kept.GetWorktree()) || !exists(kept.GetScratch()) {
-			t.Errorf("%s lost its folders", kept.GetCode())
-		}
-		if got := e.get(t, kept); got.GetFreed() != nil || got.GetWorktree() == "" {
-			t.Errorf("%s recorded freed: %v", kept.GetCode(), got.GetFreed())
-		}
+	if !exists(young.GetWorktree()) || !exists(young.GetScratch()) {
+		t.Error("W1 lost its folders at 29 days")
 	}
-	for _, gone := range []*planv1.Task{old, cancelled} {
-		if exists(gone.GetWorktree()) || exists(gone.GetScratch()) {
-			t.Errorf("%s keeps its folders", gone.GetCode())
-		}
-		if !e.hasBranch(t, gone.GetBranch()) {
-			t.Errorf("%s lost its branch", gone.GetCode())
-		}
-		got := e.get(t, gone)
-		if got.GetWorktree() != "" || got.GetScratch() != "" {
-			t.Errorf("%s still records worktree %q, scratch %q", gone.GetCode(), got.GetWorktree(), got.GetScratch())
-		}
-		if f := got.GetFreed(); f.GetRule() != planv1.FreeRule_FREE_RULE_AGE || f.GetBranchDeleted() {
-			t.Errorf("%s freed = %v, want by age, branch kept", gone.GetCode(), f)
-		}
-		texts := e.statusTexts(t, gone)
-		if len(texts) == 0 || !strings.Contains(texts[len(texts)-1], "worktree and scratch freed; branch "+gone.GetBranch()+" kept (it ended 30 days ago)") {
-			t.Errorf("%s events = %q", gone.GetCode(), texts)
-		}
+	if got := e.get(t, young); got.GetFreed() != nil || got.GetWorktree() == "" {
+		t.Errorf("W1 recorded freed: %v", got.GetFreed())
+	}
+	if exists(old.GetWorktree()) || exists(old.GetScratch()) {
+		t.Error("W2 keeps its folders")
+	}
+	if !e.hasBranch(t, old.GetBranch()) {
+		t.Error("W2 lost its branch")
+	}
+	got := e.get(t, old)
+	if got.GetWorktree() != "" || got.GetScratch() != "" {
+		t.Errorf("W2 still records worktree %q, scratch %q", got.GetWorktree(), got.GetScratch())
+	}
+	if f := got.GetFreed(); f.GetRule() != planv1.FreeRule_FREE_RULE_AGE || f.GetBranchDeleted() {
+		t.Errorf("W2 freed = %v, want by age, branch kept", f)
+	}
+	texts := e.statusTexts(t, old)
+	if len(texts) == 0 || !strings.Contains(texts[len(texts)-1],
+		"worktree and scratch freed; branch "+old.GetBranch()+" kept (it ended 30 days ago, its work integrated)") {
+		t.Errorf("W2 events = %q", texts)
 	}
 	p := e.h.Freeing()
-	if p.GetTotal() != 2 || p.GetDone() != 2 || p.GetKept() != 0 || p.GetFreedBytes() == 0 || p.GetEndTime() == nil {
-		t.Errorf("progress = %v, want 2 of 2 done, bytes freed, ended", p)
+	if p.GetTotal() != 1 || p.GetDone() != 1 || p.GetKept() != 0 || p.GetFreedBytes() == 0 || p.GetEndTime() == nil {
+		t.Errorf("progress = %v, want 1 of 1 done, bytes freed, ended", p)
 	}
 
 	// The young one turns 30 days old.
@@ -194,6 +199,64 @@ func TestFreeAge(t *testing.T) {
 	e.h.freePass(t.Context())
 	if exists(young.GetWorktree()) {
 		t.Error("W1 keeps its worktree past 30 days")
+	}
+}
+
+// TestFreeAgeOneStatus (Q81): only a task done with its work integrated is freed by its age; a task cancelled, done
+// with its work dropped, done with nothing integrated, failed or stopped keeps its folders at 30 days and long after,
+// and each is freed once its azima is validated.
+func TestFreeAgeOneStatus(t *testing.T) {
+	t.Parallel()
+	day := 24 * time.Hour
+	for _, c := range []struct {
+		name   string
+		status planv1.TaskStatus
+		mod    func(*planv1.Task)
+	}{
+		{"cancelled", planv1.TaskStatus_TASK_STATUS_CANCELLED, nil},
+		{"cancelled integrated", planv1.TaskStatus_TASK_STATUS_CANCELLED, committed},
+		{"done dropped", planv1.TaskStatus_TASK_STATUS_DONE, dropped},
+		{"done not integrated", planv1.TaskStatus_TASK_STATUS_DONE, nil},
+		{"done red", planv1.TaskStatus_TASK_STATUS_DONE, func(task *planv1.Task) {
+			task.Integration = &planv1.TaskIntegration{State: planv1.IntegrationState_INTEGRATION_STATE_RED, Branch: "djinn/payroll"}
+		}},
+		{"failed", planv1.TaskStatus_TASK_STATUS_FAILED, nil},
+		{"stopped", planv1.TaskStatus_TASK_STATUS_STOPPED, nil},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			e := newFreeEnv(t, planv1.WishState_WISH_STATE_ACTIVE)
+			a := e.azima(t, "T1", func(a *planv1.Task) { a.Azima.Branch = "djinn/payroll" })
+			task := e.task(t, "W1", c.status, 31*day, func(task *planv1.Task) {
+				task.PartOf = a.GetId()
+				if c.mod != nil {
+					c.mod(task)
+				}
+			})
+			e.integrate(t, "djinn/payroll", task) // Its commits are in its azima's branch: only the rule keeps it.
+
+			e.h.freePass(t.Context())
+			e.clock.set(e.clock.now().Add(365 * day))
+			e.h.freePass(t.Context())
+
+			if !exists(task.GetWorktree()) || !exists(task.GetScratch()) || !e.hasBranch(t, task.GetBranch()) {
+				t.Fatalf("%s freed by its age", c.name)
+			}
+			if got := e.get(t, task); got.GetFreed() != nil {
+				t.Fatalf("%s recorded freed: %v", c.name, got.GetFreed())
+			}
+
+			a.Azima.Merged = &planv1.AzimaMerged{Time: timestamppb.New(e.clock.now()), MainBranch: "main"}
+			putTaskInDB(t, e.db, a)
+			e.h.freePass(t.Context())
+
+			if exists(task.GetWorktree()) || exists(task.GetScratch()) || e.hasBranch(t, task.GetBranch()) {
+				t.Errorf("%s of a validated azima keeps its worktree, scratch or branch", c.name)
+			}
+			if f := e.get(t, task).GetFreed(); f.GetRule() != planv1.FreeRule_FREE_RULE_AZIMA || !f.GetBranchDeleted() {
+				t.Errorf("%s freed = %v, want by its azima, branch deleted", c.name, f)
+			}
+		})
 	}
 }
 
@@ -326,7 +389,7 @@ func TestFreeGrantCascade(t *testing.T) {
 func TestFreedContinueSaysFork(t *testing.T) {
 	t.Parallel()
 	e := newFreeEnv(t, planv1.WishState_WISH_STATE_ACTIVE)
-	task := e.task(t, "W1", planv1.TaskStatus_TASK_STATUS_DONE, 31*24*time.Hour, nil)
+	task := e.task(t, "W1", planv1.TaskStatus_TASK_STATUS_DONE, 31*24*time.Hour, committed)
 	e.h.freePass(t.Context())
 	got := e.get(t, task)
 	gone := connect.NewError(connect.CodeFailedPrecondition, &worktreeGoneError{task: got, why: "has no worktree any more"})

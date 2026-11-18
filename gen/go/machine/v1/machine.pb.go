@@ -778,7 +778,7 @@ func (x *Disk) GetFreeing() *DiskFreeing {
 }
 
 // DiskFreeing is how far a pass that frees the worktrees, scratch and local branches of finished tasks is (Q75): a
-// task done or cancelled 30 days ago, one of an azima validated, one of a wish granted. A window bar follows it.
+// task done 30 days ago with its work integrated (Q81), one of an azima validated, one of a wish granted. A window bar follows it.
 type DiskFreeing struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The tasks the pass frees, and how many of them it has looked at, freed or kept.
