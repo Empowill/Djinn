@@ -61,6 +61,12 @@ func WithDiskMeasure(state func() (time.Time, bool), measure func() bool) Handle
 	return func(s *service) { s.diskState, s.measureDisk = state, measure }
 }
 
+// WithDiskFreeing sets the function telling how far the last pass freeing finished tasks' folders is (the harness's
+// Freeing).
+func WithDiskFreeing(fn func() *machinev1.DiskFreeing) HandlerOption {
+	return func(s *service) { s.diskFreeing = fn }
+}
+
 // Handler returns the Connect handler of MachineService on m, and its path prefix. running counts the workers that
 // run now, uses lists what each one uses; nil counts and lists none.
 func Handler(m *Monitor, running func() int, uses func() []*machinev1.WorkerUse, opts ...HandlerOption) (string, http.Handler) {
@@ -85,6 +91,7 @@ type service struct {
 	diskItems   func() []*machinev1.DiskItem
 	diskState   func() (time.Time, bool)
 	measureDisk func() bool
+	diskFreeing func() *machinev1.DiskFreeing
 }
 
 func (s *service) disk(snap Snapshot) *machinev1.Disk {
@@ -108,6 +115,9 @@ func (s *service) disk(snap Snapshot) *machinev1.Disk {
 		return nil
 	}
 	out := &machinev1.Disk{Folders: folders, Items: items}
+	if s.diskFreeing != nil {
+		out.Freeing = s.diskFreeing()
+	}
 	if s.diskState != nil {
 		at, measuring := s.diskState()
 		out.Measuring = measuring

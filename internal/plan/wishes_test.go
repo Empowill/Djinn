@@ -101,6 +101,8 @@ func (w *workers) HasRun(_ string) bool {
 
 func (w *workers) CloseOutrun(_, _ string) {}
 
+func (w *workers) Free() {}
+
 // TestThreeWishes: there may be as many wishes as you like, and the three first are active. A fourth is made paused;
 // activating one when three are active takes the third place, and pauses the third wish. A paused wish's workers
 // stop.

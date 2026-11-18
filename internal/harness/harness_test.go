@@ -85,7 +85,9 @@ func upWith(t *testing.T, home string, providers map[planv1.Provider]Provider, o
 	if err != nil {
 		t.Fatal(err)
 	}
-	h := New(db, home, providers, opts...)
+	// No freeing pass of finished tasks' folders (Q75) unless the test asks: a kick from an azima merged would remove
+	// the branches and worktrees a test reads after; free_test.go runs the pass by hand.
+	h := New(db, home, providers, append([]Option{WithFreeEvery(0)}, opts...)...)
 	if err := h.Recover(t.Context()); err != nil {
 		t.Fatal(err)
 	}

@@ -591,7 +591,7 @@ func (w *Wishes) Route(
 // answer is stored: tell the lead of the wish, or start the new wish's lead. A question without a route is left.
 func (w *Wishes) settle(ctx context.Context, tx *store.Tx, q *planv1.Question) (func(context.Context), error) {
 	if q.GetGrant() && q.GetAnswer() != nil {
-		return nil, settleGrant(ctx, tx, q)
+		return w.free, settleGrant(ctx, tx, q)
 	}
 	route := q.GetRoute()
 	if route == nil || q.GetAnswer() == nil {

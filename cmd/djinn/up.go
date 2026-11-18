@@ -666,6 +666,7 @@ func runUp(args []string) (restart bool, err error) {
 		machine.WithDiskFolders(workers.DiskFolders),
 		machine.WithDiskItems(workers.DiskItems),
 		machine.WithDiskMeasure(workers.DiskState, workers.MeasureDisk),
+		machine.WithDiskFreeing(workers.Freeing),
 	)
 	svc[machinePrefix] = machineHandler
 	gatePrefix, gateHandler := gate.Handler(gates, gate.WithPast(gate.StorePast(db)))

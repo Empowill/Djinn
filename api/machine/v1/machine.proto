@@ -131,6 +131,41 @@ message Disk {
   google.protobuf.Timestamp measure_time = 6;
   // Whether a measure of the folders or the caches is going now.
   bool measuring = 7;
+  // The last pass that freed the worktrees and scratch of finished tasks (Q75), while it goes and once it ended; unset
+  // before the first pass that found something to free.
+  DiskFreeing freeing = 8;
+}
+
+// DiskFreeing is how far a pass that frees the worktrees, scratch and local branches of finished tasks is (Q75): a
+// task done or cancelled 30 days ago, one of an azima validated, one of a wish granted. A window bar follows it.
+message DiskFreeing {
+  // The tasks the pass frees, and how many of them it has looked at, freed or kept.
+  int32 total = 1;
+  int32 done = 2;
+  // What the folders it removed took on disk, in bytes: a floor when a walk ran out of time.
+  uint64 freed_bytes = 3;
+  // How many tasks it kept something of, for they hold work: changes not committed, or commits found neither in the
+  // integration branch nor on the remote. Djinn's log says why each.
+  int32 kept = 4;
+  // When it started, and when it ended; end_time unset while it goes.
+  google.protobuf.Timestamp start_time = 5;
+  google.protobuf.Timestamp end_time = 6;
+  // The granted wishes whose tasks it frees, by identifier: the cascade a grant starts at once.
+  repeated string wish_ids = 7;
+  // The same, per azima validated or of a wish granted, in the order the pass frees them; each azima's events say what
+  // was freed of each task, or kept and why.
+  repeated DiskFreeingAzima azimas = 8;
+}
+
+// DiskFreeingAzima is how far a freeing pass is in the tasks of one azima (DiskFreeing).
+message DiskFreeingAzima {
+  // The azima, by identifier, and its wish.
+  string azima_id = 1;
+  string wish_id = 2;
+  int32 total = 3;
+  int32 done = 4;
+  uint64 freed_bytes = 5;
+  int32 kept = 6;
 }
 
 // DiskFolder is a folder measured on disk, with what its files take on it: the blocks they hold, which counts what the
