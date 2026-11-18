@@ -145,6 +145,16 @@ asked at once, waited their turn on the connection, 2.4 s on a copy of the devel
 events), 4.1 to 4.8 s in the window (W576). They now read the kept gate waits in one statement per 500 tasks
 (`store.GetMany`), no wish's tasks again when the load holds them all, and the loads asked together with the same
 filter share one read (`query.Timed`): 75 to 105 ms for the 13 (W616).
+
+After a restart, the window asks again for each wish's tasks while the resumed workers and the scheduler's passes
+hold the connection: each list read every task's prompt apart, one statement per task over all the task's events, and
+the lists of the largest wishes (995 tasks, 302 MB of events) passed the window's 30 s, then started again, for 2 to 4
+minutes (L25). A task's prompts now have an index of their own, a partial one on the events whose kind is a prompt
+(`(djinn.v1.subset)`, `store.InSubset`), and a list reads the prompts of all its tasks in one statement: on a wish of
+that size made by `bigwish.Dew`, 60 to 83 ms before and 0.4 to 0.6 ms after for a page of 50 tasks, 1.4 to 1.9 s
+before and 10 ms after for all of them (`BenchmarkFillPrompts`), and a whole TaskService/List of the wish 69 ms in six
+statements. The brief reads only WishService's commands of a wish's history (W123).
+
 Every git command Djinn
 runs has a deadline (`internal/gitx`): 5 minutes for one that reaches a remote, 10 for one that stays in the
 repository, and its output is let go 5 s after it is killed, even when an ssh it started still holds it.

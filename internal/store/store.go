@@ -367,6 +367,53 @@ func ListAfter[T proto.Message](ctx context.Context, r Reader, where Where, afte
 	return out, err
 }
 
+// InSubset returns the entities of type T in its subset name (djinn.v1.subset) whose first field of the subset's order
+// is among values, read through the subset's index: a statement per 500 values, which reads the subset's rows only,
+// where a List with Where reads every row of each value. The entities of one value come in the subset's order.
+func InSubset[T proto.Message](ctx context.Context, r Reader, name string, values []string) ([]T, error) {
+	var zero T
+	mt := zero.ProtoReflect().Type()
+	t, err := r.table(mt.Descriptor())
+	if err != nil {
+		return nil, err
+	}
+	i := slices.IndexFunc(t.subsets, func(s *subset) bool { return s.name == name })
+	if i < 0 {
+		return nil, fmt.Errorf("%s has no subset %q", mt.Descriptor().Name(), name)
+	}
+	sub := t.subsets[i]
+	order := make([]string, len(sub.by))
+	for i, f := range sub.by {
+		order[i] = quote(f)
+	}
+	var out []T
+	for chunk := range slices.Chunk(values, getManyChunk) {
+		args := make([]any, len(chunk))
+		for i, v := range chunk {
+			args[i] = v
+		}
+		marks := strings.Repeat("?,", len(chunk))
+		// INDEXED BY: without the statistics of ANALYZE, SQLite may prefer the index of the first field, which reads
+		// every row of each value; this one holds the subset's rows only.
+		q := `SELECT payload FROM ` + quote(t.name) + ` INDEXED BY ` + quote(sub.index(t)) + ` WHERE ` + order[0] +
+			` IN (` + marks[:len(marks)-1] + `) AND ` + sub.where() + ` ORDER BY ` + strings.Join(order, ", ")
+		rows, err := r.query(ctx, q, args...)
+		if err != nil {
+			return nil, err
+		}
+		err = decode(rows, mt, func(m proto.Message) bool {
+			if sub.holds(m.ProtoReflect()) {
+				out = append(out, m.(T))
+			}
+			return true
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
 // Oldest calls f on the entities of type T that match where, the first written first, until f returns false: an
 // entity put again keeps its place. Through the index on where's field, it reads no further than f asks.
 func Oldest[T proto.Message](ctx context.Context, r Reader, where Where, f func(T) bool) error {
@@ -468,6 +515,11 @@ func query(
 	if err != nil {
 		return err
 	}
+	return decode(rows, mt, add)
+}
+
+// decode decodes the payloads of rows, a payload a row, and closes them, until add returns false.
+func decode(rows *sql.Rows, mt protoreflect.MessageType, add func(proto.Message) bool) error {
 	defer rows.Close()
 	for rows.Next() {
 		var payload []byte

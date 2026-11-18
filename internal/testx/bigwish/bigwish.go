@@ -42,6 +42,10 @@ type Size struct {
 	Commands int
 	// Events of a task its worker ran, on average: a pending task has none.
 	EventsPerTask int
+	// Words of a tool's result, on average: 40 when 0.
+	ResultWords int
+	// Percent of the tasks that ran whose worker was given a second prompt (a continue) halfway through.
+	Continued int
 }
 
 // Real is the size of the developer's own wish, Djinn sur Wails, as its export read on 2026-10-10: 180 work tasks,
@@ -57,13 +61,21 @@ var X10 = Size{
 	EventsPerTask: 160,
 }
 
+// Dew is the size of the developer's largest wish, Dew, as L25 read its database on 2026-11-18: 995 tasks, 128 000
+// events and 302 MB of them, about 2.4 KB an event (the tool results weigh most); some tasks continued. It is not
+// among Sizes, which every test makes: only a benchmark asks for it (plan's BenchmarkFillPrompts).
+var Dew = Size{
+	Name: "dew", Work: 995, Azimas: 150, Questions: 340, Decisions: 330, Blocks: 1400, Commands: 5300,
+	EventsPerTask: 130, ResultWords: 1000, Continued: 20,
+}
+
 // Sizes are the named sizes, the smallest first.
 func Sizes() []Size { return []Size{Real, X10} }
 
-// Named returns the size of that name.
+// Named returns the size of that name, Dew included.
 func Named(name string) (Size, error) {
 	var names []string
-	for _, s := range Sizes() {
+	for _, s := range append(Sizes(), Dew) {
 		if s.Name == name {
 			return s, nil
 		}
@@ -245,12 +257,20 @@ func (g *gen) events(t *planv1.Task) {
 	}
 	t.StartTime = g.tick(time.Minute)
 	usage := &planv1.Usage{}
+	continued := g.size.Continued > 0 && g.rand.IntN(100) < g.size.Continued
 	for seq := 1; seq <= n; seq++ {
 		e := &planv1.TaskEvent{TaskId: t.GetId(), Seq: int64(seq), CreateTime: g.tick(3 * time.Second)}
 		e.Id = g.id()
 		switch seq {
 		case 1:
 			e.Kind, e.Text = planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT, g.prompt(t)
+		case n / 2:
+			if !continued {
+				e.Kind = g.eventKind()
+				e.Text = g.eventText(e.GetKind())
+				break
+			}
+			e.Kind, e.Text = planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT, "Continue: "+g.text(60)
 		case n:
 			usage.InputTokens += int64(g.rand.IntN(500))
 			usage.OutputTokens += int64(20_000 + g.rand.IntN(40_000))
@@ -288,6 +308,9 @@ func (g *gen) eventText(kind planv1.TaskEventKind) string {
 	case planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_CALL:
 		return tools[g.rand.IntN(len(tools))] + " " + g.words(8)
 	case planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_RESULT:
+		if w := g.size.ResultWords; w > 0 {
+			return g.text(w/2 + g.rand.IntN(w+1))
+		}
 		return g.text(40)
 	case planv1.TaskEventKind_TASK_EVENT_KIND_TEXT:
 		return g.text(30)
