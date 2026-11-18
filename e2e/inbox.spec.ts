@@ -57,7 +57,7 @@ test.skip(
   "the fake claude, the fake source and the fake watcher are shell scripts",
 );
 
-test("a source runs once plugged in from its project's panel; its assigned merge request becomes a card that makes the template's wish with its watcher, whose done line offers to grant it; a failing source gets its own card", async ({
+test("a source runs once plugged in from its project's Skills tab; its assigned merge request becomes a card that makes the template's wish with its watcher, whose done line offers to grant it; a failing source gets its own card", async ({
   page,
 }) => {
   // Three wishes at a time: the earlier specs' wishes make way, and one stays active for the flying carpet.

@@ -22,9 +22,9 @@ back, and nothing is said or marked at the source.
 
 A skill may declare a source: a command that prints what comes from outside, like the merge requests assigned to you.
 It says what it reads, in a sentence its skill writes in its metadata, else the skill's description. The sources live
-in their project's panel, under **Inbox sources**, on this machine: what each one reads, how its last run went, and
-**Plug in** or **Unplug**, with what that does written under the button. A source runs only once you plug it in, on
-this machine; the inbox never lists the sources.
+in their project's settings, on the **Skills** tab, under **Inbox sources**, on this machine: what each one reads, how
+its last run went, and **Plug in** or **Unplug**, with what that does written under the button. A source runs only
+once you plug it in, on this machine; the inbox never lists the sources.
 
 ## A source that fails
 
@@ -38,8 +38,9 @@ the same card, until the skill is fixed.
 
 A project whose configuration has something for you to fix, a skill Djinn cannot read, a source no one decided on,
 takes one line under the cards: **Project** and its name, how many things, the first of them in one sentence, and
-**Open its configuration**, which opens its panel, as its red gear in the side panel does. The detail and its actions
-stay in the panel, never twice. Once nothing is left to fix, the line goes and the gear turns grey.
+**Open its configuration**, which opens its settings page, as its red gear in the side panel does. The detail and its
+actions stay on that page, under **To fix**, never twice. Once nothing is left to fix, the line goes and the gear
+turns grey.
 
 ## Read next
 
