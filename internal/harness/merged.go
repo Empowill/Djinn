@@ -51,7 +51,7 @@ func (h *Harness) lookMerged(ctx context.Context, wish *planv1.Wish, now bool, f
 			m = h.commitsInMain(ctx, wish, azima, work, now, fetched)
 		}
 		if m != nil {
-			h.markMerged(ctx, azima.GetId(), m)
+			h.markMerged(ctx, azima.GetId(), m, true)
 		}
 	}
 }
@@ -211,8 +211,10 @@ func (h *Harness) fetchedForMerged(
 }
 
 // markMerged records that the work of the azima id is all in main, as m says, when its work is still all settled and
-// it carries no mark yet; then tells the lead, once, and whether every azima of its wish is in main now.
-func (h *Harness) markMerged(ctx context.Context, id string, m *planv1.AzimaMerged) {
+// it carries no mark yet; then, with tell, tells the lead, once, and whether every azima of its wish is in main now.
+// Without, the mark is only recorded: the forge read again says merged the request of an azima already closed, which
+// the lead knows of (W108).
+func (h *Harness) markMerged(ctx context.Context, id string, m *planv1.AzimaMerged, tell bool) {
 	ctx = context.WithoutCancel(ctx)
 	var azima *planv1.Task
 	var tasks []*planv1.Task
@@ -246,6 +248,9 @@ func (h *Harness) markMerged(ctx context.Context, id string, m *planv1.AzimaMerg
 		return
 	}
 	h.notify()
+	if !tell {
+		return
+	}
 	for i, t := range tasks {
 		if t.GetId() == id {
 			tasks[i].Azima = &planv1.Azima{Merged: m}
