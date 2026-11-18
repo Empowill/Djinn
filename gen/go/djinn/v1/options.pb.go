@@ -228,6 +228,82 @@ func (x *Unique) GetFields() []string {
 	return nil
 }
 
+// Subset is a partial index of a stored message: the rows whose enum or int64 field holds one value, ordered by
+// indexed fields, for a read that wants those rows only, such as a task's prompts among all its events. The store keeps
+// it on the bytes that encode the field in the payload, with no column: it is built by reading the table once, where a
+// new column would write every row again.
+type Subset struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Name of the subset, which a read names, and which names its index: <table>_subset_<name>.
+	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// The enum or int64 field, as written in the proto.
+	Field string `protobuf:"bytes,2,opt,name=field,proto3" json:"field,omitempty"`
+	// The field's value: the name of an enum value, or a number.
+	Value string `protobuf:"bytes,3,opt,name=value,proto3" json:"value,omitempty"`
+	// The indexed fields the index orders by, as written in the proto. A read gives the rows whose first is among values.
+	By            []string `protobuf:"bytes,4,rep,name=by,proto3" json:"by,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Subset) Reset() {
+	*x = Subset{}
+	mi := &file_djinn_v1_options_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Subset) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Subset) ProtoMessage() {}
+
+func (x *Subset) ProtoReflect() protoreflect.Message {
+	mi := &file_djinn_v1_options_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Subset.ProtoReflect.Descriptor instead.
+func (*Subset) Descriptor() ([]byte, []int) {
+	return file_djinn_v1_options_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *Subset) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *Subset) GetField() string {
+	if x != nil {
+		return x.Field
+	}
+	return ""
+}
+
+func (x *Subset) GetValue() string {
+	if x != nil {
+		return x.Value
+	}
+	return ""
+}
+
+func (x *Subset) GetBy() []string {
+	if x != nil {
+		return x.By
+	}
+	return nil
+}
+
 var file_djinn_v1_options_proto_extTypes = []protoimpl.ExtensionInfo{
 	{
 		ExtendedType:  (*descriptorpb.MethodOptions)(nil),
@@ -283,6 +359,14 @@ var file_djinn_v1_options_proto_extTypes = []protoimpl.ExtensionInfo{
 		Field:         51002,
 		Name:          "djinn.v1.unique",
 		Tag:           "bytes,51002,rep,name=unique",
+		Filename:      "djinn/v1/options.proto",
+	},
+	{
+		ExtendedType:  (*descriptorpb.MessageOptions)(nil),
+		ExtensionType: ([]*Subset)(nil),
+		Field:         51017,
+		Name:          "djinn.v1.subset",
+		Tag:           "bytes,51017,rep,name=subset",
 		Filename:      "djinn/v1/options.proto",
 	},
 	{
@@ -385,6 +469,10 @@ var (
 	//
 	// repeated djinn.v1.Unique unique = 51002;
 	E_Unique = &file_djinn_v1_options_proto_extTypes[6]
+	// Partial indexes of the stored messages of this type.
+	//
+	// repeated djinn.v1.Subset subset = 51017;
+	E_Subset = &file_djinn_v1_options_proto_extTypes[7]
 )
 
 // Extension fields to descriptorpb.FieldOptions.
@@ -393,39 +481,39 @@ var (
 	// a worker's commands name its task by $DJINN_TASK_ID, which Djinn sets for every worker.
 	//
 	// optional string env = 51006;
-	E_Env = &file_djinn_v1_options_proto_extTypes[7]
+	E_Env = &file_djinn_v1_options_proto_extTypes[8]
 	// Keep a singular field positional when it becomes optional, preserving an existing command's arguments. Such a
 	// field answers to its flag too: djinn wish add-project <wish> djinn, or --project-id djinn.
 	//
 	// optional bool positional = 51009;
-	E_Positional = &file_djinn_v1_options_proto_extTypes[8]
+	E_Positional = &file_djinn_v1_options_proto_extTypes[9]
 	// A response field the command line prints with --json only: a text beside it says the same, as its reader wants
 	// it. djinn mcp still returns it.
 	//
 	// optional bool json_only = 51010;
-	E_JsonOnly = &file_djinn_v1_options_proto_extTypes[9]
+	E_JsonOnly = &file_djinn_v1_options_proto_extTypes[10]
 	// 51011 is left out: the generated descriptor would write it as a French letter, which TestNoFrench refuses.
 	// The full name of the stored message whose id the field holds, such as "plan.v1.Wish": internal/query reads
 	// wish_id->title across it, as a join.
 	//
 	// optional string ref = 51012;
-	E_Ref = &file_djinn_v1_options_proto_extTypes[10]
+	E_Ref = &file_djinn_v1_options_proto_extTypes[11]
 	// How internal/query shows the field.
 	//
 	// optional djinn.v1.Query query = 51013;
-	E_Query = &file_djinn_v1_options_proto_extTypes[11]
+	E_Query = &file_djinn_v1_options_proto_extTypes[12]
 	// A response field the command line prints as it is, without its name, and djinn mcp returns as text: a table or
 	// a CSV that its reader pipes. A bytes field holding text that is not UTF-8, such as Arrow, stays in base64.
 	//
 	// optional bool raw = 51014;
-	E_Raw = &file_djinn_v1_options_proto_extTypes[12]
+	E_Raw = &file_djinn_v1_options_proto_extTypes[13]
 	// 51015 is left out: (djinn.v1.text) marked a field a message was filled from, before the command line read the
 	// texts of a query itself (internal/querytext).
 	// The value the command line and djinn mcp give the field when the caller leaves it empty, where a request that
 	// leaves it empty means another for the window: djinn query asks a text table, where the window reads Arrow.
 	//
 	// optional string client_default = 51016;
-	E_ClientDefault = &file_djinn_v1_options_proto_extTypes[13]
+	E_ClientDefault = &file_djinn_v1_options_proto_extTypes[14]
 )
 
 var File_djinn_v1_options_proto protoreflect.FileDescriptor
@@ -434,7 +522,12 @@ const file_djinn_v1_options_proto_rawDesc = "" +
 	"\n" +
 	"\x16djinn/v1/options.proto\x12\bdjinn.v1\x1a google/protobuf/descriptor.proto\" \n" +
 	"\x06Unique\x12\x16\n" +
-	"\x06fields\x18\x01 \x03(\tR\x06fields*X\n" +
+	"\x06fields\x18\x01 \x03(\tR\x06fields\"X\n" +
+	"\x06Subset\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
+	"\x05field\x18\x02 \x01(\tR\x05field\x12\x14\n" +
+	"\x05value\x18\x03 \x01(\tR\x05value\x12\x0e\n" +
+	"\x02by\x18\x04 \x03(\tR\x02by*X\n" +
 	"\n" +
 	"Visibility\x12\x1a\n" +
 	"\x16VISIBILITY_UNSPECIFIED\x10\x00\x12\x15\n" +
@@ -455,7 +548,8 @@ const file_djinn_v1_options_proto_rawDesc = "" +
 	"\fmethod_alias\x12\x1e.google.protobuf.MethodOptions\x18\xbf\x8e\x03 \x03(\tR\vmethodAlias:L\n" +
 	"\x11command_line_only\x12\x1e.google.protobuf.MethodOptions\x18\xc0\x8e\x03 \x01(\bR\x0fcommandLineOnly:7\n" +
 	"\x05alias\x12\x1f.google.protobuf.ServiceOptions\x18\xbd\x8e\x03 \x03(\tR\x05alias:K\n" +
-	"\x06unique\x12\x1f.google.protobuf.MessageOptions\x18\xba\x8e\x03 \x03(\v2\x10.djinn.v1.UniqueR\x06unique:1\n" +
+	"\x06unique\x12\x1f.google.protobuf.MessageOptions\x18\xba\x8e\x03 \x03(\v2\x10.djinn.v1.UniqueR\x06unique:K\n" +
+	"\x06subset\x12\x1f.google.protobuf.MessageOptions\x18Ɏ\x03 \x03(\v2\x10.djinn.v1.SubsetR\x06subset:1\n" +
 	"\x03env\x12\x1d.google.protobuf.FieldOptions\x18\xbe\x8e\x03 \x01(\tR\x03env:?\n" +
 	"\n" +
 	"positional\x12\x1d.google.protobuf.FieldOptions\x18\xc1\x8e\x03 \x01(\bR\n" +
@@ -480,40 +574,43 @@ func file_djinn_v1_options_proto_rawDescGZIP() []byte {
 }
 
 var file_djinn_v1_options_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_djinn_v1_options_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
+var file_djinn_v1_options_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
 var file_djinn_v1_options_proto_goTypes = []any{
 	(Visibility)(0),                     // 0: djinn.v1.Visibility
 	(Writes)(0),                         // 1: djinn.v1.Writes
 	(Query)(0),                          // 2: djinn.v1.Query
 	(*Unique)(nil),                      // 3: djinn.v1.Unique
-	(*descriptorpb.MethodOptions)(nil),  // 4: google.protobuf.MethodOptions
-	(*descriptorpb.ServiceOptions)(nil), // 5: google.protobuf.ServiceOptions
-	(*descriptorpb.MessageOptions)(nil), // 6: google.protobuf.MessageOptions
-	(*descriptorpb.FieldOptions)(nil),   // 7: google.protobuf.FieldOptions
+	(*Subset)(nil),                      // 4: djinn.v1.Subset
+	(*descriptorpb.MethodOptions)(nil),  // 5: google.protobuf.MethodOptions
+	(*descriptorpb.ServiceOptions)(nil), // 6: google.protobuf.ServiceOptions
+	(*descriptorpb.MessageOptions)(nil), // 7: google.protobuf.MessageOptions
+	(*descriptorpb.FieldOptions)(nil),   // 8: google.protobuf.FieldOptions
 }
 var file_djinn_v1_options_proto_depIdxs = []int32{
-	4,  // 0: djinn.v1.visibility:extendee -> google.protobuf.MethodOptions
-	4,  // 1: djinn.v1.autostart:extendee -> google.protobuf.MethodOptions
-	4,  // 2: djinn.v1.writes:extendee -> google.protobuf.MethodOptions
-	4,  // 3: djinn.v1.method_alias:extendee -> google.protobuf.MethodOptions
-	4,  // 4: djinn.v1.command_line_only:extendee -> google.protobuf.MethodOptions
-	5,  // 5: djinn.v1.alias:extendee -> google.protobuf.ServiceOptions
-	6,  // 6: djinn.v1.unique:extendee -> google.protobuf.MessageOptions
-	7,  // 7: djinn.v1.env:extendee -> google.protobuf.FieldOptions
-	7,  // 8: djinn.v1.positional:extendee -> google.protobuf.FieldOptions
-	7,  // 9: djinn.v1.json_only:extendee -> google.protobuf.FieldOptions
-	7,  // 10: djinn.v1.ref:extendee -> google.protobuf.FieldOptions
-	7,  // 11: djinn.v1.query:extendee -> google.protobuf.FieldOptions
-	7,  // 12: djinn.v1.raw:extendee -> google.protobuf.FieldOptions
-	7,  // 13: djinn.v1.client_default:extendee -> google.protobuf.FieldOptions
-	0,  // 14: djinn.v1.visibility:type_name -> djinn.v1.Visibility
-	1,  // 15: djinn.v1.writes:type_name -> djinn.v1.Writes
-	3,  // 16: djinn.v1.unique:type_name -> djinn.v1.Unique
-	2,  // 17: djinn.v1.query:type_name -> djinn.v1.Query
-	18, // [18:18] is the sub-list for method output_type
-	18, // [18:18] is the sub-list for method input_type
-	14, // [14:18] is the sub-list for extension type_name
-	0,  // [0:14] is the sub-list for extension extendee
+	5,  // 0: djinn.v1.visibility:extendee -> google.protobuf.MethodOptions
+	5,  // 1: djinn.v1.autostart:extendee -> google.protobuf.MethodOptions
+	5,  // 2: djinn.v1.writes:extendee -> google.protobuf.MethodOptions
+	5,  // 3: djinn.v1.method_alias:extendee -> google.protobuf.MethodOptions
+	5,  // 4: djinn.v1.command_line_only:extendee -> google.protobuf.MethodOptions
+	6,  // 5: djinn.v1.alias:extendee -> google.protobuf.ServiceOptions
+	7,  // 6: djinn.v1.unique:extendee -> google.protobuf.MessageOptions
+	7,  // 7: djinn.v1.subset:extendee -> google.protobuf.MessageOptions
+	8,  // 8: djinn.v1.env:extendee -> google.protobuf.FieldOptions
+	8,  // 9: djinn.v1.positional:extendee -> google.protobuf.FieldOptions
+	8,  // 10: djinn.v1.json_only:extendee -> google.protobuf.FieldOptions
+	8,  // 11: djinn.v1.ref:extendee -> google.protobuf.FieldOptions
+	8,  // 12: djinn.v1.query:extendee -> google.protobuf.FieldOptions
+	8,  // 13: djinn.v1.raw:extendee -> google.protobuf.FieldOptions
+	8,  // 14: djinn.v1.client_default:extendee -> google.protobuf.FieldOptions
+	0,  // 15: djinn.v1.visibility:type_name -> djinn.v1.Visibility
+	1,  // 16: djinn.v1.writes:type_name -> djinn.v1.Writes
+	3,  // 17: djinn.v1.unique:type_name -> djinn.v1.Unique
+	4,  // 18: djinn.v1.subset:type_name -> djinn.v1.Subset
+	2,  // 19: djinn.v1.query:type_name -> djinn.v1.Query
+	20, // [20:20] is the sub-list for method output_type
+	20, // [20:20] is the sub-list for method input_type
+	15, // [15:20] is the sub-list for extension type_name
+	0,  // [0:15] is the sub-list for extension extendee
 	0,  // [0:0] is the sub-list for field type_name
 }
 
@@ -528,8 +625,8 @@ func file_djinn_v1_options_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_djinn_v1_options_proto_rawDesc), len(file_djinn_v1_options_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   1,
-			NumExtensions: 14,
+			NumMessages:   2,
+			NumExtensions: 15,
 			NumServices:   0,
 		},
 		GoTypes:           file_djinn_v1_options_proto_goTypes,

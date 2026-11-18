@@ -2148,6 +2148,8 @@ enum TaskEventKind {
 // An event of a task's worker: what it said, the tools it called, what it spent.
 message TaskEvent {
   option (djinn.v1.unique) = {fields: ["task_id", "seq"]};
+  // A task's prompts, which its list reads for many tasks at once (plan.FillPrompts, W123).
+  option (djinn.v1.subset) = {name: "prompt", field: "kind", value: "TASK_EVENT_KIND_PROMPT", by: ["task_id", "seq"]};
 
   // Identifier, a UUIDv7.
   string id = 1 [(buf.validate.field).string.uuid = true];

@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file djinn/v1/options.proto.
  */
 export const file_djinn_v1_options: GenFile = /*@__PURE__*/
-  fileDesc("ChZkamlubi92MS9vcHRpb25zLnByb3RvEghkamlubi52MSIYCgZVbmlxdWUSDgoGZmllbGRzGAEgAygJKlgKClZpc2liaWxpdHkSGgoWVklTSUJJTElUWV9VTlNQRUNJRklFRBAAEhUKEVZJU0lCSUxJVFlfUFVCTElDEAESFwoTVklTSUJJTElUWV9JTlRFUk5BTBACKkYKBldyaXRlcxIWChJXUklURVNfVU5TUEVDSUZJRUQQABIRCg1XUklURVNfQ0hBTkdFEAESEQoNV1JJVEVTX0RFTEVURRACKjAKBVF1ZXJ5EhUKEVFVRVJZX1VOU1BFQ0lGSUVEEAASEAoMUVVFUllfSElEREVOEAE6VgoKdmlzaWJpbGl0eRIeLmdvb2dsZS5wcm90b2J1Zi5NZXRob2RPcHRpb25zGLmOAyABKA4yFC5kamlubi52MS5WaXNpYmlsaXR5Ugp2aXNpYmlsaXR5Oj4KCWF1dG9zdGFydBIeLmdvb2dsZS5wcm90b2J1Zi5NZXRob2RPcHRpb25zGLuOAyABKAhSCWF1dG9zdGFydDpKCgZ3cml0ZXMSHi5nb29nbGUucHJvdG9idWYuTWV0aG9kT3B0aW9ucxi8jgMgASgOMhAuZGppbm4udjEuV3JpdGVzUgZ3cml0ZXM6QwoMbWV0aG9kX2FsaWFzEh4uZ29vZ2xlLnByb3RvYnVmLk1ldGhvZE9wdGlvbnMYv44DIAMoCVILbWV0aG9kQWxpYXM6TAoRY29tbWFuZF9saW5lX29ubHkSHi5nb29nbGUucHJvdG9idWYuTWV0aG9kT3B0aW9ucxjAjgMgASgIUg9jb21tYW5kTGluZU9ubHk6NwoFYWxpYXMSHy5nb29nbGUucHJvdG9idWYuU2VydmljZU9wdGlvbnMYvY4DIAMoCVIFYWxpYXM6SwoGdW5pcXVlEh8uZ29vZ2xlLnByb3RvYnVmLk1lc3NhZ2VPcHRpb25zGLqOAyADKAsyEC5kamlubi52MS5VbmlxdWVSBnVuaXF1ZToxCgNlbnYSHS5nb29nbGUucHJvdG9idWYuRmllbGRPcHRpb25zGL6OAyABKAlSA2Vudjo/Cgpwb3NpdGlvbmFsEh0uZ29vZ2xlLnByb3RvYnVmLkZpZWxkT3B0aW9ucxjBjgMgASgIUgpwb3NpdGlvbmFsOjwKCWpzb25fb25seRIdLmdvb2dsZS5wcm90b2J1Zi5GaWVsZE9wdGlvbnMYwo4DIAEoCFIIanNvbk9ubHk6MQoDcmVmEh0uZ29vZ2xlLnByb3RvYnVmLkZpZWxkT3B0aW9ucxjEjgMgASgJUgNyZWY6RgoFcXVlcnkSHS5nb29nbGUucHJvdG9idWYuRmllbGRPcHRpb25zGMWOAyABKA4yDy5kamlubi52MS5RdWVyeVIFcXVlcnk6MQoDcmF3Eh0uZ29vZ2xlLnByb3RvYnVmLkZpZWxkT3B0aW9ucxjGjgMgASgIUgNyYXc6RgoOY2xpZW50X2RlZmF1bHQSHS5nb29nbGUucHJvdG9idWYuRmllbGRPcHRpb25zGMiOAyABKAlSDWNsaWVudERlZmF1bHRCkAEKDGNvbS5kamlubi52MUIMT3B0aW9uc1Byb3RvUAFaMWdpdGh1Yi5jb20vZW1wb3dpbGwvZGppbm4vZ2VuL2dvL2RqaW5uL3YxO2RqaW5udjGiAgNEWFiqAghEamlubi5WMcoCCERqaW5uXFYx4gIURGppbm5cVjFcR1BCTWV0YWRhdGHqAglEamlubjo6VjFiBnByb3RvMw", [file_google_protobuf_descriptor]);
+  fileDesc("ChZkamlubi92MS9vcHRpb25zLnByb3RvEghkamlubi52MSIYCgZVbmlxdWUSDgoGZmllbGRzGAEgAygJIkAKBlN1YnNldBIMCgRuYW1lGAEgASgJEg0KBWZpZWxkGAIgASgJEg0KBXZhbHVlGAMgASgJEgoKAmJ5GAQgAygJKlgKClZpc2liaWxpdHkSGgoWVklTSUJJTElUWV9VTlNQRUNJRklFRBAAEhUKEVZJU0lCSUxJVFlfUFVCTElDEAESFwoTVklTSUJJTElUWV9JTlRFUk5BTBACKkYKBldyaXRlcxIWChJXUklURVNfVU5TUEVDSUZJRUQQABIRCg1XUklURVNfQ0hBTkdFEAESEQoNV1JJVEVTX0RFTEVURRACKjAKBVF1ZXJ5EhUKEVFVRVJZX1VOU1BFQ0lGSUVEEAASEAoMUVVFUllfSElEREVOEAE6VgoKdmlzaWJpbGl0eRIeLmdvb2dsZS5wcm90b2J1Zi5NZXRob2RPcHRpb25zGLmOAyABKA4yFC5kamlubi52MS5WaXNpYmlsaXR5Ugp2aXNpYmlsaXR5Oj4KCWF1dG9zdGFydBIeLmdvb2dsZS5wcm90b2J1Zi5NZXRob2RPcHRpb25zGLuOAyABKAhSCWF1dG9zdGFydDpKCgZ3cml0ZXMSHi5nb29nbGUucHJvdG9idWYuTWV0aG9kT3B0aW9ucxi8jgMgASgOMhAuZGppbm4udjEuV3JpdGVzUgZ3cml0ZXM6QwoMbWV0aG9kX2FsaWFzEh4uZ29vZ2xlLnByb3RvYnVmLk1ldGhvZE9wdGlvbnMYv44DIAMoCVILbWV0aG9kQWxpYXM6TAoRY29tbWFuZF9saW5lX29ubHkSHi5nb29nbGUucHJvdG9idWYuTWV0aG9kT3B0aW9ucxjAjgMgASgIUg9jb21tYW5kTGluZU9ubHk6NwoFYWxpYXMSHy5nb29nbGUucHJvdG9idWYuU2VydmljZU9wdGlvbnMYvY4DIAMoCVIFYWxpYXM6SwoGdW5pcXVlEh8uZ29vZ2xlLnByb3RvYnVmLk1lc3NhZ2VPcHRpb25zGLqOAyADKAsyEC5kamlubi52MS5VbmlxdWVSBnVuaXF1ZTpLCgZzdWJzZXQSHy5nb29nbGUucHJvdG9idWYuTWVzc2FnZU9wdGlvbnMYyY4DIAMoCzIQLmRqaW5uLnYxLlN1YnNldFIGc3Vic2V0OjEKA2VudhIdLmdvb2dsZS5wcm90b2J1Zi5GaWVsZE9wdGlvbnMYvo4DIAEoCVIDZW52Oj8KCnBvc2l0aW9uYWwSHS5nb29nbGUucHJvdG9idWYuRmllbGRPcHRpb25zGMGOAyABKAhSCnBvc2l0aW9uYWw6PAoJanNvbl9vbmx5Eh0uZ29vZ2xlLnByb3RvYnVmLkZpZWxkT3B0aW9ucxjCjgMgASgIUghqc29uT25seToxCgNyZWYSHS5nb29nbGUucHJvdG9idWYuRmllbGRPcHRpb25zGMSOAyABKAlSA3JlZjpGCgVxdWVyeRIdLmdvb2dsZS5wcm90b2J1Zi5GaWVsZE9wdGlvbnMYxY4DIAEoDjIPLmRqaW5uLnYxLlF1ZXJ5UgVxdWVyeToxCgNyYXcSHS5nb29nbGUucHJvdG9idWYuRmllbGRPcHRpb25zGMaOAyABKAhSA3JhdzpGCg5jbGllbnRfZGVmYXVsdBIdLmdvb2dsZS5wcm90b2J1Zi5GaWVsZE9wdGlvbnMYyI4DIAEoCVINY2xpZW50RGVmYXVsdEKQAQoMY29tLmRqaW5uLnYxQgxPcHRpb25zUHJvdG9QAVoxZ2l0aHViLmNvbS9lbXBvd2lsbC9kamlubi9nZW4vZ28vZGppbm4vdjE7ZGppbm52MaICA0RYWKoCCERqaW5uLlYxygIIRGppbm5cVjHiAhREamlublxWMVxHUEJNZXRhZGF0YeoCCURqaW5uOjpWMWIGcHJvdG8z", [file_google_protobuf_descriptor]);
 
 /**
  * Unique is one group of fields whose values, taken together, identify a stored message.
@@ -36,6 +36,51 @@ export type Unique = Message<"djinn.v1.Unique"> & {
  */
 export const UniqueSchema: GenMessage<Unique> = /*@__PURE__*/
   messageDesc(file_djinn_v1_options, 0);
+
+/**
+ * Subset is a partial index of a stored message: the rows whose enum or int64 field holds one value, ordered by
+ * indexed fields, for a read that wants those rows only, such as a task's prompts among all its events. The store keeps
+ * it on the bytes that encode the field in the payload, with no column: it is built by reading the table once, where a
+ * new column would write every row again.
+ *
+ * @generated from message djinn.v1.Subset
+ */
+export type Subset = Message<"djinn.v1.Subset"> & {
+  /**
+   * Name of the subset, which a read names, and which names its index: <table>_subset_<name>.
+   *
+   * @generated from field: string name = 1;
+   */
+  name: string;
+
+  /**
+   * The enum or int64 field, as written in the proto.
+   *
+   * @generated from field: string field = 2;
+   */
+  field: string;
+
+  /**
+   * The field's value: the name of an enum value, or a number.
+   *
+   * @generated from field: string value = 3;
+   */
+  value: string;
+
+  /**
+   * The indexed fields the index orders by, as written in the proto. A read gives the rows whose first is among values.
+   *
+   * @generated from field: repeated string by = 4;
+   */
+  by: string[];
+};
+
+/**
+ * Describes the message djinn.v1.Subset.
+ * Use `create(SubsetSchema)` to create a new message.
+ */
+export const SubsetSchema: GenMessage<Subset> = /*@__PURE__*/
+  messageDesc(file_djinn_v1_options, 1);
 
 /**
  * Visibility says who may call a method.
@@ -196,13 +241,21 @@ export const unique: GenExtension<MessageOptions, Unique[]> = /*@__PURE__*/
   extDesc(file_djinn_v1_options, 6);
 
 /**
+ * Partial indexes of the stored messages of this type.
+ *
+ * @generated from extension: repeated djinn.v1.Subset subset = 51017;
+ */
+export const subset: GenExtension<MessageOptions, Subset[]> = /*@__PURE__*/
+  extDesc(file_djinn_v1_options, 7);
+
+/**
  * The command line and djinn mcp fill the field from this environment variable when the caller leaves it empty:
  * a worker's commands name its task by $DJINN_TASK_ID, which Djinn sets for every worker.
  *
  * @generated from extension: string env = 51006;
  */
 export const env: GenExtension<FieldOptions, string> = /*@__PURE__*/
-  extDesc(file_djinn_v1_options, 7);
+  extDesc(file_djinn_v1_options, 8);
 
 /**
  * Keep a singular field positional when it becomes optional, preserving an existing command's arguments. Such a
@@ -211,7 +264,7 @@ export const env: GenExtension<FieldOptions, string> = /*@__PURE__*/
  * @generated from extension: bool positional = 51009;
  */
 export const positional: GenExtension<FieldOptions, boolean> = /*@__PURE__*/
-  extDesc(file_djinn_v1_options, 8);
+  extDesc(file_djinn_v1_options, 9);
 
 /**
  * A response field the command line prints with --json only: a text beside it says the same, as its reader wants
@@ -220,7 +273,7 @@ export const positional: GenExtension<FieldOptions, boolean> = /*@__PURE__*/
  * @generated from extension: bool json_only = 51010;
  */
 export const json_only: GenExtension<FieldOptions, boolean> = /*@__PURE__*/
-  extDesc(file_djinn_v1_options, 9);
+  extDesc(file_djinn_v1_options, 10);
 
 /**
  * 51011 is left out: the generated descriptor would write it as a French letter, which TestNoFrench refuses.
@@ -230,7 +283,7 @@ export const json_only: GenExtension<FieldOptions, boolean> = /*@__PURE__*/
  * @generated from extension: string ref = 51012;
  */
 export const ref: GenExtension<FieldOptions, string> = /*@__PURE__*/
-  extDesc(file_djinn_v1_options, 10);
+  extDesc(file_djinn_v1_options, 11);
 
 /**
  * How internal/query shows the field.
@@ -238,7 +291,7 @@ export const ref: GenExtension<FieldOptions, string> = /*@__PURE__*/
  * @generated from extension: djinn.v1.Query query = 51013;
  */
 export const query: GenExtension<FieldOptions, Query> = /*@__PURE__*/
-  extDesc(file_djinn_v1_options, 11);
+  extDesc(file_djinn_v1_options, 12);
 
 /**
  * A response field the command line prints as it is, without its name, and djinn mcp returns as text: a table or
@@ -247,7 +300,7 @@ export const query: GenExtension<FieldOptions, Query> = /*@__PURE__*/
  * @generated from extension: bool raw = 51014;
  */
 export const raw: GenExtension<FieldOptions, boolean> = /*@__PURE__*/
-  extDesc(file_djinn_v1_options, 12);
+  extDesc(file_djinn_v1_options, 13);
 
 /**
  * 51015 is left out: (djinn.v1.text) marked a field a message was filled from, before the command line read the
@@ -258,5 +311,5 @@ export const raw: GenExtension<FieldOptions, boolean> = /*@__PURE__*/
  * @generated from extension: string client_default = 51016;
  */
 export const client_default: GenExtension<FieldOptions, string> = /*@__PURE__*/
-  extDesc(file_djinn_v1_options, 13);
+  extDesc(file_djinn_v1_options, 14);
 
