@@ -108,6 +108,50 @@ func TestTake(t *testing.T) {
 		await(t, outside, "the grant outside any task")()
 	})
 
+	// Workers of wishes ranked 3, 1 and 2 wait for a full gate, in that order, after a holder outside any task: once it
+	// frees, it goes to the wish ranked 1, then 2, then 3, each holding it until it gives it back, and the holder outside
+	// any task last, though it asked first (W118).
+	t.Run("wishes ranked 3, 1, 2 served 1, 2, 3", func(t *testing.T) {
+		t.Parallel()
+		f := &tasks{rank: map[string]int{"holder": 0, "R3": 3, "R1": 1, "R2": 2}}
+		g := New(nil, nil, f)
+		give := await(t, func() <-chan func() { c, _ := take(t, g, "test", "holder"); return c }(), "first grant")
+		granted := map[string]<-chan func(){}
+		for _, id := range []string{"", "R3", "R1", "R2"} {
+			c, waits := take(t, g, "test", id)
+			await(t, waits, id+" waits")
+			granted[id] = c
+		}
+		give()
+		served := []string{"R1", "R2", "R3", ""}
+		for i, id := range served {
+			next := await(t, granted[id], "the grant of "+id)
+			for _, other := range served[i+1:] {
+				notGranted(t, granted[other], "the gate held by "+id+", for "+other)
+			}
+			next()
+		}
+	})
+
+	// Workers of the same rank are served in the order they asked, whatever their task's name (W118).
+	t.Run("same rank first come", func(t *testing.T) {
+		t.Parallel()
+		f := &tasks{rank: map[string]int{"holder": 0, "W3": 1, "W1": 1, "W2": 1}}
+		g := New(nil, nil, f)
+		give := await(t, func() <-chan func() { c, _ := take(t, g, "test", "holder"); return c }(), "first grant")
+		granted := map[string]<-chan func(){}
+		arrival := []string{"W3", "W1", "W2"}
+		for _, id := range arrival {
+			c, waits := take(t, g, "test", id)
+			await(t, waits, id+" waits")
+			granted[id] = c
+		}
+		give()
+		for _, id := range arrival {
+			await(t, granted[id], "the grant of "+id)()
+		}
+	})
+
 	// Within a wish, the waiter whose azima is ranked first gets the gate, whoever came first; work of no azima after
 	// the ranked azimas', a wish ranked first before them all, and Djinn's merges before every worker, whatever their
 	// azimas (W134).
