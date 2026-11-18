@@ -19,6 +19,7 @@ import "djinn/v1/containers.proto";
 // A value out of its bounds there leaves the whole file out too, and the project's tasks wait until it is fixed. Djinn
 // no longer reads .agents/settings.txtpb, where they lived before: one left there is a warning.
 //
+//   version: 1
 //   settings:
 //     setup: npm ci
 //     checks:
@@ -41,6 +42,11 @@ message ProjectConfig {
   // merges first) hold for every command, declared or not. A developer turns one off on their machine with djinn
   // project gates --off.
   repeated ProjectGate gates = 2 [(buf.validate.field).repeated.max_items = 8];
+  // The version of the file's schema, first in the file: 1 when it has none. Djinn reads every version up to the
+  // highest it knows, an older one lifted to it first (plan.ProjectConfigVersion); a higher version, or one that is not
+  // a whole number from 1, leaves the whole file out, said with the file, the version read and the highest known: a
+  // newer Djinn wrote it, and this one does not read it wrong. Read, it holds the highest version Djinn knows.
+  uint32 version = 3;
 }
 
 // ProjectGate is a gate a project declares in its djinn.yaml: the commands of its workers that rebuild a shared

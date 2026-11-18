@@ -677,12 +677,15 @@ A repository also tells Djinn about itself in `djinn.yaml`, at its root or in `.
 reference branch like the permissions, so that a worker never changes what bounds it. With both files, the root's is
 read and a warning under "To fix" says the other is not; a field Djinn does not know is ignored, the rest of the file
 applies, and a warning under "To fix" names the file and the field, the gear left grey; a file that does not parse, or
-a value of the wrong type or out of range, is a thing to fix, Djinn's defaults then holding. Today it holds the runaway ceilings of the containers the workers start
+a value of the wrong type or out of range, is a thing to fix, Djinn's defaults then holding. Its `version:` (1 when it
+is missing) is the version of its schema: a higher one than this Djinn knows refuses the file the same way, the error
+naming the version read and the highest known, rather than read it wrong. Today it holds the runaway ceilings of the containers the workers start
 (`docker run`, `docker create`): without it, 4 GiB of memory (a quarter of the machine's when that is less) and 1024
 processes per container. Djinn's `docker`, first on each worker's path, brings a higher limit down to them and names
 the file to raise them in.
 
 ```yaml
+version: 1
 containers:
   memory_mib: 8192 # memory of a container, swap included, in MiB (64 at least)
   pids: 2048       # processes and threads of a container (16 at least)

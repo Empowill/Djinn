@@ -15,7 +15,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file djinn/v1/project_config.proto.
  */
 export const file_djinn_v1_project_config: GenFile = /*@__PURE__*/
-  fileDesc("Ch1kamlubi92MS9wcm9qZWN0X2NvbmZpZy5wcm90bxIIZGppbm4udjEiaQoNUHJvamVjdENvbmZpZxIoCgpjb250YWluZXJzGAEgASgLMhQuZGppbm4udjEuQ29udGFpbmVycxIuCgVnYXRlcxgCIAMoCzIVLmRqaW5uLnYxLlByb2plY3RHYXRlQgi6SAWSAQIQCCKsAgoLUHJvamVjdEdhdGUSNQoEbmFtZRgBIAEoCUInukgkciIyFl5bYS16XVthLXowLTktXXswLDM5fSRaCGNvbW1hbmRzEi4KBWFsb25lGAIgAygJQh+6SBySARkiF3IVEAEYyAEyDl5bXipcc11bXlxuXSokEi8KBmJlc2lkZRgDIAMoCUIfukgckgEZIhdyFRABGMgBMg5eW14qXHNdW15cbl0qJDqEAbpIgAEafgoVcHJvamVjdF9nYXRlLnBhdHRlcm5zEjlhIGdhdGUgaGFzIDMyIHBhdHRlcm5zIGF0IG1vc3QsIGFsb25lIGFuZCBiZXNpZGUgdG9nZXRoZXIaKnNpemUodGhpcy5hbG9uZSkgKyBzaXplKHRoaXMuYmVzaWRlKSA8PSAzMkKWAQoMY29tLmRqaW5uLnYxQhJQcm9qZWN0Q29uZmlnUHJvdG9QAVoxZ2l0aHViLmNvbS9lbXBvd2lsbC9kamlubi9nZW4vZ28vZGppbm4vdjE7ZGppbm52MaICA0RYWKoCCERqaW5uLlYxygIIRGppbm5cVjHiAhREamlublxWMVxHUEJNZXRhZGF0YeoCCURqaW5uOjpWMWIGcHJvdG8z", [file_buf_validate_validate, file_djinn_v1_containers]);
+  fileDesc("Ch1kamlubi92MS9wcm9qZWN0X2NvbmZpZy5wcm90bxIIZGppbm4udjEiegoNUHJvamVjdENvbmZpZxIoCgpjb250YWluZXJzGAEgASgLMhQuZGppbm4udjEuQ29udGFpbmVycxIuCgVnYXRlcxgCIAMoCzIVLmRqaW5uLnYxLlByb2plY3RHYXRlQgi6SAWSAQIQCBIPCgd2ZXJzaW9uGAMgASgNIqwCCgtQcm9qZWN0R2F0ZRI1CgRuYW1lGAEgASgJQie6SCRyIjIWXlthLXpdW2EtejAtOS1dezAsMzl9JFoIY29tbWFuZHMSLgoFYWxvbmUYAiADKAlCH7pIHJIBGSIXchUQARjIATIOXlteKlxzXVteXG5dKiQSLwoGYmVzaWRlGAMgAygJQh+6SBySARkiF3IVEAEYyAEyDl5bXipcc11bXlxuXSokOoQBukiAARp+ChVwcm9qZWN0X2dhdGUucGF0dGVybnMSOWEgZ2F0ZSBoYXMgMzIgcGF0dGVybnMgYXQgbW9zdCwgYWxvbmUgYW5kIGJlc2lkZSB0b2dldGhlchoqc2l6ZSh0aGlzLmFsb25lKSArIHNpemUodGhpcy5iZXNpZGUpIDw9IDMyQpYBCgxjb20uZGppbm4udjFCElByb2plY3RDb25maWdQcm90b1ABWjFnaXRodWIuY29tL2VtcG93aWxsL2RqaW5uL2dlbi9nby9kamlubi92MTtkamlubnYxogIDRFhYqgIIRGppbm4uVjHKAghEamlublxWMeICFERqaW5uXFYxXEdQQk1ldGFkYXRh6gIJRGppbm46OlYxYgZwcm90bzM", [file_buf_validate_validate, file_djinn_v1_containers]);
 
 /**
  * ProjectConfig is what a project tells Djinn, in YAML: djinn.yaml at its root, else .agents/djinn.yaml. Djinn reads
@@ -31,6 +31,7 @@ export const file_djinn_v1_project_config: GenFile = /*@__PURE__*/
  * A value out of its bounds there leaves the whole file out too, and the project's tasks wait until it is fixed. Djinn
  * no longer reads .agents/settings.txtpb, where they lived before: one left there is a warning.
  *
+ *   version: 1
  *   settings:
  *     setup: npm ci
  *     checks:
@@ -65,6 +66,16 @@ export type ProjectConfig = Message<"djinn.v1.ProjectConfig"> & {
    * @generated from field: repeated djinn.v1.ProjectGate gates = 2;
    */
   gates: ProjectGate[];
+
+  /**
+   * The version of the file's schema, first in the file: 1 when it has none. Djinn reads every version up to the
+   * highest it knows, an older one lifted to it first (plan.ProjectConfigVersion); a higher version, or one that is not
+   * a whole number from 1, leaves the whole file out, said with the file, the version read and the highest known: a
+   * newer Djinn wrote it, and this one does not read it wrong. Read, it holds the highest version Djinn knows.
+   *
+   * @generated from field: uint32 version = 3;
+   */
+  version: number;
 };
 
 /**

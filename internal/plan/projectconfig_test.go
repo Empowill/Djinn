@@ -100,6 +100,69 @@ func TestReadProjectConfig(t *testing.T) {
 	}
 }
 
+// TestProjectConfigVersion (W120): a djinn.yaml says the version of its schema, 1 when it says none; a version higher
+// than the one this Djinn knows, or one that is not a whole number from 1, refuses the whole file, the error naming
+// the file, the version read and the highest known; the project then declares no gate, and says why.
+func TestProjectConfigVersion(t *testing.T) {
+	t.Parallel()
+	const gates = "gates:\n  - name: stack\n    alone: [task run-back]\n"
+	cases := []struct {
+		name, yaml string
+		err        []string // what the error says, all of it; nil: read, as version 1
+	}{
+		{name: "absent", yaml: gates},
+		{name: "empty", yaml: "version:\n" + gates},
+		{name: "one", yaml: "version: 1\n" + gates},
+		{name: "newer", yaml: "version: 2\n" + gates, err: []string{"djinn.yaml: version 2", "up to version 1", "update Djinn"}},
+		{name: "past an int", yaml: "version: 18446744073709551615\n" + gates,
+			err: []string{"djinn.yaml: version 18446744073709551615", "up to version 1"}},
+		{name: "zero", yaml: "version: 0\n" + gates, err: []string{"djinn.yaml: version 0", "not a version", "1 to 1"}},
+		{name: "negative", yaml: "version: -1\n" + gates, err: []string{"djinn.yaml: version -1", "not a version"}},
+		{name: "a fraction", yaml: "version: 1.5\n" + gates, err: []string{"djinn.yaml: version 1.5", "not a version"}},
+		{name: "a word", yaml: "version: two\n" + gates, err: []string{`djinn.yaml: version "two"`, "not a version"}},
+		{name: "a text", yaml: "version: '1'\n" + gates, err: []string{`djinn.yaml: version "1"`, "not a version"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "djinn.yaml"), []byte(c.yaml), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			read, err := ReadProjectConfig(dir)
+			if len(read.Unknown) != 0 {
+				t.Errorf("unknown %q: version is a field of the file", read.Unknown)
+			}
+			project := &planv1.Project{Id: "p", Directory: dir}
+			declared := LoadProjectGates(t.TempDir(), project)
+			if c.err == nil {
+				if err != nil {
+					t.Fatal(err)
+				}
+				if v := read.Config.GetVersion(); v != 1 || ProjectConfigVersion != 1 {
+					t.Errorf("version %d, highest %d; want 1, 1", v, ProjectConfigVersion)
+				}
+				if len(declared.Gates) != 1 || len(declared.Warnings) != 0 {
+					t.Errorf("gates %v, warnings %q; want stack alone", declared.Gates, declared.Warnings)
+				}
+				return
+			}
+			if err == nil || read.Config != nil || read.Settings != nil {
+				t.Fatalf("read %v, %v, err %v; want the file refused", read.Config, read.Settings, err)
+			}
+			for _, s := range c.err {
+				if !strings.Contains(err.Error(), s) {
+					t.Errorf("err = %q, want it to say %q", err, s)
+				}
+			}
+			if len(declared.Gates) != 0 || len(declared.Warnings) != 1 ||
+				declared.Warnings[0] != err.Error()+": no gate is declared" {
+				t.Errorf("gates %v, warnings %q; want none, said with the error", declared.Gates, declared.Warnings)
+			}
+		})
+	}
+}
+
 // TestDjinnYAMLNotices (Q21): the project view's To fix says what Djinn finds in the project's djinn.yaml. A file
 // it cannot read is a thing to fix, counted in to_fix, naming the file and the cause, and none of it applies; a field
 // it does not know is a warning, not counted, naming the file and the field, and the rest applies; a second file not

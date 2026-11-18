@@ -53,8 +53,8 @@ type ProjectConfigRead struct {
 // JSON, then into the message. A field the message does not know is ignored, and named in Unknown; the rest of the
 // file applies. A gate that is not valid is left out on its own, and said in Dropped; the other gates and the rest
 // of the file apply. An error names the file: a file that does not parse, a value of the wrong type or out of range
-// outside the gates, and none of the file applies. A project that writes none has neither a configuration nor an
-// error.
+// outside the gates, a version of the file this Djinn does not read (upgradeProjectConfig), and none of the file
+// applies. A project that writes none has neither a configuration nor an error.
 func ReadProjectConfig(dir string) (ProjectConfigRead, error) {
 	var read ProjectConfigRead
 	var b []byte
@@ -111,6 +111,9 @@ func parseProjectConfig(b []byte) (*djinnv1.ProjectConfig, *planv1.ProjectSettin
 	if !ok {
 		return nil, nil, nil, gates, errors.New("not a mapping of fields")
 	}
+	if err := upgradeProjectConfig(m); err != nil {
+		return nil, nil, nil, gates, err
+	}
 	c := &djinnv1.ProjectConfig{}
 	rawSettings, hasSettings := m[settingsSection]
 	delete(m, settingsSection)
@@ -140,6 +143,53 @@ func parseProjectConfig(b []byte) (*djinnv1.ProjectConfig, *planv1.ProjectSettin
 		c.Gates, gates = readGates(rawGates)
 	}
 	return c, settings, unknown, gates, nil
+}
+
+// ProjectConfigVersion is the highest version of djinn.yaml this Djinn reads: the version the parser reads, one more
+// than the upgrades that lift an older file to it (projectConfigUpgrades).
+var ProjectConfigVersion = len(projectConfigUpgrades) + 1
+
+// projectConfigUpgrades lift a djinn.yaml, as YAML gives it, from one version to the next: the one at index i turns a
+// file of version i+1 into one of version i+2, in place, or says why it cannot. A schema that changes what a field of
+// the file means adds the upgrade from the version before it here, and the parser reads only the newest version.
+// None yet: version 1 is the first.
+var projectConfigUpgrades []func(m map[string]any) error
+
+// upgradeProjectConfig reads the version of m, a djinn.yaml as YAML gives it (version:, 1 when it is missing or empty),
+// and lifts m to ProjectConfigVersion through projectConfigUpgrades; m's version then says that version. A version
+// that is not a whole number from 1, or higher than ProjectConfigVersion, is an error that says the version read and
+// the highest known: the file is not read rather than read wrong.
+func upgradeProjectConfig(m map[string]any) error {
+	version := 1
+	switch v := m["version"].(type) {
+	case nil:
+	case int:
+		version = v
+		if v < 1 {
+			return fmt.Errorf("version %d: not a version, one of 1 to %d, the highest this Djinn reads", v,
+				ProjectConfigVersion)
+		}
+	case uint64: // Past what an int holds.
+		return fmt.Errorf("version %d: this Djinn reads djinn.yaml up to version %d; update Djinn to read it", v,
+			ProjectConfigVersion)
+	case string:
+		return fmt.Errorf("version %q: not a version, one of 1 to %d, the highest this Djinn reads", v,
+			ProjectConfigVersion)
+	default:
+		return fmt.Errorf("version %v: not a version, one of 1 to %d, the highest this Djinn reads", v,
+			ProjectConfigVersion)
+	}
+	if version > ProjectConfigVersion {
+		return fmt.Errorf("version %d: this Djinn reads djinn.yaml up to version %d; update Djinn to read it", version,
+			ProjectConfigVersion)
+	}
+	for ; version < ProjectConfigVersion; version++ {
+		if err := projectConfigUpgrades[version-1](m); err != nil {
+			return fmt.Errorf("version %d to %d: %w", version, version+1, err)
+		}
+	}
+	m["version"] = version
+	return nil
 }
 
 // settingsSection is the key of a djinn.yaml that holds the settings the team shares (plan.v1.ProjectSettings),
@@ -383,10 +433,10 @@ func projectConfigLines(old, next string) []*planv1.ConfigChangeLine {
 }
 
 // configOf is the configuration of a djinn.yaml, b as read with err, without its settings: an empty one when the file
-// is missing; parsed is false when it does not read.
+// is missing, of the version a file read holds (ProjectConfigVersion); parsed is false when it does not read.
 func configOf(b []byte, err error) (c *djinnv1.ProjectConfig, parsed bool) {
 	if err != nil {
-		return &djinnv1.ProjectConfig{}, errors.Is(err, fs.ErrNotExist)
+		return &djinnv1.ProjectConfig{Version: uint32(ProjectConfigVersion)}, errors.Is(err, fs.ErrNotExist)
 	}
 	c, _, _, _, err = parseProjectConfig(b)
 	return c, err == nil

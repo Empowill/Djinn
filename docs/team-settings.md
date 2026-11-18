@@ -13,6 +13,7 @@ The `settings:` section of `djinn.yaml` is a `plan.v1.ProjectSettings`
 
 ```yaml
 # .agents/djinn.yaml: what the repository tells Djinn, read on the reference branch.
+version: 1 # the version of the file's schema; 1 when it is missing
 settings:
   # The team's workers run claude with opus, spend at most 3 dollars each, and work on djinn/<code>-<slug>-<uuid8>.
   provider: claude
@@ -40,6 +41,13 @@ reads; one value stands for a list of one (`generated: gen/**`, `when: push`); a
 text (`model: 4.5`). A field Djinn does not know is ignored, and a warning names it (`settings.future_setting`): the rest
 of the file applies. A value out of its bounds, two checks of one name, or a file that does not parse is refused whole:
 the project's tasks wait until it is fixed. The file holds no secret (see below).
+
+`version:` says the version of the file's schema (`djinn.v1.ProjectConfig`), 1 when it is missing. A Djinn reads every
+version up to the highest it knows, an older one lifted to it first (one upgrade per version, `projectConfigUpgrades`
+in `internal/plan/projectconfig.go`). A higher version, written for a newer Djinn, or a value that is not a whole number
+from 1, refuses the whole file rather than read it wrong: the error names the file, the version read and the highest
+known (`.agents/djinn.yaml: version 2: this Djinn reads djinn.yaml up to version 1; update Djinn to read it`), the
+project declares no gate, and its tasks wait until Djinn is updated or the file fixed.
 
 Djinn no longer reads `.agents/settings.txtpb`, where these settings lived before (Q55): a project that keeps one gets a
 warning in its notices and one line in Djinn's log, naming it, until its settings move under `settings:` and it is
