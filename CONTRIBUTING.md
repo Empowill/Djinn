@@ -249,7 +249,7 @@ has set for those who work on it are in [`docs/pitfalls.md`](docs/pitfalls.md). 
   removes the task's worktree when clean ([T07](plan/8e8d3d76-orchestrator.md)). It pushes the branch, never forcing,
   at an azima's end or once three tasks are committed and an hour has passed since the last push, once the `push`
   checks pass (red, the push is held, a correction worker started, and asked about if they stay red); `--push-mode ask` asks first.
-  Djinn's own checks are in [`.agents/settings.txtpb`](.agents/settings.txtpb): the lint at commit, the tests at push.
+  Djinn's own checks are in [`.agents/djinn.yaml`](.agents/djinn.yaml), under `settings:`: the lint at commit, the tests at push.
   `djinn project show <project>` and the window's project view list them with their last runs.
   `djinn wish set-integration <wish-id> --branch feat/x` names the branch. A conflict in code, or a red check, start a
   correction worker on the failed merge, part of the same azima; past `correction_attempts` (2), Djinn asks you. A task

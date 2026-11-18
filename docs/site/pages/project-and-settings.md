@@ -104,8 +104,9 @@ no. The command line's project details list the same notices.
 
 A project's settings come from two files, setting by setting:
 
-- **The repository's file**, in its agents folder (the settings file next to its permissions file), committed with the
-  code: the team's defaults, the same for everyone who works on it.
+- **The repository's file**, its djinn.yaml in its agents folder, under settings, committed with the code: the team's
+  defaults, the same for everyone who works on it. Djinn no longer reads the settings.txtpb it once kept there: one
+  left behind is a warning under To fix, until its settings move under settings in djinn.yaml and it is deleted.
 - **Your own file**, in Djinn's data folder, one per project, never committed: what you want differently on this
   machine.
 
@@ -221,7 +222,13 @@ view shows it in red, a thing to fix with the file and the line. New tasks in th
 unreadable** and why, and start once the file is fixed; Djinn holds the merges there meanwhile. A team's budget never
 silently vanishes.
 
-A setting this Djinn does not know, written by a newer one, is only an information: Djinn ignores that line.
+A setting this Djinn does not know, written by a newer one, is ignored, and the rest of the file applies: in your own
+file it is only an information; in the repository's djinn.yaml, a warning that names it under settings.
+
+In djinn.yaml, a setting is written as YAML, each under settings: a value of a list may stand alone, generated: gen/**
+say, and a choice by its last word, in any case, when: commit, install_questions: never or push_strategy: azima. Djinn's
+own repository names there its setup, npm ci, what go tool task gen makes and how, its two checks, the lint before a
+commit and the tests before a push, how to install a build, and never to ask a question to install one.
 
 ### No secret, ever
 
@@ -232,14 +239,15 @@ its agent keeps them.
 
 ## Djinn's own file
 
-A repository also tells Djinn about itself in a YAML file of its own, djinn.yaml, at its root or in its agents folder.
+A repository tells Djinn about itself in a YAML file of its own, djinn.yaml, at its root or in its agents folder.
 Djinn reads it on the reference branch, as it reads the permissions: a worker never changes what bounds it. When both
 are there, the one at the root is read, and a warning under To fix says the other is not. A field Djinn does not know
 is ignored, and the rest of the file applies: a warning under To fix names the file and the field, more quietly than a
 thing to fix, and leaves the gear grey. A file that does not parse, or a value of the wrong type or out of range, is a
-thing to fix: none of the file applies, Djinn's defaults hold, and To fix names the file and the error.
+thing to fix: none of the file applies, the project's tasks do not spawn, and To fix names the file and the error.
 
-Today it holds the **ceilings of the containers** the workers start with Docker: the memory of each container, swap
+It holds the **team's settings**, under settings (above), the project's **gates** (Gates), and the **ceilings of the
+containers** the workers start with Docker: the memory of each container, swap
 included, in MiB (containers, then memory_mib), and its processes (containers, then pids). They stop a runaway, a fork
 bomb or a leak, never a container's ordinary work: a project whose containers need more gives them more here. Without
 the file, each container gets 4 GiB, or a quarter of the machine's memory when that is less, and 1024 processes.
@@ -278,8 +286,8 @@ many calls were refused. The Djinn then decides whether the wish needs a broader
 
 ## Good to know
 
-- **Commit the team's file.** The repository's settings and permissions are read from your checkout as it is: a change
-  not committed applies on your machine only, and a teammate's Djinn never sees it.
+- **Commit the team's file.** The repository's djinn.yaml and permissions are read on the reference branch: a change
+  not pushed applies nowhere, and a teammate's Djinn sees it once fetched.
 - **Name the checks.** A project with none has its work merged untested into a wish's own branch only, and never pushed
   checked: name at least the fast one, before a commit, and the slow one, before a push.
 - **Your file replaces, it does not add.** Checks you name in your file replace the team's whole list.

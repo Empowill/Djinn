@@ -21,7 +21,7 @@ import (
 func checkedRepo(t *testing.T) string {
 	t.Helper()
 	return gitRepoWith(t, map[string]string{
-		plan.SettingsFile: "checks { name: \"lint\" command: \"git --version\" when: CHECK_WHEN_COMMIT }\n",
+		plan.ProjectConfigFiles[1]: teamYAML("checks:\n  - {name: lint, command: git --version, when: commit}\n"),
 	})
 }
 

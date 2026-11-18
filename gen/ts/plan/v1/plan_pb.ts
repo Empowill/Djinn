@@ -159,7 +159,7 @@ export type ProjectNotice = Message<"plan.v1.ProjectNotice"> & {
   topic: ProjectNoticeTopic;
 
   /**
-   * What it names there: a file (.agents/settings.txtpb), a skill, a source (<project>/<skill>), a branch
+   * What it names there: a file (.agents/djinn.yaml), a skill, a source (<project>/<skill>), a branch
    * (origin/main).
    *
    * @generated from field: string subject = 3;
@@ -723,8 +723,8 @@ export const SummonSchema: GenMessage<Summon> = /*@__PURE__*/
 
 /**
  * ProjectSettings are the defaults of a project's workers, the few a team shares. The team writes them in the
- * repository, in .agents/settings.txtpb; a developer may write their own in Djinn's data folder, in
- * projects/<project id>/settings.txtpb. Setting by setting, the developer's win over the repository's, and a task's
+ * repository, under settings: in its .agents/djinn.yaml (djinn.v1.ProjectConfig), in YAML; a developer may write their
+ * own in Djinn's data folder, in text protobuf, in projects/<project id>/settings.txtpb. Setting by setting, the developer's win over the repository's, and a task's
  * own flags win over both. Djinn reads both files each time a task is spawned; djinn project show says where each
  * setting comes from. A file that cannot be read stops the project's tasks from spawning, with why, until it is
  * fixed; Djinn itself still starts. The files hold no secret: a value or a field name that looks like one is
@@ -6367,7 +6367,7 @@ export type ProjectServiceShowResponse = Message<"plan.v1.ProjectServiceShowResp
   settings: ProjectSetting[];
 
   /**
-   * The team's file, in the project's folder; empty for a project without one on this machine.
+   * The team's file, its djinn.yaml in the project's folder; empty for a project without one on this machine.
    *
    * @generated from field: string repository_file = 3;
    */
@@ -14245,8 +14245,7 @@ export enum ProjectNoticeTopic {
   UNSPECIFIED = 0,
 
   /**
-   * A settings file: the team's .agents/settings.txtpb, or your own in Djinn's data folder; or the project's
-   * djinn.yaml.
+   * A settings file: your own in Djinn's data folder; or the project's djinn.yaml, which holds the team's settings.
    *
    * @generated from enum value: PROJECT_NOTICE_TOPIC_SETTINGS = 1;
    */
@@ -14503,7 +14502,7 @@ export enum SettingSource {
   DEFAULT = 1,
 
   /**
-   * The repository's .agents/settings.txtpb, shared by the team.
+   * The repository's settings, under settings: in its .agents/djinn.yaml, shared by the team.
    *
    * @generated from enum value: SETTING_SOURCE_REPOSITORY = 2;
    */
@@ -16895,7 +16894,7 @@ export const ProjectService: GenService<{
   },
   /**
    * Show a project, and the defaults its workers get: each setting and where it comes from, the repository's
-   * .agents/settings.txtpb or your own file.
+   * .agents/djinn.yaml or your own file.
    *
    * @generated from rpc plan.v1.ProjectService.Show
    */
@@ -16994,7 +16993,7 @@ export const ProjectService: GenService<{
   /**
    * Choose the project's reference branch for yourself: the branch Djinn keeps the wishes up to date with (merge_main),
    * that pull requests aim at and that tells whether a branch landed. Written as main_branch in your own settings
-   * file, never in the repository: it wins over the team's .agents/settings.txtpb, where a team that follows another
+   * file, never in the repository: it wins over the team's .agents/djinn.yaml, where a team that follows another
    * branch names it for everyone. Refused for a branch the repository does not hold, on its remote when it has one.
    *
    * @generated from rpc plan.v1.ProjectService.SetBranch

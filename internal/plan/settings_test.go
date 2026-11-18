@@ -1,7 +1,9 @@
 package plan
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -190,15 +192,121 @@ func TestReadSettings(t *testing.T) {
 		}
 	})
 
-	// Djinn's repository names its setup and its checks, the lint before each commit and the tests before each push.
+	// Djinn's repository names its setup and its checks, the lint before each commit and the tests before each push,
+	// under settings: in its .agents/djinn.yaml: the same settings its settings.txtpb held before Q55.
 	t.Run("djinn's own", func(t *testing.T) {
 		t.Parallel()
-		s, err := ReadSettings(filepath.Join("..", "..", SettingsFile))
+		read, err := ReadProjectConfig(filepath.Join("..", ".."))
+		if err != nil || read.File != ".agents/djinn.yaml" || len(read.Unknown) > 0 {
+			t.Fatalf("read %s, unknown %v: %v", read.File, read.Unknown, err)
+		}
+		old := filepath.Join(t.TempDir(), "settings.txtpb")
+		writeSettings(t, old, `setup: "npm ci"
+generated: "gen/**"
+generate: "go tool task gen"
+checks { name: "lint" command: "go tool task lint" when: CHECK_WHEN_COMMIT }
+checks { name: "test" command: "go tool task test" when: CHECK_WHEN_PUSH }
+install: "go tool task install"
+install_questions: never
+`)
+		want, err := ReadSettings(old)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got, want := ChecksText(s.GetChecks()), "lint: go tool task lint (commit); test: go tool task test (push)"; s.GetSetup() != "npm ci" || got != want {
-			t.Errorf("setup %q, checks %q; want npm ci, %q", s.GetSetup(), got, want)
+		if !proto.Equal(read.Settings, want) {
+			t.Errorf("djinn.yaml settings:\n%v\nwant settings.txtpb's:\n%v", read.Settings, want)
+		}
+		if _, err := os.Stat(filepath.Join("..", "..", StaleSettingsFile)); !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("the repository keeps %s: %v", StaleSettingsFile, err)
+		}
+	})
+}
+
+// teamYAML is a djinn.yaml whose settings: section holds lines, the team's settings in YAML, one field a line.
+func teamYAML(lines string) string {
+	var b strings.Builder
+	b.WriteString("settings:\n")
+	for _, l := range strings.SplitAfter(lines, "\n") {
+		if l != "" {
+			b.WriteString("  " + l)
+		}
+	}
+	return b.String()
+}
+
+// TestTeamSettingsYAML (Q55): the team's settings read under settings: in djinn.yaml, in the short forms YAML invites
+// (an enum by the end of its name, one value for a list, a number for a string); a field ProjectSettings does not know
+// is named under settings. and the rest applies; a value out of bounds, two checks of one name, a secret refuse the
+// file, naming it; a stale .agents/settings.txtpb is not read, and a warning says where its settings go.
+func TestTeamSettingsYAML(t *testing.T) {
+	t.Parallel()
+	read := func(t *testing.T, content string) (ProjectConfigRead, error) {
+		t.Helper()
+		dir := t.TempDir()
+		writeSettings(t, filepath.Join(dir, ProjectConfigFiles[1]), content)
+		return ReadProjectConfig(dir)
+	}
+	t.Run("short forms", func(t *testing.T) {
+		t.Parallel()
+		got, err := read(t, teamYAML("provider: codex\nmodel: 4.5\nmerge_main: off\ninstall_questions: WHEN_NEEDED\n"+
+			"generated: gen/**\nchecks:\n  - {name: lint, command: task lint, when: commit}\n"+
+			"  - {name: e2e, command: task e2e, when: [push, CHECK_WHEN_COMMIT]}\npush_strategy: azima\nbabysit: false\n"))
+		if err != nil || len(got.Unknown) > 0 {
+			t.Fatalf("%v, unknown %v", err, got.Unknown)
+		}
+		want := &planv1.ProjectSettings{
+			Provider: planv1.Provider_PROVIDER_CODEX.Enum(), Model: proto.String("4.5"),
+			MergeMain: planv1.MergeMain_MERGE_MAIN_OFF.Enum(), Generated: []string{"gen/**"},
+			InstallQuestions: planv1.InstallQuestions_INSTALL_QUESTIONS_WHEN_NEEDED.Enum(),
+			Checks: []*planv1.ProjectCheck{
+				{Name: "lint", Command: "task lint", When: []planv1.CheckWhen{planv1.CheckWhen_CHECK_WHEN_COMMIT}},
+				{Name: "e2e", Command: "task e2e", When: []planv1.CheckWhen{
+					planv1.CheckWhen_CHECK_WHEN_PUSH, planv1.CheckWhen_CHECK_WHEN_COMMIT,
+				}},
+			},
+			PushStrategy: planv1.PushStrategy_PUSH_STRATEGY_AZIMA.Enum(), Babysit: proto.Bool(false),
+		}
+		if !proto.Equal(got.Settings, want) {
+			t.Errorf("settings %v\nwant %v", got.Settings, want)
+		}
+	})
+	t.Run("unknown field", func(t *testing.T) {
+		t.Parallel()
+		got, err := read(t, teamYAML("setup: make\nfuture_setting: true\nchecks:\n  - {name: a, command: b, when: push, soon: 1}\n"))
+		if err != nil || got.Settings.GetSetup() != "make" ||
+			!slices.Equal(got.Unknown, []string{"settings.checks[0].soon", "settings.future_setting"}) {
+			t.Errorf("%v, unknown %v, %v", got.Settings, got.Unknown, err)
+		}
+	})
+	for _, tc := range []struct{ name, content, want string }{
+		{"out of bounds", teamYAML("correction_attempts: 11\n"), ".agents/djinn.yaml: settings: "},
+		{"an enum it does not know", teamYAML("merge_main: sometimes\n"), ".agents/djinn.yaml: settings: "},
+		{"two checks of one name", teamYAML("checks:\n  - {name: lint, command: a, when: push}\n  - {name: LINT, command: b, when: push}\n"),
+			"two checks are named LINT"},
+		{"not a mapping", "settings: [setup]\n", "settings: not a mapping of settings"},
+		{"a secret", teamYAML("setup: make\napi_token: abc\n"), ".agents/djinn.yaml: line 3 names a secret (api_token)"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := read(t, tc.content)
+			if err == nil || !strings.Contains(err.Error(), tc.want) || got.Settings != nil || strings.Contains(err.Error(), "abc") {
+				t.Errorf("%v, %v; want an error with %q", got.Settings, err, tc.want)
+			}
+		})
+	}
+	t.Run("stale settings.txtpb", func(t *testing.T) {
+		t.Parallel()
+		home, dir := t.TempDir(), t.TempDir()
+		writeSettings(t, filepath.Join(dir, StaleSettingsFile), "setup: \"npm ci\"\n")
+		p := &planv1.Project{Id: "p1", Directory: dir}
+		s, err := LoadSettings(home, p)
+		if err != nil || s.Setup != "" || len(s.Warnings) != 1 || !strings.Contains(s.Warnings[0],
+			"settings.txtpb: Djinn no longer reads this file: the team's settings go under settings: in .agents/djinn.yaml") {
+			t.Errorf("setup %q, warnings %q, %v; want none read, a warning", s.Setup, s.Warnings, err)
+		}
+		notices := settingsNotices(readSettingsFiles(home, p))
+		if len(notices) != 1 || notices[0].GetKind() != warning || notices[0].GetFile() != filepath.Join(dir, StaleSettingsFile) {
+			t.Errorf("notices %v, want one warning on the stale file", notices)
 		}
 	})
 }
@@ -227,7 +335,7 @@ func TestLoadSettings(t *testing.T) {
 		t.Parallel()
 		home := t.TempDir()
 		repo := t.TempDir()
-		writeSettings(t, filepath.Join(repo, ".agents", "settings.txtpb"), "provider: PROVIDER_CODEX\nunknown_feature: true\n")
+		writeSettings(t, filepath.Join(repo, ".agents", "djinn.yaml"), teamYAML("provider: PROVIDER_CODEX\nunknown_feature: true\n"))
 		p := &planv1.Project{Id: "p1", Directory: repo, Git: true}
 		s, err := LoadSettings(home, p)
 		if err != nil {
@@ -666,8 +774,8 @@ func TestEffectiveWishPushStrategy(t *testing.T) {
 	}
 
 	// (b) repository default: azima, repository
-	repoSettingsFile := filepath.Join(projDir, ".agents", "settings.txtpb")
-	writeSettings(t, repoSettingsFile, "push_strategy: PUSH_STRATEGY_AZIMA\n")
+	repoSettingsFile := filepath.Join(projDir, ".agents", "djinn.yaml")
+	writeSettings(t, repoSettingsFile, teamYAML("push_strategy: azima\n"))
 	if strat, src, err := EffectiveWishPushStrategy(t.Context(), sStore, home, w); err != nil || strat != azimaStrat || src != repo {
 		t.Errorf("EffectiveWishPushStrategy repo = %v, %v; want azima, repository", strat, src)
 	}
@@ -780,7 +888,7 @@ func TestWatchCommandsSettings(t *testing.T) {
 		t.Errorf("the repository's serve commands: %q, want none", s.ServeCommands)
 	}
 
-	writeSettings(t, filepath.Join(dir, SettingsFile), "watch_commands: \"rm -rf\"\n")
+	writeSettings(t, filepath.Join(dir, ProjectConfigFiles[1]), teamYAML("watch_commands: \"rm -rf\"\n"))
 	show, err = c.projects.Show(ctx, connect.NewRequest(&planv1.ProjectServiceShowRequest{Project: "shop"}))
 	if err != nil || !slices.ContainsFunc(show.Msg.GetNotices(), func(n *planv1.ProjectNotice) bool {
 		return n.GetAction() == planv1.ProjectNoticeAction_PROJECT_NOTICE_ACTION_FIX_FILE &&
@@ -825,7 +933,7 @@ func TestProjectShow(t *testing.T) {
 	}
 
 	res := show()
-	repoFile := filepath.Join(project.GetDirectory(), ".agents", "settings.txtpb")
+	repoFile := filepath.Join(project.GetDirectory(), ".agents", "djinn.yaml")
 	devFile := filepath.Join(home, "projects", project.GetId(), "settings.txtpb")
 	if res.GetRepositoryFile() != repoFile || res.GetDeveloperFile() != devFile || len(res.GetNotices()) > 0 {
 		t.Errorf("files = %s, %s, %v; want %s, %s", res.GetRepositoryFile(), res.GetDeveloperFile(), res.GetNotices(), repoFile, devFile)
@@ -844,8 +952,9 @@ func TestProjectShow(t *testing.T) {
 		t.Errorf("no file, the question workers: %s; want %s", got, want)
 	}
 
-	writeSettings(t, repoFile, "provider: PROVIDER_CLAUDE\nmodel: \"opus\"\nmax_budget_usd: 3\nbranch: \"djinn/{code}-{uuid8}\"\n"+
-		"generated: \"gen/**\"\ngenerated: \"docs/schema.json\"\ngenerate: \"go tool task gen\"\ntest: \"go tool task test\"\ncorrection_attempts: 3\ninstall: \"go tool task install\"\n")
+	writeSettings(t, repoFile, teamYAML("provider: claude\nmodel: opus\nmax_budget_usd: 3\nbranch: djinn/{code}-{uuid8}\n"+
+		"generated: [gen/**, docs/schema.json]\ngenerate: go tool task gen\ntest: go tool task test\ncorrection_attempts: 3\n"+
+		"install: go tool task install\n"))
 	writeSettings(t, devFile, "model: \"sonnet\"\nbranch: \"me/{slug}-{uuid8}\"\ntest: \"go tool task test-go\"\n")
 	Migrate(home) // djinn up moves the developer's legacy model to the circle.
 	if got, want := rows(show()), "provider=claude REPOSITORY, model=opus REPOSITORY, max_budget_usd=3 REPOSITORY, "+

@@ -47,14 +47,20 @@ func line(topic planv1.ProjectNoticeTopic, subject string, asks bool, format str
 	return &planv1.ConfigChangeLine{Topic: topic, Subject: subject, Text: fmt.Sprintf(format, args...), Asks: asks}
 }
 
-// settingsLines say what changed in the team's settings file from old to new: the file itself, its checks, its setup,
-// the reference branch it names, then the names of the other settings it changes.
+// teamSettingsIn are the settings the team shares in the configuration laid out in dir, under settings: in its
+// djinn.yaml (ReadProjectConfig); the file, relative to dir, with slashes, .agents/djinn.yaml when there is none; and
+// whether it holds the section, or does not read.
+func teamSettingsIn(dir string) (*planv1.ProjectSettings, string, bool, error) {
+	read, err := ReadProjectConfig(dir)
+	return read.Settings, cmp.Or(read.File, filepath.ToSlash(ProjectConfigFiles[1])), read.Settings != nil || err != nil, err
+}
+
+// settingsLines say what changed in the team's settings, under settings: in its djinn.yaml, from old to new: the
+// section itself, its checks, its setup, the reference branch it names, then the names of the other settings it
+// changes.
 func settingsLines(old, next string) []*planv1.ConfigChangeLine {
-	subject := filepath.ToSlash(SettingsFile)
-	oldPath, newPath := filepath.Join(old, SettingsFile), filepath.Join(next, SettingsFile)
-	o, oErr := ReadSettings(oldPath)
-	n, nErr := ReadSettings(newPath)
-	oHas, nHas := exists(oldPath), exists(newPath)
+	o, _, oHas, oErr := teamSettingsIn(old)
+	n, subject, nHas, nErr := teamSettingsIn(next)
 	settings := func(format string, args ...any) *planv1.ConfigChangeLine {
 		return line(topicSettings, subject, false, format, args...)
 	}
@@ -63,17 +69,17 @@ func settingsLines(old, next string) []*planv1.ConfigChangeLine {
 		return nil
 	case nErr != nil:
 		// A notice of the project says so until it is fixed.
-		return []*planv1.ConfigChangeLine{settings("Djinn can no longer read the team's settings: the project's tasks " +
-			"do not spawn until the file is fixed.")}
+		return []*planv1.ConfigChangeLine{settings("Djinn can no longer read the team's settings: the project's tasks "+
+			"do not spawn until %s is fixed.", subject)}
 	case oErr != nil:
 		return []*planv1.ConfigChangeLine{settings("Djinn can read the team's settings again.")}
 	case !nHas:
-		return []*planv1.ConfigChangeLine{settings("The team's settings file is gone: Djinn's defaults apply, and " +
-			"no check runs.")}
+		return []*planv1.ConfigChangeLine{settings("The team's settings are gone from %s: Djinn's defaults apply, and "+
+			"no check runs.", subject)}
 	}
 	var out []*planv1.ConfigChangeLine
 	if !oHas {
-		out = append(out, settings("The team's settings file appears."))
+		out = append(out, settings("The team's settings appear in %s.", subject))
 	}
 	out = append(out, checkLines(o.GetChecks(), n.GetChecks())...)
 	switch {
@@ -491,12 +497,10 @@ func filesIn(dir string) map[string][]byte {
 	return out
 }
 
-// otherFiles are the files of .agents, besides the settings, the permissions and the skills, that differ between the
+// otherFiles are the files of .agents, besides its djinn.yaml, the permissions and the skills, that differ between the
 // configurations in old and next, with slashes.
 func otherFiles(old, next string) []string {
-	skip := []string{
-		filepath.ToSlash(SettingsFile), filepath.ToSlash(PermissionsFile), filepath.ToSlash(ProjectConfigFiles[1]),
-	}
+	skip := []string{filepath.ToSlash(PermissionsFile), filepath.ToSlash(ProjectConfigFiles[1])}
 	var out []string
 	for _, f := range changedFiles(filepath.Join(old, ".agents"), filepath.Join(next, ".agents")) {
 		path := ".agents/" + f

@@ -246,7 +246,7 @@ func TestStartQuestionWorker_Fallback(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Configure question_provider as ANTIGRAVITY (which fails at start with ErrReadOnly).
-	if err := os.WriteFile(filepath.Join(dir, plan.SettingsFile), []byte("provider: PROVIDER_ANTIGRAVITY\nquestion_provider: PROVIDER_ANTIGRAVITY\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, plan.ProjectConfigFiles[1]), []byte(teamYAML("provider: PROVIDER_ANTIGRAVITY\nquestion_provider: PROVIDER_ANTIGRAVITY\n")), 0o600); err != nil {
 		t.Fatal(err)
 	}
 

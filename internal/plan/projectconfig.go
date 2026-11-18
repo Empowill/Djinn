@@ -16,6 +16,7 @@ import (
 	"buf.build/go/protovalidate"
 	"go.yaml.in/yaml/v3"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 
 	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
@@ -30,13 +31,16 @@ var ProjectConfigFiles = []string{"djinn.yaml", filepath.Join(".agents", "djinn.
 type ProjectConfigRead struct {
 	// Config is the configuration read; nil when the project writes none, or when its file is unreadable.
 	Config *djinnv1.ProjectConfig
+	// Settings are the settings the team shares, its settings: section (plan.v1.ProjectSettings); nil when the file
+	// has none, or is unreadable. The developer's own file wins over them, setting by setting (ResolveSettings).
+	Settings *planv1.ProjectSettings
 	// File is the file read, relative to the project, with slashes: djinn.yaml or .agents/djinn.yaml; empty when
 	// there is none.
 	File string
 	// Ignored is the other file, present beside File but not read; empty when there is none.
 	Ignored string
-	// Unknown are the fields of File the message does not know, as their paths in the file (containers.memroy_mib),
-	// sorted: ignored, the rest of the file applies (Q21).
+	// Unknown are the fields of File the message does not know, as their paths in the file (containers.memroy_mib,
+	// settings.setpu), sorted: ignored, the rest of the file applies (Q21).
 	Unknown []string
 	// Dropped say each gate left out, by its name or its place, and why: the other gates and the rest of the file
 	// apply.
@@ -73,12 +77,12 @@ func ReadProjectConfig(dir string) (ProjectConfigRead, error) {
 	if read.File == "" {
 		return read, nil
 	}
-	c, unknown, gates, err := parseProjectConfig(b)
+	c, settings, unknown, gates, err := parseProjectConfig(b)
 	read.Unknown, read.Dropped, read.Broad = unknown, gates.dropped, gates.broad
 	if err != nil {
 		return read, fmt.Errorf("%s: %w", read.File, err)
 	}
-	read.Config = c
+	read.Config, read.Settings = c, settings
 	return read, nil
 }
 
@@ -86,40 +90,159 @@ func ReadProjectConfig(dir string) (ProjectConfigRead, error) {
 // tells nothing of the file.
 var protojsonPlace = regexp.MustCompile(`\(line \d+:\d+\): `)
 
-// parseProjectConfig is the configuration a djinn.yaml holds in b: YAML, then JSON, then protojson; the fields the
-// message does not know, dropped before protojson reads it, said even when the file is refused; and the gates left
-// out, each read and checked on its own (readGates).
-func parseProjectConfig(b []byte) (*djinnv1.ProjectConfig, []string, gatesRead, error) {
+// parseProjectConfig is the configuration a djinn.yaml holds in b: YAML, then JSON, then protojson; the settings of
+// its settings: section, read the same way (readSettingsSection); the fields the messages do not know, dropped before
+// protojson reads them, said even when the file is refused; and the gates left out, each read and checked on its own
+// (readGates). A file that holds something that looks like a secret is refused, comments included, without repeating
+// it: the file is versioned.
+func parseProjectConfig(b []byte) (*djinnv1.ProjectConfig, *planv1.ProjectSettings, []string, gatesRead, error) {
 	var gates gatesRead
+	if line, why := secretIn(b); line > 0 {
+		return nil, nil, nil, gates, fmt.Errorf("line %d %s; this file holds no secret: remove it", line, why)
+	}
 	var doc any
 	if err := yaml.Unmarshal(b, &doc); err != nil {
-		return nil, nil, gates, err
+		return nil, nil, nil, gates, err
 	}
 	if doc == nil {
 		doc = map[string]any{} // An empty file, or comments only.
 	}
 	m, ok := doc.(map[string]any)
 	if !ok {
-		return nil, nil, gates, errors.New("not a mapping of fields")
+		return nil, nil, nil, gates, errors.New("not a mapping of fields")
 	}
 	c := &djinnv1.ProjectConfig{}
+	rawSettings, hasSettings := m[settingsSection]
+	delete(m, settingsSection)
 	unknown := dropUnknownFields(doc, c.ProtoReflect().Descriptor(), "", nil)
+	var settings *planv1.ProjectSettings
+	if hasSettings {
+		var err error
+		settings, unknown, err = readSettingsSection(rawSettings, unknown)
+		slices.Sort(unknown)
+		if err != nil {
+			return nil, nil, unknown, gates, fmt.Errorf("%s: %w", settingsSection, err)
+		}
+	}
 	rawGates, hasGates := m["gates"]
 	delete(m, "gates")
 	j, err := json.Marshal(doc)
 	if err != nil {
-		return nil, unknown, gates, err
+		return nil, nil, unknown, gates, err
 	}
 	if err := protojson.Unmarshal(j, c); err != nil {
-		return nil, unknown, gates, errors.New(protojsonPlace.ReplaceAllString(err.Error(), ""))
+		return nil, nil, unknown, gates, errors.New(protojsonPlace.ReplaceAllString(err.Error(), ""))
 	}
 	if err := protovalidate.Validate(c); err != nil {
-		return nil, unknown, gates, err
+		return nil, nil, unknown, gates, err
 	}
 	if hasGates {
 		c.Gates, gates = readGates(rawGates)
 	}
-	return c, unknown, gates, nil
+	return c, settings, unknown, gates, nil
+}
+
+// settingsSection is the key of a djinn.yaml that holds the settings the team shares (plan.v1.ProjectSettings),
+// apart from djinn.v1.ProjectConfig: plan.v1 imports djinn.v1, which cannot name it back.
+const settingsSection = "settings"
+
+// readSettingsSection reads v, the settings: section of a djinn.yaml as YAML gives it, into the team's settings: the
+// fields ProjectSettings does not know are dropped and appended to unknown, under settings.; the short forms YAML
+// invites are taken (normalizeYAML); the values are checked as the developer's file is (protovalidate, two checks of
+// one name). A section that is empty holds no setting.
+func readSettingsSection(v any, unknown []string) (*planv1.ProjectSettings, []string, error) {
+	s := &planv1.ProjectSettings{}
+	if v == nil {
+		return s, unknown, nil
+	}
+	if _, ok := v.(map[string]any); !ok {
+		return nil, unknown, errors.New("not a mapping of settings")
+	}
+	md := s.ProtoReflect().Descriptor()
+	unknown = dropUnknownFields(v, md, settingsSection, unknown)
+	normalizeYAML(v, md)
+	j, err := json.Marshal(v)
+	if err != nil {
+		return nil, unknown, err
+	}
+	if err := protojson.Unmarshal(j, s); err != nil {
+		return nil, unknown, errors.New(protojsonPlace.ReplaceAllString(err.Error(), ""))
+	}
+	if err := protovalidate.Validate(s); err != nil {
+		return nil, unknown, err
+	}
+	if err := uniqueCheckNames(s); err != nil {
+		return nil, unknown, err
+	}
+	return s, unknown, nil
+}
+
+// normalizeYAML turns, in v, a message md as YAML gives it, the short forms a person writes in YAML into what
+// protojson reads: one value where a list is expected becomes a list of it (when: commit); an enum value written by
+// the end of its name, in any case, becomes its name (commit for CHECK_WHEN_COMMIT, never for
+// INSTALL_QUESTIONS_NEVER), when one value alone ends so; a number or a boolean where a string is expected becomes
+// its text (model: 4.5). What does not fit is left as it is, and protojson says what is wrong with it.
+func normalizeYAML(v any, md protoreflect.MessageDescriptor) {
+	m, ok := v.(map[string]any)
+	if !ok {
+		return
+	}
+	for k, e := range m {
+		fd := md.Fields().ByName(protoreflect.Name(k))
+		if fd == nil {
+			fd = md.Fields().ByJSONName(k)
+		}
+		if fd == nil || fd.IsMap() {
+			continue
+		}
+		if !fd.IsList() {
+			m[k] = normalizeYAMLValue(e, fd)
+			continue
+		}
+		list, ok := e.([]any)
+		if !ok {
+			if e == nil {
+				continue
+			}
+			list = []any{e}
+		}
+		for i := range list {
+			list[i] = normalizeYAMLValue(list[i], fd)
+		}
+		m[k] = list
+	}
+}
+
+// normalizeYAMLValue is e, one value of the field fd as YAML gives it, in the form protojson reads (normalizeYAML).
+func normalizeYAMLValue(e any, fd protoreflect.FieldDescriptor) any {
+	switch fd.Kind() {
+	case protoreflect.EnumKind:
+		s, ok := e.(string)
+		if !ok || fd.Enum().Values().ByName(protoreflect.Name(s)) != nil {
+			return e
+		}
+		short := "_" + strings.ToUpper(strings.ReplaceAll(s, "-", "_"))
+		var found []string
+		values := fd.Enum().Values()
+		for i := range values.Len() {
+			if name := string(values.Get(i).Name()); strings.HasSuffix(name, short) {
+				found = append(found, name)
+			}
+		}
+		if len(found) == 1 {
+			return found[0]
+		}
+	case protoreflect.StringKind:
+		switch e.(type) {
+		case bool, int, int64, uint64, float64:
+			return fmt.Sprint(e)
+		}
+	case protoreflect.MessageKind:
+		if !strings.HasPrefix(string(fd.Message().FullName()), "google.protobuf.") {
+			normalizeYAML(e, fd.Message())
+		}
+	}
+	return e
 }
 
 // MaxProjectGates is how many gates a project declares at most: those past it are left out.
@@ -230,13 +353,20 @@ func dropUnknownFields(v any, md protoreflect.MessageDescriptor, at string, out 
 }
 
 // projectConfigLines say which of the project's djinn.yaml files changed from the configuration in old to the one in
-// next, two folders laid out as a project's: a line each.
+// next, two folders laid out as a project's: a line each. A file whose change is all in its settings: section or its
+// comments, or that does not read, says none here: settingsLines say what changed in the team's settings, or that
+// Djinn can no longer read them.
 func projectConfigLines(old, next string) []*planv1.ConfigChangeLine {
 	var out []*planv1.ConfigChangeLine
 	for _, f := range ProjectConfigFiles {
 		a, errA := os.ReadFile(filepath.Join(old, f))
 		b, errB := os.ReadFile(filepath.Join(next, f))
 		if (errA != nil) == (errB != nil) && bytes.Equal(a, b) {
+			continue
+		}
+		ca, parsedA := configOf(a, errA)
+		cb, parsedB := configOf(b, errB)
+		if !parsedA || !parsedB || proto.Equal(ca, cb) {
 			continue
 		}
 		name := filepath.ToSlash(f)
@@ -250,6 +380,16 @@ func projectConfigLines(old, next string) []*planv1.ConfigChangeLine {
 		out = append(out, &planv1.ConfigChangeLine{Topic: topicSettings, Subject: name, Text: text})
 	}
 	return out
+}
+
+// configOf is the configuration of a djinn.yaml, b as read with err, without its settings: an empty one when the file
+// is missing; parsed is false when it does not read.
+func configOf(b []byte, err error) (c *djinnv1.ProjectConfig, parsed bool) {
+	if err != nil {
+		return &djinnv1.ProjectConfig{}, errors.Is(err, fs.ErrNotExist)
+	}
+	c, _, _, _, err = parseProjectConfig(b)
+	return c, err == nil
 }
 
 // ProjectGates are the gates a project declares in its djinn.yaml, as Djinn applies them on this machine

@@ -691,7 +691,7 @@ type ProjectServiceClient interface {
 	// List the projects.
 	List(context.Context, *connect.Request[v1.ProjectServiceListRequest]) (*connect.Response[v1.ProjectServiceListResponse], error)
 	// Show a project, and the defaults its workers get: each setting and where it comes from, the repository's
-	// .agents/settings.txtpb or your own file.
+	// .agents/djinn.yaml or your own file.
 	Show(context.Context, *connect.Request[v1.ProjectServiceShowRequest]) (*connect.Response[v1.ProjectServiceShowResponse], error)
 	// Push the project's integration branch for a wish: runs push checks under gates, never with --force.
 	Push(context.Context, *connect.Request[v1.ProjectServicePushRequest]) (*connect.Response[v1.ProjectServicePushResponse], error)
@@ -718,7 +718,7 @@ type ProjectServiceClient interface {
 	Branches(context.Context, *connect.Request[v1.ProjectServiceBranchesRequest]) (*connect.Response[v1.ProjectServiceBranchesResponse], error)
 	// Choose the project's reference branch for yourself: the branch Djinn keeps the wishes up to date with (merge_main),
 	// that pull requests aim at and that tells whether a branch landed. Written as main_branch in your own settings
-	// file, never in the repository: it wins over the team's .agents/settings.txtpb, where a team that follows another
+	// file, never in the repository: it wins over the team's .agents/djinn.yaml, where a team that follows another
 	// branch names it for everyone. Refused for a branch the repository does not hold, on its remote when it has one.
 	SetBranch(context.Context, *connect.Request[v1.ProjectServiceSetBranchRequest]) (*connect.Response[v1.ProjectServiceSetBranchResponse], error)
 	// Mark seen the changes of the project's configuration on its reference branch that ask for your look (a
@@ -911,7 +911,7 @@ type ProjectServiceHandler interface {
 	// List the projects.
 	List(context.Context, *connect.Request[v1.ProjectServiceListRequest]) (*connect.Response[v1.ProjectServiceListResponse], error)
 	// Show a project, and the defaults its workers get: each setting and where it comes from, the repository's
-	// .agents/settings.txtpb or your own file.
+	// .agents/djinn.yaml or your own file.
 	Show(context.Context, *connect.Request[v1.ProjectServiceShowRequest]) (*connect.Response[v1.ProjectServiceShowResponse], error)
 	// Push the project's integration branch for a wish: runs push checks under gates, never with --force.
 	Push(context.Context, *connect.Request[v1.ProjectServicePushRequest]) (*connect.Response[v1.ProjectServicePushResponse], error)
@@ -938,7 +938,7 @@ type ProjectServiceHandler interface {
 	Branches(context.Context, *connect.Request[v1.ProjectServiceBranchesRequest]) (*connect.Response[v1.ProjectServiceBranchesResponse], error)
 	// Choose the project's reference branch for yourself: the branch Djinn keeps the wishes up to date with (merge_main),
 	// that pull requests aim at and that tells whether a branch landed. Written as main_branch in your own settings
-	// file, never in the repository: it wins over the team's .agents/settings.txtpb, where a team that follows another
+	// file, never in the repository: it wins over the team's .agents/djinn.yaml, where a team that follows another
 	// branch names it for everyone. Refused for a branch the repository does not hold, on its remote when it has one.
 	SetBranch(context.Context, *connect.Request[v1.ProjectServiceSetBranchRequest]) (*connect.Response[v1.ProjectServiceSetBranchResponse], error)
 	// Mark seen the changes of the project's configuration on its reference branch that ask for your look (a

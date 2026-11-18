@@ -3,6 +3,7 @@ package plan
 import (
 	"bufio"
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"buf.build/go/protovalidate"
@@ -26,9 +28,25 @@ import (
 	"github.com/empowill/djinn/internal/store"
 )
 
-// SettingsFile is where a project's repository keeps the settings its team shares: a plan.v1.ProjectSettings in
-// text protobuf, next to the permissions in .agents.
-var SettingsFile = filepath.Join(".agents", "settings.txtpb")
+// StaleSettingsFile is where a project's repository kept the settings its team shares, in text protobuf, before they
+// moved under settings: in its djinn.yaml (TeamSettingsFile, Q55): Djinn no longer reads it, and says so when it finds
+// one where it reads the project's configuration.
+var StaleSettingsFile = filepath.Join(".agents", "settings.txtpb")
+
+// staleSettingsWarned holds the folders whose stale settings file is logged: once each, not on every read.
+var staleSettingsWarned sync.Map
+
+// TeamSettingsFile is the file of the project laid out in dir that holds the settings its team shares, under
+// settings: (plan.v1.ProjectSettings), beside the rest of Djinn's configuration (ProjectConfigFiles): the first of
+// them dir holds, else .agents/djinn.yaml, where a project writes it.
+func TeamSettingsFile(dir string) string {
+	for _, f := range ProjectConfigFiles {
+		if exists(filepath.Join(dir, f)) {
+			return filepath.Join(dir, f)
+		}
+	}
+	return filepath.Join(dir, ProjectConfigFiles[1])
+}
 
 // DeveloperSettingsFile is where the developer keeps their own settings of a project, in Djinn's data folder home.
 func DeveloperSettingsFile(home, projectID string) string {
@@ -87,15 +105,23 @@ func readSettingsNamed(path, name string) (*planv1.ProjectSettings, []string, er
 	if err := protovalidate.Validate(s); err != nil {
 		return nil, nil, fmt.Errorf("%s: %w", name, err)
 	}
+	if err := uniqueCheckNames(s); err != nil {
+		return nil, nil, fmt.Errorf("%s: %w", name, err)
+	}
+	return s, warnings, nil
+}
+
+// uniqueCheckNames refuses settings s with two checks of one name: names ignore case.
+func uniqueCheckNames(s *planv1.ProjectSettings) error {
 	seen := map[string]bool{}
 	for _, c := range s.GetChecks() {
 		lower := strings.ToLower(c.GetName())
 		if seen[lower] {
-			return nil, nil, fmt.Errorf("%s: two checks are named %s: names ignore case", name, c.GetName())
+			return fmt.Errorf("two checks are named %s: names ignore case", c.GetName())
 		}
 		seen[lower] = true
 	}
-	return s, warnings, nil
+	return nil
 }
 
 var (
@@ -404,7 +430,7 @@ func ResolveSettings(repo, dev *planv1.ProjectSettings) Settings {
 // and the developer's in home, empty without home.
 func settingsFiles(home string, project *planv1.Project) (repo, dev string) {
 	if project.GetDirectory() != "" {
-		repo = filepath.Join(project.GetDirectory(), SettingsFile)
+		repo = TeamSettingsFile(project.GetDirectory())
 	}
 	if home != "" && project.GetId() != "" {
 		dev = DeveloperSettingsFile(home, project.GetId())
@@ -451,6 +477,8 @@ type settingsRead struct {
 	// path is the file; team tells the repository's from the developer's.
 	path string
 	team bool
+	// file is the team's file, relative to the project, with slashes: .agents/djinn.yaml or djinn.yaml.
+	file string
 	// settings are what it holds; nil without the file, or when it cannot be read: err says why.
 	settings *planv1.ProjectSettings
 	err      error
@@ -459,10 +487,52 @@ type settingsRead struct {
 }
 
 // settingsWarning is a thing a settings file holds that Djinn ignores; ignored says a line to remove, not a field a
-// newer Djinn knows.
+// newer Djinn knows; stale says the team's settings file Djinn no longer reads (StaleSettingsFile); elsewhere says a
+// field of djinn.yaml, which the notices of djinn.yaml already say (projectConfigNotices); file is the stale file, in
+// the project's folder.
 type settingsWarning struct {
-	text    string
-	ignored bool
+	text      string
+	ignored   bool
+	stale     bool
+	elsewhere bool
+	file      string
+}
+
+// readTeamSettings reads the settings project's team shares, where Djinn reads its configuration (config): the
+// settings: section of its djinn.yaml (ReadProjectConfig). A djinn.yaml Djinn cannot read is an error that names it,
+// with the reference branch it was read on; a field of the section it does not know is a warning. A settings.txtpb
+// left in .agents is not read: a warning says where its settings go, and the log says it once.
+func readTeamSettings(project *planv1.Project, config Config) settingsRead {
+	f := settingsRead{team: true}
+	read, err := ReadProjectConfig(config.Dir)
+	f.file = cmp.Or(read.File, filepath.ToSlash(ProjectConfigFiles[1]))
+	f.path = filepath.Join(project.GetDirectory(), filepath.FromSlash(f.file))
+	name := config.Named(filepath.Join(config.Dir, filepath.FromSlash(f.file)))
+	if err != nil {
+		if config.FromReference() {
+			err = fmt.Errorf("%s:%w", config.Ref, err) // the error names the file: origin/main:.agents/djinn.yaml: ...
+		}
+		f.err = err
+	} else {
+		f.settings = read.Settings
+		for _, u := range read.Unknown {
+			if field, ok := strings.CutPrefix(u, settingsSection+"."); ok {
+				f.warnings = append(f.warnings, settingsWarning{text: WarnUnknownField(name, field), elsewhere: true})
+			}
+		}
+	}
+	if stale := filepath.Join(config.Dir, StaleSettingsFile); exists(stale) {
+		staleName := config.Named(stale)
+		if _, seen := staleSettingsWarned.LoadOrStore(stale, true); !seen {
+			logx.L().Warn("stale team settings file: Djinn no longer reads it, its settings go under settings: in "+
+				filepath.ToSlash(ProjectConfigFiles[1]), "file", staleName)
+		}
+		f.warnings = append(f.warnings, settingsWarning{
+			stale: true, file: filepath.Join(project.GetDirectory(), StaleSettingsFile),
+			text: staleName + ": Djinn no longer reads this file: the team's settings go under settings: in " + f.file,
+		})
+	}
+	return f
 }
 
 // readSettingsFiles reads the files of project: the repository's, then the developer's; a file project has no path
@@ -484,16 +554,18 @@ func readSettingsFilesConfig(home string, project *planv1.Project, config Config
 		if f.path == "" {
 			continue
 		}
-		read, name := f.path, f.path
 		if f.team {
-			// The team's file is read where Djinn reads the project's configuration: the reference branch's tree.
-			read = filepath.Join(config.Dir, SettingsFile)
-			name = config.Named(read)
+			f = readTeamSettings(project, config)
+		} else {
+			var w []string
+			f.settings, w, f.err = readSettingsNamed(f.path, f.path)
+			for _, text := range w {
+				f.warnings = append(f.warnings, settingsWarning{text: text})
+			}
 		}
-		var w []string
-		f.settings, w, f.err = readSettingsNamed(read, name)
-		for _, text := range w {
-			f.warnings = append(f.warnings, settingsWarning{text: text})
+		name := f.path
+		if f.team {
+			name = config.Named(filepath.Join(config.Dir, filepath.FromSlash(f.file)))
 		}
 		if f.err == nil && f.team && config.TeamBranch != "" && f.settings.GetMainBranch() == "" {
 			// The default branch's tree named the reference branch, whose own tree does not: it stays the reference.

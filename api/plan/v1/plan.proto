@@ -64,7 +64,7 @@ message ProjectNotice {
   ProjectNoticeKind kind = 1;
   // The part of the configuration it comes from.
   ProjectNoticeTopic topic = 2;
-  // What it names there: a file (.agents/settings.txtpb), a skill, a source (<project>/<skill>), a branch
+  // What it names there: a file (.agents/djinn.yaml), a skill, a source (<project>/<skill>), a branch
   // (origin/main).
   string subject = 3;
   // What it is, and what it changes, in one sentence.
@@ -96,8 +96,7 @@ enum ProjectNoticeKind {
 enum ProjectNoticeTopic {
   // Not set.
   PROJECT_NOTICE_TOPIC_UNSPECIFIED = 0;
-  // A settings file: the team's .agents/settings.txtpb, or your own in Djinn's data folder; or the project's
-  // djinn.yaml.
+  // A settings file: your own in Djinn's data folder; or the project's djinn.yaml, which holds the team's settings.
   PROJECT_NOTICE_TOPIC_SETTINGS = 1;
   // The project's .agents/permissions.txtpb.
   PROJECT_NOTICE_TOPIC_PERMISSIONS = 2;
@@ -292,8 +291,8 @@ message Summon {
 }
 
 // ProjectSettings are the defaults of a project's workers, the few a team shares. The team writes them in the
-// repository, in .agents/settings.txtpb; a developer may write their own in Djinn's data folder, in
-// projects/<project id>/settings.txtpb. Setting by setting, the developer's win over the repository's, and a task's
+// repository, under settings: in its .agents/djinn.yaml (djinn.v1.ProjectConfig), in YAML; a developer may write their
+// own in Djinn's data folder, in text protobuf, in projects/<project id>/settings.txtpb. Setting by setting, the developer's win over the repository's, and a task's
 // own flags win over both. Djinn reads both files each time a task is spawned; djinn project show says where each
 // setting comes from. A file that cannot be read stops the project's tasks from spawning, with why, until it is
 // fixed; Djinn itself still starts. The files hold no secret: a value or a field name that looks like one is
@@ -543,7 +542,7 @@ enum SettingSource {
   SETTING_SOURCE_UNSPECIFIED = 0;
   // Djinn's own default: neither file sets it.
   SETTING_SOURCE_DEFAULT = 1;
-  // The repository's .agents/settings.txtpb, shared by the team.
+  // The repository's settings, under settings: in its .agents/djinn.yaml, shared by the team.
   SETTING_SOURCE_REPOSITORY = 2;
   // The developer's own file, in Djinn's data folder.
   SETTING_SOURCE_DEVELOPER = 3;
@@ -3027,7 +3026,7 @@ service ProjectService {
     option idempotency_level = NO_SIDE_EFFECTS;
   }
   // Show a project, and the defaults its workers get: each setting and where it comes from, the repository's
-  // .agents/settings.txtpb or your own file.
+  // .agents/djinn.yaml or your own file.
   rpc Show(ProjectServiceShowRequest) returns (ProjectServiceShowResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option idempotency_level = NO_SIDE_EFFECTS;
@@ -3081,7 +3080,7 @@ service ProjectService {
   }
   // Choose the project's reference branch for yourself: the branch Djinn keeps the wishes up to date with (merge_main),
   // that pull requests aim at and that tells whether a branch landed. Written as main_branch in your own settings
-  // file, never in the repository: it wins over the team's .agents/settings.txtpb, where a team that follows another
+  // file, never in the repository: it wins over the team's .agents/djinn.yaml, where a team that follows another
   // branch names it for everyone. Refused for a branch the repository does not hold, on its remote when it has one.
   rpc SetBranch(ProjectServiceSetBranchRequest) returns (ProjectServiceSetBranchResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
@@ -3131,7 +3130,7 @@ message ProjectServiceShowResponse {
   Project project = 1;
   // The settings its workers get, when a task names none, and where each comes from.
   repeated ProjectSetting settings = 2;
-  // The team's file, in the project's folder; empty for a project without one on this machine.
+  // The team's file, its djinn.yaml in the project's folder; empty for a project without one on this machine.
   string repository_file = 3;
   // Your own file, in Djinn's data folder. It wins over the team's, setting by setting.
   string developer_file = 4;

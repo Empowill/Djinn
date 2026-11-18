@@ -54,8 +54,8 @@ test("a push from the projects panel spins while its checks run, then its line f
   );
   fs.mkdirSync(path.join(folder, ".agents"));
   fs.writeFileSync(
-    path.join(folder, ".agents", "settings.txtpb"),
-    'checks { name: "slow" command: "sh wait.sh" when: CHECK_WHEN_PUSH }\n',
+    path.join(folder, ".agents", "djinn.yaml"),
+    "settings:\n  checks:\n    - {name: slow, command: sh wait.sh, when: push}\n",
   );
   git(folder, "add", ".");
   git(folder, "commit", "--quiet", "-m", "A brass lamp");

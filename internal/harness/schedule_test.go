@@ -692,12 +692,12 @@ func TestSpawnUnreadableSettingsWaitsThenStarts(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
 	repo := gitRepo(t)
-	settingsFile := filepath.Join(repo, ".agents", "settings.txtpb")
+	settingsFile := filepath.Join(repo, ".agents", "djinn.yaml")
 	if err := os.MkdirAll(filepath.Dir(settingsFile), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	// Invalid prototext syntax to make LoadSettings fail.
-	if err := os.WriteFile(settingsFile, []byte("provider: [invalid\n"), 0o600); err != nil {
+	// Invalid YAML to make LoadSettings fail.
+	if err := os.WriteFile(settingsFile, []byte(teamYAML("provider: [invalid\n")), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -724,7 +724,7 @@ func TestSpawnUnreadableSettingsWaitsThenStarts(t *testing.T) {
 	}
 
 	// Now fix the settings file.
-	if err := os.WriteFile(settingsFile, []byte("provider: PROVIDER_FAKE\n"), 0o600); err != nil {
+	if err := os.WriteFile(settingsFile, []byte(teamYAML("provider: fake\n")), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	e.h.wake()

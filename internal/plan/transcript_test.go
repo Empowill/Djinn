@@ -38,7 +38,7 @@ func TestSessionNotices(t *testing.T) {
 			c := serve(t, WithHome(t.TempDir()), WithNameMax(func(string) int { return tc.limit }))
 			dir := t.TempDir()
 			if tc.settings != "" {
-				writeFileAt(t, filepath.Join(dir, SettingsFile), tc.settings)
+				writeFileAt(t, filepath.Join(dir, ProjectConfigFiles[1]), teamYAML(tc.settings))
 			}
 			add, err := c.projects.Add(ctx, connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: dir}))
 			if err != nil {

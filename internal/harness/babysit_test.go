@@ -102,7 +102,7 @@ func babysitRepo(t *testing.T, remote, babysit, settings string) string {
 		filepath.Join(skill, "watch.sh"): "printf 'request %s, state %s\\n' \"$1\" \"$2\"\nsleep 0.02\necho 'MERGED: it is merged.'\nsleep 30\n",
 	}
 	if settings != "" {
-		files[filepath.Join(repo, ".agents", "settings.txtpb")] = settings
+		files[filepath.Join(repo, ".agents", "djinn.yaml")] = teamYAML(settings)
 	}
 	for path, text := range files {
 		if err := os.WriteFile(path, []byte(text), 0o600); err != nil {

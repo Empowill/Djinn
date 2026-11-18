@@ -36,7 +36,7 @@ A refused permission is not an error in itself: Claude and Codex tell the agent,
 ## A task's seal
 
 A task's seal is the set of constraints Djinn gives the worker of a task: what it may spend, what it may touch, how
-it shares the machine. Each part comes from a default of Djinn, the project's settings (`.agents/settings.txtpb`,
+it shares the machine. Each part comes from a default of Djinn, the project's settings (`settings:` in `.agents/djinn.yaml`,
 the developer's file over the repository's), the wish (its allowance), the task's spawn request, or Djinn's own
 flags; none of it is the worker's to change.
 
@@ -190,7 +190,7 @@ own environment, which never holds the guard. What the guard does not stop: a co
 first, or a remote given an explicit `pushurl` (which `pushInsteadOf` leaves alone).
 `TestGitGuardKeepsWorkersFromPushing` (`internal/harness/guard_test.go`) proves each case.
 
-Next to it, `.agents/settings.txtpb` gives the project's workers their default agent, model, budget and branch
+Next to it, `settings:` in `.agents/djinn.yaml` gives the project's workers their default agent, model, budget and branch
 name, shared by the team, your own file winning: [team settings](team-settings.md).
 
 ### How each agent receives it
@@ -797,7 +797,7 @@ the lead's program ended, with its output, until Lead starts it again (`TestRunU
 accept-edits` and `--project <Djinn's agy project>` (run without `--sandbox`: developer choice Decision Q66, as agy's sandbox
 blocks UNIX domain sockets needed for `djinn gate run lint`, which triggers an `unsandboxed` request that headless mode denies);
 `--conversation <id>` to resume, `--model` (the Summoning Circle stores the canonical identifier `"gemini-4-argon-high"`,
-and `"Gemini 4 Argon (High)"`, `"gemini-4-argon-high"`, `"gemini-4-argon"` or `"argon"` are accepted in `settings.txtpb`
+and `"Gemini 4 Argon (High)"`, `"gemini-4-argon-high"`, `"gemini-4-argon"` or `"argon"` are accepted in the settings files
 and `djinn task spawn`, all mapped to `"Gemini 4 Argon (High)"` for `agy --model`, the name `agy` expects; W383, W400, Q101, Q102); outside a project, refused until a real capture proves a read-only mode. No `-p`: it takes the prompt as its value, and stream-json
 input replaces it. Each message on the input is `{"event":"user","message":{"content":"…"}}` and runs one turn;
 the input is closed once every message has its result. agy cannot fork a conversation, and has no spending cap.

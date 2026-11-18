@@ -89,9 +89,9 @@ test("a project with something to fix: its gear and inbox line open its panel; t
     );
   }
   fs.writeFileSync(path.join(folder, "lamp-news.sh"), "exit 0\n");
-  const teamFile = path.join(folder, ".agents", "settings.txtpb");
+  const teamFile = path.join(folder, ".agents", "djinn.yaml");
   const teamSettings =
-    'checks { name: "lint" command: "true" when: CHECK_WHEN_COMMIT }\nmerge_main: MERGE_MAIN_OFF\n';
+    'settings:\n  checks:\n    - {name: lint, command: "true", when: commit}\n  merge_main: off\n';
   fs.writeFileSync(teamFile, teamSettings);
   // The reference: origin/main as fetched, the remote's default branch; the copy works on feature.
   git(folder, "init", "-q", "-b", "main");
@@ -261,7 +261,7 @@ test("a project with something to fix: its gear and inbox line open its panel; t
     await expect(team).toHaveText("the team's file");
     await expect(team).toHaveAttribute(
       "title",
-      path.join(directory, ".agents", "settings.txtpb"),
+      path.join(directory, ".agents", "djinn.yaml"),
     );
     const settings = boxes.filter({
       has: page.locator("h3", { hasText: "Settings" }),
@@ -317,7 +317,7 @@ test("a project with something to fix: its gear and inbox line open its panel; t
     expect(() => djinn("project", "set-branch", "lantern", "nope")).toThrow(
       /holds no origin\/nope/,
     );
-    fs.writeFileSync(teamFile, teamSettings + 'main_branch: "main"\n');
+    fs.writeFileSync(teamFile, teamSettings + "  main_branch: main\n");
     git(folder, "commit", "-q", "-am", "set main_branch");
     git(folder, "update-ref", "refs/remotes/origin/main", "HEAD");
     git(folder, "reset", "-q", "--hard", "HEAD~1");

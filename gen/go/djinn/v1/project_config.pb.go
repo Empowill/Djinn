@@ -32,6 +32,15 @@ const (
 // leaves the whole file out, said once: Djinn holds its defaults and goes on. A gate that is not valid is left out on
 // its own, said with its name: the other gates and the containers apply. Without the file, Djinn's defaults.
 //
+// Its settings: section holds the settings the team shares, a plan.v1.ProjectSettings in YAML (docs/team-settings.md),
+// which this message cannot name (plan.v1 imports djinn.v1): Djinn reads it apart, in the same file and the same way.
+// A value out of its bounds there leaves the whole file out too, and the project's tasks wait until it is fixed. Djinn
+// no longer reads .agents/settings.txtpb, where they lived before: one left there is a warning.
+//
+//	settings:
+//	  setup: npm ci
+//	  checks:
+//	    - {name: lint, command: task lint, when: commit}
 //	containers:
 //	  memory_mib: 8192
 //	  pids: 2048
