@@ -38,17 +38,29 @@ interruption and thaw; a frozen worker's time is left out of its budget. You cho
 thaws what it froze. On a laptop where the browser leaves Djinn little room, 5 % comes fast: choose 3 %, or Off. A flag
 of djinn up, or its environment variable, fixes the percent for one run instead, and the Circle then says so.
 
-**The disk.** The **Disk** tab of the Hourglass draws a bar of the whole disk (with the 30 GB and 10 GB guard marks)
-above two tabs: **Djinn and its workers** (worktrees, Playwright, tilasms, scratch, logs, and any isolated Go build
-caches) and **Machine** (the Go build and module caches, Docker build cache, images and volumes when Docker is
-installed, pnpm, uv, pip, npm, and JetBrains), grouped by risk (**Safe**, **Rebuilds**, **Data loss**) with each item's
-size, what its cleanup frees, and the command to copy (plus one row at the bottom to copy all safe commands at once;
-Djinn never runs a cleanup command itself). The Go builds Djinn runs, in its workers and its checks, share one Go build cache across
+**The disk.** The **Disk** tab of the Hourglass draws a bar of the whole disk (with the 30 GB and 10 GB guard marks),
+split into its sources: Go, Docker, Djinn, other caches, the home, the system, and what is left unmeasured. Below it,
+three tabs: **Djinn and its workers** (each project's worktrees and scratch, with the share of tasks ended, done or
+cancelled, that still keep theirs; Playwright, tilasms, logs, the data folder, and any isolated Go build caches),
+**Machine** (the Go build cache, the Go module and download caches, golangci-lint, Docker build cache, images and
+volumes when Docker is installed, pnpm, uv, pip, npm, and JetBrains), grouped by risk (**Safe**, **Rebuilds**, **Data
+loss**) with each item's size, what its cleanup frees, and the command to copy (plus one row at the bottom to copy all
+safe commands at once; Djinn never runs a cleanup command itself), and **Rest of the disk**: each entry of your home
+folder (those of the caches, settings, local data and Go folders one by one, the small ones summed in one row) and
+the system folders on the same disk, without what the other tabs count.
+
+Sizes count what files take on the disk, as du does: on an encrypted home, a small file takes far more than its
+length. Each folder has its own time to be measured: one that runs out keeps its last whole size, or shows a floor
+(≥). A measure that took long holds longer before the next, a few times a day at most for a slow disk; the rest of the
+disk is measured by a slow pass in the background every 6 hours, kept across restarts. What stays unmeasured is what
+no pass reads (folders only root reads, the file system's own records) and what changed since: it should stay small.
+
+The Go builds Djinn runs, in its workers and its checks, share one Go build cache across
 worktrees: an unchanged package is compiled once, not once per worktree. Before a worker starts and before push checks,
 Djinn reads the free space of its data folder's disk and of the Go build cache's, when Go is installed. Under 30 GB
 free, it deletes the cache entries unused for a day. Under 10 GB, the Djinn tells you the disk is almost full and names
-the biggest folders it knows, and the push checks wait until space comes back, instead of failing. Both thresholds are
-flags of djinn up.
+the biggest sources it knows: a project's worktrees and what of them ended tasks take, the caches, the entries of your
+home; the push checks wait until space comes back, instead of failing. Both thresholds are flags of djinn up.
 
 > **This page is a sketch.** Its full guide, how to use it from the window and from the Djinn, what to expect and
 > the common mistakes, is being written.

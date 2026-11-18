@@ -687,6 +687,14 @@ html[data-theme="light"] .resource-chart-readout {
   background: var(--term-magenta);
 }
 
+.resource-disk-seg.seg-home {
+  background: var(--term-green);
+}
+
+.resource-disk-seg.seg-system {
+  background: var(--n-65);
+}
+
 .resource-disk-seg.seg-unmeasured {
   background: var(--n-47);
 }
@@ -748,6 +756,14 @@ html[data-theme="light"] .resource-chart-readout {
   background: var(--term-magenta);
 }
 
+.resource-disk-swatch.seg-home {
+  background: var(--term-green);
+}
+
+.resource-disk-swatch.seg-system {
+  background: var(--n-65);
+}
+
 .resource-disk-swatch.seg-unmeasured {
   background: var(--n-47);
 }
@@ -785,6 +801,7 @@ html[data-theme="light"] .resource-chart-readout {
 }
 
 .resource-disk-djinn,
+.resource-disk-rest,
 .resource-disk-machine {
   display: flex;
   flex-direction: column;
@@ -818,6 +835,16 @@ html[data-theme="light"] .resource-chart-readout {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.resource-disk-folder {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.resource-disk-ended {
+  font-size: var(--font-size-small);
 }
 
 .resource-disk-size {

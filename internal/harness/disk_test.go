@@ -1,6 +1,7 @@
 package harness
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -40,12 +41,28 @@ func withDiskTest(cache string, poll time.Duration) Option {
 		h.disk.cacheDir = func() string { return cache }
 		h.disk.poll = poll
 		h.disk.wait = 5 * time.Second // A slow disk's first walk comes back whole, never in part (W492).
-		h.disk.folders = func(cache string) []string {
-			return slices.DeleteFunc(h.knownFolders(cache), func(dir string) bool {
-				return dir != cache && !strings.HasPrefix(dir, h.home)
+		h.disk.folders = func(cache string) []diskDir {
+			return slices.DeleteFunc(h.knownFolders(cache), func(dir diskDir) bool {
+				return dir.path != cache && !strings.HasPrefix(dir.path, h.home)
 			})
 		}
+		h.disk.measure = func(context.Context, time.Time, string) []*machinev1.DiskItem { return nil }
+		h.disk.restRoots = func() (string, []string) { return "", nil }
 	}
+}
+
+// onDiskOf is what the files at paths take on disk, as the measures count them.
+func onDiskOf(t *testing.T, paths ...string) uint64 {
+	t.Helper()
+	var total uint64
+	for _, p := range paths {
+		info, err := os.Lstat(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		total += onDisk(info)
+	}
+	return total
 }
 
 // diskLines are the texts of the lead's disk events, with their detail.
@@ -271,7 +288,7 @@ func TestDiskGuard(t *testing.T) {
 	eventually(t, func() bool { return len(diskLines(queue)) > 0 }, func() string { return "no disk event" })
 	lines := diskLines(queue)
 	if len(lines) != 1 || !strings.HasPrefix(lines[0], "Djinn: disk almost full, 5.0 GB free where Djinn's data folder is (under 10 GB)") ||
-		!strings.Contains(lines[0], "Biggest folders Djinn knows: "+f.dir+" ") {
+		!strings.Contains(lines[0], "Biggest on the disk: "+f.dir+" ") {
 		t.Errorf("the lead heard %q; want one line, with the free space and the Go build cache among the biggest folders", lines)
 	}
 
@@ -382,8 +399,11 @@ func TestDiskFolders(t *testing.T) {
 	for _, f := range got {
 		sizes[f.GetPath()] = f.GetSizeBytes()
 	}
-	if sizes[cache] != 500_000 || sizes[nodeModules] != 300_000 || sizes[worktrees] != 80_000 || sizes[logs] != 10_000 {
-		t.Errorf("sizes = %v; want cache=500000, node_modules=300000, worktrees=80000, logs=10000", sizes)
+	wantCache, wantModules := onDiskOf(t, filepath.Join(cache, "ab", "entry")), onDiskOf(t, filepath.Join(nodeModules, "pkg", "index.js"))
+	wantTrees, wantLogs := onDiskOf(t, filepath.Join(worktrees, "w1", "file.go")), onDiskOf(t, filepath.Join(logs, "djinn.log"))
+	if sizes[cache] != wantCache || sizes[nodeModules] != wantModules || sizes[worktrees] != wantTrees || sizes[logs] != wantLogs {
+		t.Errorf("sizes = %v; want cache=%d, node_modules=%d, worktrees=%d, logs=%d", sizes, wantCache, wantModules,
+			wantTrees, wantLogs)
 	}
 	if sizes[e.h.home] <= sizes[worktrees]+sizes[logs] {
 		t.Errorf("home size = %d; want > worktrees+logs (%d)", sizes[e.h.home], sizes[worktrees]+sizes[logs])
@@ -394,8 +414,8 @@ func TestDiskFolders(t *testing.T) {
 	clock.set(start.Add(time.Minute))
 	cached := e.h.DiskFolders()
 	for _, f := range cached {
-		if f.GetPath() == logs && f.GetSizeBytes() != 10_000 {
-			t.Errorf("within diskFoldersEvery, logs size = %d; want cached 10000", f.GetSizeBytes())
+		if f.GetPath() == logs && f.GetSizeBytes() != wantLogs {
+			t.Errorf("within diskFoldersEvery, logs size = %d; want cached %d", f.GetSizeBytes(), wantLogs)
 		}
 	}
 
@@ -408,8 +428,8 @@ func TestDiskFolders(t *testing.T) {
 			freshLogs = f.GetSizeBytes()
 		}
 	}
-	if freshLogs != 30_000 {
-		t.Errorf("after diskFoldersEvery, logs size = %d; want 30000", freshLogs)
+	if want := wantLogs + onDiskOf(t, filepath.Join(logs, "more.log")); freshLogs != want {
+		t.Errorf("after diskFoldersEvery, logs size = %d; want %d", freshLogs, want)
 	}
 }
 
@@ -488,18 +508,26 @@ func TestDiskItems(t *testing.T) {
 		count       int32
 		djinn       bool
 	}
+	at := func(parts ...string) uint64 { return onDiskOf(t, filepath.Join(append([]string{fakeHome}, parts...)...)) }
+	oldBuild := at(".cache", "go-build", "01", "old-entry")
+	goBuildSize := oldBuild + at(".cache", "go-build", "02", "fresh-entry")
+	isolated := at(".cache", "w12-go-build", "aa", "entry") + at(".cache", "et4224-go-build", "bb", "entry")
+	goMod := at("go", "pkg", "mod", "cache", "download", "mod.zip")
+	jetbrains := at(".cache", "JetBrains", "GoLand", "index.dat")
+	pnpm := at(".local", "share", "pnpm", "store", "v3", "pkg") + at(".cache", "pnpm", "dlx", "pkg")
+	pip, uv, npm := at(".cache", "pip", "http", "wheel"), at(".cache", "uv", "archive", "whl"), at(".npm", "_cacache", "tar")
 	wants := map[string]wantItem{
 		"docker-builder": {19_000_000_000, 12_900_000_000, false, machinev1.DiskRisk_DISK_RISK_REBUILD, "docker builder prune -f", 0, false},
 		"docker-images":  {15_600_000_000, 6_800_000_000, false, machinev1.DiskRisk_DISK_RISK_REBUILD, "docker image prune -a -f", 0, false},
 		"docker-volumes": {3_200_000_000, 1_100_000_000, false, machinev1.DiskRisk_DISK_RISK_LOSS, "docker volume prune -f", 0, false},
-		"go-build":       {800_000, 600_000, false, machinev1.DiskRisk_DISK_RISK_REBUILD, "find ~/.cache/go-build -type f -mmin +360 -delete", 0, false},
-		"go-isolated":    {500_000, 500_000, false, machinev1.DiskRisk_DISK_RISK_REBUILD, "rm -rf ~/.cache/*-go-build", 2, true},
-		"go-mod":         {400_000, 400_000, false, machinev1.DiskRisk_DISK_RISK_REBUILD, "go clean -modcache", 0, false},
-		"jetbrains":      {90_000, 90_000, false, machinev1.DiskRisk_DISK_RISK_LOSS, "rm -rf ~/.cache/JetBrains", 0, false},
-		"pnpm":           {80_000, 0, true, machinev1.DiskRisk_DISK_RISK_SAFE, "pnpm store prune", 0, false},
-		"pip":            {40_000, 40_000, false, machinev1.DiskRisk_DISK_RISK_REBUILD, "pip cache purge", 0, false},
-		"uv":             {30_000, 0, true, machinev1.DiskRisk_DISK_RISK_SAFE, "uv cache prune", 0, false},
-		"npm":            {20_000, 20_000, false, machinev1.DiskRisk_DISK_RISK_REBUILD, "npm cache clean --force", 0, false},
+		"go-build":       {goBuildSize, oldBuild, false, machinev1.DiskRisk_DISK_RISK_REBUILD, "find ~/.cache/go-build -type f -mmin +360 -delete", 0, false},
+		"go-isolated":    {isolated, isolated, false, machinev1.DiskRisk_DISK_RISK_REBUILD, "rm -rf ~/.cache/*-go-build", 2, true},
+		"go-mod":         {goMod, goMod, false, machinev1.DiskRisk_DISK_RISK_REBUILD, "go clean -modcache", 0, false},
+		"jetbrains":      {jetbrains, jetbrains, false, machinev1.DiskRisk_DISK_RISK_LOSS, "rm -rf ~/.cache/JetBrains", 0, false},
+		"pnpm":           {pnpm, 0, true, machinev1.DiskRisk_DISK_RISK_SAFE, "pnpm store prune", 0, false},
+		"pip":            {pip, pip, false, machinev1.DiskRisk_DISK_RISK_REBUILD, "pip cache purge", 0, false},
+		"uv":             {uv, 0, true, machinev1.DiskRisk_DISK_RISK_SAFE, "uv cache prune", 0, false},
+		"npm":            {npm, npm, false, machinev1.DiskRisk_DISK_RISK_REBUILD, "npm cache clean --force", 0, false},
 	}
 	for kind, w := range wants {
 		it := byKind[kind]

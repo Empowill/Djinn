@@ -351,9 +351,10 @@ minutes; no `go`, no cache step, nothing said):
   a missing file. Never `go clean -cache`, never `/tmp/go-build*`. `djinn.log` says what it freed (`go build cache
   trimmed`, its entries and bytes).
 - Under `--disk-full-gb` free where the data folder or the cache is (10 by default, `$DJINN_DISK_FULL_GB`), the lead
-  hears one `disk` event, "disk almost full", with the free space; its detail names the biggest folders Djinn knows
-  (the Go build cache, each project's worktrees, Djinn's logs and tilasms, the npm and Playwright caches, the
-  temporary folder). The push checks wait instead of failing, and so do push checks that ran out of space ("no space
+  hears one `disk` event, "disk almost full", with the free space; its detail names the five biggest sources Djinn
+  knows on the disk, from the Hourglass's last measures (W122): each project's worktrees and scratch with what ended
+  tasks' take of them, the caches (Go, golangci-lint, Docker, npm…), Djinn's logs and tilasms, the entries of the home
+  and the system folders the slow pass measured. It waits up to two minutes on a first measure. The push checks wait instead of failing, and so do push checks that ran out of space ("no space
   left on device") as the disk filled up: nothing held, no correction. Djinn reads the free space every 30 seconds;
   once it is back over the threshold, the lead hears it and the push checks run.
 

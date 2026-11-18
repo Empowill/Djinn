@@ -14923,8 +14923,9 @@ export enum LeadEventKind {
 
   /**
    * The disk is almost full, or space came back (W303): one line each, of no wish. Under the threshold (djinn up
-   * --disk-full-gb), the line names the free space, the detail the biggest folders Djinn knows; the push checks wait
-   * instead of failing, and run once space comes back.
+   * --disk-full-gb), the line names the free space, the detail the biggest sources Djinn knows on the disk (a
+   * project's worktrees and what ended tasks' take of them, the caches, the home's entries, W122); the push checks
+   * wait instead of failing, and run once space comes back.
    *
    * @generated from enum value: LEAD_EVENT_KIND_DISK = 20;
    */

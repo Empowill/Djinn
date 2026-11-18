@@ -79,7 +79,7 @@ address in the data folder, for the other commands.`,
 		{
 			Name: "--disk-full-gb", Type: "int", Default: "10", Env: "DJINN_DISK_FULL_GB",
 			Help: "Under this many GB free where Djinn's data folder or the Go build cache is, tell the lead the disk is " +
-				"almost full, naming the biggest folders, and hold the push checks until space comes back; 0 never; " +
+				"almost full, naming the biggest sources on the disk, and hold the push checks until space comes back; 0 never; " +
 				"default $DJINN_DISK_FULL_GB.",
 		},
 		{
