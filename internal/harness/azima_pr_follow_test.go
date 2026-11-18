@@ -146,3 +146,75 @@ func TestAzimaPRFollowed(t *testing.T) {
 		}
 	})
 }
+
+// TestAzimaPRFollowedClosedAzima: the forge read again (Q534 B) tells the lead nothing of the request of an azima
+// already closed, merged or closed without a merge: it records where the request stands, and the lead, who closed the
+// azima, hears no landed and no "the azima stays open". An azima still open hears both (W108, wish Dew: 12 landed and
+// 4 moves for azimas the brief showed done).
+func TestAzimaPRFollowedClosedAzima(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+
+	const url = "https://github.com/acme/app/pull/42"
+	for _, c := range []struct {
+		name, state string
+		closed      bool
+		want        planv1.AzimaPrState
+		told        string // the lead's line about T1 once the forge is read again; empty: none
+	}{
+		{"merged, azima closed", "MERGED", true, planv1.AzimaPrState_AZIMA_PR_STATE_MERGED, ""},
+		{"closed, azima closed", "CLOSED", true, planv1.AzimaPrState_AZIMA_PR_STATE_CLOSED, ""},
+		{"merged, azima open", "MERGED", false, planv1.AzimaPrState_AZIMA_PR_STATE_MERGED, "landed Djinn: T1's work is in"},
+		{"closed, azima open", "CLOSED", false, planv1.AzimaPrState_AZIMA_PR_STATE_CLOSED,
+			"move T1: PR #42 closed without merging, the azima stays open"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			in := integrating(t)
+			in.setAzimaStrategy(t)
+			in.remote(t)
+			queue := &leadQueue{}
+			in.h.NotifyLead(queue.notify)
+			forge := &fakeForge{views: map[string]string{}}
+			in.mu.Lock()
+			in.forge = forge
+			in.mu.Unlock()
+			t1, b1 := openAzimaRequest(t, in, forge,
+				`{"number":42,"state":"OPEN","baseRefName":"main","mergeable":"MERGEABLE","url":"`+url+`"}`)
+			if c.closed {
+				_, err := in.h.Done(t.Context(), "/plan.v1.TaskService/Done", &planv1.TaskServiceDoneRequest{
+					TaskId: t1.GetId(), By: planv1.Closer_CLOSER_LEAD, Note: "closed by hand",
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if got := in.get(t, t1.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE ||
+					got.GetAzima().GetPr().GetState() != planv1.AzimaPrState_AZIMA_PR_STATE_OPEN {
+					t.Fatalf("T1 = %v, request %v; want done, its request recorded open", got.GetStatus(), got.GetAzima().GetPr())
+				}
+			}
+			before := len(leadLines(queue, "T1"))
+
+			forge.mu.Lock()
+			delete(forge.views, b1)
+			forge.views["42"] = `{"number":42,"state":"` + c.state + `","baseRefName":"main","mergeable":"UNKNOWN","url":"` + url + `"}`
+			forge.mu.Unlock()
+			in.pass(t, 0)
+			in.pass(t, 0)
+
+			if pr := in.get(t, t1.GetId()).GetAzima().GetPr(); pr.GetState() != c.want || pr.GetUrl() != url {
+				t.Errorf("T1's request = %v, want %v at %s", pr, c.want, url)
+			}
+			lines := leadLines(queue, "T1")[before:]
+			told := slices.DeleteFunc(slices.Clone(lines), func(l string) bool {
+				return !strings.HasPrefix(l, "landed ") && !strings.Contains(l, "closed without merging")
+			})
+			switch {
+			case c.told == "" && len(told) != 0:
+				t.Errorf("lead lines about the closed T1 = %q, want none", told)
+			case c.told != "" && (len(told) != 1 || !strings.HasPrefix(told[0], c.told)):
+				t.Errorf("lead lines about T1 = %q, want %q once", lines, c.told)
+			}
+		})
+	}
+}

@@ -2984,11 +2984,12 @@ func (h *Harness) azimaPRPass(
 				}
 			}
 		case "MERGED":
-			// Its work is in main (merged.go), unless work was added since or still runs: markMerged looks again.
+			// Its work is in main (merged.go), unless work was added since or still runs: markMerged looks again. An
+			// azima already closed is only marked: the lead closed it, it hears nothing of it (W108).
 			if azima.GetAzima().GetPr().GetState() != planv1.AzimaPrState_AZIMA_PR_STATE_MERGED {
 				h.markMerged(ctx, azima.GetId(), &planv1.AzimaMerged{
 					Time: timestamppb.New(h.now()), RequestUrl: pr.URL, MainBranch: base,
-				})
+				}, !plan.Finished(azima))
 			}
 			h.recordAzimaPR(ctx, azima, &planv1.AzimaPr{Url: pr.URL, State: planv1.AzimaPrState_AZIMA_PR_STATE_MERGED})
 			if azima.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE && !h.unfinishedParts(ctx, azima) {
@@ -3034,7 +3035,7 @@ func (h *Harness) unfinishedParts(ctx context.Context, azima *planv1.Task) bool 
 
 // azimaPRClosed records that the pull request of azima was closed on the forge without being merged, and tells the
 // lead, once: Djinn shows it closed and closes nothing (Q534 B); the lead reopens it, has another opened, or closes the
-// azima if its work is dropped.
+// azima if its work is dropped. An azima already closed is only recorded: the lead has nothing left to settle (W108).
 func (h *Harness) azimaPRClosed(ctx context.Context, project *planv1.Project, azima *planv1.Task, pr *forgePR) {
 	closed := &planv1.AzimaPr{Url: pr.URL, State: planv1.AzimaPrState_AZIMA_PR_STATE_CLOSED}
 	if proto.Equal(azima.GetAzima().GetPr(), closed) {
@@ -3055,6 +3056,9 @@ func (h *Harness) azimaPRClosed(ctx context.Context, project *planv1.Project, az
 		return
 	}
 	h.notify()
+	if plan.Finished(azima) {
+		return
+	}
 	h.tellLeadDetail(ctx, planv1.LeadEventKind_LEAD_EVENT_KIND_MOVE, azima.GetWishId(), azima.GetCode(),
 		fmt.Sprintf("%s: %s closed without merging, the azima stays open", azima.GetCode(), name),
 		fmt.Sprintf("The forge says %s is closed, not merged. Djinn shows it closed and closes nothing: reopen it, open "+

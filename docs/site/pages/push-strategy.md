@@ -101,7 +101,8 @@ merge?* Merging is yours: Djinn only notes your answer, and marks the azima done
 Once open, the request is read on the forge again at each pass, by its number: a watcher that keeps running in the
 azima, or a branch the forge deleted at the merge, never leaves it shown open. Closed without being merged, Djinn
 closes nothing: the Djinn reopens it, has another one opened for the branch, or closes the azima if its work is
-dropped. Reopened, or another one opened, the card shows it open again.
+dropped. Reopened, or another one opened, the card shows it open again. For an azima already closed, the card shows
+where its request stands, merged or closed, and the Djinn hears nothing of it: it closed the azima.
 
 ### No azima waits for another
 
