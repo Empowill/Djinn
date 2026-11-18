@@ -218,6 +218,12 @@ func (h *Harness) forkInstead(ctx context.Context, err error, t *planv1.Task, pr
 	if in := t.GetIntegration(); in.GetState() == planv1.IntegrationState_INTEGRATION_STATE_COMMITTED && in.GetBranch() != "" {
 		why = fmt.Sprintf("its work merged into %s, which removed it", in.GetBranch())
 	}
+	if f := t.GetFreed(); f != nil {
+		why = "Djinn freed it once the task was finished, " + freedWhy(f.GetRule())
+		if f.GetBranchDeleted() {
+			why += ", its local branch with it"
+		}
+	}
 	words := []string{"djinn", "task", "spawn", t.GetWishId(), "--title", shellQuote(t.GetTitle())}
 	part := ""
 	if azima, _ := h.azimaOf(ctx, t); azima != "" {

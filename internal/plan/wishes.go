@@ -36,6 +36,15 @@ type WishWorkers interface {
 	StopWish(ctx context.Context, wishID string) error
 	HasRun(taskID string) bool
 	CloseOutrun(wishID, code string)
+	// Free frees at once the worktrees, scratch and local branches of the tasks of the wishes granted (Q75).
+	Free()
+}
+
+// free asks the workers to free the folders of a granted wish's tasks at once; without workers, nothing.
+func (w *Wishes) free(context.Context) {
+	if w.Workers != nil {
+		w.Workers.Free()
+	}
 }
 
 // shelve stops the workers of the wishes paused, and wakes the scheduler for the active ones; without workers,
@@ -189,6 +198,7 @@ func (w *Wishes) Grant(
 	if err != nil {
 		return nil, err
 	}
+	w.free(ctx)
 	return connect.NewResponse(&planv1.WishServiceGrantResponse{Wish: wish}), nil
 }
 

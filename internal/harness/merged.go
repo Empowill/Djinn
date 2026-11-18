@@ -248,6 +248,7 @@ func (h *Harness) markMerged(ctx context.Context, id string, m *planv1.AzimaMerg
 		return
 	}
 	h.notify()
+	h.Free() // A validated azima frees its tasks' folders at once (Q75).
 	if !tell {
 		return
 	}

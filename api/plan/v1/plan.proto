@@ -1585,6 +1585,31 @@ message Task {
   // releases it; the worker's first prompt then says the decision, or the withdrawal and its note. Kept once
   // released, as a record of what it waited for.
   repeated string hold_question_ids = 82;
+  // When and why Djinn freed the task's worktree and scratch by itself once it was finished (Q75); djinn task continue
+  // then says to fork it. Unset while they are on disk, or when they went another way (merged, cancelled, deleted).
+  Freed freed = 83;
+}
+
+// Freed says when and why Djinn freed a finished task's worktree and scratch by itself (Q75). It never frees a worktree
+// holding changes not committed, nor a branch with commits found neither in the integration branch nor on the remote,
+// and never touches a remote branch.
+message Freed {
+  google.protobuf.Timestamp time = 1;
+  FreeRule rule = 2;
+  // Its local branch went too, every commit of it being in the integration branch or on the remote; kept otherwise.
+  bool branch_deleted = 3;
+}
+
+// FreeRule is the rule of Q75 that freed a task's worktree and scratch.
+enum FreeRule {
+  FREE_RULE_UNSPECIFIED = 0;
+  // Done or cancelled 30 days ago: its branch stays.
+  FREE_RULE_AGE = 1;
+  // Its azima was validated, its request merged or closed as done by the developer or the lead: its local branch goes
+  // too.
+  FREE_RULE_AZIMA = 2;
+  // Its wish was granted, which validates all its azimas: its local branch goes too.
+  FREE_RULE_GRANT = 3;
 }
 
 // TaskHold is what holds a planned task that waits (Task.hold).

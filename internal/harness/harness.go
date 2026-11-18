@@ -177,6 +177,9 @@ type Harness struct {
 	// The disks' free space, as Djinn knows it (disk.go).
 	disk disk
 
+	// The freeing of finished tasks' worktrees and scratch (free.go).
+	free freeing
+
 	// Babysitting what tasks open (babysit.go).
 	babysitting sync.WaitGroup // one per look for what a task opened; Close waits for them
 	babysitMu   sync.Mutex     // one watcher decided at a time
@@ -356,6 +359,7 @@ func New(s *store.Store, home string, providers map[planv1.Provider]Provider, op
 	h := &Harness{
 		store: s, home: home, providers: providers, ctx: ctx, cancel: cancel, runs: map[string]*run{},
 		tick: 2 * time.Second, kick: make(chan struct{}, 1), changed: make(chan struct{}),
+		free:          freeing{every: freeEvery, kick: make(chan struct{}, 1)},
 		integrateKick: make(chan struct{}, 1), configKick: make(chan struct{}, 1), tested: map[string]tested{}, mainTested: map[string]mainTested{}, pushWaits: map[string]bool{}, toldApart: map[string]bool{}, mergedLooks: map[string]time.Time{}, protectedLooks: map[string]protectedLook{},
 		pushJobs:  map[string]*pushJob{},
 		installed: map[string]string{}, preempted: map[string]string{}, rateHits: map[string]int{}, aliases: map[string]string{},
@@ -417,6 +421,9 @@ func (h *Harness) Close() {
 	h.scheduling.Do(func() {}) // No scheduler starts from now on.
 	if h.loopDone != nil {
 		<-h.loopDone
+	}
+	if h.free.done != nil {
+		<-h.free.done
 	}
 	h.integrating.Do(func() {}) // Nor any integration.
 	if h.integrateDone != nil {
