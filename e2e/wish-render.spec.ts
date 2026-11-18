@@ -852,6 +852,10 @@ test("the version shows at the foot of the menu and in the tooltips of the perso
   // The tag stays clear of the toggle, the side panel at its widest and at its narrowest unfolded (1300px and less).
   for (const width of [1800, 1440, 1100, 830]) {
     await page.setViewportSize({ width, height: 900 });
+    // The panel's width glides to its new value: measure where it lands, not on the way (W115).
+    await page
+      .locator(".sidebar")
+      .evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)));
     const tag = (await page.locator(".version-tag").boundingBox())!;
     const toggle = (await page.locator(".sidebar-toggle").boundingBox())!;
     expect(tag.x + tag.width, `at ${width}px`).toBeLessThan(toggle.x);
