@@ -99,27 +99,28 @@ A project is a folder Djinn's workers work in. Git or not: a folder outside Git 
   type the path in the browser) and, optionally, a name.
 - From a terminal: `djinn project add <folder>`.
 
-Click a project to see its configuration, as Djinn reads it on this machine. What waits for you comes first, in red
-("To fix"): each thing in a sentence, the error as read, and what settles it (a file to correct, a source to plug in or
-say no to, a skill to unsummon). Then its reference branch (the ref and commit Djinn merges, and where its name comes
-from): in Git with a remote, Djinn reads the project's settings, permissions and skills on it, at the last fetch, not
-in your copy; **Change** chooses another among the remote's branches, written in your own file, never in the repository
-(`djinn project set-branch <project> dev`, `--unset` takes it back). Djinn watches that branch: every 5 minutes, and
-after each of its pushes, it fetches it alone and compares the digest of `.agents`, `.claude/skills` and `djinn.yaml`
-with its last look; when they moved, the panel's **What changed on origin/main** tells each commit that changed them,
-who and when, in sentences ("New check e2e before a push", "Permissions: 1 more command the workers may run: curl", "New skill
-open-pr, with a wish template"). A change is applied as soon as it is fetched. One that gives the workers more (a
-command allowed, editing, the network, the auto mode), or changes what a skill makes or runs for Djinn (a wish
-template, a babysit, the command of a source you plugged in), is a thing to fix until you mark it **Seen**
-(`djinn project acknowledge <project>`, or `djinn project acknowledge <project> <commit>` for one); a new source asks
-through its own line, until you plug it in or say no. A failed fetch is said there, as git said it. Then its checks, the inbox sources of this machine, its skills with the role each has for Djinn (a wish template, an
-inbox source, a babysit, or know-how for the workers alone), its push cadence, and every other setting with where it
-comes from: Djinn's default, the team's file or yours. In the **Summoning Circle** (below the Grimoire in the side
-panel), you choose one model per kind of worker across all projects (Djinn the lead, investigation, mockup, ifrit, work,
-merge correction, merge review, and question investigator), with **Same as lead** as the default for every row below the
-lead (`djinn lead get-circle`, `djinn lead set-circle`). Skills summoned from another
-project show "from app".
-`djinn skill summon app/babysit-mr --into infra` lets infra's workers use a skill of app without a copy.
+Click a project to see its configuration, as Djinn reads it on this machine: a page of the window, in tabs. What waits
+for you comes first, above the tabs, in red ("To fix"): each thing in a sentence, the error as read, and what settles it
+(a file to correct, a source to plug in or say no to, a skill to unsummon). Then its reference branch (the ref and
+commit Djinn merges, and where its name comes from): in Git with a remote, Djinn reads the project's settings,
+permissions and skills on it, at the last fetch, not in your copy; **Change** chooses another among the remote's
+branches, written in your own file, never in the repository (`djinn project set-branch <project> dev`, `--unset` takes
+it back). Djinn watches that branch: every 5 minutes, and after each of its pushes, it fetches it alone and compares the
+digest of `.agents`, `.claude/skills` and `djinn.yaml` with its last look; when they moved, the **Changes on main** tab
+tells each commit that changed them, who and when, in sentences ("New check e2e before a push", "Permissions: 1 more
+command the workers may run: curl", "New skill open-pr, with a wish template"). A change is applied as soon as it is
+fetched. One that gives the workers more (a command allowed, editing, the network, the auto mode), or changes what a
+skill makes or runs for Djinn (a wish template, a babysit, the command of a source you plugged in), is a thing to fix
+until you mark it **Seen** (`djinn project acknowledge <project>`, or `djinn project acknowledge <project> <commit>` for
+one); a new source asks through its own line, until you plug it in or say no. A failed fetch is said there, as git said
+it. The other tabs hold its checks and gates (**Gates and checks**), its skills with the role each has for Djinn (a wish
+template, an inbox source, a babysit, or know-how for the workers alone) and the inbox sources of this machine
+(**Skills**), its push cadence (**Integration and push**), and every other setting with where it comes from: Djinn's
+default, the team's file or yours. In the **Summoning Circle** (below the Grimoire in the side panel), you choose one
+model per kind of worker across all projects (Djinn the lead, investigation, mockup, ifrit, work, merge correction,
+merge review, and question investigator), with **Same as lead** as the default for every row below the lead (`djinn lead
+get-circle`, `djinn lead set-circle`). Skills summoned from another project show "from app". `djinn skill summon
+app/babysit-mr --into infra` lets infra's workers use a skill of app without a copy.
 
 ## A wish
 
@@ -609,12 +610,12 @@ checks. `djinn task stop W12` stops it and keeps its work without integrating it
 
 ## Watchers and wish templates
 
-A *watcher* is a task that runs a command, with no agent and no model: a pipeline, a merge request, a queue. Each
-new paragraph it prints wakes the Djinn. Its card shows the first line of its last paragraph; **Pause the worker**
-holds it, **Resume the worker** lets it go on. Its command runs when the project lists it in
-`.agents/permissions.txtpb`, when a skill of the project declares it (a template's or a babysit's watcher, as Djinn
-builds it), or when you allow it for yourself in the project's panel ("Watcher commands you allow") or with `djinn
-project allow <project> --watch '<command>'`: [what a watcher may run](wish-templates.md#what-a-watcher-may-run).
+A *watcher* is a task that runs a command, with no agent and no model: a pipeline, a merge request, a queue. Each new
+paragraph it prints wakes the Djinn. Its card shows the first line of its last paragraph; **Pause the worker** holds it,
+**Resume the worker** lets it go on. Its command runs when the project lists it in `.agents/permissions.txtpb`, when a
+skill of the project declares it (a template's or a babysit's watcher, as Djinn builds it), or when you allow it for
+yourself on the Permissions tab of the project's settings ("Watcher commands you allow") or with `djinn project allow
+<project> --watch '<command>'`: [what a watcher may run](wish-templates.md#what-a-watcher-may-run).
 
 A *wish template* turns a request that comes back (babysit a pull request, a QA run) into a wish that already knows
 how to work: a skill declares it in its `SKILL.md`. When a routed request matches it, the new wish starts its watcher
@@ -647,25 +648,24 @@ the cards, and the window shows each new item as a system notification. Nothing 
 lamp** takes the recommended choice. Djinn only reads a source: it never comments, reacts or replies. `djinn inbox
 list` lists the items.
 
-The sources live in their project's panel, under "Inbox sources", on this machine: what each reads, how its last run
-went, and **Plug in** or **Unplug**, with what it does written under the button. A source runs only once plugged in, on
-this machine; one this machine has not decided on is one of the project's things to fix, until you plug it in or
-unplug it to say no. One you plugged in that fails gets a card of the kind **Djinn's configuration**: the error, since
-when, how many runs failed in a row. Djinn runs it again on its own, and the first run that goes well takes the card
-away; its other choice unplugs it.
-A skill whose `metadata` Djinn cannot read is not listed as a source: it is one of the project's things to fix, at the
-top of its panel and in `djinn project show`. Until it is fixed, Djinn ignores what it declares. Another line that
-breaks the YAML, like `argument-hint: [a] [b]`, which Claude Code reads anyway, is only an information there, with the
-line at fault: Djinn reads `metadata` apart from it. Details: [the
-inbox](wish-templates.md#the-inbox-what-comes-from-outside).
+The sources live in their project's settings, on the Skills tab, under "Inbox sources", on this machine: what each
+reads, how its last run went, and **Plug in** or **Unplug**, with what it does written under the button. A source runs
+only once plugged in, on this machine; one this machine has not decided on is one of the project's things to fix, until
+you plug it in or unplug it to say no. One you plugged in that fails gets a card of the kind **Djinn's configuration**:
+the error, since when, how many runs failed in a row. Djinn runs it again on its own, and the first run that goes well
+takes the card away; its other choice unplugs it. A skill whose `metadata` Djinn cannot read is not listed as a source:
+it is one of the project's things to fix, at the top of its settings page and in `djinn project show`. Until it is
+fixed, Djinn ignores what it declares. Another line that breaks the YAML, like `argument-hint: [a] [b]`, which Claude
+Code reads anyway, is only an information there, with the line at fault: Djinn reads `metadata` apart from it. Details:
+[the inbox](wish-templates.md#the-inbox-what-comes-from-outside).
 
 A project with things to fix has its gear, beside its name in the side panel, red with a small flame (on its folder when
 the side panel is folded), its tooltip counting them, and one line in the inbox under the cards: **Project** and its
 name, how many things, the first of them in a sentence, and **Open its configuration**. The gear and the line open the
-same panel, as a click on the name does; the detail stays there. Once nothing is left to fix, the gear turns grey and
-the line goes. A change on the reference branch lights the gear only when a decision comes back to you (a permission
-given, a wish template or babysit changed, a source plugged in here that runs another command, a new source); a new
-check, a skill's new instructions or a setting changed are applied and only told in the panel's journal.
+same settings page, as a click on the name does; the detail stays there. Once nothing is left to fix, the gear turns
+grey and the line goes. A change on the reference branch lights the gear only when a decision comes back to you (a
+permission given, a wish template or babysit changed, a source plugged in here that runs another command, a new source);
+a new check, a skill's new instructions or a setting changed are applied and only told on its **Changes on main** tab.
 
 ## Team settings and integration
 

@@ -56,9 +56,9 @@ Where a project lists the commands its workers may run, a watcher runs a command
   project with no list of its own lists nothing;
 - a skill of the project declares it, as a babysit or a wish template, and the command is the one Djinn builds from
   that declaration; or
-- you allowed it yourself, in the project's panel, under **Watcher commands you allow**: type the command, or its
-  start, and **Allow**. **Take back** removes it. What you allow is kept in your own settings, never in the repository,
-  and holds for the commands that start with it.
+- you allowed it yourself, on the **Permissions** tab of the project's settings, under **Watcher commands you
+  allow**: type the command, or its start, and **Allow**. **Take back** removes it. What you allow is kept in your
+  own settings, never in the repository, and holds for the commands that start with it.
 
 A command the project denies never runs, whatever else allows it. A refused watcher says why, and how to allow its
 command.
@@ -161,8 +161,8 @@ the Djinn spawns a new one.
   makes the best watcher: each paragraph is news.
 - **Print the done line.** A watcher with nothing to end it runs as long as its wish; a babysit or a template ends on
   its done line.
-- **A refused command is not a bug.** Allow it in the project's panel, list it in the project, or declare it in one
-  of its skills, and the watcher starts.
+- **A refused command is not a bug.** Allow it on the project's **Permissions** tab, list it in the project, or
+  declare it in one of its skills, and the watcher starts.
 - **A watcher's done line grants nothing.** The wish waits for your yes.
 
 ## Read next

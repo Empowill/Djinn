@@ -72,10 +72,10 @@ allowance, which lists none without that file), its command runs when it is one 
    the babysit watcher Djinn starts on a request (`metadata.djinn.babysit`, by itself or with `djinn task spawn
    --babysit`), `{pr}` or `{mr}` the request's number and `{state}` its own file. A summoned skill's does not count,
    nor a command typed by hand (`--provider watch --prompt '…'`), even one that starts the same way.
-3. **Allowed by you** in the project, for yourself: `djinn project allow <project> --watch '<command or its start>'`,
-   or the project's panel in the window ("Watcher commands you allow"). It goes into your own settings file
-   (`watch_commands`, [team settings](team-settings.md)), never into the repository; `--revoke` takes it back, and
-   `djinn project allow <project>` lists them.
+3. **Allowed by you** in the project, for yourself: `djinn project allow <project> --watch '<command or its start>'`, or
+   the Permissions tab of the project's settings in the window ("Watcher commands you allow"). It goes into your own
+   settings file (`watch_commands`, [team settings](team-settings.md)), never into the repository; `--revoke` takes it
+   back, and `djinn project allow <project>` lists them.
 
 The project's `denied_commands` win over all three. Each judges the command that runs: `$DJINN_HOME`,
 `$DJINN_TASK_ID` and `$DJINN_WISH_ID` expanded ([watch](providers.md#watch-a-command-no-agent)). The start event says
@@ -224,19 +224,19 @@ with a watcher: a wish whose watcher starts at once), and under each choice what
 click; "Dismiss", the last choice, sets an item aside. The inbox shows only what waits for you: empty, it is hidden.
 
 **A source runs only once you plug it in, on your machine.** Declaring one in a skill runs nothing: a clone of the
-repository polls no forge by itself. Each project's panel lists the sources its skills declare ("Inbox sources", on
-this machine), each with its summary, its last run, its command and a "Plug in" button ("Unplug" once plugged in),
-what the button does written under it; `djinn inbox sources`, `djinn inbox plug <source>` and `djinn inbox unplug
-<source>` do the same. A source is named `<project>/<skill>`, the project that holds the skill, or
-by its skill alone when one project holds it. Whether it is plugged in lives in Djinn's data on this machine, never in
-the repository. Unplugged, its command stops; the items it brought stay. Unplugging a source never plugged in says no to
-it: a source neither plugged in nor said no to is a thing to fix of its project (`djinn project show`), until you
-decide; plugging it in forgets the no. A skill whose `metadata` is not YAML, or whose `metadata.djinn` Djinn cannot
-read, is no source: its project's notices name it, in the project's panel and in `djinn project show`, and Djinn
+repository polls no forge by itself. Each project's settings list the sources its skills declare, on the Skills tab
+("Inbox sources", on this machine), each with its summary, its last run, its command and a "Plug in" button ("Unplug"
+once plugged in), what the button does written under it; `djinn inbox sources`, `djinn inbox plug <source>` and `djinn
+inbox unplug <source>` do the same. A source is named `<project>/<skill>`, the project that holds the skill, or by its
+skill alone when one project holds it. Whether it is plugged in lives in Djinn's data on this machine, never in the
+repository. Unplugged, its command stops; the items it brought stay. Unplugging a source never plugged in says no to it:
+a source neither plugged in nor said no to is a thing to fix of its project (`djinn project show`), until you decide;
+plugging it in forgets the no. A skill whose `metadata` is not YAML, or whose `metadata.djinn` Djinn cannot read, is no
+source: its project's notices name it, in the project's settings ("To fix") and in `djinn project show`, and Djinn
 ignores its template, source and babysit until it is fixed. One plugged in before it broke stays listed with why, so
-that it can be unplugged: the inbox shows it as a failing source. Another key of the front matter that breaks the
-YAML, like `argument-hint: [a] [b]` (Claude Code reads it anyway), is only an information in the same places, with its
-line: Djinn reads `metadata` apart from it. Quoting the value fixes it.
+that it can be unplugged: the inbox shows it as a failing source. Another key of the front matter that breaks the YAML,
+like `argument-hint: [a] [b]` (Claude Code reads it anyway), is only an information in the same places, with its line:
+Djinn reads `metadata` apart from it. Quoting the value fixes it.
 
 ```yaml
 ---
@@ -316,5 +316,5 @@ say again after a restart, a fake `gh` on the `PATH`), and `e2e/inbox.spec.ts` (
 inbox: `TestReadSource`, `TestSources`, `TestKeepSourceRun`, `TestOwnSource`, `TestInbox`, `TestItemKey`
 (`internal/plan/inbox_test.go`), `TestSourceReadsOnly`, `TestSourceRefused`, `TestSourceFails`, `TestSourceUnplugged`
 (`internal/harness/watch_source_test.go`),
-`TestRunUp`, its case of an inbox source (`cmd/djinn/up_test.go`), and `e2e/inbox.spec.ts` (a fake source, plugged in from its project's panel, and a failing one, unplugged from its
-card).
+`TestRunUp`, its case of an inbox source (`cmd/djinn/up_test.go`), and `e2e/inbox.spec.ts` (a fake source, plugged in
+from its project's Skills tab, and a failing one, unplugged from its card).
