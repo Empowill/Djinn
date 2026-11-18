@@ -131,7 +131,7 @@ func TestMigrate_TypicalFolder(t *testing.T) {
 }
 
 // A question model Antigravity cannot run read-only no longer keeps the stale lines (L20): the worker seat moves to a
-// circle not configured yet, the question seat is dropped.
+// circle not configured yet, the question seat is dropped and its row written "Same as lead" (Q67).
 func TestMigrate_UnmigratableQuestionModel(t *testing.T) {
 	t.Parallel()
 	home := t.TempDir()
@@ -150,8 +150,75 @@ func TestMigrate_UnmigratableQuestionModel(t *testing.T) {
 		r.GetModel() != "gemini-4-argon-high" {
 		t.Errorf("work row = %v, want the project's seat", r)
 	}
-	if r, ok := byKind[planv1.WorkerKind_WORKER_KIND_QUESTION]; ok {
-		t.Errorf("question row = %v, want none", r)
+	if r, ok := byKind[planv1.WorkerKind_WORKER_KIND_QUESTION]; !ok || !sameAsLead(r) {
+		t.Errorf("question row = %v (written %v), want Same as lead", r, ok)
+	}
+}
+
+// "Same as lead" is a model choice written in the circle (Q67): a circle whose lead is on Claude and whose rows are Same
+// as lead keeps every worker on the lead's model after the migration, a project on Antigravity notwithstanding, and
+// settings.json then names each row. The circle's three shapes: every row written, the lead moved before any row was
+// set, the rows set while the lead kept its default.
+func TestMigrate_SameAsLeadStays(t *testing.T) {
+	t.Parallel()
+	sameRows := func() []*planv1.WorkerSeat {
+		var rows []*planv1.WorkerSeat
+		for _, kind := range CircleRowOrder[1:] {
+			rows = append(rows, &planv1.WorkerSeat{Kind: kind})
+		}
+		return rows
+	}
+	opus := &planv1.LeadSeat{Provider: planv1.Provider_PROVIDER_CLAUDE, Model: "claude-opus-5-5"}
+	for _, c := range []struct {
+		name      string
+		settings  *uiv1.Settings
+		leadModel string
+	}{
+		{"every row", &uiv1.Settings{Lead: opus, Circle: append(sameRows(), &planv1.WorkerSeat{
+			Kind: planv1.WorkerKind_WORKER_KIND_LEAD, Provider: opus.Provider, Model: opus.Model,
+		})}, "claude-opus-5-5"},
+		{"lead moved, no row", &uiv1.Settings{Lead: opus}, "claude-opus-5-5"},
+		{"rows, lead by default", &uiv1.Settings{Circle: sameRows()}, DefaultCircleModel(planv1.Provider_PROVIDER_CLAUDE)},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			home := t.TempDir()
+			data, err := protojson.Marshal(c.settings)
+			if err != nil {
+				t.Fatal(err)
+			}
+			writeSettings(t, filepath.Join(home, settingsFile), string(data))
+			devFile := DeveloperSettingsFile(home, "p1")
+			writeSettings(t, devFile, "provider: PROVIDER_ANTIGRAVITY\nmodel: \"gemini-4-argon-high\"\n"+
+				"question_provider: PROVIDER_CODEX\nquestion_model: \"gpt-5.3-codex\"\npush: PROJECT_PUSH_ON_DEMAND\n")
+
+			migrateTwice(t, home)
+
+			if b, _ := os.ReadFile(devFile); string(b) != "push: PROJECT_PUSH_ON_DEMAND\n" {
+				t.Errorf("devFile = %q, want the stale lines gone", b)
+			}
+			written := map[planv1.WorkerKind]*planv1.WorkerSeat{}
+			for _, r := range readSettings(home).GetCircle() {
+				written[r.GetKind()] = r
+			}
+			for _, kind := range CircleRowOrder[1:] {
+				if r, ok := written[kind]; !ok || !sameAsLead(r) {
+					t.Errorf("%v row = %v (written %v), want Same as lead written in settings.json", kind, r, ok)
+				}
+				p, m, explicit := ResolveWorkerSeat(home, kind)
+				if p != planv1.Provider_PROVIDER_CLAUDE || m != c.leadModel || !explicit {
+					t.Errorf("%v seat = %v %s explicit %v, want the lead's CLAUDE %s", kind, p, m, explicit, c.leadModel)
+				}
+			}
+			for _, row := range ReadCircle(home)[1:] {
+				if !sameAsLead(row) {
+					t.Errorf("circle shows %v, want Same as lead", row)
+				}
+			}
+			if lead := ReadLeadSeat(home); c.settings.Lead != nil && lead.GetModel() != c.leadModel {
+				t.Errorf("lead seat = %v, want it unchanged", lead)
+			}
+		})
 	}
 }
 

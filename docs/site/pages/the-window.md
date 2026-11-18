@@ -104,7 +104,9 @@ Antigravity when the lead runs in a terminal, and shows it greyed out with a too
 Changing the lead row moves the driven Djinn there for its next batch. A Djinn in its terminal keeps its recorded
 session: when the lead row names another agent, the row says which session **Talk to the Djinn** resumes, and
 **Start the Djinn on** that agent starts a new session there from the brief, which becomes the Djinn.
-Every row except the lead offers **Same as lead** by default, following the lead's choice when it changes. Below the rows,
+Every row except the lead offers **Same as lead** by default, following the lead's choice when it changes. Same as lead
+is a model choice of its own, written in the circle once you set any row or move the lead: the project's settings never
+choose for a row set so. Below the rows,
 the bulk model switcher (also in each wish's header, and on the command line with the task command update-models)
 previews and switches every open work, investigation, correction, review, and question worker task—plus defaults for
 future spawns—in one gesture, skipping watchers and finished tasks, and changing running tasks at their next start or

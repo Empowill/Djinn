@@ -252,7 +252,9 @@ come from the agent itself where it reports them (`agy models`) and from the sha
 never a second hand-written list in the UI. Each dropdown shows each model once by its label (`"Gemini 4 Argon (High)"`)
 while storing and sending its canonical model identifier (`"gemini-4-argon-high"`, passed to `agy` as `"Gemini 4 Argon (High)"`).
 The lead row offers Antigravity when the lead runs in a terminal, and shows a tooltip when a driven lead cannot run it.
-Every row except the lead defaults to **Same as lead**, following the lead's choice when it changes. Any legacy
+Every row except the lead defaults to **Same as lead**, following the lead's choice when it changes. Same as lead is a
+model choice of its own: once the circle is configured (a lead seat or any row), `settings.json` names every worker row,
+a row set to Same as lead holding the kind alone, and the project's `provider` and `model` never fill it. Any legacy
 per-project `provider`, `model` or `question_model` in your developer settings file (`projects/<id>/settings.txtpb`) is
 dropped from the per-project file at `djinn up`, after seeding the Summoning Circle when it is not configured yet
 (`docs/migrations.md`); `djinn task spawn --provider --model`
