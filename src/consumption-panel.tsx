@@ -23,6 +23,7 @@ import {
 } from "../gen/ts/plan/v1/plan_pb";
 import {
   type Disk,
+  type DiskFolder,
   type DiskItem,
   DiskRisk,
   type MachinePoint,
@@ -36,6 +37,7 @@ import { useDjinn } from "./data/djinn";
 import {
   shortModel,
   span,
+  when,
   taskModelDisplay,
   taskTime,
   useNow,
@@ -545,6 +547,8 @@ function diskItemTitle(item: DiskItem): string {
       });
     case "go-mod":
       return t("consumption.disk_item_go_mod");
+    case "golangci-lint":
+      return t("consumption.disk_item_golangci_lint");
     case "docker-builder":
       return t("consumption.disk_item_docker_builder");
     case "docker-images":
@@ -574,6 +578,8 @@ function diskItemNote(item: DiskItem): string {
       return t("consumption.disk_item_go_isolated_note");
     case "go-mod":
       return t("consumption.disk_item_go_mod_note");
+    case "golangci-lint":
+      return t("consumption.disk_item_golangci_lint_note");
     case "docker-builder":
       return t("consumption.disk_item_docker_builder_note");
     case "docker-images":
@@ -664,6 +670,12 @@ function formatReclaimable(bytes: number, unknown: boolean): string {
   });
 }
 
+// diskSize says a measured size; a walk that ran out of time gives a floor, said "≥".
+function diskSize(bytes: number, partial: boolean): string {
+  const size = formatValue("memory", bytes);
+  return partial ? t("consumption.disk_at_least", { size }) : size;
+}
+
 function DiskItemRow({
   item,
   showRisk = false,
@@ -684,7 +696,12 @@ function DiskItemRow({
         <span className="resource-disk-item-name">{title}</span>
         <code className="resource-disk-item-path">{item.path}</code>
       </div>
-      <span className="resource-disk-size">{formatValue("memory", size)}</span>
+      <span
+        className="resource-disk-size"
+        title={item.partial ? t("consumption.disk_partial") : undefined}
+      >
+        {diskSize(size, !!item.partial)}
+      </span>
       <span className="resource-disk-freed">{freedText}</span>
       {showRisk && <DiskRiskBadge risk={item.risk} />}
       {item.command && (
@@ -697,30 +714,106 @@ function DiskItemRow({
   );
 }
 
-function isMachineFolderPath(path: string): boolean {
+function isMachineFolder(f: DiskFolder): boolean {
   return (
-    path.endsWith("/.cache/go-build") ||
-    path.endsWith("/.npm") ||
-    path.endsWith("/go/pkg/mod")
+    f.kind === "go-build" ||
+    f.kind === "npm" ||
+    f.path.endsWith("/.cache/go-build") ||
+    f.path.endsWith("/.npm") ||
+    f.path.endsWith("/go/pkg/mod")
   );
 }
 
+// isRestFolder says whether the slow pass measured the folder: an entry of the home, or a system folder.
+function isRestFolder(f: DiskFolder): boolean {
+  return f.kind === "home" || f.kind === "system";
+}
+
+// sumIndependentFolders sums the folders without counting twice one inside another: a folder that holds listed
+// ones (Djinn's data folder) counts only what it holds besides them.
 function sumIndependentFolders(
   folders: { path: string; sizeBytes: bigint }[],
 ): number {
   const paths = folders.map((f) => f.path.replace(/\/+$/, ""));
+  const inside = (child: string, parent: string) =>
+    child.startsWith(`${parent}/`);
   let sum = 0;
   for (let i = 0; i < folders.length; i++) {
     const p = paths[i];
-    // Skip parent aggregate folder (e.g. ~/.config/djinn) if any of its child folders is also listed.
-    const hasChild = paths.some(
-      (other, j) => j !== i && other.startsWith(`${p}/`),
+    // Its listed children: those inside it with no listed folder between.
+    const children = folders.filter(
+      (_, j) =>
+        j !== i &&
+        inside(paths[j], p) &&
+        !paths.some(
+          (mid, k) =>
+            k !== i && k !== j && inside(mid, p) && inside(paths[j], mid),
+        ),
     );
-    if (!hasChild) {
-      sum += Number(folders[i].sizeBytes);
-    }
+    const held = children.reduce((acc, f) => acc + Number(f.sizeBytes), 0);
+    sum += Math.max(0, Number(folders[i].sizeBytes) - held);
   }
   return sum;
+}
+
+// folderTitle names a folder of Djinn's: a project's worktrees or scratch by the project, the others by their path.
+function folderTitle(f: DiskFolder): string {
+  if (f.project && f.kind === "worktrees") {
+    return t("consumption.disk_folder_worktrees", { project: f.project });
+  }
+  if (f.project && f.kind === "scratch") {
+    return t("consumption.disk_folder_scratch", { project: f.project });
+  }
+  return f.path;
+}
+
+// restTitle names a row of the slow pass: its path, or the sum of the home's small entries.
+function restTitle(f: DiskFolder): string {
+  if (f.path === "~") {
+    return t("consumption.disk_rest_small", { count: f.count || 1 });
+  }
+  return f.path;
+}
+
+function DiskFolderRow({
+  folder,
+  title,
+  top,
+}: {
+  folder: DiskFolder;
+  title: string;
+  top: number;
+}) {
+  const size = Number(folder.sizeBytes);
+  const share = Math.round((size / top) * 100);
+  const ended = Number(folder.endedBytes ?? 0n);
+  return (
+    <div className="resource-disk-row" role="listitem">
+      <span className="resource-disk-folder">
+        <code className="resource-disk-path" title={folder.path}>
+          {title}
+        </code>
+        {(folder.count ?? 0) > 0 && (
+          <span className="resource-disk-ended muted-text">
+            {t("consumption.disk_ended", {
+              size: formatValue("memory", ended),
+              ended: folder.endedCount,
+              count: folder.count,
+            })}
+          </span>
+        )}
+      </span>
+      <span className="resource-share" aria-hidden="true">
+        <span style={{ width: `${share}%` }} />
+      </span>
+      <span
+        className="resource-disk-size"
+        title={folder.partial ? t("consumption.disk_partial") : undefined}
+      >
+        {diskSize(size, !!folder.partial)}
+      </span>
+    </div>
+  );
 }
 
 // The whole disk bar, Djinn's folders and isolated Go caches, and the machine's caches grouped by cleanup risk (L48).
@@ -729,7 +822,7 @@ export const DiskSection = memo(function DiskSection({
   initialView,
 }: {
   disk?: Disk;
-  initialView?: "djinn" | "machine";
+  initialView?: "djinn" | "machine" | "rest";
 }) {
   const items = useMemo(
     () =>
@@ -755,19 +848,31 @@ export const DiskSection = memo(function DiskSection({
   );
   const djinnItems = useMemo(() => items.filter((i) => i.djinn), [items]);
   const machineItems = useMemo(() => items.filter((i) => !i.djinn), [items]);
+  const restFolders = useMemo(
+    () => allFolders.filter(isRestFolder),
+    [allFolders],
+  );
+  const measuredFolders = useMemo(
+    () => allFolders.filter((f) => !isRestFolder(f)),
+    [allFolders],
+  );
   const folders = useMemo(
     () =>
       machineItems.length > 0
-        ? allFolders.filter((f) => !isMachineFolderPath(f.path))
-        : allFolders,
-    [allFolders, machineItems.length],
+        ? measuredFolders.filter((f) => !isMachineFolder(f))
+        : measuredFolders,
+    [measuredFolders, machineItems.length],
   );
 
-  const [view, setView] = useState<"djinn" | "machine">(
+  const [view, setView] = useState<"djinn" | "machine" | "rest">(
     initialView ?? (machineItems.length > 0 ? "machine" : "djinn"),
   );
   const activeView =
-    initialView ?? (machineItems.length === 0 ? "djinn" : view);
+    initialView ??
+    ((view === "machine" && machineItems.length === 0) ||
+    (view === "rest" && restFolders.length === 0)
+      ? "djinn"
+      : view);
 
   const total = Number(disk?.totalBytes ?? 0n);
   const free = Number(disk?.availableBytes ?? 0n);
@@ -786,6 +891,21 @@ export const DiskSection = memo(function DiskSection({
     () => machineItems.reduce((acc, i) => acc + Number(i.sizeBytes), 0),
     [machineItems],
   );
+  const homeBytes = useMemo(
+    () =>
+      restFolders
+        .filter((f) => f.kind === "home")
+        .reduce((acc, f) => acc + Number(f.sizeBytes), 0),
+    [restFolders],
+  );
+  const systemBytes = useMemo(
+    () =>
+      restFolders
+        .filter((f) => f.kind === "system")
+        .reduce((acc, f) => acc + Number(f.sizeBytes), 0),
+    [restFolders],
+  );
+  const restTime = restFolders[0]?.measureTime;
 
   const segments = useMemo(() => {
     if (total <= 0) return [];
@@ -794,26 +914,37 @@ export const DiskSection = memo(function DiskSection({
         (i) =>
           i.kind === "go-build" ||
           i.kind === "go-isolated" ||
-          i.kind === "go-mod",
+          i.kind === "go-mod" ||
+          i.kind === "golangci-lint",
       )
       .reduce((acc, i) => acc + Number(i.sizeBytes), 0);
     if (goBytes === 0) {
-      goBytes = allFolders
-        .filter((f) => f.path.endsWith("/.cache/go-build"))
+      goBytes = measuredFolders
+        .filter(
+          (f) => f.kind === "go-build" || f.path.endsWith("/.cache/go-build"),
+        )
         .reduce((acc, f) => acc + Number(f.sizeBytes), 0);
     }
     const dockerBytes = items
       .filter((i) => i.kind.startsWith("docker-"))
       .reduce((acc, i) => acc + Number(i.sizeBytes), 0);
     const playwrightBytes = folders
-      .filter((f) => f.path.includes("ms-playwright"))
+      .filter(
+        (f) => f.kind === "playwright" || f.path.includes("ms-playwright"),
+      )
       .reduce((acc, f) => acc + Number(f.sizeBytes), 0);
     const otherItemBytes = items
       .filter((i) => ["jetbrains", "pnpm", "pip", "uv", "npm"].includes(i.kind))
       .reduce((acc, i) => acc + Number(i.sizeBytes), 0);
     const otherBytes = otherItemBytes + playwrightBytes;
     const djinnOnlyBytes = Math.max(0, djinnFolderBytes - playwrightBytes);
-    const measured = goBytes + dockerBytes + djinnOnlyBytes + otherBytes;
+    const measured =
+      goBytes +
+      dockerBytes +
+      djinnOnlyBytes +
+      otherBytes +
+      homeBytes +
+      systemBytes;
     const unmeasured = Math.max(0, used - measured);
     return [
       {
@@ -849,12 +980,37 @@ export const DiskSection = memo(function DiskSection({
         }),
       },
       {
+        id: "home",
+        cls: "seg-home",
+        bytes: homeBytes,
+        label: t("consumption.disk_seg_home", {
+          size: formatValue("memory", homeBytes),
+        }),
+      },
+      {
+        id: "system",
+        cls: "seg-system",
+        bytes: systemBytes,
+        label: t("consumption.disk_seg_system", {
+          size: formatValue("memory", systemBytes),
+        }),
+      },
+      {
         id: "unmeasured",
         cls: "seg-unmeasured",
         bytes: unmeasured,
-        label: t("consumption.disk_seg_unmeasured", {
-          size: formatValue("memory", unmeasured),
-        }),
+        label:
+          restFolders.length > 0
+            ? t("consumption.disk_seg_unmeasured", {
+                size: formatValue("memory", unmeasured),
+              })
+            : t("consumption.disk_seg_not_yet", {
+                size: formatValue("memory", unmeasured),
+              }),
+        title:
+          restFolders.length > 0
+            ? t("consumption.disk_unmeasured_why")
+            : t("consumption.disk_not_yet_why"),
       },
       {
         id: "free",
@@ -865,7 +1021,18 @@ export const DiskSection = memo(function DiskSection({
         }),
       },
     ].filter((s) => s.bytes > 0);
-  }, [allFolders, djinnFolderBytes, folders, free, items, total, used]);
+  }, [
+    djinnFolderBytes,
+    folders,
+    free,
+    homeBytes,
+    items,
+    measuredFolders,
+    restFolders.length,
+    systemBytes,
+    total,
+    used,
+  ]);
 
   const riskGroups = useMemo(() => {
     const specs = [
@@ -913,7 +1080,9 @@ export const DiskSection = memo(function DiskSection({
   }, [machineItems]);
 
   const top = Math.max(1, Number(folders[0]?.sizeBytes ?? 0n));
+  const restTop = Math.max(1, Number(restFolders[0]?.sizeBytes ?? 0n));
   const empty = allFolders.length === 0 && items.length === 0;
+  const tabs = machineItems.length > 0 || restFolders.length > 0;
 
   return (
     <section className="resource-disk" aria-label={t("consumption.disk_title")}>
@@ -943,7 +1112,7 @@ export const DiskSection = memo(function DiskSection({
                 key={seg.id}
                 className={`resource-disk-seg ${seg.cls}`}
                 style={{ width: `${(seg.bytes / total) * 100}%` }}
-                title={seg.label}
+                title={seg.title ? `${seg.label}: ${seg.title}` : seg.label}
               />
             ))}
             {total > DISK_TRIM_BYTES && (
@@ -967,7 +1136,11 @@ export const DiskSection = memo(function DiskSection({
           </div>
           <div className="resource-disk-legend">
             {segments.map((seg) => (
-              <span key={seg.id} className="resource-disk-legend-item">
+              <span
+                key={seg.id}
+                className="resource-disk-legend-item"
+                title={seg.title}
+              >
                 <i
                   className={`resource-disk-swatch ${seg.cls}`}
                   aria-hidden="true"
@@ -982,7 +1155,7 @@ export const DiskSection = memo(function DiskSection({
         <p className="muted-text">{t("consumption.no_disk")}</p>
       ) : (
         <>
-          {machineItems.length > 0 && (
+          {tabs && (
             <div className="resource-disk-subtabs" role="tablist">
               <button
                 type="button"
@@ -994,46 +1167,65 @@ export const DiskSection = memo(function DiskSection({
                 {t("consumption.disk_tab_djinn")}{" "}
                 <b>{formatValue("memory", djinnTotal)}</b>
               </button>
-              <button
-                type="button"
-                role="tab"
-                className={`resource-disk-subtab${activeView === "machine" ? " active" : ""}`}
-                aria-selected={activeView === "machine"}
-                onClick={() => setView("machine")}
-              >
-                {t("consumption.disk_tab_machine")}{" "}
-                <b>{formatValue("memory", machineTotal)}</b>
-              </button>
+              {machineItems.length > 0 && (
+                <button
+                  type="button"
+                  role="tab"
+                  className={`resource-disk-subtab${activeView === "machine" ? " active" : ""}`}
+                  aria-selected={activeView === "machine"}
+                  onClick={() => setView("machine")}
+                >
+                  {t("consumption.disk_tab_machine")}{" "}
+                  <b>{formatValue("memory", machineTotal)}</b>
+                </button>
+              )}
+              {restFolders.length > 0 && (
+                <button
+                  type="button"
+                  role="tab"
+                  className={`resource-disk-subtab${activeView === "rest" ? " active" : ""}`}
+                  aria-selected={activeView === "rest"}
+                  onClick={() => setView("rest")}
+                >
+                  {t("consumption.disk_tab_rest")}{" "}
+                  <b>{formatValue("memory", homeBytes + systemBytes)}</b>
+                </button>
+              )}
             </div>
           )}
           {activeView === "djinn" ? (
             <div className="resource-disk-djinn">
               <div className="resource-disk-list" role="list">
-                {folders.map((f) => {
-                  const size = Number(f.sizeBytes);
-                  const share = Math.round((size / top) * 100);
-                  return (
-                    <div
-                      key={f.path}
-                      className="resource-disk-row"
-                      role="listitem"
-                    >
-                      <code className="resource-disk-path">{f.path}</code>
-                      <span className="resource-share" aria-hidden="true">
-                        <span style={{ width: `${share}%` }} />
-                      </span>
-                      <span className="resource-disk-size">
-                        {formatValue("memory", size)}
-                      </span>
-                    </div>
-                  );
-                })}
+                {folders.map((f) => (
+                  <DiskFolderRow
+                    key={f.path}
+                    folder={f}
+                    title={folderTitle(f)}
+                    top={top}
+                  />
+                ))}
                 {djinnItems.map((item) => (
                   <DiskItemRow key={item.kind} item={item} showRisk />
                 ))}
               </div>
               <p className="resource-disk-hint muted-text">
                 {t("consumption.disk_djinn_note")}
+              </p>
+            </div>
+          ) : activeView === "rest" ? (
+            <div className="resource-disk-rest">
+              <div className="resource-disk-list" role="list">
+                {restFolders.map((f) => (
+                  <DiskFolderRow
+                    key={`${f.kind}:${f.path}`}
+                    folder={f}
+                    title={restTitle(f)}
+                    top={restTop}
+                  />
+                ))}
+              </div>
+              <p className="resource-disk-hint muted-text">
+                {t("consumption.disk_rest_note", { when: when(restTime) })}
               </p>
             </div>
           ) : (
