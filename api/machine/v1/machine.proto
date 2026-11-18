@@ -122,12 +122,30 @@ message Disk {
   repeated DiskItem items = 5;
 }
 
-// DiskFolder is a folder measured on disk, with its size in bytes.
+// DiskFolder is a folder measured on disk, with what its files take on it: the blocks they hold, which counts what the
+// file system adds to each file (eCryptfs: a header, the rounding up to a block), not their length.
 message DiskFolder {
-  // Path of the folder.
+  // Path of the folder; "~" for the sum of the home's small entries (kind home, count of them).
   string path = 1;
-  // Size of its files on disk, in bytes.
+  // What its files take on disk, in bytes. Of kind home or system: without what another row counts inside it.
   uint64 size_bytes = 2;
+  // Whether its walk ran out of time: the size is at least this, or the last whole measure when it was bigger.
+  bool partial = 3;
+  // What the folder is: worktrees, scratch (each a project's), data (Djinn's data folder), logs, tilasms, node_modules,
+  // go-build, npm, playwright, tmp; home (an entry of the home folder) or system (/var, /usr, /opt), which the slow
+  // pass measures every few hours, apart from Djinn's.
+  string kind = 4;
+  // Name of the project whose worktrees or scratch these are.
+  string project = 5;
+  // Of the worktrees or scratch, the folders of tasks ended (done or cancelled) or that Djinn no longer knows, in
+  // bytes; the rest is live tasks'.
+  uint64 ended_bytes = 6;
+  // How many task folders the worktrees or scratch hold; how many entries the "~" row of kind home sums.
+  int32 count = 7;
+  // How many of them are ended tasks'.
+  int32 ended_count = 8;
+  // When the folder was last walked.
+  google.protobuf.Timestamp measure_time = 9;
 }
 
 // DiskRisk is what happens when a DiskItem's cleanup command runs.
@@ -146,8 +164,8 @@ enum DiskRisk {
 
 // DiskItem is a known cache or store on the machine, with the command to copy to clean it, what it frees and its risk.
 message DiskItem {
-  // Identifier of the item (go-build, go-isolated, go-mod, docker-builder, docker-images, docker-volumes,
-  // docker-dangling, jetbrains, pnpm, pip, uv, npm).
+  // Identifier of the item (go-build, go-isolated, go-mod, golangci-lint, docker-builder, docker-images,
+  // docker-volumes, docker-dangling, jetbrains, pnpm, pip, uv, npm).
   string kind = 1;
   // Path or source read on the machine (e.g. ~/.cache/go-build, docker builder).
   string path = 2;
@@ -166,6 +184,8 @@ message DiskItem {
   // True when created by Djinn or its workers (e.g. isolated *-go-build caches), so the window shows it on the Djinn
   // side rather than under Machine.
   bool djinn = 9;
+  // Whether its walk ran out of time: the size is at least this, or the last whole measure when it was bigger.
+  bool partial = 10;
 }
 
 // Gpu is a graphics processor of the machine.

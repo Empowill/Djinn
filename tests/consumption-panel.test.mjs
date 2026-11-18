@@ -381,7 +381,7 @@ test("the disk tab: whole-machine bar with guard marks, Machine items grouped by
   assert.match(html, /Docker 38 GB/);
   assert.match(html, /Djinn 16 GB/);
   assert.match(html, /Other caches 17 GB/);
-  assert.match(html, /Unmeasured 384 GB/);
+  assert.match(html, /Not measured yet 384 GB/);
   assert.match(html, /Free 394 GB/);
 
   // Sub-tabs with their totals (Djinn 17 GB folders + 33 GB isolated Go caches = 50 GB; Machine = 165 GB).
@@ -423,6 +423,75 @@ test("the disk tab: whole-machine bar with guard marks, Machine items grouped by
   assert.doesNotMatch(html, /\/home\/dev\/\.npm/);
   assert.match(
     html,
-    /Djinn removes a worktree when its task ends; isolated Go caches come from worker builds that set their own GOCACHE\./,
+    /A worktree stays after its task ends until its work is merged and the folder is clean/,
   );
+});
+
+test("the disk tab names what fills the disk: worktrees split by ended tasks, the slow pass's home and system folders, a small unmeasured share", () => {
+  const gib = 1024n ** 3n;
+  const disk = {
+    availableBytes: 171n * gib,
+    totalBytes: 926n * gib,
+    folders: [
+      {
+        path: "/home/dev/.config/djinn/projects/p1/worktrees",
+        kind: "worktrees",
+        project: "dolmen",
+        sizeBytes: 120n * gib,
+        endedBytes: 100n * gib,
+        count: 3,
+        endedCount: 2,
+      },
+      { path: "/home/dev/.config/djinn", kind: "data", sizeBytes: 125n * gib },
+      { path: "~/.cache/google-chrome", kind: "home", sizeBytes: 300n * gib },
+      { path: "~/empowill", kind: "home", sizeBytes: 40n * gib },
+      { path: "~", kind: "home", sizeBytes: 10n * gib, count: 12 },
+      { path: "/var", kind: "system", sizeBytes: 23n * gib, partial: true },
+    ],
+    items: [
+      {
+        kind: "docker-images",
+        path: "docker images",
+        sizeBytes: 123n * gib,
+        reclaimableBytes: 103n * gib,
+        risk: s.DiskRisk.REBUILD,
+        command: "docker image prune -a -f",
+      },
+      {
+        kind: "go-build",
+        path: "~/.cache/go-build",
+        sizeBytes: 92n * gib,
+        reclaimableBytes: 80n * gib,
+        risk: s.DiskRisk.REBUILD,
+        command: "find ~/.cache/go-build -type f -mmin +360 -delete",
+      },
+    ],
+  };
+  const sec = live(s.DiskSection, { disk });
+  let html = sec.html();
+
+  // 755 GB used: Go 92, Docker 123, Djinn 125 (the worktrees, and the data folder's 5 beside them), home 350,
+  // system 23: 42 GB that no pass reads.
+  assert.match(html, /Djinn 125 GB/);
+  assert.match(html, /Home 350 GB/);
+  assert.match(html, /System 23 GB/);
+  assert.match(html, /Unmeasured 42 GB/);
+  assert.match(html, /title="What no pass reads: folders only root reads/);
+  assert.match(html, /Rest of the disk\s*<b>373 GB<\/b>/);
+
+  // Djinn's tab: the worktrees named by their project, with what ended tasks take.
+  sec.all("resource-disk-subtab")[0].props.onClick();
+  html = sec.html();
+  assert.match(html, /Worktrees · dolmen/);
+  assert.match(html, /100 GB of ended tasks \(2 of 3 folders\)/);
+
+  // The rest: each entry of the home, the small ones summed, the system folders, a partial walk a floor.
+  sec.all("resource-disk-subtab")[2].props.onClick();
+  html = sec.html();
+  assert.match(html, /~\/\.cache\/google-chrome/);
+  assert.match(html, /~\/empowill/);
+  assert.match(html, /12 other entries of the home/);
+  assert.match(html, /\/var/);
+  assert.match(html, /≥ 23 GB/);
+  assert.match(html, /Measured by a slow pass every 6 hours/);
 });

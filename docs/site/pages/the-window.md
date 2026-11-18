@@ -273,12 +273,14 @@ live metrics, as time goes by; **Gates**, what the gates do now and what the com
   worker, its code on hover, stacked in a narrow page) and the running workers grouped by wish, watchers last in each
   group: each worker's project, model, time, turns, cost, gate, and its own CPU and memory graphs. Its eye opens the
   task in its wish; the gate it holds, or held, opens the **Gates** tab on that gate.
-- **Disk.** A bar of the whole disk (Go, Docker, Djinn worktrees, other caches, unmeasured and free space, with the
-  30 GB and 10 GB disk-guard marks), above two tabs: **Djinn and its workers** (worktrees per project, Playwright,
-  tilasms, scratch, logs, and any isolated Go build caches) and **Machine** (Go build cache and module cache, Docker
-  build cache, images and volumes when Docker is present, pnpm, uv, pip, npm, and JetBrains), grouped by risk (**Safe**,
-  **Rebuilds**, **Data loss**) with each item's size, reclaimable space, and cleanup command to copy—plus **All “safe”
-  at once** at the bottom. Djinn never runs those commands itself: it displays them to copy.
+- **Disk.** A bar of the whole disk (Go, Docker, Djinn, other caches, home, system, unmeasured and free space, with
+  the 30 GB and 10 GB disk-guard marks), above three tabs: **Djinn and its workers** (worktrees and scratch per
+  project, with what ended tasks' folders take, Playwright, tilasms, logs, and any isolated Go build caches),
+  **Machine** (Go build cache, Go module and download caches, golangci-lint, Docker build cache, images and volumes
+  when Docker is present, pnpm, uv, pip, npm, and JetBrains), grouped by risk (**Safe**, **Rebuilds**, **Data loss**)
+  with each item's size, reclaimable space, and cleanup command to copy—plus **All “safe” at once** at the bottom—and
+  **Rest of the disk** (each entry of the home and the system folders, measured every 6 hours). A size that ran out
+  of time to be measured shows as a floor (≥). Djinn never runs those commands itself: it displays them to copy.
 
 A running task's card links to its row, **Live in the Hourglass**, on the Machine tab. The page reads its figures
 only while it shows: leave it, or fold its panel, and the reads stop. See [Machine and load](#machine-and-load).

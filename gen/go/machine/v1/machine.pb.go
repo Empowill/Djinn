@@ -748,13 +748,31 @@ func (x *Disk) GetItems() []*DiskItem {
 	return nil
 }
 
-// DiskFolder is a folder measured on disk, with its size in bytes.
+// DiskFolder is a folder measured on disk, with what its files take on it: the blocks they hold, which counts what the
+// file system adds to each file (eCryptfs: a header, the rounding up to a block), not their length.
 type DiskFolder struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Path of the folder.
+	// Path of the folder; "~" for the sum of the home's small entries (kind home, count of them).
 	Path string `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
-	// Size of its files on disk, in bytes.
-	SizeBytes     uint64 `protobuf:"varint,2,opt,name=size_bytes,json=sizeBytes,proto3" json:"size_bytes,omitempty"`
+	// What its files take on disk, in bytes. Of kind home or system: without what another row counts inside it.
+	SizeBytes uint64 `protobuf:"varint,2,opt,name=size_bytes,json=sizeBytes,proto3" json:"size_bytes,omitempty"`
+	// Whether its walk ran out of time: the size is at least this, or the last whole measure when it was bigger.
+	Partial bool `protobuf:"varint,3,opt,name=partial,proto3" json:"partial,omitempty"`
+	// What the folder is: worktrees, scratch (each a project's), data (Djinn's data folder), logs, tilasms, node_modules,
+	// go-build, npm, playwright, tmp; home (an entry of the home folder) or system (/var, /usr, /opt), which the slow
+	// pass measures every few hours, apart from Djinn's.
+	Kind string `protobuf:"bytes,4,opt,name=kind,proto3" json:"kind,omitempty"`
+	// Name of the project whose worktrees or scratch these are.
+	Project string `protobuf:"bytes,5,opt,name=project,proto3" json:"project,omitempty"`
+	// Of the worktrees or scratch, the folders of tasks ended (done or cancelled) or that Djinn no longer knows, in
+	// bytes; the rest is live tasks'.
+	EndedBytes uint64 `protobuf:"varint,6,opt,name=ended_bytes,json=endedBytes,proto3" json:"ended_bytes,omitempty"`
+	// How many task folders the worktrees or scratch hold; how many entries the "~" row of kind home sums.
+	Count int32 `protobuf:"varint,7,opt,name=count,proto3" json:"count,omitempty"`
+	// How many of them are ended tasks'.
+	EndedCount int32 `protobuf:"varint,8,opt,name=ended_count,json=endedCount,proto3" json:"ended_count,omitempty"`
+	// When the folder was last walked.
+	MeasureTime   *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=measure_time,json=measureTime,proto3" json:"measure_time,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -803,11 +821,60 @@ func (x *DiskFolder) GetSizeBytes() uint64 {
 	return 0
 }
 
+func (x *DiskFolder) GetPartial() bool {
+	if x != nil {
+		return x.Partial
+	}
+	return false
+}
+
+func (x *DiskFolder) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *DiskFolder) GetProject() string {
+	if x != nil {
+		return x.Project
+	}
+	return ""
+}
+
+func (x *DiskFolder) GetEndedBytes() uint64 {
+	if x != nil {
+		return x.EndedBytes
+	}
+	return 0
+}
+
+func (x *DiskFolder) GetCount() int32 {
+	if x != nil {
+		return x.Count
+	}
+	return 0
+}
+
+func (x *DiskFolder) GetEndedCount() int32 {
+	if x != nil {
+		return x.EndedCount
+	}
+	return 0
+}
+
+func (x *DiskFolder) GetMeasureTime() *timestamppb.Timestamp {
+	if x != nil {
+		return x.MeasureTime
+	}
+	return nil
+}
+
 // DiskItem is a known cache or store on the machine, with the command to copy to clean it, what it frees and its risk.
 type DiskItem struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Identifier of the item (go-build, go-isolated, go-mod, docker-builder, docker-images, docker-volumes,
-	// docker-dangling, jetbrains, pnpm, pip, uv, npm).
+	// Identifier of the item (go-build, go-isolated, go-mod, golangci-lint, docker-builder, docker-images,
+	// docker-volumes, docker-dangling, jetbrains, pnpm, pip, uv, npm).
 	Kind string `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
 	// Path or source read on the machine (e.g. ~/.cache/go-build, docker builder).
 	Path string `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
@@ -825,7 +892,9 @@ type DiskItem struct {
 	Count int32 `protobuf:"varint,8,opt,name=count,proto3" json:"count,omitempty"`
 	// True when created by Djinn or its workers (e.g. isolated *-go-build caches), so the window shows it on the Djinn
 	// side rather than under Machine.
-	Djinn         bool `protobuf:"varint,9,opt,name=djinn,proto3" json:"djinn,omitempty"`
+	Djinn bool `protobuf:"varint,9,opt,name=djinn,proto3" json:"djinn,omitempty"`
+	// Whether its walk ran out of time: the size is at least this, or the last whole measure when it was bigger.
+	Partial       bool `protobuf:"varint,10,opt,name=partial,proto3" json:"partial,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -919,6 +988,13 @@ func (x *DiskItem) GetCount() int32 {
 func (x *DiskItem) GetDjinn() bool {
 	if x != nil {
 		return x.Djinn
+	}
+	return false
+}
+
+func (x *DiskItem) GetPartial() bool {
+	if x != nil {
+		return x.Partial
 	}
 	return false
 }
@@ -3544,12 +3620,21 @@ const file_machine_v1_machine_proto_rawDesc = "" +
 	"totalBytes\x12'\n" +
 	"\x0favailable_bytes\x18\x03 \x01(\x04R\x0eavailableBytes\x120\n" +
 	"\afolders\x18\x04 \x03(\v2\x16.machine.v1.DiskFolderR\afolders\x12*\n" +
-	"\x05items\x18\x05 \x03(\v2\x14.machine.v1.DiskItemR\x05items\"?\n" +
+	"\x05items\x18\x05 \x03(\v2\x14.machine.v1.DiskItemR\x05items\"\x9e\x02\n" +
 	"\n" +
 	"DiskFolder\x12\x12\n" +
 	"\x04path\x18\x01 \x01(\tR\x04path\x12\x1d\n" +
 	"\n" +
-	"size_bytes\x18\x02 \x01(\x04R\tsizeBytes\"\x9f\x02\n" +
+	"size_bytes\x18\x02 \x01(\x04R\tsizeBytes\x12\x18\n" +
+	"\apartial\x18\x03 \x01(\bR\apartial\x12\x12\n" +
+	"\x04kind\x18\x04 \x01(\tR\x04kind\x12\x18\n" +
+	"\aproject\x18\x05 \x01(\tR\aproject\x12\x1f\n" +
+	"\vended_bytes\x18\x06 \x01(\x04R\n" +
+	"endedBytes\x12\x14\n" +
+	"\x05count\x18\a \x01(\x05R\x05count\x12\x1f\n" +
+	"\vended_count\x18\b \x01(\x05R\n" +
+	"endedCount\x12=\n" +
+	"\fmeasure_time\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\vmeasureTime\"\xb9\x02\n" +
 	"\bDiskItem\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x12\n" +
 	"\x04path\x18\x02 \x01(\tR\x04path\x12\x1d\n" +
@@ -3560,7 +3645,9 @@ const file_machine_v1_machine_proto_rawDesc = "" +
 	"\x04risk\x18\x06 \x01(\x0e2\x14.machine.v1.DiskRiskR\x04risk\x12\x18\n" +
 	"\acommand\x18\a \x01(\tR\acommand\x12\x14\n" +
 	"\x05count\x18\b \x01(\x05R\x05count\x12\x14\n" +
-	"\x05djinn\x18\t \x01(\bR\x05djinn\"\xba\x01\n" +
+	"\x05djinn\x18\t \x01(\bR\x05djinn\x12\x18\n" +
+	"\apartial\x18\n" +
+	" \x01(\bR\apartial\"\xba\x01\n" +
 	"\x03Gpu\x12\x16\n" +
 	"\x06vendor\x18\x01 \x01(\tR\x06vendor\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x16\n" +
@@ -3902,69 +3989,70 @@ var file_machine_v1_machine_proto_depIdxs = []int32{
 	40, // 8: machine.v1.WorkerUse.resources:type_name -> plan.v1.Resources
 	8,  // 9: machine.v1.Disk.folders:type_name -> machine.v1.DiskFolder
 	9,  // 10: machine.v1.Disk.items:type_name -> machine.v1.DiskItem
-	0,  // 11: machine.v1.DiskItem.risk:type_name -> machine.v1.DiskRisk
-	5,  // 12: machine.v1.MachineServiceShowResponse.machine:type_name -> machine.v1.Machine
-	38, // 13: machine.v1.MachineServiceSeriesRequest.since:type_name -> google.protobuf.Timestamp
-	15, // 14: machine.v1.MachineServiceSeriesResponse.machine:type_name -> machine.v1.MachineSeries
-	17, // 15: machine.v1.MachineServiceSeriesResponse.workers:type_name -> machine.v1.WorkerSeries
-	19, // 16: machine.v1.MachineServiceSeriesResponse.gates:type_name -> machine.v1.GateInterval
-	7,  // 17: machine.v1.MachineServiceSeriesResponse.disk:type_name -> machine.v1.Disk
-	16, // 18: machine.v1.MachineSeries.points:type_name -> machine.v1.MachinePoint
-	38, // 19: machine.v1.MachinePoint.time:type_name -> google.protobuf.Timestamp
-	41, // 20: machine.v1.WorkerSeries.provider:type_name -> plan.v1.Provider
-	18, // 21: machine.v1.WorkerSeries.points:type_name -> machine.v1.WorkerPoint
-	19, // 22: machine.v1.WorkerSeries.gates:type_name -> machine.v1.GateInterval
-	38, // 23: machine.v1.WorkerPoint.time:type_name -> google.protobuf.Timestamp
-	38, // 24: machine.v1.GateInterval.asked_time:type_name -> google.protobuf.Timestamp
-	38, // 25: machine.v1.GateInterval.grant_time:type_name -> google.protobuf.Timestamp
-	38, // 26: machine.v1.GateInterval.release_time:type_name -> google.protobuf.Timestamp
-	1,  // 27: machine.v1.GateInterval.mode:type_name -> machine.v1.GateMode
-	2,  // 28: machine.v1.GateInterval.wait_cause:type_name -> machine.v1.GateWaitCause
-	42, // 29: machine.v1.GateInterval.task_kind:type_name -> plan.v1.TaskKind
-	38, // 30: machine.v1.CommandRun.time:type_name -> google.protobuf.Timestamp
-	3,  // 31: machine.v1.GateServiceAdmitResponse.state:type_name -> machine.v1.GateState
-	38, // 32: machine.v1.Gate.since:type_name -> google.protobuf.Timestamp
-	40, // 33: machine.v1.Gate.resources:type_name -> plan.v1.Resources
-	38, // 34: machine.v1.Gate.expire_time:type_name -> google.protobuf.Timestamp
-	3,  // 35: machine.v1.GateServiceHoldResponse.state:type_name -> machine.v1.GateState
-	23, // 36: machine.v1.GateServiceListResponse.gates:type_name -> machine.v1.Gate
-	38, // 37: machine.v1.GateServiceHistoryRequest.after_time:type_name -> google.protobuf.Timestamp
-	38, // 38: machine.v1.GateServiceHistoryResponse.start_time:type_name -> google.protobuf.Timestamp
-	38, // 39: machine.v1.GateServiceHistoryResponse.read_time:type_name -> google.protobuf.Timestamp
-	19, // 40: machine.v1.GateServiceHistoryResponse.intervals:type_name -> machine.v1.GateInterval
-	30, // 41: machine.v1.GateServiceHistoryResponse.runs:type_name -> machine.v1.WorkerRun
-	42, // 42: machine.v1.WorkerRun.kind:type_name -> plan.v1.TaskKind
-	38, // 43: machine.v1.WorkerRun.start_time:type_name -> google.protobuf.Timestamp
-	38, // 44: machine.v1.WorkerRun.end_time:type_name -> google.protobuf.Timestamp
-	38, // 45: machine.v1.CommandCost.last_time:type_name -> google.protobuf.Timestamp
-	20, // 46: machine.v1.CommandCost.recent_runs:type_name -> machine.v1.CommandRun
-	31, // 47: machine.v1.CommandServiceListResponse.costs:type_name -> machine.v1.CommandCost
-	34, // 48: machine.v1.CommandServiceListResponse.summary:type_name -> machine.v1.GatesSummary
-	31, // 49: machine.v1.GatesSummary.peak:type_name -> machine.v1.CommandCost
-	35, // 50: machine.v1.GatesSummary.gates:type_name -> machine.v1.GateWaits
-	20, // 51: machine.v1.GateWaits.last:type_name -> machine.v1.CommandRun
-	31, // 52: machine.v1.CommandServiceRecordResponse.cost:type_name -> machine.v1.CommandCost
-	11, // 53: machine.v1.MachineService.Show:input_type -> machine.v1.MachineServiceShowRequest
-	13, // 54: machine.v1.MachineService.Series:input_type -> machine.v1.MachineServiceSeriesRequest
-	24, // 55: machine.v1.GateService.Hold:input_type -> machine.v1.GateServiceHoldRequest
-	26, // 56: machine.v1.GateService.List:input_type -> machine.v1.GateServiceListRequest
-	28, // 57: machine.v1.GateService.History:input_type -> machine.v1.GateServiceHistoryRequest
-	21, // 58: machine.v1.GateService.Admit:input_type -> machine.v1.GateServiceAdmitRequest
-	32, // 59: machine.v1.CommandService.List:input_type -> machine.v1.CommandServiceListRequest
-	36, // 60: machine.v1.CommandService.Record:input_type -> machine.v1.CommandServiceRecordRequest
-	12, // 61: machine.v1.MachineService.Show:output_type -> machine.v1.MachineServiceShowResponse
-	14, // 62: machine.v1.MachineService.Series:output_type -> machine.v1.MachineServiceSeriesResponse
-	25, // 63: machine.v1.GateService.Hold:output_type -> machine.v1.GateServiceHoldResponse
-	27, // 64: machine.v1.GateService.List:output_type -> machine.v1.GateServiceListResponse
-	29, // 65: machine.v1.GateService.History:output_type -> machine.v1.GateServiceHistoryResponse
-	22, // 66: machine.v1.GateService.Admit:output_type -> machine.v1.GateServiceAdmitResponse
-	33, // 67: machine.v1.CommandService.List:output_type -> machine.v1.CommandServiceListResponse
-	37, // 68: machine.v1.CommandService.Record:output_type -> machine.v1.CommandServiceRecordResponse
-	61, // [61:69] is the sub-list for method output_type
-	53, // [53:61] is the sub-list for method input_type
-	53, // [53:53] is the sub-list for extension type_name
-	53, // [53:53] is the sub-list for extension extendee
-	0,  // [0:53] is the sub-list for field type_name
+	38, // 11: machine.v1.DiskFolder.measure_time:type_name -> google.protobuf.Timestamp
+	0,  // 12: machine.v1.DiskItem.risk:type_name -> machine.v1.DiskRisk
+	5,  // 13: machine.v1.MachineServiceShowResponse.machine:type_name -> machine.v1.Machine
+	38, // 14: machine.v1.MachineServiceSeriesRequest.since:type_name -> google.protobuf.Timestamp
+	15, // 15: machine.v1.MachineServiceSeriesResponse.machine:type_name -> machine.v1.MachineSeries
+	17, // 16: machine.v1.MachineServiceSeriesResponse.workers:type_name -> machine.v1.WorkerSeries
+	19, // 17: machine.v1.MachineServiceSeriesResponse.gates:type_name -> machine.v1.GateInterval
+	7,  // 18: machine.v1.MachineServiceSeriesResponse.disk:type_name -> machine.v1.Disk
+	16, // 19: machine.v1.MachineSeries.points:type_name -> machine.v1.MachinePoint
+	38, // 20: machine.v1.MachinePoint.time:type_name -> google.protobuf.Timestamp
+	41, // 21: machine.v1.WorkerSeries.provider:type_name -> plan.v1.Provider
+	18, // 22: machine.v1.WorkerSeries.points:type_name -> machine.v1.WorkerPoint
+	19, // 23: machine.v1.WorkerSeries.gates:type_name -> machine.v1.GateInterval
+	38, // 24: machine.v1.WorkerPoint.time:type_name -> google.protobuf.Timestamp
+	38, // 25: machine.v1.GateInterval.asked_time:type_name -> google.protobuf.Timestamp
+	38, // 26: machine.v1.GateInterval.grant_time:type_name -> google.protobuf.Timestamp
+	38, // 27: machine.v1.GateInterval.release_time:type_name -> google.protobuf.Timestamp
+	1,  // 28: machine.v1.GateInterval.mode:type_name -> machine.v1.GateMode
+	2,  // 29: machine.v1.GateInterval.wait_cause:type_name -> machine.v1.GateWaitCause
+	42, // 30: machine.v1.GateInterval.task_kind:type_name -> plan.v1.TaskKind
+	38, // 31: machine.v1.CommandRun.time:type_name -> google.protobuf.Timestamp
+	3,  // 32: machine.v1.GateServiceAdmitResponse.state:type_name -> machine.v1.GateState
+	38, // 33: machine.v1.Gate.since:type_name -> google.protobuf.Timestamp
+	40, // 34: machine.v1.Gate.resources:type_name -> plan.v1.Resources
+	38, // 35: machine.v1.Gate.expire_time:type_name -> google.protobuf.Timestamp
+	3,  // 36: machine.v1.GateServiceHoldResponse.state:type_name -> machine.v1.GateState
+	23, // 37: machine.v1.GateServiceListResponse.gates:type_name -> machine.v1.Gate
+	38, // 38: machine.v1.GateServiceHistoryRequest.after_time:type_name -> google.protobuf.Timestamp
+	38, // 39: machine.v1.GateServiceHistoryResponse.start_time:type_name -> google.protobuf.Timestamp
+	38, // 40: machine.v1.GateServiceHistoryResponse.read_time:type_name -> google.protobuf.Timestamp
+	19, // 41: machine.v1.GateServiceHistoryResponse.intervals:type_name -> machine.v1.GateInterval
+	30, // 42: machine.v1.GateServiceHistoryResponse.runs:type_name -> machine.v1.WorkerRun
+	42, // 43: machine.v1.WorkerRun.kind:type_name -> plan.v1.TaskKind
+	38, // 44: machine.v1.WorkerRun.start_time:type_name -> google.protobuf.Timestamp
+	38, // 45: machine.v1.WorkerRun.end_time:type_name -> google.protobuf.Timestamp
+	38, // 46: machine.v1.CommandCost.last_time:type_name -> google.protobuf.Timestamp
+	20, // 47: machine.v1.CommandCost.recent_runs:type_name -> machine.v1.CommandRun
+	31, // 48: machine.v1.CommandServiceListResponse.costs:type_name -> machine.v1.CommandCost
+	34, // 49: machine.v1.CommandServiceListResponse.summary:type_name -> machine.v1.GatesSummary
+	31, // 50: machine.v1.GatesSummary.peak:type_name -> machine.v1.CommandCost
+	35, // 51: machine.v1.GatesSummary.gates:type_name -> machine.v1.GateWaits
+	20, // 52: machine.v1.GateWaits.last:type_name -> machine.v1.CommandRun
+	31, // 53: machine.v1.CommandServiceRecordResponse.cost:type_name -> machine.v1.CommandCost
+	11, // 54: machine.v1.MachineService.Show:input_type -> machine.v1.MachineServiceShowRequest
+	13, // 55: machine.v1.MachineService.Series:input_type -> machine.v1.MachineServiceSeriesRequest
+	24, // 56: machine.v1.GateService.Hold:input_type -> machine.v1.GateServiceHoldRequest
+	26, // 57: machine.v1.GateService.List:input_type -> machine.v1.GateServiceListRequest
+	28, // 58: machine.v1.GateService.History:input_type -> machine.v1.GateServiceHistoryRequest
+	21, // 59: machine.v1.GateService.Admit:input_type -> machine.v1.GateServiceAdmitRequest
+	32, // 60: machine.v1.CommandService.List:input_type -> machine.v1.CommandServiceListRequest
+	36, // 61: machine.v1.CommandService.Record:input_type -> machine.v1.CommandServiceRecordRequest
+	12, // 62: machine.v1.MachineService.Show:output_type -> machine.v1.MachineServiceShowResponse
+	14, // 63: machine.v1.MachineService.Series:output_type -> machine.v1.MachineServiceSeriesResponse
+	25, // 64: machine.v1.GateService.Hold:output_type -> machine.v1.GateServiceHoldResponse
+	27, // 65: machine.v1.GateService.List:output_type -> machine.v1.GateServiceListResponse
+	29, // 66: machine.v1.GateService.History:output_type -> machine.v1.GateServiceHistoryResponse
+	22, // 67: machine.v1.GateService.Admit:output_type -> machine.v1.GateServiceAdmitResponse
+	33, // 68: machine.v1.CommandService.List:output_type -> machine.v1.CommandServiceListResponse
+	37, // 69: machine.v1.CommandService.Record:output_type -> machine.v1.CommandServiceRecordResponse
+	62, // [62:70] is the sub-list for method output_type
+	54, // [54:62] is the sub-list for method input_type
+	54, // [54:54] is the sub-list for extension type_name
+	54, // [54:54] is the sub-list for extension extendee
+	0,  // [0:54] is the sub-list for field type_name
 }
 
 func init() { file_machine_v1_machine_proto_init() }
