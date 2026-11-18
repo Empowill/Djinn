@@ -2,8 +2,8 @@ package harness
 
 // The hourglass Disk tab's measures (W435, T65, W122). Two passes walk the disk, each on demand, never on its own:
 //
-//   - the regular one measures Djinn's folders (each project's worktrees and scratch, split between live and ended
-//     tasks, its logs and tilasms, its data folder, the projects' node_modules) and the known caches (Go, Docker,
+//   - the regular one measures Djinn's folders (each project's worktrees and scratch, split by what the freeing pass
+//     frees of them, its logs and tilasms, its data folder, the projects' node_modules) and the known caches (Go, Docker,
 //     golangci-lint, npm, pip, uv, pnpm, JetBrains), each walk within its own diskWalkTimeout: on 18/11/2026 the walk
 //     of 800 worktrees on an eCryptfs home ate a shared two minutes, and the folders after it came back at 0 and left
 //     the list (L26). A walk that runs out of time keeps the last whole measure, or says its size is a floor. A pass
@@ -272,7 +272,8 @@ func (d *disk) foldersOut() []*machinev1.DiskFolder {
 
 // toDiskFolders makes the rows of the measured folders, biggest first. A folder whose walk ran out of time keeps its
 // previous whole size when that was bigger, said partial; one that measured nothing is left out. With ctx, the
-// worktrees and scratch are split between live and ended tasks, read in the store, when split.
+// worktrees and scratch are split, read in the store, when split: the folders of tasks the freeing pass frees by their
+// age (freeIntegrated, Q81), those it frees only by the cascade of their azima or wish (freeFinished), and the rest.
 func (h *Harness) toDiskFolders(
 	ctx context.Context, split bool, dirs []diskDir, walks map[string]walked, previous []*machinev1.DiskFolder, at time.Time,
 ) []*machinev1.DiskFolder {
@@ -307,11 +308,14 @@ func (h *Harness) toDiskFolders(
 		if tasks != nil && (dir.kind == folderWorktrees || dir.kind == folderScratch) {
 			for id, bytes := range w.children {
 				f.Count++
-				t := tasks[id]
-				if t == nil || t.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE ||
-					t.GetStatus() == planv1.TaskStatus_TASK_STATUS_CANCELLED {
-					f.EndedCount++
-					f.EndedBytes += bytes
+				switch t := tasks[id]; {
+				case t == nil: // Djinn never frees the folder of a task it no longer knows.
+				case freeIntegrated(t):
+					f.IntegratedCount++
+					f.IntegratedBytes += bytes
+				case freeFinished(t):
+					f.CascadeCount++
+					f.CascadeBytes += bytes
 				}
 			}
 		}
@@ -936,10 +940,10 @@ func (h *Harness) saveRest(rest []*machinev1.DiskFolder, at time.Time) {
 
 // diskSource is a source of the disk's use, named for the lead.
 type diskSource struct {
-	name    string
-	bytes   uint64
-	ended   uint64 // of worktrees or scratch, what ended tasks' take
-	partial bool
+	name       string
+	bytes      uint64
+	integrated uint64 // of worktrees or scratch, what tasks done and integrated take: freed 30 days after their end
+	partial    bool
 }
 
 // diskSources are the sources of the disk's use Djinn knows, biggest first: Djinn's folders, the caches and the slow
@@ -974,7 +978,7 @@ func (h *Harness) diskSources(wait time.Duration) []diskSource {
 				continue // An item counts it.
 			}
 		}
-		s := diskSource{name: f.GetPath(), bytes: f.GetSizeBytes(), ended: f.GetEndedBytes(), partial: f.GetPartial()}
+		s := diskSource{name: f.GetPath(), bytes: f.GetSizeBytes(), integrated: f.GetIntegratedBytes(), partial: f.GetPartial()}
 		if p := f.GetProject(); p != "" {
 			s.name = "the " + f.GetKind() + " of " + p
 		}

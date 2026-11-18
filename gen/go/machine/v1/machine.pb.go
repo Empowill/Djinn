@@ -989,15 +989,21 @@ type DiskFolder struct {
 	Kind string `protobuf:"bytes,4,opt,name=kind,proto3" json:"kind,omitempty"`
 	// Name of the project whose worktrees or scratch these are.
 	Project string `protobuf:"bytes,5,opt,name=project,proto3" json:"project,omitempty"`
-	// Of the worktrees or scratch, the folders of tasks ended (done or cancelled) or that Djinn no longer knows, in
-	// bytes; the rest is live tasks'.
-	EndedBytes uint64 `protobuf:"varint,6,opt,name=ended_bytes,json=endedBytes,proto3" json:"ended_bytes,omitempty"`
+	// Of the worktrees or scratch, the folders of tasks done with their work integrated, in bytes: what the freeing pass
+	// frees by itself 30 days after their end (Q81), by the same predicate.
+	IntegratedBytes uint64 `protobuf:"varint,6,opt,name=integrated_bytes,json=integratedBytes,proto3" json:"integrated_bytes,omitempty"`
 	// How many task folders the worktrees or scratch hold; how many entries the "~" row of kind home sums.
 	Count int32 `protobuf:"varint,7,opt,name=count,proto3" json:"count,omitempty"`
-	// How many of them are ended tasks'.
-	EndedCount int32 `protobuf:"varint,8,opt,name=ended_count,json=endedCount,proto3" json:"ended_count,omitempty"`
+	// How many of them are such tasks'.
+	IntegratedCount int32 `protobuf:"varint,8,opt,name=integrated_count,json=integratedCount,proto3" json:"integrated_count,omitempty"`
 	// When the folder was last walked.
-	MeasureTime   *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=measure_time,json=measureTime,proto3" json:"measure_time,omitempty"`
+	MeasureTime *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=measure_time,json=measureTime,proto3" json:"measure_time,omitempty"`
+	// Of the worktrees or scratch, the folders of the other tasks finished (cancelled, failed, stopped, done with their
+	// work dropped or not integrated), in bytes: what the freeing pass frees on top once their azima is validated or
+	// their wish granted. A task Djinn no longer knows counts in neither: Djinn never frees its folder.
+	CascadeBytes uint64 `protobuf:"varint,10,opt,name=cascade_bytes,json=cascadeBytes,proto3" json:"cascade_bytes,omitempty"`
+	// How many of them are those tasks'.
+	CascadeCount  int32 `protobuf:"varint,11,opt,name=cascade_count,json=cascadeCount,proto3" json:"cascade_count,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1067,9 +1073,9 @@ func (x *DiskFolder) GetProject() string {
 	return ""
 }
 
-func (x *DiskFolder) GetEndedBytes() uint64 {
+func (x *DiskFolder) GetIntegratedBytes() uint64 {
 	if x != nil {
-		return x.EndedBytes
+		return x.IntegratedBytes
 	}
 	return 0
 }
@@ -1081,9 +1087,9 @@ func (x *DiskFolder) GetCount() int32 {
 	return 0
 }
 
-func (x *DiskFolder) GetEndedCount() int32 {
+func (x *DiskFolder) GetIntegratedCount() int32 {
 	if x != nil {
-		return x.EndedCount
+		return x.IntegratedCount
 	}
 	return 0
 }
@@ -1093,6 +1099,20 @@ func (x *DiskFolder) GetMeasureTime() *timestamppb.Timestamp {
 		return x.MeasureTime
 	}
 	return nil
+}
+
+func (x *DiskFolder) GetCascadeBytes() uint64 {
+	if x != nil {
+		return x.CascadeBytes
+	}
+	return 0
+}
+
+func (x *DiskFolder) GetCascadeCount() int32 {
+	if x != nil {
+		return x.CascadeCount
+	}
+	return 0
 }
 
 // DiskItem is a known cache or store on the machine, with the command to copy to clean it, what it frees and its risk.
@@ -3948,7 +3968,7 @@ const file_machine_v1_machine_proto_rawDesc = "" +
 	"\x04done\x18\x04 \x01(\x05R\x04done\x12\x1f\n" +
 	"\vfreed_bytes\x18\x05 \x01(\x04R\n" +
 	"freedBytes\x12\x12\n" +
-	"\x04kept\x18\x06 \x01(\x05R\x04kept\"\x9e\x02\n" +
+	"\x04kept\x18\x06 \x01(\x05R\x04kept\"\xfc\x02\n" +
 	"\n" +
 	"DiskFolder\x12\x12\n" +
 	"\x04path\x18\x01 \x01(\tR\x04path\x12\x1d\n" +
@@ -3956,13 +3976,14 @@ const file_machine_v1_machine_proto_rawDesc = "" +
 	"size_bytes\x18\x02 \x01(\x04R\tsizeBytes\x12\x18\n" +
 	"\apartial\x18\x03 \x01(\bR\apartial\x12\x12\n" +
 	"\x04kind\x18\x04 \x01(\tR\x04kind\x12\x18\n" +
-	"\aproject\x18\x05 \x01(\tR\aproject\x12\x1f\n" +
-	"\vended_bytes\x18\x06 \x01(\x04R\n" +
-	"endedBytes\x12\x14\n" +
-	"\x05count\x18\a \x01(\x05R\x05count\x12\x1f\n" +
-	"\vended_count\x18\b \x01(\x05R\n" +
-	"endedCount\x12=\n" +
-	"\fmeasure_time\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\vmeasureTime\"\xb9\x02\n" +
+	"\aproject\x18\x05 \x01(\tR\aproject\x12)\n" +
+	"\x10integrated_bytes\x18\x06 \x01(\x04R\x0fintegratedBytes\x12\x14\n" +
+	"\x05count\x18\a \x01(\x05R\x05count\x12)\n" +
+	"\x10integrated_count\x18\b \x01(\x05R\x0fintegratedCount\x12=\n" +
+	"\fmeasure_time\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\vmeasureTime\x12#\n" +
+	"\rcascade_bytes\x18\n" +
+	" \x01(\x04R\fcascadeBytes\x12#\n" +
+	"\rcascade_count\x18\v \x01(\x05R\fcascadeCount\"\xb9\x02\n" +
 	"\bDiskItem\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x12\n" +
 	"\x04path\x18\x02 \x01(\tR\x04path\x12\x1d\n" +

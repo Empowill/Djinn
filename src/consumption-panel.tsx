@@ -786,7 +786,8 @@ function DiskFolderRow({
 }) {
   const size = Number(folder.sizeBytes);
   const share = Math.round((size / top) * 100);
-  const ended = Number(folder.endedBytes ?? 0n);
+  const freed = Number(folder.integratedBytes ?? 0n);
+  const cascade = folder.cascadeCount ?? 0;
   return (
     <div className="resource-disk-row" role="listitem">
       <span className="resource-disk-folder">
@@ -795,11 +796,16 @@ function DiskFolderRow({
         </code>
         {(folder.count ?? 0) > 0 && (
           <span className="resource-disk-ended muted-text">
-            {t("consumption.disk_ended", {
-              size: formatValue("memory", ended),
-              ended: folder.endedCount,
+            {t("consumption.disk_freed", {
+              size: formatValue("memory", freed),
+              freed: folder.integratedCount ?? 0,
               count: folder.count,
             })}
+            {cascade > 0 &&
+              ` · ${t("consumption.disk_cascade", {
+                size: formatValue("memory", Number(folder.cascadeBytes ?? 0n)),
+                cascade,
+              })}`}
           </span>
         )}
       </span>
@@ -816,25 +822,39 @@ function DiskFolderRow({
   );
 }
 
-// endedResidues sums what the tasks that ended (done, cancelled, or no longer known) leave in the projects'
-// worktrees and scratch folders: how many folders, how many of them worktrees and scratch, what they take, and whether
-// a walk ran out of time, the size then a floor.
-export function endedResidues(folders: readonly DiskFolder[]): {
+// freedResidues sums what the tasks the freeing pass frees leave in the projects' worktrees and scratch folders: those
+// done with their work integrated, freed 30 days after their end (Q81), how many folders, how many of them worktrees
+// and scratch, what they take; those it frees on top once their azima is validated or their wish granted; and whether
+// a walk ran out of time, the sizes then a floor.
+export function freedResidues(folders: readonly DiskFolder[]): {
   count: number;
   worktrees: number;
   scratch: number;
   bytes: number;
+  cascadeCount: number;
+  cascadeBytes: number;
   partial: boolean;
 } {
-  const out = { count: 0, worktrees: 0, scratch: 0, bytes: 0, partial: false };
+  const out = {
+    count: 0,
+    worktrees: 0,
+    scratch: 0,
+    bytes: 0,
+    cascadeCount: 0,
+    cascadeBytes: 0,
+    partial: false,
+  };
   for (const f of folders) {
     if (f.kind !== "worktrees" && f.kind !== "scratch") continue;
-    const ended = f.endedCount ?? 0;
-    if (ended === 0) continue;
-    out.count += ended;
-    if (f.kind === "worktrees") out.worktrees += ended;
-    else out.scratch += ended;
-    out.bytes += Number(f.endedBytes ?? 0n);
+    const freed = f.integratedCount ?? 0;
+    const cascade = f.cascadeCount ?? 0;
+    if (freed === 0 && cascade === 0) continue;
+    out.count += freed;
+    if (f.kind === "worktrees") out.worktrees += freed;
+    else out.scratch += freed;
+    out.bytes += Number(f.integratedBytes ?? 0n);
+    out.cascadeCount += cascade;
+    out.cascadeBytes += Number(f.cascadeBytes ?? 0n);
     out.partial ||= !!f.partial;
   }
   return out;
@@ -899,7 +919,7 @@ export const DiskSection = memo(function DiskSection({
     [measuredFolders, machineItems.length],
   );
 
-  const residues = useMemo(() => endedResidues(folders), [folders]);
+  const residues = useMemo(() => freedResidues(folders), [folders]);
 
   const [view, setView] = useState<"djinn" | "machine" | "rest">(
     initialView ?? (machineItems.length > 0 ? "machine" : "djinn"),
@@ -1262,6 +1282,14 @@ export const DiskSection = memo(function DiskSection({
                     size: diskSize(residues.bytes, residues.partial),
                     worktrees: residues.worktrees,
                     scratch: residues.scratch,
+                  })}
+                </p>
+              )}
+              {residues.cascadeCount > 0 && (
+                <p className="resource-disk-residues">
+                  {t("consumption.disk_cascade_residues", {
+                    count: residues.cascadeCount,
+                    size: diskSize(residues.cascadeBytes, residues.partial),
                   })}
                 </p>
               )}

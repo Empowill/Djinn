@@ -41,9 +41,11 @@ of djinn up, or its environment variable, fixes the percent for one run instead,
 **The disk.** The **Disk** tab of the Hourglass says at its top, in grey, when it last measured the disk, or that a
 measure is going, with a button to measure again now. It draws a bar of the whole disk (with the 30 GB and 10 GB guard marks),
 split into its sources: Go, Docker, Djinn, other caches, the home, the system, and what is left unmeasured. Below it,
-three tabs: **Djinn and its workers** (each project's worktrees and scratch, with the share of tasks ended, done or
-cancelled, that still keep theirs, summed above the list: how many folders the ended tasks leave, worktrees and
-scratch, and what they take, part of which Djinn frees by itself by the rules of [Task and worker](#task-and-worker);
+three tabs: **Djinn and its workers** (each project's worktrees and scratch, with the share Djinn frees by itself by
+the rules of [Task and worker](#task-and-worker): that of the tasks done with their work integrated, freed 30 days
+after their end, and apart what the other finished tasks take, freed once their azima is validated or their wish
+granted; both summed above the list, how many folders and what they take; a folder Djinn no longer knows counts in
+neither;
 Playwright, tilasms, logs, the data folder, and any isolated Go build caches),
 **Machine** (the Go build cache, the Go module and download caches, golangci-lint, Docker build cache, images and
 volumes when Docker is installed, pnpm, uv, pip, npm, and JetBrains), grouped by risk (**Safe**, **Rebuilds**, **Data
@@ -62,7 +64,7 @@ The Go builds Djinn runs, in its workers and its checks, share one Go build cach
 worktrees: an unchanged package is compiled once, not once per worktree. Before a worker starts and before push checks,
 Djinn reads the free space of its data folder's disk and of the Go build cache's, when Go is installed. Under 30 GB
 free, it deletes the cache entries unused for a day. Under 10 GB, the Djinn tells you the disk is almost full and names
-the biggest sources it knows: a project's worktrees and what of them ended tasks take, the caches, the entries of your
+the biggest sources it knows: a project's worktrees and what of them Djinn frees 30 days after their tasks' end, the caches, the entries of your
 home; the push checks wait until space comes back, instead of failing. Both thresholds are flags of djinn up.
 
 > **This page is a sketch.** Its full guide, how to use it from the window and from the Djinn, what to expect and
