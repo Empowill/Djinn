@@ -246,7 +246,7 @@ export {
   HourglassLine,
   HourglassSections,
 } from "@/src/hourglass.tsx";
-export { GatesTab, gateWaits } from "@/src/gates-tab.tsx";
+export { GatesTab, PAGE, mergeHistory } from "@/src/gates-tab.tsx";
 export {
   ADMISSIONS,
   GatesFlow,
@@ -760,7 +760,14 @@ export function resources(s) {
   // A djinn whose machine services count their reads: the series, the commands, the gates and their history (each
   // window asked), the machine the status bar reads.
   function hourglassDjinn() {
-    const reads = { series: 0, commands: 0, gates: 0, history: [] };
+    const reads = {
+      series: 0,
+      commands: 0,
+      commandAsks: [],
+      gates: 0,
+      history: [],
+      historyAfter: [],
+    };
     const transport = s.createRouterTransport(({ service }) => {
       service(s.MachineService, {
         series: () => {
@@ -784,6 +791,7 @@ export function resources(s) {
         },
         history: (req) => {
           reads.history.push(req.minutes);
+          reads.historyAfter.push(Boolean(req.afterTime));
           return {
             startTime: at(t3 - BigInt(req.minutes * 60)),
             readTime: at(t3),
@@ -793,9 +801,16 @@ export function resources(s) {
         },
       });
       service(s.CommandService, {
-        list: () => {
+        list: (req) => {
           reads.commands++;
-          return { costs: resourceCommands };
+          reads.commandAsks.push({
+            byTotal: req.byTotal,
+            brief: req.brief,
+            summary: req.summary,
+            pageSize: req.pageSize,
+            pageToken: req.pageToken,
+          });
+          return { costs: resourceCommands, total: resourceCommands.length };
         },
       });
     });

@@ -1,7 +1,6 @@
 package machine
 
 import (
-	"cmp"
 	"context"
 	"errors"
 	"math"
@@ -9,6 +8,8 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"connectrpc.com/connect"
@@ -25,12 +26,20 @@ import (
 // CostsHandler returns the Connect handler of CommandService on the store, and its path prefix: what the commands
 // of each project cost, as djinn gate run measures them.
 func CostsHandler(db *store.Store) (string, http.Handler) {
-	return machinev1connect.NewCommandServiceHandler(&costs{db: db}, connect.WithInterceptors(plan.Validate))
+	c := &costs{db: db}
+	c.stale.Store(true)
+	db.OnCommit(c.committed)
+	return machinev1connect.NewCommandServiceHandler(c, connect.WithInterceptors(plan.Validate))
 }
 
 type costs struct {
 	machinev1connect.UnimplementedCommandServiceHandler
 	db *store.Store
+
+	// The commands as List last read them, kept until a command or a project changes (listed.go).
+	mu     sync.Mutex
+	stale  atomic.Bool
+	listed *listed
 }
 
 func (c *costs) Record(
@@ -317,41 +326,4 @@ func Project(ctx context.Context, db *store.Store, taskID, dir string) (id, name
 func (c *costs) project(ctx context.Context, taskID, dir string) (string, error) {
 	id, _, err := Project(ctx, c.db, taskID, dir)
 	return id, err
-}
-
-func (c *costs) List(
-	ctx context.Context, req *connect.Request[machinev1.CommandServiceListRequest],
-) (*connect.Response[machinev1.CommandServiceListResponse], error) {
-	where := store.Where{}
-	if name := req.Msg.GetProject(); name != "" {
-		p, err := plan.ProjectNamed(ctx, c.db, name)
-		if err != nil {
-			return nil, plan.Status(err)
-		}
-		where["project_id"] = p.GetId()
-	}
-	all, err := store.List[*machinev1.CommandCost](ctx, c.db, where)
-	if err != nil {
-		return nil, plan.Status(err)
-	}
-	projects, _ := store.List[*planv1.Project](ctx, c.db, nil)
-	projNames := make(map[string]string)
-	for _, p := range projects {
-		projNames[p.GetId()] = p.GetName()
-	}
-	for _, cost := range all {
-		if name, ok := projNames[cost.GetProjectId()]; ok {
-			cost.ProjectName = name
-		}
-	}
-	slices.SortStableFunc(all, func(a, b *machinev1.CommandCost) int {
-		return cmp.Or(
-			cmp.Compare(b.GetP50HeldSeconds(), a.GetP50HeldSeconds()),
-			cmp.Compare(b.GetLastHeldSeconds(), a.GetLastHeldSeconds()),
-			cmp.Compare(b.GetSeconds(), a.GetSeconds()),
-			cmp.Compare(b.GetRuns(), a.GetRuns()),
-			strings.Compare(a.GetCommand(), b.GetCommand()),
-		)
-	})
-	return connect.NewResponse(&machinev1.CommandServiceListResponse{Costs: all}), nil
 }

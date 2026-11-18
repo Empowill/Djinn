@@ -127,6 +127,33 @@ func TestService_History(t *testing.T) {
 		}
 	}
 
+	// Asked after a time within the window, only what changed since: the intervals released after it, the runs from it
+	// on; the window stays the one asked.
+	after, err := client.History(t.Context(), connect.NewRequest(&machinev1.GateServiceHistoryRequest{
+		Minutes: 1440, AfterTime: at(4 * time.Hour),
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var commands []string
+	for _, iv := range after.Msg.GetIntervals() {
+		commands = append(commands, iv.GetCommand())
+	}
+	var runs []string
+	for _, r := range after.Msg.GetRuns() {
+		runs = append(runs, r.GetCode())
+	}
+	if span := after.Msg.GetReadTime().AsTime().Sub(after.Msg.GetStartTime().AsTime()); span != 24*time.Hour ||
+		!slices.Equal(commands, []string{"3h0m0s", "30m0s"}) || !slices.Equal(runs, []string{"W2", "W1", "W4", "W1"}) {
+		t.Errorf("after 4 hours ago: a window of %v, intervals %v, runs %v", span, commands, runs)
+	}
+	// After a time before the window: the whole window.
+	if before, err := client.History(t.Context(), connect.NewRequest(&machinev1.GateServiceHistoryRequest{
+		Minutes: 60, AfterTime: at(3 * time.Hour),
+	})); err != nil || len(before.Msg.GetIntervals()) != 1 {
+		t.Errorf("after a time before the hour: %v, %v", before.Msg.GetIntervals(), err)
+	}
+
 	// The joins are copies: the intervals the log in memory shares are left as they are.
 	kept := []*machinev1.GateInterval{{TaskId: "w1"}}
 	if joined := Joined(kept, past); joined[0].GetTaskCode() != "W1" || kept[0].GetTaskCode() != "" {
@@ -137,5 +164,39 @@ func TestService_History(t *testing.T) {
 	_, err = client.History(t.Context(), connect.NewRequest(&machinev1.GateServiceHistoryRequest{Minutes: 7*24*60 + 1}))
 	if connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Errorf("a window past a week: %v, want invalid_argument", err)
+	}
+}
+
+// TestStorePast: the tasks the history joins are read once, then again only after a task changed.
+func TestStorePast(t *testing.T) {
+	t.Parallel()
+	db, err := store.Open(t.Context(), "", &planv1.Task{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	put := func(task *planv1.Task) {
+		t.Helper()
+		if err := db.Tx(t.Context(), func(tx *store.Tx) error {
+			if err := tx.Journal("test", "put", task); err != nil {
+				return err
+			}
+			return tx.Put(task)
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	put(&planv1.Task{Id: store.NewID(), Code: "W1"})
+	past := StorePast(db)
+	first, err := past(t.Context())
+	if err != nil || len(first) != 1 {
+		t.Fatalf("first read: %v, %v", first, err)
+	}
+	if again, _ := past(t.Context()); &again[0] != &first[0] {
+		t.Error("read again with no task changed")
+	}
+	put(&planv1.Task{Id: store.NewID(), Code: "W2"})
+	if after, err := past(t.Context()); err != nil || len(after) != 2 {
+		t.Errorf("after a task was added: %v, %v", after, err)
 	}
 }

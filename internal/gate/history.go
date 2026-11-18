@@ -3,6 +3,8 @@ package gate
 import (
 	"context"
 	"slices"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"connectrpc.com/connect"
@@ -12,6 +14,7 @@ import (
 	machinev1 "github.com/empowill/djinn/gen/go/machine/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/plan"
+	"github.com/empowill/djinn/internal/store"
 )
 
 // HistoryMinutes is the window of the history of the gates when its request names none: the last hour.
@@ -28,9 +31,42 @@ type HandlerOption func(*service)
 // intervals alone: no kinds, no runs.
 func WithPast(past Past) HandlerOption { return func(s *service) { s.past = past } }
 
+// StorePast lists the tasks of db, read again only after one changed: the Gates tab reads the history every few
+// seconds, and some 3,300 tasks took 16 to 26 ms to read each time in the real store (W124), on its one connection.
+// The tasks given are shared: never changed.
+func StorePast(db *store.Store) Past {
+	var (
+		mu    sync.Mutex
+		stale atomic.Bool
+		tasks []*planv1.Task
+	)
+	stale.Store(true)
+	db.OnCommit(func(ms []proto.Message) {
+		for _, m := range ms {
+			if _, ok := m.(*planv1.Task); ok {
+				stale.Store(true)
+				return
+			}
+		}
+	})
+	return func(ctx context.Context) ([]*planv1.Task, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		if stale.Swap(false) {
+			read, err := store.List[*planv1.Task](ctx, db, nil)
+			if err != nil {
+				stale.Store(true)
+				return nil, err
+			}
+			tasks = read
+		}
+		return tasks, nil
+	}
+}
+
 // History gives the gate intervals released in the last minutes, then those held now, each with its task's kind and
-// code, and the runs of the workers over the same window (Runs). The intervals outlive a restart: the store keeps them
-// for three months (machine.Intervals).
+// code, and the runs of the workers over the same window (Runs); asked after a time, only those released after it and
+// the runs from it on. The intervals outlive a restart: the store keeps them for three months (machine.Intervals).
 func (s *service) History(
 	ctx context.Context, req *connect.Request[machinev1.GateServiceHistoryRequest],
 ) (*connect.Response[machinev1.GateServiceHistoryResponse], error) {
@@ -40,7 +76,12 @@ func (s *service) History(
 	}
 	now := time.Now()
 	start := now.Add(-time.Duration(minutes) * time.Minute)
-	ivs := s.g.Intervals(start, req.Msg.GetAllAdmissions())
+	// A read after a previous one gives only what changed since: the window keeps the rest.
+	from := start
+	if after := req.Msg.GetAfterTime(); after != nil && after.AsTime().After(start) {
+		from = after.AsTime()
+	}
+	ivs := s.g.Intervals(from, req.Msg.GetAllAdmissions())
 	var tasks []*planv1.Task
 	if s.past != nil {
 		var err error
@@ -50,7 +91,7 @@ func (s *service) History(
 	}
 	return connect.NewResponse(&machinev1.GateServiceHistoryResponse{
 		StartTime: timestamppb.New(start), ReadTime: timestamppb.New(now),
-		Intervals: Joined(ivs, tasks), Runs: Runs(tasks, start, now),
+		Intervals: Joined(ivs, tasks), Runs: Runs(tasks, from, now),
 	}), nil
 }
 

@@ -517,6 +517,10 @@ message GateServiceHistoryRequest {
   // When set, the intervals hold every admission of a worker's command; otherwise only those that waited a second or
   // more or ran a heavy command, the many that pass at once left out.
   bool all_admissions = 2;
+  // Only what changed since this time, the read_time of a previous read: the intervals released after it, those
+  // held now, and the runs that overlap from it to now. The Gates tab keeps the rest of the window it read, and asks
+  // a little before its last read_time, so that an interval kept late is not missed.
+  google.protobuf.Timestamp after_time = 3;
 }
 
 message GateServiceHistoryResponse {
@@ -624,11 +628,83 @@ message CommandCost {
 message CommandServiceListRequest {
   // Only the commands of this project, by name or identifier.
   string project = 1 [(buf.validate.field).string.max_len = 100];
+  // The most total time first (runs times their mean duration), as the Gates tab ranks them: the one worth making
+  // faster on top. Not set: the longest held first.
+  bool by_total = 2;
+  // The most commands to return, from page_token on. Not set: all of them.
+  int32 page_size = 3 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 1000
+  }];
+  // The next_page_token of a previous list, to fetch the page after it.
+  string page_token = 4 [(buf.validate.field).string.max_len = 20];
+  // Leave each command's recent runs out (recent_runs, recent_held_seconds): a table of the commands needs their
+  // figures alone, and the runs weigh most of the list.
+  bool brief = 5;
+  // Only the command of this identifier, its recent runs included: the row the Gates tab opens.
+  string id = 6 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+  // Add the summary of the gates over every command listed, whatever the page (summary).
+  bool summary = 7;
+  // Only the commands of this text, case ignored: with project, the band of a gate the Gates tab opens.
+  string command = 8 [(buf.validate.field).string.max_len = 200];
 }
 
 message CommandServiceListResponse {
   // The commands, by project, the most run first.
   repeated CommandCost costs = 1;
+  // Token to fetch the next page; empty on the last.
+  string next_page_token = 2;
+  // How many commands the request matches, every page together.
+  int32 total = 3;
+  // The gates over the commands' recent runs, when asked: what the Gates tab shows before any list.
+  GatesSummary summary = 4;
+}
+
+// GatesSummary is what the commands' recent runs (up to 200 a command) say of the gates, whole: the figures of the
+// Gates tab and the waits for each gate, so that the tab reads a page of the commands and not all of them.
+message GatesSummary {
+  // How many runs were asked of a gate: djinn gate run asked it, whether the command then ran to its end or not.
+  int32 asked = 1;
+  // How many ran to their end.
+  int32 ran = 2;
+  // The recent runs under a gate, measured.
+  int32 holds = 3;
+  // 50th percentile of their wait before the grant, in seconds, nearest rank.
+  double p50_wait_seconds = 4;
+  // 90th percentile of their wait before the grant, in seconds, nearest rank.
+  double p90_wait_seconds = 5;
+  // The longest wait, in seconds.
+  double max_wait_seconds = 6;
+  // How many waited over 5 seconds: the waits a worker notices.
+  int32 long_waits = 7;
+  // The command of the highest peak memory, its recent runs left out; absent when none was measured.
+  CommandCost peak = 8;
+  // The waits for each gate, the most held first.
+  repeated GateWaits gates = 9;
+}
+
+// GateWaits is the waits for a gate over the recent runs held under it: a median and a 90th percentile, never a sum
+// or a mean (the Statistics tab's rule).
+message GateWaits {
+  // Gate name.
+  string gate = 1;
+  // How many recent runs held it.
+  int32 holds = 2;
+  // 50th percentile of the wait, in seconds, nearest rank.
+  double p50_seconds = 3;
+  // 90th percentile of the wait, in seconds, nearest rank.
+  double p90_seconds = 4;
+  // The longest wait, in seconds.
+  double max_seconds = 5;
+  // How many waited over 5 seconds.
+  int32 long = 6;
+  // The newest run under the gate: its last hold.
+  CommandRun last = 7;
+  // The command of that run.
+  string last_command = 8;
 }
 
 message CommandServiceRecordRequest {

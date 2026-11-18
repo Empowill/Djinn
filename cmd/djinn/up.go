@@ -667,9 +667,7 @@ func runUp(args []string) (restart bool, err error) {
 		machine.WithDiskItems(workers.DiskItems),
 	)
 	svc[machinePrefix] = machineHandler
-	gatePrefix, gateHandler := gate.Handler(gates, gate.WithPast(func(ctx context.Context) ([]*planv1.Task, error) {
-		return store.List[*planv1.Task](ctx, db, nil)
-	}))
+	gatePrefix, gateHandler := gate.Handler(gates, gate.WithPast(gate.StorePast(db)))
 	svc[gatePrefix] = gateHandler
 	costsPrefix, costsHandler := machine.CostsHandler(db)
 	svc[costsPrefix] = costsHandler
