@@ -39,11 +39,13 @@ A command asks for a gate by its name, and waits until all of these hold:
 4. **Its turn has come:**
    - first, Djinn's own merges and pushes, in the order they asked: the checks of a task's merge, of a merge of main,
      of a push, and the code generation and setup they need;
-   - then everyone else, the workers, the Djinn, your terminal, the first wish by rank first, then within it the work
-     of the first [azima](#azima) by rank, then the first to ask.
+   - then everyone else, the workers, the Djinn, your terminal, by the rank of the active wishes you set in the window:
+     the worker of the wish ranked 1 first, then 2, then 3; within a wish the work of the first [azima](#azima) by
+     rank; then the first to ask. The work of a paused wish, and a command outside any wish, comes after the ranked
+     wishes, the first to ask first. The rank is read each time a gate frees: moving a wish counts from the next turn.
 
 A merge or a push that waits for a gate keeps it from the others, even when a lighter command would fit. A gate already
-held is never taken back for it: Djinn waits for the holder to finish.
+held is never taken back for it, nor for a better ranked wish: Djinn waits for the holder to finish.
 
 While a command waits, it says why: *held by W12 (Export as PDF)*, with the command W12 runs and for how long, and
 *then 1 merge or push goes first* when one does; or *the machine is under pressure*, and why.
