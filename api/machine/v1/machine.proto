@@ -636,6 +636,13 @@ service CommandService {
   rpc Record(CommandServiceRecordRequest) returns (CommandServiceRecordResponse) {
     option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
   }
+  // Forget what commands of a project were measured to cost: one command by its key (--command), the commands whose
+  // key starts with some words (--head), or all of the project's (--all); one of the three, no more. A cost learned
+  // wrong then stops holding the gates: the next run of each command is measured anew. Journaled; it cannot be undone.
+  rpc Forget(CommandServiceForgetRequest) returns (CommandServiceForgetResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_DELETE;
+  }
 }
 
 // CommandCost is what a command of a project costs, over the runs Djinn measured. The peak memory is the resident
@@ -816,4 +823,30 @@ message CommandServiceRecordRequest {
 message CommandServiceRecordResponse {
   // What the command costs now; absent when it ran outside any project.
   CommandCost cost = 1;
+}
+
+message CommandServiceForgetRequest {
+  option (buf.validate.message).cel = {
+    id: "command_service_forget.one"
+    message: "say what to forget: one of command, head or all"
+    expression: "(this.command != '' ? 1 : 0) + (this.head != '' ? 1 : 0) + (this.all ? 1 : 0) == 1"
+  };
+
+  // The project, by name or identifier.
+  string project = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.max_len = 100
+  ];
+  // The command of this key, case ignored, as djinn command list shows it.
+  string command = 2 [(buf.validate.field).string.max_len = 200];
+  // The commands whose key starts with these words, whole, case ignored: cat forgets cat and cat notes.md, not
+  // catalog.
+  string head = 3 [(buf.validate.field).string.max_len = 200];
+  // All the commands of the project.
+  bool all = 4;
+}
+
+message CommandServiceForgetResponse {
+  // The keys of the commands forgotten; none when nothing matched.
+  repeated string commands = 1;
 }

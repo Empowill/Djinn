@@ -75,6 +75,85 @@ func (c *costs) Record(
 	return connect.NewResponse(&machinev1.CommandServiceRecordResponse{Cost: out}), nil
 }
 
+// Forget deletes what the commands of a project were measured to cost: the one of a key, those whose key starts with
+// some words, or all of them. The forgetting is journaled, even of nothing, with who asked it.
+func (c *costs) Forget(
+	ctx context.Context, req *connect.Request[machinev1.CommandServiceForgetRequest],
+) (*connect.Response[machinev1.CommandServiceForgetResponse], error) {
+	in := req.Msg
+	p, err := plan.ProjectNamed(ctx, c.db, in.GetProject())
+	if err != nil {
+		return nil, plan.Status(err)
+	}
+	out := &machinev1.CommandServiceForgetResponse{}
+	err = c.db.Tx(ctx, func(tx *store.Tx) error {
+		all, err := store.List[*machinev1.CommandCost](ctx, tx, store.Where{"project_id": p.GetId()})
+		if err != nil {
+			return err
+		}
+		if err := tx.Journal(plan.CallerActor(ctx), machinev1connect.CommandServiceForgetProcedure, in); err != nil {
+			return err
+		}
+		for _, o := range all {
+			if !forgets(in, o.GetCommand()) {
+				continue
+			}
+			if err := tx.Delete(o); err != nil {
+				return err
+			}
+			out.Commands = append(out.Commands, o.GetCommand())
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, plan.Status(err)
+	}
+	slices.Sort(out.Commands)
+	logx.L().Info("command costs forgotten", "project", p.GetName(), "command", in.GetCommand(), "head", in.GetHead(),
+		"all", in.GetAll(), "forgotten", len(out.Commands), "by", plan.CallerActor(ctx))
+	return connect.NewResponse(out), nil
+}
+
+// forgets says whether in forgets the cost kept under command: all of them, the one of its key (Key, case ignored),
+// or those whose key starts with its head's words.
+func forgets(in *machinev1.CommandServiceForgetRequest, command string) bool {
+	switch {
+	case in.GetAll():
+		return true
+	case in.GetCommand() != "":
+		key := Key(in.GetCommand())
+		return strings.EqualFold(command, key) || strings.EqualFold(Key(command), key) ||
+			strings.EqualFold(command, in.GetCommand())
+	case in.GetHead() != "":
+		head := strings.ToLower(strings.Join(strings.Fields(in.GetHead()), " "))
+		key := strings.ToLower(command)
+		return key == head || strings.HasPrefix(key, head+" ")
+	}
+	return false
+}
+
+// PeakRuns is how many of a command's latest measured runs give the peak the gates hold it to (Peak).
+const PeakRuns = 20
+
+// Peak is the peak memory the gates hold the command c to: the 95th percentile of the peaks of its latest PeakRuns
+// measured runs, so that a run measured wrong, a tree gone astray, fades after a few runs (W139); its highest peak
+// when it kept no run.
+func Peak(c *machinev1.CommandCost) uint64 {
+	var peaks []float64
+	for _, r := range slices.Backward(c.GetRecentRuns()) {
+		if r.GetPeakMemoryBytes() > 0 {
+			peaks = append(peaks, float64(r.GetPeakMemoryBytes()))
+		}
+		if len(peaks) == PeakRuns {
+			break
+		}
+	}
+	if len(peaks) == 0 {
+		return c.GetPeakMemoryBytes()
+	}
+	return uint64(percentile(peaks, 0.95))
+}
+
 // find is the cost of the command whose key is key among all, case ignored: the one kept under key, else one kept
 // under a command of that key, from before the keys were normalized (it then takes key, once counted again); nil when
 // there is none.
@@ -88,7 +167,7 @@ func find(all []*machinev1.CommandCost, key string) *machinev1.CommandCost {
 	return nil
 }
 
-// byHead is what the commands of all with the head of key cost, key's own left out: the median of their highest peaks,
+// byHead is what the commands of all with the head of key cost, key's own left out: the median of their peaks (Peak),
 // and of their CPU times, with how many they are; zero when there is none.
 func byHead(all []*machinev1.CommandCost, key string) (Cost, int) {
 	head := Head(key)
@@ -103,7 +182,7 @@ func byHead(all []*machinev1.CommandCost, key string) (Cost, int) {
 		if h := Head(Key(o.GetCommand())); !strings.EqualFold(h, head) {
 			continue
 		}
-		peaks = append(peaks, float64(o.GetPeakMemoryBytes()))
+		peaks = append(peaks, float64(Peak(o)))
 		cpus = append(cpus, max(o.GetCpuSeconds(), o.GetLastCpuSeconds()))
 	}
 	if len(peaks) == 0 {
@@ -120,7 +199,7 @@ type Peaks struct{ db *store.Store }
 // NewPeaks reads the costs in the store.
 func NewPeaks(db *store.Store) *Peaks { return &Peaks{db: db} }
 
-// Cost is what a command was measured to cost: its highest peak memory, in bytes, and its CPU time, user and system,
+// Cost is what a command was measured to cost: its peak memory, in bytes (Peak), and its CPU time, user and system,
 // the higher of its mean and its last run's; how long it usually holds its gate, the 95th percentile of its last runs.
 // A command never measured is given the cost of the others of its head in its project (Head), their median: Head
 // then names it, and Held is zero.
@@ -152,7 +231,7 @@ func (p *Peaks) Cost(ctx context.Context, taskID, dir, command string) Cost {
 	}
 	cpu := max(found.GetCpuSeconds(), found.GetLastCpuSeconds())
 	return Cost{
-		Peak: found.GetPeakMemoryBytes(), CPU: time.Duration(cpu * float64(time.Second)),
+		Peak: Peak(found), CPU: time.Duration(cpu * float64(time.Second)),
 		Held: time.Duration(found.GetP95HeldSeconds() * float64(time.Second)),
 	}
 }

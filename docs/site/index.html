@@ -327,7 +327,8 @@
                 <p>
                   Workers share one machine. Tests, builds and code generation take a gate, one at a time:
                   <code>djinn gate run test -- go tool task test</code>. Djinn records what each command cost and, next time,
-                  even in another task's folder, waits for the memory it peaked at, five minutes at most. A gate is never taken back from a command
+                  even in another task's folder, waits for the memory it usually peaks at, five minutes at most; <code>djinn command forget</code> forgets a cost
+                  learned wrong. A gate is never taken back from a command
                   that still runs: past three times its usual hold, its lead hears of it. Every other command of a Claude worker that neither reads nor edits is
                   admitted first, measured, and, when heavy, takes its turn. Djinn's own checks to merge a task's work or
                   push a branch go before the workers' requests, and on a machine of more than one slot, one stays free for

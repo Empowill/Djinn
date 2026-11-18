@@ -34,7 +34,8 @@ A command asks for a gate by its name, and waits until all of these hold:
    A command never measured counts as light. A lit ifrit holds its gates alone whatever its server costs.
 2. **The machine is not under pressure.** See [Machine and load](#machine-and-load).
 3. **The memory is there.** A command Djinn has measured before waits until the free memory covers its peak, with a
-   margin; the memory the commands already holding gates may still take is counted as used. A command never measured
+   margin: its usual peak, the 95th percentile of its last 20 runs, so that a run measured wrong fades after a few
+   others; the memory the commands already holding gates may still take is counted as used. A command never measured
    waits for what the commands of the same kind cost (see below); with none measured, it goes at once. Three bounds
    keep a peak learned wrong from holding a worker:
    - **Alone, it goes.** When no measured command holds a gate or an admission, a command goes whatever its peak:
@@ -87,6 +88,11 @@ would run it, made alike from one run to the next:
   what runs after it stays.
 
 Arguments stay: the tests of a whole module and the tests of one package are two commands, with two costs.
+
+**A cost learned wrong can be forgotten.** Djinn's command line forgets, in a project, the cost of one command, of the
+commands that start with some words (every command starting with cat, say), or of all its commands; each forgetting is
+kept in Djinn's journal, with who asked it. The next run of each command is measured anew. A wrong cost also fades by
+itself: the gates hold a command to its usual peak over its last 20 runs, never to the most it ever used.
 
 A command never measured is given what the others of the same head cost in its project, their median: the head is the
 program and its subcommand, such as go test, npm run build or npx playwright test. A command of several commands, a
@@ -183,6 +189,10 @@ docker compose star up. No regular expression and no shell: nothing runs. 32 pat
 - **A mistake costs one gate.** A gate that is not valid is left out on its own, and the project's view says which and
   why; the other gates and the containers apply. A field Djinn does not know is ignored and said. A pattern of one word
   is kept, and said: it takes every command of that program.
+- **The admissions can be turned off.** admit: false, at the top of the file, has the project's workers' commands wait
+  for no admission: no Claude worker runs the gates' hook, no other agent's heavy command waits on Djinn's wrappers.
+  A gate the file declares is then taken only by a command run through it by name; the checks of Djinn's merges and
+  pushes still go through theirs. It counts from the next worker that starts.
 - **You can turn one off on your machine.** djinn project gates shows the gates as Djinn applies them; djinn project
   gates with off and the gate's name turns it off in your own settings file, never the repository's; on turns it back.
 

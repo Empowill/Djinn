@@ -106,6 +106,9 @@ type Spec struct {
 	// containers are the runaway ceilings of the containers the worker starts, its project's (containerCaps): the
 	// harness tells them to Djinn's docker, first on the worker's path (wrapperEnv). Providers ignore them.
 	containers wrap.Caps
+	// unadmitted: the project's djinn.yaml says admit: false (projectAdmits): the worker's commands wait for no
+	// admission, Admit is not set and no wrapper waits on a heavy head.
+	unadmitted bool
 }
 
 // AdmissionGate is the name the admissions of the workers' commands go by among the gates a task holds or waits for
