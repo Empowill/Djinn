@@ -410,9 +410,10 @@ before, Djinn refuses the switch, which would strand that work, and says how
 
 Under the per-azima strategy no azima waits for another: each branch holds main and its own work, nothing else. Djinn
 refuses an azima after another, directly or through their work (`djinn task spawn --after`, `djinn task depend`,
-`djinn task update`, `djinn task group`, an `after:` line of a plan file at `djinn plan sync`), and refuses switching a
-wish to per azima while its azimas depend on each other: the window says which in a line, and the switch stays on per
-wish. Tasks inside one azima wait for each other as usual. A branch made before, stacked on the branch of the azima it
+`djinn task update`, `djinn task group`, an `after:` line of a plan file at `djinn plan sync`), saying which azima
+would wait for which and what to change: drop from `--after` the tasks part of another azima, or spawn the task part of
+that one (W117). It refuses switching a wish to per azima while its azimas depend on each other: the window says which
+in a line, and the switch stays on per wish. Tasks inside one azima wait for each other as usual. A branch made before, stacked on the branch of the azima it
 depended on, keeps working as it is: Djinn never cuts it again nor rewrites it.
 
 Once every task part of an azima is finished, it is **To validate**: nothing is left for Djinn. Its card says what

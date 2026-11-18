@@ -1,6 +1,6 @@
 ---
 name: direct-commands
-description: Never pipe, chain, loop, redirect or substitute around djinn; each is a manual approval prompt. The direct flags that replace them
+description: Never pipe, chain, loop, redirect or substitute around djinn; each is a manual approval prompt. The direct flags that replace them, and the right form of the calls Djinn refused
 type: feedback
 ---
 
@@ -29,3 +29,19 @@ terminal. The brief now starts and ends with the rule, and ends with a line per 
 
 **How to apply:** when an output is too long, cut it with a flag, never with a pipe; when a flag is missing, run the
 commands one by one, then spawn a task that adds the flag to Djinn and a line to this note.
+
+## Calls refused for their form, and the form that passes
+
+The lead's calls refused from 16 to 18/11/2026 (W117), read in its transcripts: about a hundred in three days. Djinn now
+takes the first one as typed; the others are the lead's to write right the first time.
+
+| Refused | Passes |
+| --- | --- |
+| `project-id: dolmen` in a plan (`--plan`, `--plan-file`), "not one of the wish's" though the wish had dolmen | Passes since W117: a plan names its project by name, as `--project-id` does. When the wish has not the project, the refusal gives `djinn wish add-project` |
+| `djinn task spawn <wish> --kind azima ... --tilasm L95` | An azima has no worker: no `--tilasm`, `--prompt`, `--write-scopes`, `--minutes`; link the tilasm in `--description` (`djinn://tilasm/<id>`) and give it to the parts |
+| `djinn task spawn <wish> --part-of T92 --after W875` (W875 part of T85), in a wish that pushes per azima | A task waits only for tasks of its own azima: drop the `--after`, or spawn it `--part-of T85` |
+| `djinn task spawn` or `--kind azima` with no `--project-id` in a wish of several projects | Always give `--project-id` (or `--part-of` an azima) when the wish has several projects |
+| `djinn question launch Q12 --write-scopes ...` or `--urgent` | Not flags of `launch`; `djinn question launch --help` lists what it takes in place of the plan's |
+| `djinn question revise Q12 --text ...` or `--title ...` | `revise` changes context, options, recommendation and plans, never the question's text: ask a new question |
+| `djinn question launch Q12` with a code in several wishes | Add `--wish-id <wish>` |
+| a Write in `/tmp/...`, a `grep` on a tool result file | Write only in your own folder, the session's working directory; read a long output with a flag of the command, never with `grep` |

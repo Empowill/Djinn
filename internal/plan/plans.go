@@ -228,14 +228,23 @@ func fillPlan(ctx context.Context, r store.Reader, q *planv1.Question, p *planv1
 	if err != nil {
 		return err
 	}
-	if id := p.GetProjectId(); id != "" {
-		project, err := store.Get[*planv1.Project](ctx, r, id)
-		if errors.Is(err, store.ErrNotFound) || err == nil && !slices.Contains(wish.GetProjectIds(), project.GetId()) {
-			return invalid("the plan for %s names project %s, not one of the wish's", letter, id)
+	if name := p.GetProjectId(); name != "" {
+		// By name as by identifier, as --project-id takes it on the command line: the lead writes project-id: dolmen
+		// (W117: refused as "not one of the wish's" thirteen times in three days, dolmen being one).
+		project, err := ProjectNamed(ctx, r, name)
+		if errors.Is(err, store.ErrNotFound) {
+			return invalid("the plan for %s names project %s, which Djinn does not have; the wish's: %s", letter, name,
+				ProjectNames(ctx, r, wish.GetProjectIds()))
 		}
 		if err != nil {
 			return err
 		}
+		if !slices.Contains(wish.GetProjectIds(), project.GetId()) {
+			return invalid("the plan for %s names project %s, not one of the wish's (%s): add it first with "+
+				"djinn wish add-project %s --project-id %s, or name one of the wish's", letter, project.GetName(),
+				ProjectNames(ctx, r, wish.GetProjectIds()), wish.GetId(), project.GetName())
+		}
+		p.ProjectId = project.GetId()
 	}
 	tasks, err := store.List[*planv1.Task](ctx, r, store.Where{"wish_id": q.GetWishId()})
 	if err != nil {

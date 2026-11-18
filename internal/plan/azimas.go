@@ -373,7 +373,8 @@ func RefuseAzimaDependencies(tasks, graph []*planv1.Task) error {
 		return nil
 	}
 	return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
-		"the wish pushes per azima: no azima waits for another, each one's branch cut from main (%s)",
+		"the wish pushes per azima: no azima waits for another, each one's branch cut from main (%s); a task waits "+
+			"only for tasks of its own azima: drop from --after what is part of another, or spawn the task part of that one",
 		AzimaDependenciesText(added)))
 }
 

@@ -154,7 +154,8 @@ turns on, and when every azima of the wish carries it, it proposes to you to gra
 > comes back. Every azima of the wish now carries it: the Djinn asks you whether to grant the wish.
 
 Under the per-azima strategy, **no azima waits for another**: each branch holds main and its own work, nothing else.
-Djinn refuses to make one azima come after another, and refuses the switch to per azima while azimas depend on each
+Djinn refuses to make one azima come after another, directly or through work part of them, saying which and what to
+change: a task waits only for tasks of its own azima. It refuses the switch to per azima while azimas depend on each
 other, saying which. Tasks inside one azima still wait for each other as usual.
 
 ## Azimas from the Djinn
