@@ -47,31 +47,6 @@ func Hook(in io.Reader, out io.Writer, admit func(what, dir, match string) (stri
 	})
 }
 
-// readHeads are the commands that read or edit and run nothing else: they pass with no admission. Anything else, a
-// build, a test, a package manager, a script, an interpreter, a loop, is admitted.
-var readHeads = map[string]bool{
-	// Reading files and folders.
-	"ls": true, "cat": true, "head": true, "tail": true, "wc": true, "grep": true, "egrep": true, "fgrep": true,
-	"rg": true, "fd": true, "tree": true, "stat": true, "file": true, "du": true, "df": true, "less": true,
-	"more": true, "diff": true, "cmp": true, "comm": true, "od": true, "xxd": true, "hexdump": true, "strings": true,
-	"sha256sum": true, "sha1sum": true, "md5sum": true, "cksum": true, "realpath": true, "readlink": true,
-	"basename": true, "dirname": true, "find": true,
-	// Text in a pipe.
-	"echo": true, "printf": true, "sort": true, "uniq": true, "cut": true, "tr": true, "awk": true, "sed": true,
-	"jq": true, "column": true, "nl": true, "tee": true, "base64": true, "fold": true, "rev": true, "paste": true,
-	"join": true, "expand": true, "fmt": true,
-	// Editing files and folders.
-	"mkdir": true, "rmdir": true, "touch": true, "cp": true, "mv": true, "rm": true, "ln": true, "chmod": true,
-	"patch": true,
-	// The shell itself, and what tells about the machine.
-	"cd": true, "pwd": true, "true": true, "false": true, "test": true, "[": true, "export": true, "unset": true,
-	"which": true, "type": true, "date": true, "printenv": true, "id": true, "whoami": true,
-	"hostname": true, "uname": true, "ps": true, "pgrep": true, "free": true, "uptime": true, "nproc": true,
-	"exit": true,
-	// Djinn's own commands talk to Djinn; djinn gate run takes its gate.
-	"djinn": true,
-}
-
 // gitReads are git's commands that read or edit the worktree, and run no hook.
 var gitReads = map[string]bool{
 	"status": true, "log": true, "diff": true, "show": true, "branch": true, "rev-parse": true, "rev-list": true,
@@ -86,7 +61,7 @@ var gitReads = map[string]bool{
 // and env, whose assignments are stripped after it.
 var stripped = map[string]bool{"time": true, "nohup": true, "command": true, "builtin": true, "noglob": true, "env": true}
 
-// Plain says whether command only reads or edits, its every part being a command of readHeads or a reading git: it
+// Plain says whether command only reads or edits, its every part being a light command (machine.Light) or a reading git: it
 // passes with no admission. A here-document is data its command reads, cat <<'EOF' > notes.md writes a file (W82);
 // a substitution in its body runs, unless its delimiter is quoted. One it cannot read through, a substitution, a
 // subshell, a find that runs or deletes, is not plain.
@@ -116,7 +91,7 @@ func Plain(command string) bool {
 		}
 		head := path.Base(words[0])
 		switch {
-		case !readHeads[head] && head != "git":
+		case !machine.Light(head) && head != "git":
 			return false
 		case head == "git" && !gitRead(words[1:]):
 			return false

@@ -89,7 +89,7 @@ type Policy struct {
 	MemoryFree  float64
 	MemoryLevel int
 	// A gate goes to a command measured in its project only when the memory available, less the peaks of the
-	// commands holding a gate, holds its highest peak plus CommandMargin; a command never measured goes as it comes.
+	// commands holding a gate, holds its peak plus CommandMargin (Room); a command never measured goes as it comes.
 	// Djinn's recommendation: the developer may change it.
 	CommandMargin uint64
 	// Another worker starts only when the memory available, less what the workers running may still take, holds the
@@ -658,20 +658,29 @@ func (p Policy) Pressure(s Snapshot) string {
 	return ""
 }
 
-// Room says why the machine cannot hold the command yet, its highest measured peak memory being peak, or "" when it
-// can: the memory available, less held (the peaks of the commands holding a gate, which may not have reached them
-// yet), holds the peak plus CommandMargin. A command never measured (peak 0), or a machine whose memory is unknown,
-// has room.
+// CommandPeakShare is the most of the machine's memory a command's peak counts for in Room: a peak measured past it,
+// a tree gone wrong or a command learned under another's key, never asks more than the machine can give (W139).
+const CommandPeakShare = 0.5
+
+// Room says why the machine cannot hold the command yet, its measured peak memory being peak, or "" when it can: the
+// memory available, less held (the peaks of the commands holding a gate, which may not have reached them yet), holds
+// the peak plus CommandMargin, the peak counted at CommandPeakShare of the memory at most. A command never measured
+// (peak 0), a machine whose memory is unknown, or a command that nothing measured holds a gate beside (held 0) has
+// room: alone, waiting frees nothing for it (W139).
 func (p Policy) Room(s Snapshot, command string, peak, held uint64) string {
-	free := s.MemoryAvailable - min(held, s.MemoryAvailable)
-	if peak == 0 || s.MemoryTotal == 0 || free >= peak+p.CommandMargin {
+	if peak == 0 || s.MemoryTotal == 0 || held == 0 {
 		return ""
 	}
-	why := fmt.Sprintf("%s peaks at %s, %s free", command, size(peak), size(s.MemoryAvailable))
-	if held > 0 {
-		why += fmt.Sprintf(", %s of it for the commands holding a gate", size(min(held, s.MemoryAvailable)))
+	capped := ""
+	if most := uint64(float64(s.MemoryTotal) * CommandPeakShare); peak > most {
+		peak, capped = most, fmt.Sprintf(" (counted at %.0f%% of %s)", CommandPeakShare*100, size(s.MemoryTotal))
 	}
-	return why
+	free := s.MemoryAvailable - min(held, s.MemoryAvailable)
+	if free >= peak+p.CommandMargin {
+		return ""
+	}
+	why := fmt.Sprintf("%s peaks at %s%s, %s free", command, size(peak), capped, size(s.MemoryAvailable))
+	return why + fmt.Sprintf(", %s of it for the commands holding a gate", size(min(held, s.MemoryAvailable)))
 }
 
 // Typical is the typical peak memory of a worker, and how many measured peaks gave it: the median of the first

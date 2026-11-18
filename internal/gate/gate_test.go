@@ -241,20 +241,25 @@ func TestTake(t *testing.T) {
 		f := &tasks{rank: map[string]int{"M": 0, "W1": 0, "W2": 0, "W3": 0}, works: map[string]bool{"W1": true, "W2": true, "W3": true}}
 		m := calm()
 		m.setFree(18 * machine.GiB / 10)
-		g := New(m, peaks{"go tool task test": 5 * machine.GiB, "go tool task lint": 200 << 20}, f)
+		g := New(m, peaks{"go tool task test": 5 * machine.GiB, "go tool task lint": 200 << 20, "go vet ./...": 100 << 20}, f)
 		g.tick = 10 * time.Millisecond
+		// A measured command holds a gate: alone, the merge would pass (Room).
+		vet, _ := run(t, g, "vet", "W3", "go vet ./...")
+		giveVet := await(t, vet, "the vet's grant")
 
 		heavy, heavyWaits := merge(t, g, "test", "M", "go tool task test")
-		if why := await(t, heavyWaits, "the merge waits"); why != "a merge or a push, served before the workers: go tool task test peaks at 5.0 GiB, 1.8 GiB free" {
+		const short = "go tool task test peaks at 5.0 GiB, 1.8 GiB free, 100 MiB of it for the commands holding a gate"
+		if why := await(t, heavyWaits, "the merge waits"); why != "a merge or a push, served before the workers: "+short {
 			t.Errorf("the merge waits because %q", why)
 		}
 		light, lightWaits := run(t, g, "test", "W1", "go tool task lint")
-		if why := await(t, lightWaits, "the worker waits"); why != "a merge or a push goes first: go tool task test peaks at 5.0 GiB, 1.8 GiB free" {
+		if why := await(t, lightWaits, "the worker waits"); why != "a merge or a push goes first: "+short {
 			t.Errorf("the worker waits because %q", why)
 		}
 		notGranted(t, light, "a gate a merge waits for")
 		m.setFree(8 * machine.GiB)
 		giveTest := await(t, heavy, "the merge's grant once memory frees")
+		giveVet()
 		notGranted(t, light, "a gate a merge holds")
 		giveTest()
 		await(t, light, "the worker's grant after the merge")()
@@ -287,16 +292,23 @@ func TestTake(t *testing.T) {
 		f := &tasks{rank: map[string]int{"W1": 0}}
 		m := calm()
 		m.setFree(18 * machine.GiB / 10)
-		g := New(m, peaks{"go tool task e2e": 31 * machine.GiB / 10, "go tool task test": 5 * machine.GiB, "go tool task lint": 200 << 20}, f)
+		g := New(m, peaks{
+			"go tool task e2e": 31 * machine.GiB / 10, "go tool task test": 5 * machine.GiB, "go tool task lint": 200 << 20,
+			"go vet ./...": 100 << 20,
+		}, f)
 		g.tick = 10 * time.Millisecond
 		g.Heavy(64*machine.GiB, time.Hour) // The memory alone keeps them apart here, not their turn (TestAdmission).
+		vet, _ := run(t, g, "vet", "", "go vet ./...")
+		giveVet := await(t, vet, "the vet's grant")
+		defer giveVet()
 
 		heavy, waits := run(t, g, "e2e", "W1", "go tool task e2e")
-		if why := await(t, waits, "reason"); why != "go tool task e2e peaks at 3.1 GiB, 1.8 GiB free" {
+		const short = "go tool task e2e peaks at 3.1 GiB, 1.8 GiB free, 100 MiB of it for the commands holding a gate"
+		if why := await(t, waits, "reason"); why != short {
 			t.Errorf("the heavy command waits because %q", why)
 		}
 		notGranted(t, heavy, "a command the machine cannot hold")
-		if !slices.Contains(f.noted(), "W1 gate e2e: waiting: go tool task e2e peaks at 3.1 GiB, 1.8 GiB free") {
+		if !slices.Contains(f.noted(), "W1 gate e2e: waiting: "+short) {
 			t.Errorf("notes = %q", f.noted())
 		}
 		light, _ := run(t, g, "lint", "", "go tool task lint")
@@ -309,12 +321,45 @@ func TestTake(t *testing.T) {
 
 		// The e2e run holds its gate: its peak counts as taken until it gives it back.
 		test, waits := run(t, g, "test", "", "go tool task test")
-		if why := await(t, waits, "reason"); why != "go tool task test peaks at 5.0 GiB, 8.0 GiB free, 3.1 GiB of it for the commands holding a gate" {
+		if why := await(t, waits, "reason"); why != "go tool task test peaks at 5.0 GiB, 8.0 GiB free, 3.2 GiB of it for the commands holding a gate" {
 			t.Errorf("the second heavy command waits because %q", why)
 		}
 		notGranted(t, test, "a command beside a heavy holder")
 		giveE2E()
 		await(t, test, "the second heavy command's grant")()
+	})
+
+	// A command that nothing measured holds a gate beside passes whatever its peak: waiting would free nothing for it.
+	// Beside one, it waits for the memory MemoryWait at most, then is admitted all the same, told why (W139).
+	t.Run("memory: alone passes, the wait is bounded", func(t *testing.T) {
+		t.Parallel()
+		f := &tasks{rank: map[string]int{"W1": 0, "W2": 0}}
+		m := calm()
+		m.setFree(18 * machine.GiB / 10)
+		g := New(m, peaks{"go tool task e2e": 12 * machine.GiB, "go vet ./...": 100 << 20}, f)
+		g.tick = 10 * time.Millisecond
+		g.memWait = 300 * time.Millisecond
+		g.Heavy(64*machine.GiB, time.Hour)
+
+		alone, _ := run(t, g, "e2e", "W1", "go tool task e2e")
+		await(t, alone, "the grant of a command alone")()
+
+		vet, _ := run(t, g, "vet", "", "go vet ./...")
+		giveVet := await(t, vet, "the vet's grant")
+		defer giveVet()
+		heavy, waits := run(t, g, "e2e", "W2", "go tool task e2e")
+		const short = "go tool task e2e peaks at 8.0 GiB (counted at 50% of 16.0 GiB), 1.8 GiB free, 100 MiB of it for the commands holding a gate"
+		if why := await(t, waits, "reason"); why != short {
+			t.Errorf("waits because %q", why)
+		}
+		await(t, heavy, "the grant past the memory wait")()
+		const forced = "admitted after 300ms waiting for memory, the most a command waits for it: " + short
+		if why := await(t, waits, "the reason it was admitted"); why != forced {
+			t.Errorf("admitted because %q", why)
+		}
+		if !slices.Contains(f.noted(), "W2 gate e2e: "+forced) {
+			t.Errorf("notes = %q", f.noted())
+		}
 	})
 
 	// A waiter that leaves is forgotten; the gate goes to the next one.

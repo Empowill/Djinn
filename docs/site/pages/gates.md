@@ -33,9 +33,16 @@ A command asks for a gate by its name, and waits until all of these hold:
    comes from what the command was measured to cost (see Heavy commands take turns, below), not from the gate's name.
    A command never measured counts as light. A lit ifrit holds its gates alone whatever its server costs.
 2. **The machine is not under pressure.** See [Machine and load](#machine-and-load).
-3. **The memory is there.** A command Djinn has measured before waits until the free memory covers the most it ever
-   used, with a margin; the memory the commands already holding gates may still take is counted as used. A command
-   never measured waits for what the commands of the same kind cost (see below); with none measured, it goes at once.
+3. **The memory is there.** A command Djinn has measured before waits until the free memory covers its peak, with a
+   margin; the memory the commands already holding gates may still take is counted as used. A command never measured
+   waits for what the commands of the same kind cost (see below); with none measured, it goes at once. Three bounds
+   keep a peak learned wrong from holding a worker:
+   - **Alone, it goes.** When no measured command holds a gate or an admission, a command goes whatever its peak:
+     waiting would free nothing for it.
+   - **Half the machine at most.** A peak counts for half of the machine's memory at most: it never asks more than the
+     machine has.
+   - **Five minutes at most.** A command waits for the memory five minutes at most; past them it is admitted all the
+     same, and its worker reads why beside its result.
 4. **Its turn has come:**
    - first, Djinn's own merges and pushes, in the order they asked: the checks of a task's merge, of a merge of main,
      of a push, and the code generation and setup they need;
@@ -82,8 +89,10 @@ would run it, made alike from one run to the next:
 Arguments stay: the tests of a whole module and the tests of one package are two commands, with two costs.
 
 A command never measured is given what the others of the same head cost in its project, their median: the head is the
-program and its subcommand, such as go test, npm run build or npx playwright test. With no such command measured, it
-has no cost yet, and goes as soon as its gate is free. A cost kept before the keys were made alike is still found.
+program and its subcommand, such as go test, npm run build or npx playwright test. A command of several commands, a
+format then a build joined by a semicolon, or one whose program only reads or edits, such as moving or editing a file in
+place, has no head: it neither lends its cost to another nor borrows one. With no such command measured, it has no cost
+yet, and goes as soon as its gate is free. A cost kept before the keys were made alike is still found.
 
 ## Admitted commands
 
@@ -96,7 +105,7 @@ it:
   runs exactly as the worker wrote it: its permissions judge it as before.
 
 An admission is shared: many commands hold one at once. It waits only while the machine is under pressure or lacks
-the memory the command peaked at, in the same order as the gates: the first wish first. Once admitted, Djinn finds the
+the memory the command peaked at, five minutes at most for the memory, in the same order as the gates: the first wish first. Once admitted, Djinn finds the
 command among the worker's processes, reads what it uses, and records its cost when it ends. A command too short to be
 found in a few seconds is counted asked, not measured.
 
