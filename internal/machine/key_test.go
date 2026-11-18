@@ -82,7 +82,8 @@ func TestKey(t *testing.T) {
 	}
 }
 
-// TestHead covers Head: the program and its subcommand, the arguments left out.
+// TestHead covers Head: the program and its subcommand, the arguments left out; none for a key of several commands
+// or of a light program, which lends its cost to none (W139).
 func TestHead(t *testing.T) {
 	for key, want := range map[string]string{
 		"go test ./internal/gate -run TestKey":     "go test",
@@ -94,7 +95,12 @@ func TestHead(t *testing.T) {
 		"./bin/djinn-e2e up --data $DJINN_SCRATCH": "./bin/djinn-e2e up",
 		"python3 -I bench.py":                      "python3",
 		"python3 - '<<d287bb7f'":                   "python3",
-		"cat '<<8f434346' | python3":               "cat",
+		"cat '<<8f434346' | python3":               "",
+		"gofmt -l . ; go build ./cmd/djinn":        "",
+		"mv a b && pnpm build":                     "",
+		"sed -i s/a/b/ f":                          "",
+		"/usr/bin/cat f":                           "",
+		"git push":                                 "git push",
 		"":                                         "",
 	} {
 		if got := Head(key); got != want {

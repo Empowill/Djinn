@@ -689,7 +689,13 @@ version: 1
 containers:
   memory_mib: 8192 # memory of a container, swap included, in MiB (64 at least)
   pids: 2048       # processes and threads of a container (16 at least)
+admit: false       # the workers' commands wait for no admission by the gates (W139); true when not set
 ```
+
+`admit: false` gives the project's Claude workers no `djinn gate hook`, and its other agents no wrapper on their heavy
+heads: their commands run with no admission, whatever they cost. A gate the project declares is then taken only by `djinn gate
+run` with its name; the checks of Djinn's merges and pushes still go through theirs; Djinn's `docker` still bounds the containers. It
+counts from the next worker that starts.
 
 When a project's settings name its checks, Djinn brings finished work into the wish's branch by itself: the tasks
 ended and waiting go as one batch, their branches merged one on top of the other in a worktree of its own (made ready
@@ -748,11 +754,17 @@ djinn gate run test -- go tool task test
 ```
 
 A gate is granted only while the machine is not under pressure; a command measured before waits until the machine
-has the memory it peaked at. What the command cost, not the gate's name, says how it holds it: a command measured heavy
+has the memory it peaked at, with three bounds (W139): a command that no measured command holds a gate or an admission
+beside goes whatever its peak, since waiting would free nothing; a peak counts for half of the machine's memory at
+most; and a command waits for the memory 5 minutes at most, then is admitted all the same, its worker reading
+`admitted after 5m0s waiting for memory, the most a command waits for it: …`. What the command cost, not the gate's name, says how it holds it: a command measured heavy
 (below) holds its gate alone, one holder at a time; a light one, or one never measured, shares it, as many at once as
 the machine holds, and waits only for one that holds the name alone. A lit ifrit holds its gates alone whatever its
 server costs. The status bar shows how many gates are held. `djinn
-command list` shows what each command cost (CPU time, peak memory, duration).
+command list` shows what each command cost (CPU time, peak memory, duration). The peak the gates hold a command to is the
+95th percentile of its last 20 measured runs (`machine.Peak`), not the most it ever used: a run measured wrong fades
+after a few others. `djinn command forget <project> --command <key>`, `--head <words>` (every key that starts with
+them: `--head cat`) or `--all` forgets costs learned wrong, journaled; the next run is measured anew.
 
 Who gets a gate first: Djinn's own requests to merge a task's work into its branch (its wish's or its azima's), to
 settle such a merge, or to run a push's checks, the first come first; then the others (a worker's `djinn gate run`, a
@@ -794,7 +806,9 @@ body (`python3 - '<<d287bb7f'`): two inline scripts are two keys; a file `cat` o
 command that runs it is left out, and the commands after its body stay (W82: they were cut, and the keys `cat` and
 `python3 -` kept the peaks of whatever followed). A command that only reads or edits, `cat <<'EOF' > notes.md`
 among them, needs no admission; a substitution in a here-document whose delimiter is not quoted does. A command never measured is given the median cost of the others of
-its head in its project (`go test`, `go tool task lint`, `npm run build`, `npx playwright test`), else none. A cost
+its head in its project (`go test`, `go tool task lint`, `npm run build`, `npx playwright test`), else none. A key of
+several commands (`gofmt -l . ; go build`, `mv a b && pnpm build`) or of a light program (`sed -i`, `cat`, `mv`) has no
+head: it neither lends its cost nor borrows one (W139). A cost
 kept under a command from before the keys were normalized is found too, and takes its key once counted again.
 
 A gate or an admission is never taken back from a holder that lives: it goes back when its holder gives it, its

@@ -15,7 +15,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file djinn/v1/project_config.proto.
  */
 export const file_djinn_v1_project_config: GenFile = /*@__PURE__*/
-  fileDesc("Ch1kamlubi92MS9wcm9qZWN0X2NvbmZpZy5wcm90bxIIZGppbm4udjEiegoNUHJvamVjdENvbmZpZxIoCgpjb250YWluZXJzGAEgASgLMhQuZGppbm4udjEuQ29udGFpbmVycxIuCgVnYXRlcxgCIAMoCzIVLmRqaW5uLnYxLlByb2plY3RHYXRlQgi6SAWSAQIQCBIPCgd2ZXJzaW9uGAMgASgNIqwCCgtQcm9qZWN0R2F0ZRI1CgRuYW1lGAEgASgJQie6SCRyIjIWXlthLXpdW2EtejAtOS1dezAsMzl9JFoIY29tbWFuZHMSLgoFYWxvbmUYAiADKAlCH7pIHJIBGSIXchUQARjIATIOXlteKlxzXVteXG5dKiQSLwoGYmVzaWRlGAMgAygJQh+6SBySARkiF3IVEAEYyAEyDl5bXipcc11bXlxuXSokOoQBukiAARp+ChVwcm9qZWN0X2dhdGUucGF0dGVybnMSOWEgZ2F0ZSBoYXMgMzIgcGF0dGVybnMgYXQgbW9zdCwgYWxvbmUgYW5kIGJlc2lkZSB0b2dldGhlchoqc2l6ZSh0aGlzLmFsb25lKSArIHNpemUodGhpcy5iZXNpZGUpIDw9IDMyQpYBCgxjb20uZGppbm4udjFCElByb2plY3RDb25maWdQcm90b1ABWjFnaXRodWIuY29tL2VtcG93aWxsL2RqaW5uL2dlbi9nby9kamlubi92MTtkamlubnYxogIDRFhYqgIIRGppbm4uVjHKAghEamlublxWMeICFERqaW5uXFYxXEdQQk1ldGFkYXRh6gIJRGppbm46OlYxYgZwcm90bzM", [file_buf_validate_validate, file_djinn_v1_containers]);
+  fileDesc("Ch1kamlubi92MS9wcm9qZWN0X2NvbmZpZy5wcm90bxIIZGppbm4udjEimAEKDVByb2plY3RDb25maWcSKAoKY29udGFpbmVycxgBIAEoCzIULmRqaW5uLnYxLkNvbnRhaW5lcnMSLgoFZ2F0ZXMYAiADKAsyFS5kamlubi52MS5Qcm9qZWN0R2F0ZUIIukgFkgECEAgSDwoHdmVyc2lvbhgDIAEoDRISCgVhZG1pdBgEIAEoCEgAiAEBQggKBl9hZG1pdCKsAgoLUHJvamVjdEdhdGUSNQoEbmFtZRgBIAEoCUInukgkciIyFl5bYS16XVthLXowLTktXXswLDM5fSRaCGNvbW1hbmRzEi4KBWFsb25lGAIgAygJQh+6SBySARkiF3IVEAEYyAEyDl5bXipcc11bXlxuXSokEi8KBmJlc2lkZRgDIAMoCUIfukgckgEZIhdyFRABGMgBMg5eW14qXHNdW15cbl0qJDqEAbpIgAEafgoVcHJvamVjdF9nYXRlLnBhdHRlcm5zEjlhIGdhdGUgaGFzIDMyIHBhdHRlcm5zIGF0IG1vc3QsIGFsb25lIGFuZCBiZXNpZGUgdG9nZXRoZXIaKnNpemUodGhpcy5hbG9uZSkgKyBzaXplKHRoaXMuYmVzaWRlKSA8PSAzMkKWAQoMY29tLmRqaW5uLnYxQhJQcm9qZWN0Q29uZmlnUHJvdG9QAVoxZ2l0aHViLmNvbS9lbXBvd2lsbC9kamlubi9nZW4vZ28vZGppbm4vdjE7ZGppbm52MaICA0RYWKoCCERqaW5uLlYxygIIRGppbm5cVjHiAhREamlublxWMVxHUEJNZXRhZGF0YeoCCURqaW5uOjpWMWIGcHJvdG8z", [file_buf_validate_validate, file_djinn_v1_containers]);
 
 /**
  * ProjectConfig is what a project tells Djinn, in YAML: djinn.yaml at its root, else .agents/djinn.yaml. Djinn reads
@@ -78,6 +78,16 @@ export type ProjectConfig = Message<"djinn.v1.ProjectConfig"> & {
    * @generated from field: uint32 version = 3;
    */
   version: number;
+
+  /**
+   * false: the commands of the project's workers wait for no admission by the gates, whatever they cost: no Claude
+   * worker runs the gates' hook, no other agent waits on the heavy commands' wrappers. A gate declared here is then
+   * taken only by djinn gate run with its name; the checks of the merges and pushes still go through theirs. Not set,
+   * or true: they are admitted (Djinn's default).
+   *
+   * @generated from field: optional bool admit = 4;
+   */
+  admit?: boolean | undefined;
 };
 
 /**

@@ -1617,6 +1617,7 @@ func (h *Harness) launch(
 		Skills: skills, SkillsDir: skillsDir, Restart: task.GetRestart(), ReadDirs: plan.TilasmDirs(h.home, prompt),
 	}
 	spec.containers = h.containerCaps(project)
+	spec.unadmitted = !h.projectAdmits(project)
 	var err error
 	if spec.WriteDirs, err = h.questionWriteDirs(task); err != nil {
 		h.finish(r, Result{ExitCode: -1, Err: err})
@@ -1821,7 +1822,7 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 	}, guard...)
 	spec.Env = append(spec.Env, plan.AccountEnv(account)...)
 	// Djinn's docker first on its path bounds its containers; without a hook, its heavy commands wait their turn.
-	wrappers, err := h.wrapperEnv(spec, !r.watcher && agentOf(t) != planv1.Provider_PROVIDER_CLAUDE)
+	wrappers, err := h.wrapperEnv(spec, !r.watcher && !spec.unadmitted && agentOf(t) != planv1.Provider_PROVIDER_CLAUDE)
 	if err != nil {
 		return fmt.Errorf("wrappers: %w", err)
 	}
@@ -1845,7 +1846,7 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 	kind := "worker"
 	if r.watcher {
 		kind = "watcher"
-	} else {
+	} else if !spec.unadmitted {
 		spec.Admit = h.admit
 	}
 	spec.Track = h.trackContainers(t.GetId(), h.children.tracker(t.GetCode(), kind))

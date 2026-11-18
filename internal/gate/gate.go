@@ -119,6 +119,11 @@ const (
 	UnmeasuredLong = time.Hour
 )
 
+// MemoryWait is the longest a command waits for the memory its peak needs: past it, it is admitted all the same, and
+// its worker is told why. A peak learned wrong, or a machine that never frees enough, never holds a worker for good
+// (W139).
+const MemoryWait = 5 * time.Minute
+
 // Commands is the name the admissions of the workers' commands go by (Request.Shared): in Held, Waiting, a task's
 // events and the intervals of the gates.
 const Commands = harness.AdmissionGate
@@ -143,6 +148,7 @@ type Gates struct {
 	heavy   machine.Cost                        // a command measured past either is heavy (Heavy)
 	minLong time.Duration                       // MinLongHold; tests shorten it
 	noLong  time.Duration                       // UnmeasuredLong; tests shorten it
+	memWait time.Duration                       // MemoryWait; tests shorten it
 	track   func(pid int, taskID string) func() // told of a worker's command holding a gate (Track); nil: none
 
 	projectResolver func(taskID, dir string) string
@@ -185,6 +191,8 @@ type waiter struct {
 	why, cause              string                  // guarded by Gates.mu
 	waitCause               machinev1.GateWaitCause // what it waited for last; guarded by Gates.mu
 	unmeasured              bool                    // its command had no measured cost of its own when it asked
+	memory                  time.Time               // when it first waited for the memory; guarded by Gates.mu
+	forced                  string                  // why it was granted past MemoryWait, "" when it was not; guarded by Gates.mu
 	back                    string                  // why Djinn took the gate back; guarded by Gates.mu
 	leaving                 bool                    // given or taken back, its task being told; guarded by Gates.mu
 	use                     *planv1.Resources
@@ -198,7 +206,8 @@ type waiter struct {
 func New(m Machine, costs Costs, tasks Tasks) *Gates {
 	return &Gates{
 		machine: m, costs: costs, tasks: tasks, tick: time.Second, findBy: 3 * time.Second, held: map[string]*waiter{},
-		shared: map[*waiter]bool{}, minLong: MinLongHold, noLong: UnmeasuredLong, log: &memoryLog{},
+		shared: map[*waiter]bool{}, minLong: MinLongHold, noLong: UnmeasuredLong, memWait: MemoryWait,
+		log:   &memoryLog{},
 		heavy: machine.Cost{Peak: DefaultHeavyMemory, CPU: DefaultHeavyCPU},
 	}
 }
@@ -391,6 +400,15 @@ func (g *Gates) Take(ctx context.Context, r Request, waiting func(why string)) (
 		g.pass(ctx)
 		select {
 		case <-w.granted:
+			g.mu.Lock()
+			forced := w.forced
+			g.mu.Unlock()
+			if forced != "" {
+				g.note(w, forced)
+				if waiting != nil {
+					waiting(forced)
+				}
+			}
 			g.note(w, "taken")
 			go g.keep(context.WithoutCancel(ctx), w) // It follows the hold, not the call that asked for it.
 			return &Hold{g: g, w: w}, nil
@@ -878,8 +896,15 @@ func (g *Gates) pass(ctx context.Context) {
 			cause, kind = "merge first: "+mergeCause[heavyTurn], machinev1.GateWaitCause_GATE_WAIT_CAUSE_MERGE_FIRST
 		default:
 			if why = policy.Room(snap, w.what, w.peak, held); why != "" {
-				cause, kind = "memory", machinev1.GateWaitCause_GATE_WAIT_CAUSE_MEMORY
-				break
+				if w.memory.IsZero() {
+					w.memory = time.Now()
+				}
+				if time.Since(w.memory) < g.memWait {
+					cause, kind = "memory", machinev1.GateWaitCause_GATE_WAIT_CAUSE_MEMORY
+					break
+				}
+				w.forced = fmt.Sprintf("admitted after %s waiting for memory, the most a command waits for it: %s",
+					g.memWait, why)
 			}
 			held += w.peak
 			w.since = time.Now()
