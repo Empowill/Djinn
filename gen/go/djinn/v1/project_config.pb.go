@@ -42,6 +42,8 @@ const (
 //	  setup: npm ci
 //	  checks:
 //	    - {name: lint, command: task lint, when: commit}
+//	  instructions:
+//	    general: Run the tasks, not the tools.
 //	containers:
 //	  memory_mib: 8192
 //	  pids: 2048

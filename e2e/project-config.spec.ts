@@ -93,7 +93,8 @@ test("a project with something to fix: its gear and inbox line open its panel; t
   fs.writeFileSync(path.join(folder, "lamp-news.sh"), "exit 0\n");
   const teamFile = path.join(folder, ".agents", "djinn.yaml");
   const teamSettings =
-    'settings:\n  checks:\n    - {name: lint, command: "true", when: commit}\n  merge_main: off\n';
+    'settings:\n  checks:\n    - {name: lint, command: "true", when: commit}\n  merge_main: off\n' +
+    "  instructions:\n    general: Run the tasks, not the tools.\n    mockup: Both themes.\n";
   fs.writeFileSync(teamFile, teamSettings);
   // The reference: origin/main as fetched, the remote's default branch; the copy works on feature.
   git(folder, "init", "-q", "-b", "main");
@@ -341,6 +342,57 @@ test("a project with something to fix: its gear and inbox line open its panel; t
     await expect(
       panel.locator(".inbox-source-row").filter({ hasText: "lamp-news" }),
     ).toContainText("Unplugged: runs nothing");
+    // The workers' instructions by kind (W114): the Summoning Circle's and your own set from the command line over
+    // the repository's; the tab shows the three layers, a kind on the general text, and writes yours from the window.
+    djinn("lead", "instructions", "--kind", "mockup", "--text", "Light first.");
+    djinn(
+      "project",
+      "instructions",
+      "lantern",
+      "--kind",
+      "mockup",
+      "--text",
+      "Dark first.",
+    );
+    // The page reads the project as it opens: leave it and open it again by its gear.
+    await page
+      .locator(".sidebar")
+      .getByText("Hourglass", { exact: true })
+      .click();
+    await expect(panel).toBeHidden();
+    await gear.click();
+    await tab("Workers' brief");
+    const kind = (name: string) =>
+      panel.locator(`tbody[data-instruction="${name}"]`);
+    await expect(kind("mockup").locator('td[data-side="machine"]')).toHaveText(
+      "Light first.",
+    );
+    await expect(
+      kind("mockup").locator('td[data-side="repository"] .setting-struck'),
+    ).toHaveText("Both themes.");
+    await expect(kind("mockup").locator('td[data-side="retained"]')).toHaveText(
+      "Dark first.your file",
+    );
+    await expect(kind("work").locator('td[data-side="retained"]')).toHaveText(
+      "Run the tasks, not the tools.the general text",
+    );
+    await kind("ifrit").getByRole("button", { name: "set mine" }).click();
+    await kind("ifrit")
+      .getByRole("textbox", { name: /Your instructions to the Ifrit/ })
+      .fill("Say the URL.");
+    await kind("ifrit").getByRole("button", { name: "Save" }).click();
+    await expect(kind("ifrit").locator('td[data-side="retained"]')).toHaveText(
+      "Say the URL.your file",
+    );
+    const mine = JSON.parse(
+      djinn("project", "instructions", "lantern", "--json"),
+    ).instructions.find(
+      (r: { kind: string }) => r.kind === "INSTRUCTION_KIND_IFRIT",
+    );
+    expect(mine).toMatchObject({
+      developer: "Say the URL.",
+      source: "SETTING_SOURCE_DEVELOPER",
+    });
     await shotsAndContrast(page, panel);
     // Without an active wish the flying carpet has no entry: leave by the Hourglass.
     await page
@@ -372,6 +424,10 @@ test("a project with something to fix: its gear and inbox line open its panel; t
     try {
       djinn("inbox", "unplug", "lantern/lamp-news");
     } catch {}
+    // The Summoning Circle's text is the shared djinn's, for every project: the next specs never see it.
+    try {
+      djinn("lead", "instructions", "--kind", "mockup", "--unset");
+    } catch {}
   }
 });
 
@@ -385,7 +441,12 @@ async function shotsAndContrast(
     await page.evaluate((t) => {
       document.documentElement.dataset.theme = t;
     }, theme);
-    for (const name of ["General", "Integration and push", "Permissions"]) {
+    for (const name of [
+      "General",
+      "Integration and push",
+      "Workers' brief",
+      "Permissions",
+    ]) {
       await panel.getByRole("tab", { name, exact: false }).click();
       const worst = await panel.evaluate((root) => {
         const lin = (c: number) =>
@@ -435,6 +496,15 @@ async function shotsAndContrast(
         path: path.join(shots, `project-page-${theme}.png`),
         fullPage: true,
       });
+      // The instructions by kind, whole: the terminal's panel covers the lower half of the window.
+      await panel.getByRole("tab", { name: "Workers' brief" }).click();
+      const size = page.viewportSize();
+      await page.setViewportSize({ width: 1440, height: 1800 });
+      await panel
+        .locator(".settings-box")
+        .first()
+        .screenshot({ path: path.join(shots, `project-brief-${theme}.png`) });
+      if (size) await page.setViewportSize(size);
     }
   }
   await page.evaluate(() => delete document.documentElement.dataset.theme);

@@ -50,6 +50,10 @@ import {
 } from "./project-panel";
 import { SyncLines } from "./project-sync";
 import { usePlace } from "./view-history";
+import {
+  ProjectInstructions,
+  type SetInstruction,
+} from "./worker-instructions";
 import "./project-panel.css";
 
 // PROJECT_PAGE starts the window's page value of a project's settings: the project's identifier follows it.
@@ -369,6 +373,17 @@ export function ProjectPage({
     }
   };
 
+  // A text of your own instructions to the project's workers, in your own file: the page shows the three layers again.
+  const handleSetInstruction: SetInstruction = async (req) => {
+    const res = await clients.projects.instructions({
+      project: project.id,
+      ...req,
+    });
+    setShown((prev) =>
+      prev ? { ...prev, instructions: res.instructions } : prev,
+    );
+  };
+
   const reference = shown?.reference;
   const panel = (): ReactNode => {
     if (!shown) return null;
@@ -411,7 +426,9 @@ export function ProjectPage({
           />
         );
       case "brief":
-        return <BriefTab shown={shown} />;
+        return (
+          <BriefTab shown={shown} onSetInstruction={handleSetInstruction} />
+        );
       case "skills":
         return (
           <section className="config-box">
@@ -1146,11 +1163,19 @@ function IntegrationTab({
   );
 }
 
-// BriefTab is the text Djinn adds to the first prompt of each worker that edits the project, as it stands: drawn from
-// its settings. The team's own instructions to workers go in the repository's agent instructions (decision Q61 C).
-function BriefTab({ shown }: { shown: ProjectServiceShowResponse }) {
+// BriefTab is what each worker of the project gets at its launch: the instructions of its kind, in three layers (W114,
+// decision Q70 B), then the text Djinn adds to the first prompt of each worker that edits the project, drawn from its
+// settings.
+function BriefTab({
+  shown,
+  onSetInstruction,
+}: {
+  shown: ProjectServiceShowResponse;
+  onSetInstruction: SetInstruction;
+}) {
   return (
     <>
+      <ProjectInstructions shown={shown} onSet={onSetInstruction} />
       <section className="config-box">
         <h3>
           {t("project.brief")}
@@ -1161,10 +1186,6 @@ function BriefTab({ shown }: { shown: ProjectServiceShowResponse }) {
         ) : (
           <p className="muted-text">{t("project.brief_none")}</p>
         )}
-      </section>
-      <section className="config-box">
-        <h3>{t("project.brief_team")}</h3>
-        <p className="settings-lead">{t("project.brief_team_detail")}</p>
       </section>
     </>
   );

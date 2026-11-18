@@ -89,6 +89,9 @@ const (
 	ProjectServicePushProcedure = "/plan.v1.ProjectService/Push"
 	// ProjectServiceSetPushProcedure is the fully-qualified name of the ProjectService's SetPush RPC.
 	ProjectServiceSetPushProcedure = "/plan.v1.ProjectService/SetPush"
+	// ProjectServiceInstructionsProcedure is the fully-qualified name of the ProjectService's
+	// Instructions RPC.
+	ProjectServiceInstructionsProcedure = "/plan.v1.ProjectService/Instructions"
 	// ProjectServicePushStrategyProcedure is the fully-qualified name of the ProjectService's
 	// PushStrategy RPC.
 	ProjectServicePushStrategyProcedure = "/plan.v1.ProjectService/PushStrategy"
@@ -232,6 +235,9 @@ const (
 	LeadServiceGetCircleProcedure = "/plan.v1.LeadService/GetCircle"
 	// LeadServiceSetCircleProcedure is the fully-qualified name of the LeadService's SetCircle RPC.
 	LeadServiceSetCircleProcedure = "/plan.v1.LeadService/SetCircle"
+	// LeadServiceInstructionsProcedure is the fully-qualified name of the LeadService's Instructions
+	// RPC.
+	LeadServiceInstructionsProcedure = "/plan.v1.LeadService/Instructions"
 	// BlockServicePutProcedure is the fully-qualified name of the BlockService's Put RPC.
 	BlockServicePutProcedure = "/plan.v1.BlockService/Put"
 	// BlockServiceListProcedure is the fully-qualified name of the BlockService's List RPC.
@@ -697,6 +703,10 @@ type ProjectServiceClient interface {
 	Push(context.Context, *connect.Request[v1.ProjectServicePushRequest]) (*connect.Response[v1.ProjectServicePushResponse], error)
 	// Change when Djinn pushes the project's integration branch (standard cadence or on demand).
 	SetPush(context.Context, *connect.Request[v1.ProjectServiceSetPushRequest]) (*connect.Response[v1.ProjectServiceSetPushResponse], error)
+	// Show the instructions the project's workers get, by kind of task, each with its value in the Summoning Circle, the
+	// repository's .agents/djinn.yaml and your own file; or set one text (--kind) in your own file, where it wins over
+	// the other two. --unset removes yours, and the layers below apply again.
+	Instructions(context.Context, *connect.Request[v1.ProjectServiceInstructionsRequest]) (*connect.Response[v1.ProjectServiceInstructionsResponse], error)
 	// Show or change the push strategy of a project: wish (one branch per wish) or azima (one branch per azima).
 	PushStrategy(context.Context, *connect.Request[v1.ProjectServicePushStrategyRequest]) (*connect.Response[v1.ProjectServicePushStrategyResponse], error)
 	// Show or change the watcher commands (--watch), or an ifrit's serve commands (--serve), you allow in a project for
@@ -770,6 +780,12 @@ func NewProjectServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(projectServiceMethods.ByName("SetPush")),
 			connect.WithClientOptions(opts...),
 		),
+		instructions: connect.NewClient[v1.ProjectServiceInstructionsRequest, v1.ProjectServiceInstructionsResponse](
+			httpClient,
+			baseURL+ProjectServiceInstructionsProcedure,
+			connect.WithSchema(projectServiceMethods.ByName("Instructions")),
+			connect.WithClientOptions(opts...),
+		),
 		pushStrategy: connect.NewClient[v1.ProjectServicePushStrategyRequest, v1.ProjectServicePushStrategyResponse](
 			httpClient,
 			baseURL+ProjectServicePushStrategyProcedure,
@@ -829,6 +845,7 @@ type projectServiceClient struct {
 	show         *connect.Client[v1.ProjectServiceShowRequest, v1.ProjectServiceShowResponse]
 	push         *connect.Client[v1.ProjectServicePushRequest, v1.ProjectServicePushResponse]
 	setPush      *connect.Client[v1.ProjectServiceSetPushRequest, v1.ProjectServiceSetPushResponse]
+	instructions *connect.Client[v1.ProjectServiceInstructionsRequest, v1.ProjectServiceInstructionsResponse]
 	pushStrategy *connect.Client[v1.ProjectServicePushStrategyRequest, v1.ProjectServicePushStrategyResponse]
 	allow        *connect.Client[v1.ProjectServiceAllowRequest, v1.ProjectServiceAllowResponse]
 	gates        *connect.Client[v1.ProjectServiceGatesRequest, v1.ProjectServiceGatesResponse]
@@ -862,6 +879,11 @@ func (c *projectServiceClient) Push(ctx context.Context, req *connect.Request[v1
 // SetPush calls plan.v1.ProjectService.SetPush.
 func (c *projectServiceClient) SetPush(ctx context.Context, req *connect.Request[v1.ProjectServiceSetPushRequest]) (*connect.Response[v1.ProjectServiceSetPushResponse], error) {
 	return c.setPush.CallUnary(ctx, req)
+}
+
+// Instructions calls plan.v1.ProjectService.Instructions.
+func (c *projectServiceClient) Instructions(ctx context.Context, req *connect.Request[v1.ProjectServiceInstructionsRequest]) (*connect.Response[v1.ProjectServiceInstructionsResponse], error) {
+	return c.instructions.CallUnary(ctx, req)
 }
 
 // PushStrategy calls plan.v1.ProjectService.PushStrategy.
@@ -917,6 +939,10 @@ type ProjectServiceHandler interface {
 	Push(context.Context, *connect.Request[v1.ProjectServicePushRequest]) (*connect.Response[v1.ProjectServicePushResponse], error)
 	// Change when Djinn pushes the project's integration branch (standard cadence or on demand).
 	SetPush(context.Context, *connect.Request[v1.ProjectServiceSetPushRequest]) (*connect.Response[v1.ProjectServiceSetPushResponse], error)
+	// Show the instructions the project's workers get, by kind of task, each with its value in the Summoning Circle, the
+	// repository's .agents/djinn.yaml and your own file; or set one text (--kind) in your own file, where it wins over
+	// the other two. --unset removes yours, and the layers below apply again.
+	Instructions(context.Context, *connect.Request[v1.ProjectServiceInstructionsRequest]) (*connect.Response[v1.ProjectServiceInstructionsResponse], error)
 	// Show or change the push strategy of a project: wish (one branch per wish) or azima (one branch per azima).
 	PushStrategy(context.Context, *connect.Request[v1.ProjectServicePushStrategyRequest]) (*connect.Response[v1.ProjectServicePushStrategyResponse], error)
 	// Show or change the watcher commands (--watch), or an ifrit's serve commands (--serve), you allow in a project for
@@ -986,6 +1012,12 @@ func NewProjectServiceHandler(svc ProjectServiceHandler, opts ...connect.Handler
 		connect.WithSchema(projectServiceMethods.ByName("SetPush")),
 		connect.WithHandlerOptions(opts...),
 	)
+	projectServiceInstructionsHandler := connect.NewUnaryHandler(
+		ProjectServiceInstructionsProcedure,
+		svc.Instructions,
+		connect.WithSchema(projectServiceMethods.ByName("Instructions")),
+		connect.WithHandlerOptions(opts...),
+	)
 	projectServicePushStrategyHandler := connect.NewUnaryHandler(
 		ProjectServicePushStrategyProcedure,
 		svc.PushStrategy,
@@ -1047,6 +1079,8 @@ func NewProjectServiceHandler(svc ProjectServiceHandler, opts ...connect.Handler
 			projectServicePushHandler.ServeHTTP(w, r)
 		case ProjectServiceSetPushProcedure:
 			projectServiceSetPushHandler.ServeHTTP(w, r)
+		case ProjectServiceInstructionsProcedure:
+			projectServiceInstructionsHandler.ServeHTTP(w, r)
 		case ProjectServicePushStrategyProcedure:
 			projectServicePushStrategyHandler.ServeHTTP(w, r)
 		case ProjectServiceAllowProcedure:
@@ -1090,6 +1124,10 @@ func (UnimplementedProjectServiceHandler) Push(context.Context, *connect.Request
 
 func (UnimplementedProjectServiceHandler) SetPush(context.Context, *connect.Request[v1.ProjectServiceSetPushRequest]) (*connect.Response[v1.ProjectServiceSetPushResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.ProjectService.SetPush is not implemented"))
+}
+
+func (UnimplementedProjectServiceHandler) Instructions(context.Context, *connect.Request[v1.ProjectServiceInstructionsRequest]) (*connect.Response[v1.ProjectServiceInstructionsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.ProjectService.Instructions is not implemented"))
 }
 
 func (UnimplementedProjectServiceHandler) PushStrategy(context.Context, *connect.Request[v1.ProjectServicePushStrategyRequest]) (*connect.Response[v1.ProjectServicePushStrategyResponse], error) {
@@ -2424,6 +2462,10 @@ type LeadServiceClient interface {
 	// Set one row of the global Summoning Circle (lead, investigation, mockup, ifrit, work, correction, review, or
 	// question). For every kind except lead, an empty model means "Same as lead".
 	SetCircle(context.Context, *connect.Request[v1.LeadServiceSetCircleRequest]) (*connect.Response[v1.LeadServiceSetCircleResponse], error)
+	// Show the workers' instructions on this machine, the Summoning Circle's, by kind of task: the default of every
+	// project, which a project's repository, then your own file of the project, win over, kind by kind; or set one text
+	// (--kind). --unset removes it.
+	Instructions(context.Context, *connect.Request[v1.LeadServiceInstructionsRequest]) (*connect.Response[v1.LeadServiceInstructionsResponse], error)
 }
 
 // NewLeadServiceClient constructs a client for the plan.v1.LeadService service. By default, it uses
@@ -2596,6 +2638,12 @@ func NewLeadServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(leadServiceMethods.ByName("SetCircle")),
 			connect.WithClientOptions(opts...),
 		),
+		instructions: connect.NewClient[v1.LeadServiceInstructionsRequest, v1.LeadServiceInstructionsResponse](
+			httpClient,
+			baseURL+LeadServiceInstructionsProcedure,
+			connect.WithSchema(leadServiceMethods.ByName("Instructions")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -2626,6 +2674,7 @@ type leadServiceClient struct {
 	unlimited     *connect.Client[v1.LeadServiceUnlimitedRequest, v1.LeadServiceUnlimitedResponse]
 	getCircle     *connect.Client[v1.LeadServiceGetCircleRequest, v1.LeadServiceGetCircleResponse]
 	setCircle     *connect.Client[v1.LeadServiceSetCircleRequest, v1.LeadServiceSetCircleResponse]
+	instructions  *connect.Client[v1.LeadServiceInstructionsRequest, v1.LeadServiceInstructionsResponse]
 }
 
 // Set calls plan.v1.LeadService.Set.
@@ -2753,6 +2802,11 @@ func (c *leadServiceClient) SetCircle(ctx context.Context, req *connect.Request[
 	return c.setCircle.CallUnary(ctx, req)
 }
 
+// Instructions calls plan.v1.LeadService.Instructions.
+func (c *leadServiceClient) Instructions(ctx context.Context, req *connect.Request[v1.LeadServiceInstructionsRequest]) (*connect.Response[v1.LeadServiceInstructionsResponse], error) {
+	return c.instructions.CallUnary(ctx, req)
+}
+
 // LeadServiceHandler is an implementation of the plan.v1.LeadService service.
 type LeadServiceHandler interface {
 	// Record the lead of Djinn: the agent session that drives it, for djinn lead resume to take it back. Starts
@@ -2875,6 +2929,10 @@ type LeadServiceHandler interface {
 	// Set one row of the global Summoning Circle (lead, investigation, mockup, ifrit, work, correction, review, or
 	// question). For every kind except lead, an empty model means "Same as lead".
 	SetCircle(context.Context, *connect.Request[v1.LeadServiceSetCircleRequest]) (*connect.Response[v1.LeadServiceSetCircleResponse], error)
+	// Show the workers' instructions on this machine, the Summoning Circle's, by kind of task: the default of every
+	// project, which a project's repository, then your own file of the project, win over, kind by kind; or set one text
+	// (--kind). --unset removes it.
+	Instructions(context.Context, *connect.Request[v1.LeadServiceInstructionsRequest]) (*connect.Response[v1.LeadServiceInstructionsResponse], error)
 }
 
 // NewLeadServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -3043,6 +3101,12 @@ func NewLeadServiceHandler(svc LeadServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(leadServiceMethods.ByName("SetCircle")),
 		connect.WithHandlerOptions(opts...),
 	)
+	leadServiceInstructionsHandler := connect.NewUnaryHandler(
+		LeadServiceInstructionsProcedure,
+		svc.Instructions,
+		connect.WithSchema(leadServiceMethods.ByName("Instructions")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/plan.v1.LeadService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case LeadServiceSetProcedure:
@@ -3095,6 +3159,8 @@ func NewLeadServiceHandler(svc LeadServiceHandler, opts ...connect.HandlerOption
 			leadServiceGetCircleHandler.ServeHTTP(w, r)
 		case LeadServiceSetCircleProcedure:
 			leadServiceSetCircleHandler.ServeHTTP(w, r)
+		case LeadServiceInstructionsProcedure:
+			leadServiceInstructionsHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -3202,6 +3268,10 @@ func (UnimplementedLeadServiceHandler) GetCircle(context.Context, *connect.Reque
 
 func (UnimplementedLeadServiceHandler) SetCircle(context.Context, *connect.Request[v1.LeadServiceSetCircleRequest]) (*connect.Response[v1.LeadServiceSetCircleResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.LeadService.SetCircle is not implemented"))
+}
+
+func (UnimplementedLeadServiceHandler) Instructions(context.Context, *connect.Request[v1.LeadServiceInstructionsRequest]) (*connect.Response[v1.LeadServiceInstructionsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.LeadService.Instructions is not implemented"))
 }
 
 // BlockServiceClient is a client for the plan.v1.BlockService service.

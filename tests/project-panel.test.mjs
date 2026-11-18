@@ -1187,6 +1187,42 @@ test("a project's settings page shows its tabs, the install optional, checks fro
     serveCommands: [],
     workersBrief:
       "Djinn checks this project's work before it merges a task's work, with `djinn gate run lint -- go tool task lint`.",
+    // The workers' instructions by kind (W114): the general text from the repository, the mockup's in the three layers,
+    // the ifrit's from the Summoning Circle alone, the work and investigation kinds on the general text.
+    instructions: [
+      {
+        kind: s.InstructionKind.GENERAL,
+        text: "Run the tasks, not the tools.",
+        source: s.SettingSource.REPOSITORY,
+        repository: "Run the tasks, not the tools.",
+      },
+      {
+        kind: s.InstructionKind.WORK,
+        text: "Run the tasks, not the tools.",
+        source: s.SettingSource.REPOSITORY,
+        general: true,
+      },
+      {
+        kind: s.InstructionKind.INVESTIGATION,
+        text: "Run the tasks, not the tools.",
+        source: s.SettingSource.REPOSITORY,
+        general: true,
+      },
+      {
+        kind: s.InstructionKind.MOCKUP,
+        text: "Dark first.",
+        source: s.SettingSource.DEVELOPER,
+        machine: "Light first.",
+        repository: "Both themes.",
+        developer: "Dark first.",
+      },
+      {
+        kind: s.InstructionKind.IFRIT,
+        text: "Say the URL.",
+        source: s.SettingSource.MACHINE,
+        machine: "Say the URL.",
+      },
+    ],
     permissions: {
       edit: true,
       mode: 1,
@@ -1285,8 +1321,49 @@ test("a project's settings page shows its tabs, the install optional, checks fro
   assert.match(perms, /<code>gh pr checks<\/code>/);
   assert.match(perms, /Serve commands you allow/);
 
-  // The brief as it stands, and where the team's own instructions live (Q61 C).
+  // The brief: the instructions by kind in three layers (W114, Q70 B), then what Djinn adds from the settings.
   const brief = page("brief");
   assert.match(brief, /djinn gate run lint -- go tool task lint/);
-  assert.match(brief, /AGENTS\.md/);
+  assert.doesNotMatch(brief, /AGENTS\.md/);
+  assert.deepEqual(
+    [...brief.matchAll(/data-instruction="([a-z]+)"/g)].map((m) => m[1]),
+    ["general", "work", "investigation", "mockup", "ifrit"],
+  );
+  const kind = (name) => {
+    const start = brief.indexOf(`data-instruction="${name}"`);
+    return brief.slice(start, brief.indexOf("</tbody>", start));
+  };
+  // One kind, three layers: the Circle's and the repository's struck under yours, which is retained.
+  const mockup = kind("mockup");
+  assert.match(
+    mockup,
+    /data-side="machine"><span class="instruction-text setting-struck">Light first\.<\/span>/,
+  );
+  assert.match(
+    mockup,
+    /data-side="repository"><span class="instruction-text setting-struck">Both themes\.<\/span>/,
+  );
+  assert.match(
+    mockup,
+    /data-side="local"><span class="instruction-text">Dark first\.<\/span>/,
+  );
+  assert.match(mockup, />edit mine</);
+  assert.match(
+    mockup,
+    /Dark first\.<\/span><span class="config-from"[^>]*>your file</,
+  );
+  // The Circle's alone is retained from the Circle; a kind no layer sets takes the general text, and says so.
+  assert.match(kind("ifrit"), />the Summoning Circle</);
+  assert.match(kind("ifrit"), />set mine</);
+  const work = kind("work");
+  assert.match(work, /data-side="machine"><span class="setting-absent">absent/);
+  assert.match(
+    work,
+    /Run the tasks, not the tools\.<\/span><span class="config-from" data-general="">the general text</,
+  );
+  // The instructions come before what Djinn adds.
+  assert.ok(
+    brief.indexOf("Instructions by kind of task") <
+      brief.indexOf("What Djinn adds to each worker&#x27;s first prompt"),
+  );
 });

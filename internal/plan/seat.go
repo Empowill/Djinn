@@ -992,9 +992,10 @@ func (s *LeadService) GetCircle(
 ) (*connect.Response[planv1.LeadServiceGetCircleResponse], error) {
 	providers, models := s.circleState(ctx)
 	return connect.NewResponse(&planv1.LeadServiceGetCircleResponse{
-		Rows:      ReadCircle(s.Wishes.home()),
-		Models:    models,
-		Providers: providers,
+		Rows:         ReadCircle(s.Wishes.home()),
+		Models:       models,
+		Providers:    providers,
+		Instructions: ReadMachineInstructions(s.Wishes.home()),
 	}), nil
 }
 

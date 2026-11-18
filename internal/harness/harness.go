@@ -297,6 +297,7 @@ type run struct {
 	branch         string          // the branch template of the project's settings, for launch; empty: the default
 	from           string          // the wish's integration branch in the project, which its worktree starts from; empty: HEAD
 	checks         string          // what the project's settings say of the checks Djinn runs, for the worker's first prompt
+	instructions   string          // what the project's workers of its kind are told (W114), for its first prompt
 	pushChecks     []string        // commands of the project's push checks, to note when a worker runs them
 	testOne        string          // project's targeted test command template or prefix
 	notedPush      bool            // already noted that worker ran push checks
@@ -1475,8 +1476,12 @@ const ifritRules = workerHandRule + " " + workerCheckRule + " " + ifritRule + " 
 // a worker that edits a worktree learns which checks its work meets (run.checks), to run the commit checks before it
 // ends, to commit its work (workerCommitRule), to run what it can check itself, and to ask only a decision or a move
 // only the developer can make. An ifrit
-// learns its own rules instead (ifritRule), whatever folder it works in.
+// learns its own rules instead (ifritRule), whatever folder it works in. Every worker but a watcher reads the
+// instructions of its kind first, when the project's settings give some (withInstructions).
 func briefed(r *run, prompt string, readOnly bool) string {
+	if !r.watcher {
+		prompt = withInstructions(prompt, r.instructions)
+	}
 	rules := workerRules
 	if r.ifrit {
 		rules = ifritRules
@@ -1510,6 +1515,19 @@ func briefed(r *run, prompt string, readOnly bool) string {
 		}
 	}
 	return prompt
+}
+
+// instructionsHead opens the instructions of the project's workers in a first prompt (W114).
+const instructionsHead = "The project's instructions to its workers of this kind:"
+
+// withInstructions is prompt followed by the project's instructions to the workers of its kind, under their own head:
+// prompt alone when there are none.
+func withInstructions(prompt, instructions string) string {
+	instructions = strings.TrimSpace(instructions)
+	if instructions == "" {
+		return prompt
+	}
+	return prompt + "\n\n" + instructionsHead + "\n\n" + instructions
 }
 
 // launch starts the worker of the run's task, now written with its access: in its worktree, its project's folder,
@@ -2146,8 +2164,10 @@ func (h *Harness) record(r *run, ev Event) {
 	}
 }
 
-// setChecks records what the project's settings say of checks Djinn runs, and its push checks to watch for.
+// setChecks records what the project's settings say of checks Djinn runs, and its push checks to watch for; and the
+// instructions the workers of the task's kind get (W114).
 func (r *run) setChecks(settings plan.Settings) {
+	r.instructions = settings.InstructionsFor(workerKindOf(nil, r.task))
 	r.checks = settings.ChecksBrief()
 	if r.ifrit {
 		r.checks = settings.IfritChecksBrief()

@@ -3,7 +3,8 @@
 // then every sign-in of every agent in the order of priority, ranked by drag and drop or Alt+Arrow, each with its
 // gauges, its state, the workers and the tasks waiting there, and where the Djinn runs; then one row per kind of
 // worker, global to Djinn (every project); then the change of the open tasks' models at once; last, the memory brake's
-// threshold on this machine (W28, decision Q22 B). The one place where the
+// threshold on this machine (W28, decision Q22 B). A tab of its own holds the workers' instructions by kind of task on
+// this machine, the default of every project (W114, decision Q70 B). The one place where the
 // Djinn's agent, model and account are chosen: the window's top has no selector of its own (W578). The lead in its
 // terminal keeps its recorded session; when the Djinn's row names another agent, its line starts the Djinn there.
 // Models come from the server (live agent discovery + shared internal/usage/prices.yaml table), never a hand-written UI list.
@@ -18,6 +19,7 @@ import {
   TaskStatus,
   type TaskServiceUpdateModelsResponse,
   WorkerKind,
+  type WorkerInstructions,
   type WorkerSeat,
 } from "../gen/ts/plan/v1/plan_pb";
 import type { UiServiceGetEnvironmentResponse } from "../gen/ts/ui/v1/ui_pb";
@@ -34,8 +36,14 @@ import { catalogFromPriceTable } from "./data/prices";
 import { type TextKey, t } from "./i18n";
 import { OperatingLoad } from "./operating-load";
 import { PageHeader } from "./page-header";
+import { usePlace } from "./view-history";
 import { recordedAgent } from "./wish-head";
+import { CircleInstructions, type SetInstruction } from "./worker-instructions";
 import "./project-panel.css";
+
+// CIRCLE_TABS are the Circle's tabs: who works, on which account and model; then what every worker is told.
+export const CIRCLE_TABS = ["models", "instructions"] as const;
+export type CircleTab = (typeof CIRCLE_TABS)[number];
 
 export interface CircleModel {
   readonly id: string;
@@ -255,6 +263,9 @@ export function SummoningCircle({
   onChoose,
   onAgents,
   initialBrake,
+  initialTab = "models",
+  initialInstructions,
+  onSetInstruction,
 }: {
   initialRows?: WorkerSeat[];
   initialModels?: readonly CircleModel[];
@@ -273,7 +284,23 @@ export function SummoningCircle({
   onAgents?: (env: UiServiceGetEnvironmentResponse) => void;
   // The memory brake's threshold, as a test gives it; else read from Djinn (LoadService.Get).
   initialBrake?: Brake;
+  initialTab?: CircleTab;
+  // The workers' instructions on this machine, as a test gives them; else read with the rows (LeadService.GetCircle).
+  initialInstructions?: WorkerInstructions;
+  // Sets a text of them, as a test answers it; else LeadService.Instructions.
+  onSetInstruction?: (req: {
+    kind: number;
+    text: string;
+    unset: boolean;
+  }) => Promise<WorkerInstructions | undefined>;
 }) {
+  const [tab, setTab] = useState<CircleTab>(initialTab);
+  usePlace("tab", tab, (to) =>
+    setTab(CIRCLE_TABS.find((x) => x === to) ?? "models"),
+  );
+  const [instructions, setInstructions] = useState<
+    WorkerInstructions | undefined
+  >(initialInstructions);
   const djinn = useDjinn();
   const liveAgents = useAgents();
   const agents = initialAgents ?? liveAgents;
@@ -330,6 +357,7 @@ export function SummoningCircle({
       .then((res) => {
         if (!live) return;
         setRows(res.rows);
+        if (!initialInstructions) setInstructions(res.instructions);
         if (res.models.length > 0 || res.providers.length > 0) {
           setModels(res.models);
         }
@@ -346,7 +374,16 @@ export function SummoningCircle({
     return () => {
       live = false;
     };
-  }, [djinn, initialRows]);
+  }, [djinn, initialRows, initialInstructions]);
+
+  const setInstruction: SetInstruction = async (req) => {
+    const next = onSetInstruction
+      ? await onSetInstruction(req)
+      : djinn
+        ? (await djinn.clients.lead.instructions(req)).instructions
+        : instructions;
+    setInstructions(next);
+  };
 
   const apply = (
     spec: CircleRowSpec,
@@ -411,167 +448,198 @@ export function SummoningCircle({
             <h1>{t("summoning.title")}</h1>
             <p>{t("summoning.page_detail")}</p>
           </header>
-          <AgentSetupPanel agents={agents} load={loadAt} />
-          <h3 className="summoning-section-title">
-            {t("summoning.models_title")}
-          </h3>
-          <p className="agent-setup-intro">{t("summoning.detail")}</p>
-          {error && (
-            <p className="field-error" role="alert">
-              {error}
-            </p>
-          )}
-          <section className="config-box summoning-list">
-            {CIRCLE_ROWS.map((spec) => {
-              const seat = rows.find((r) => r.kind === spec.kind);
-              const isLead = spec.kind === WorkerKind.LEAD;
-              const options = modelsForRow(spec, models, providers);
-              const rawModel = isLead
-                ? seat?.model || defaultModel(seat?.provider || Provider.CLAUDE)
-                : seat && seat.provider !== Provider.UNSPECIFIED
-                  ? seat.model || defaultModel(seat.provider)
-                  : "";
-              const canonical = canonicalModelId(rawModel);
-              const value = isLead
-                ? options.some((m) => m.id === canonical)
-                  ? canonical
-                  : (options[0]?.id ?? canonical)
-                : options.some((m) => m.id === canonical)
-                  ? canonical
-                  : "";
-              const unsignedForRow = providers.filter(
-                (p) => spec.providers.includes(p.provider) && !p.signedIn,
-              );
-              const leadUnavailableForRow = isLead
-                ? providers.filter(
-                    (p) =>
-                      spec.providers.includes(p.provider) &&
-                      p.signedIn &&
-                      !p.leadSupported,
-                  )
-                : [];
-              const label = t(spec.labelKey);
-              const detail = t(spec.detailKey);
-              // In its terminal, the lead resumes its recorded session: when this row names another agent, it starts
-              // there only on demand.
-              const leadAgent = isLead
-                ? (options.find((m) => m.id === value)?.provider ??
-                  seat?.provider)
-                : undefined;
-              const otherLead =
-                isLead &&
-                !driven &&
-                recorded !== undefined &&
-                leadAgent !== undefined &&
-                leadAgent !== Provider.UNSPECIFIED &&
-                leadAgent !== recorded
-                  ? leadAgent
-                  : undefined;
-              return (
-                <div className="setting-row summoning-row" key={spec.key}>
-                  <div>
-                    <strong>{label}</strong>
-                    <p>{detail}</p>
-                    {leadUnavailableForRow.length > 0 && (
-                      <div className="summoning-row-notes">
+          <div className="view-tabs project-tabs" role="tablist">
+            {CIRCLE_TABS.map((id) => (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                id={`circle-tab-${id}`}
+                aria-selected={tab === id}
+                className={tab === id ? "active" : ""}
+                onClick={() => setTab(id)}
+              >
+                {t(
+                  id === "models"
+                    ? "summoning.tab_models"
+                    : "summoning.tab_instructions",
+                )}
+              </button>
+            ))}
+          </div>
+          {tab === "instructions" ? (
+            <CircleInstructions
+              instructions={instructions}
+              onSet={setInstruction}
+            />
+          ) : (
+            <>
+              <AgentSetupPanel agents={agents} load={loadAt} />
+              <h3 className="summoning-section-title">
+                {t("summoning.models_title")}
+              </h3>
+              <p className="agent-setup-intro">{t("summoning.detail")}</p>
+              {error && (
+                <p className="field-error" role="alert">
+                  {error}
+                </p>
+              )}
+              <section className="config-box summoning-list">
+                {CIRCLE_ROWS.map((spec) => {
+                  const seat = rows.find((r) => r.kind === spec.kind);
+                  const isLead = spec.kind === WorkerKind.LEAD;
+                  const options = modelsForRow(spec, models, providers);
+                  const rawModel = isLead
+                    ? seat?.model ||
+                      defaultModel(seat?.provider || Provider.CLAUDE)
+                    : seat && seat.provider !== Provider.UNSPECIFIED
+                      ? seat.model || defaultModel(seat.provider)
+                      : "";
+                  const canonical = canonicalModelId(rawModel);
+                  const value = isLead
+                    ? options.some((m) => m.id === canonical)
+                      ? canonical
+                      : (options[0]?.id ?? canonical)
+                    : options.some((m) => m.id === canonical)
+                      ? canonical
+                      : "";
+                  const unsignedForRow = providers.filter(
+                    (p) => spec.providers.includes(p.provider) && !p.signedIn,
+                  );
+                  const leadUnavailableForRow = isLead
+                    ? providers.filter(
+                        (p) =>
+                          spec.providers.includes(p.provider) &&
+                          p.signedIn &&
+                          !p.leadSupported,
+                      )
+                    : [];
+                  const label = t(spec.labelKey);
+                  const detail = t(spec.detailKey);
+                  // In its terminal, the lead resumes its recorded session: when this row names another agent, it starts
+                  // there only on demand.
+                  const leadAgent = isLead
+                    ? (options.find((m) => m.id === value)?.provider ??
+                      seat?.provider)
+                    : undefined;
+                  const otherLead =
+                    isLead &&
+                    !driven &&
+                    recorded !== undefined &&
+                    leadAgent !== undefined &&
+                    leadAgent !== Provider.UNSPECIFIED &&
+                    leadAgent !== recorded
+                      ? leadAgent
+                      : undefined;
+                  return (
+                    <div className="setting-row summoning-row" key={spec.key}>
+                      <div>
+                        <strong>{label}</strong>
+                        <p>{detail}</p>
+                        {leadUnavailableForRow.length > 0 && (
+                          <div className="summoning-row-notes">
+                            {leadUnavailableForRow.map((p) => (
+                              <span
+                                key={p.provider}
+                                className="summoning-provider unsigned lead-unavailable"
+                                title={p.leadUnavailableReason}
+                              >
+                                {providerName(p.provider)}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        {otherLead !== undefined && (
+                          <div className="summoning-lead-start">
+                            <p>
+                              {t("summoning.lead_recorded", {
+                                agent: providerName(recorded!),
+                              })}
+                            </p>
+                            <button
+                              type="button"
+                              className="button secondary small"
+                              title={t("summoning.lead_start_detail")}
+                              disabled={busy}
+                              onClick={() => startLead(otherLead)}
+                            >
+                              {t("summoning.lead_start", {
+                                agent: providerName(otherLead),
+                              })}
+                            </button>
+                          </div>
+                        )}
+                        {isLead && leadNote && (
+                          <p className="summoning-lead-note" role="status">
+                            {leadNote}
+                          </p>
+                        )}
+                      </div>
+                      <select
+                        className="summoning-select"
+                        aria-label={label}
+                        value={value}
+                        disabled={
+                          busy || !loaded || (isLead && options.length === 0)
+                        }
+                        onChange={(e) => apply(spec, e.target.value, options)}
+                      >
+                        {!isLead && (
+                          <option value="">
+                            {t("summoning.same_as_lead")}
+                          </option>
+                        )}
+                        {options.map((m) => (
+                          <option key={m.id} value={m.id}>
+                            {m.label}
+                          </option>
+                        ))}
                         {leadUnavailableForRow.map((p) => (
-                          <span
-                            key={p.provider}
-                            className="summoning-provider unsigned lead-unavailable"
+                          <option
+                            key={`lead-unavail-${p.provider}`}
+                            disabled
                             title={p.leadUnavailableReason}
                           >
-                            {providerName(p.provider)}
-                          </span>
+                            {t("summoning.lead_unavailable_option", {
+                              provider: providerName(p.provider),
+                              reason: p.leadUnavailableReason || "",
+                            })}
+                          </option>
                         ))}
-                      </div>
-                    )}
-                    {otherLead !== undefined && (
-                      <div className="summoning-lead-start">
-                        <p>
-                          {t("summoning.lead_recorded", {
-                            agent: providerName(recorded!),
-                          })}
-                        </p>
-                        <button
-                          type="button"
-                          className="button secondary small"
-                          title={t("summoning.lead_start_detail")}
-                          disabled={busy}
-                          onClick={() => startLead(otherLead)}
-                        >
-                          {t("summoning.lead_start", {
-                            agent: providerName(otherLead),
-                          })}
-                        </button>
-                      </div>
-                    )}
-                    {isLead && leadNote && (
-                      <p className="summoning-lead-note" role="status">
-                        {leadNote}
-                      </p>
-                    )}
-                  </div>
-                  <select
-                    className="summoning-select"
-                    aria-label={label}
-                    value={value}
-                    disabled={
-                      busy || !loaded || (isLead && options.length === 0)
-                    }
-                    onChange={(e) => apply(spec, e.target.value, options)}
-                  >
-                    {!isLead && (
-                      <option value="">{t("summoning.same_as_lead")}</option>
-                    )}
-                    {options.map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.label}
-                      </option>
-                    ))}
-                    {leadUnavailableForRow.map((p) => (
-                      <option
-                        key={`lead-unavail-${p.provider}`}
-                        disabled
-                        title={p.leadUnavailableReason}
-                      >
-                        {t("summoning.lead_unavailable_option", {
-                          provider: providerName(p.provider),
-                          reason: p.leadUnavailableReason || "",
-                        })}
-                      </option>
-                    ))}
-                    {unsignedForRow.map((p) => (
-                      <option
-                        key={`unsigned-${p.provider}`}
-                        disabled
-                        title={`${t("summoning.sign_in_with")} ${p.loginCommand}`}
-                      >
-                        {t("summoning.sign_in_option", {
-                          provider: providerName(p.provider),
-                          command: p.loginCommand,
-                        })}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              );
-            })}
-          </section>
-          <section className="config-box summoning-bulk">
-            <UpdateModelsSection
-              models={selectableModels}
-              onApplied={(res) => {
-                if (res.circle.length > 0) {
-                  setRows((prev) =>
-                    prev.map(
-                      (r) => res.circle.find((c) => c.kind === r.kind) ?? r,
-                    ),
+                        {unsignedForRow.map((p) => (
+                          <option
+                            key={`unsigned-${p.provider}`}
+                            disabled
+                            title={`${t("summoning.sign_in_with")} ${p.loginCommand}`}
+                          >
+                            {t("summoning.sign_in_option", {
+                              provider: providerName(p.provider),
+                              command: p.loginCommand,
+                            })}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                   );
-                }
-              }}
-            />
-          </section>
-          <BrakeSection initial={initialBrake} />
+                })}
+              </section>
+              <section className="config-box summoning-bulk">
+                <UpdateModelsSection
+                  models={selectableModels}
+                  onApplied={(res) => {
+                    if (res.circle.length > 0) {
+                      setRows((prev) =>
+                        prev.map(
+                          (r) => res.circle.find((c) => c.kind === r.kind) ?? r,
+                        ),
+                      );
+                    }
+                  }}
+                />
+              </section>
+              <BrakeSection initial={initialBrake} />
+            </>
+          )}
         </div>
       </div>
     </div>

@@ -69,7 +69,7 @@ your own file on this machine; and the one **retained**, with where it comes fro
 | Worker defaults | What the project gives a worker when neither its task nor the [Summoning Circle](#the-window) names anything, with a link to the Circle, which comes first: agent, model, budget per task, correction attempts, Enlighten me; the question workers' agent, model and budget; the **ceilings of the containers** its workers start, set in djinn.yaml only. |
 | Gates and checks | The **checks** from djinn.yaml, when each runs and how each last ran; the targeted test command; the **named gates** djinn.yaml declares, each with its commands alone and beside, read-only, and how a command is matched. A gate can be turned off on this machine, and back on, in your own file; it is added only in the repository. See [Gates](#gates). |
 | Integration and push | The push cadence, **Standard** or **On demand**, and each branch Djinn pushes that differs from its remote (see [Push](#push)); the branch of new wishes, per wish or per azima, a default each wish changes in its own settings, with where workers start: never from your copy; main brought in and how often; the generated files and the command that makes them again; the babysit of pull requests, which a skill of the project does, not Djinn itself; when to ask to install, and whether releases and builds install by themselves. |
-| Workers' brief | What Djinn adds, as it stands, to the first prompt of each worker that edits the project, drawn from its settings: the checks it runs and when, the targeted tests, the setup of a fresh worktree. The team's own instructions to workers live in the repository's agent instructions, AGENTS.md, which every agent reads. |
+| Workers' brief | What each worker of the project gets at its launch. First the **instructions by kind of task**, the general text, then work, investigation, mockup and ifrit, each with its value in the Summoning Circle, in djinn.yaml and in your own file, the one retained and where it comes from; a lower layer a higher one overrides is struck, and a kind that takes the general text says so. **Set mine** or **Edit mine** writes your text for a kind in your own file, **Remove** takes it back: see Workers' instructions, below. Then what Djinn adds, as it stands, to the first prompt of each worker that edits the project, drawn from its settings: the checks it runs and when, the targeted tests, the setup of a fresh worktree. |
 | Skills | The project's skills, the folder each lives in, and those it uses from another project, marked **from** that project, each with its role for Djinn: a wish template, an inbox source, the babysit, or know-how for the workers alone. Under them, the **inbox sources** they declare on this machine, with **Plug in** or **Unplug**. See [Inbox](#inbox). |
 | Permissions | The repository's permissions file as read on the reference branch: editing, what is not listed, the network, the commands allowed and denied. **Where it applies**: Djinn translates it for the agent of each worker of the project, at launch. Claude gets an allow or deny rule per command, and refuses the rest in listed mode; Codex has each command's approval accepted by Djinn only when listed, in listed mode, its own reviewer deciding in auto mode; Antigravity gets a grant per command, every command in auto mode. A watcher or an ifrit's serve that Djinn runs itself runs a listed command, one a skill declares, or one you add; a denied command never runs. It does not apply to a question worker, a task outside any project, nor a project without the file. Then the **additions on this machine**: the commands you allow a watcher and an ifrit's serve, with **Allow** and **Take back**, in your own file. See [Rights](#rights). |
 | Changes on main | The journal of changes: each commit of the reference branch that changed the configuration, when, which and who, and what it changed in sentences. One that waits for your look has the flame and **Seen**, and the tab counts them; the others say they were applied. When Djinn could not fetch the branch, it says why, as git said it. See below. |
@@ -152,9 +152,29 @@ worker's worktree. A task keeps what it got: changing a file changes the tasks t
 | Babysitting | Whether a pull request a task opens is watched by itself. See [Pull and merge requests](#pull-requests). | On, when a skill declares how |
 | Install | What installs the build Djinn pushed; the window then proposes it. | Nothing proposed |
 | Investigators | Whether **Enlighten me** sends a worker, and which agent, model and budget it gets. See [Enlighten me](#enlighten). | On; Sonnet under Claude Code; two dollars each |
+| Workers' instructions | What each kind of worker is told at its launch, besides Djinn's own words: see below. | The Summoning Circle's, else nothing |
 
 Two settings are read from **your file only**, never the repository's: the commands you allow a watcher, and those you
 allow an ifrit's serve. A repository that sets them is warned, and ignored: it lists its commands in its permissions.
+
+### Workers' instructions
+
+What the project's workers are told, besides what Djinn says itself, set by **kind of task**: a general text, and one
+for each kind that wants its own, work, investigation, mockup and ifrit. Each worker reads its kind's text right after
+its prompt, at its launch and when it starts again. A correction, review or question worker gets the general text; a
+watcher, which runs a command, gets none. Nothing is set by agent: each agent has its own instructions outside Djinn.
+
+The texts come in three layers, kind by kind, as the other settings do, plus one below them:
+
+1. **Your own file**, on this machine, wins over the two others.
+2. **The repository's file**, under instructions in the settings of its djinn.yaml, for the whole team.
+3. **The Summoning Circle**, in its tab Workers' instructions: this machine's default for every project.
+
+A kind that no layer sets takes the general text retained; with no general text either, the workers get nothing more.
+A text written empty counts as set: it tells its kind nothing, over the layers below. Each text holds 2,000 characters
+at most. The project's Workers' brief tab shows the three layers of each kind and edits yours; the Circle edits its own;
+the repository's changes by a commit. On the command line, the instructions method of the project command shows a
+project's and sets yours, and that of the lead command shows and sets the Circle's.
 
 ### Checks make Djinn integrate
 
@@ -168,7 +188,8 @@ into the wish's branch, checked, and pushes it once its push checks pass. With n
 - **From the window**: the push cadence switch, the reference branch (**Change**, then **Choose**), the bulk model
   switcher for open tasks, and the watcher commands you allow, in the project's configuration. Each writes your own file.
   The **Summoning Circle** (below the Grimoire in the side panel) sets the model of each kind of worker across all
-  projects, stored in your own settings, and previews or switches all open tasks in one gesture.
+  projects, stored in your own settings, and previews or switches all open tasks in one gesture; its second tab sets
+  the workers' instructions of this machine. The project's Workers' brief tab writes your own instructions by kind.
 - **For the team**: edit the repository's file and commit it, like any change of the project, or ask the Djinn for a
   task that does.
 - **For yourself**: your own file, the window, or Djinn's command line, whose project details and project

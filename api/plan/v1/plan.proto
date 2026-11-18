@@ -475,6 +475,66 @@ message ProjectSettings {
       string: {pattern: "^[a-z][a-z0-9-]{0,39}$"}
     }
   }];
+  // What the project's workers are told, by kind of task, besides what Djinn says itself (decision Q70 B): one text for
+  // every worker, and one for each kind that wants its own. Three layers, kind by kind: the Summoning Circle's, this
+  // machine's default for every project; the repository's, which wins over it; yours, which wins over both. A kind no
+  // layer sets takes the general text. Not set: none.
+  WorkerInstructions instructions = 31;
+}
+
+// WorkerInstructions are the instructions a project's workers get at their launch, by kind of task (decision Q70 B), in
+// a file of the project or in the Summoning Circle. A text is set once written, even empty: an empty text tells the
+// kind nothing, where an absent one leaves it to the layer below, then to the general text. Nothing by agent: each
+// agent has its own instructions outside Djinn.
+//
+//   instructions:
+//     general: Run the tasks, not the tools.
+//     mockup: Draw each option in both themes.
+message WorkerInstructions {
+  // What every worker of the project is told, when its kind has no text of its own: a work task's, an investigation's,
+  // a mockup's, an ifrit's, and the correction, review and question workers', which have none.
+  optional string general = 1 [(buf.validate.field).string.max_len = 2000];
+  // What a work task's worker is told, the one that changes the code.
+  optional string work = 2 [(buf.validate.field).string.max_len = 2000];
+  // What an investigation's worker is told, the one that reads and reports.
+  optional string investigation = 3 [(buf.validate.field).string.max_len = 2000];
+  // What a mockup's worker is told, the one that draws interface options in a tilasm.
+  optional string mockup = 4 [(buf.validate.field).string.max_len = 2000];
+  // What an ifrit is told, the worker the developer talks to in its room.
+  optional string ifrit = 5 [(buf.validate.field).string.max_len = 2000];
+}
+
+// InstructionKind names a text of WorkerInstructions: the general one, or a kind of task's.
+enum InstructionKind {
+  // Not set.
+  INSTRUCTION_KIND_UNSPECIFIED = 0;
+  // Every worker whose kind has no text of its own.
+  INSTRUCTION_KIND_GENERAL = 1;
+  // A work task's worker.
+  INSTRUCTION_KIND_WORK = 2;
+  // An investigation's worker.
+  INSTRUCTION_KIND_INVESTIGATION = 3;
+  // A mockup's worker.
+  INSTRUCTION_KIND_MOCKUP = 4;
+  // An ifrit.
+  INSTRUCTION_KIND_IFRIT = 5;
+}
+
+// WorkerInstruction is one text of a project's workers' instructions as Djinn retains it, with its value in each layer.
+message WorkerInstruction {
+  // The text's kind.
+  InstructionKind kind = 1;
+  // The text the kind's workers get: the highest layer that sets the kind's own, else the general text retained.
+  string text = 2;
+  // Where text comes from: the Summoning Circle (machine), the repository, your file; Djinn's default when no layer
+  // sets it, and text is empty.
+  SettingSource source = 3;
+  // The kind takes the general text: no layer sets its own.
+  bool general = 4;
+  // Its own value in each layer alone: unset where that layer does not set it.
+  optional string machine = 5;
+  optional string repository = 6;
+  optional string developer = 7;
 }
 
 // MergeMain is when Djinn merges a project's main branch into a wish's integration branch.
@@ -550,6 +610,9 @@ enum SettingSource {
   SETTING_SOURCE_DEVELOPER = 3;
   // The wish itself, set for this wish specifically.
   SETTING_SOURCE_WISH = 4;
+  // This machine's default for every project, set in the Summoning Circle (settings.json in Djinn's data folder): the
+  // workers' instructions alone have one.
+  SETTING_SOURCE_MACHINE = 5;
 }
 
 // ProjectSetting is one setting of a project, as its workers get it.
@@ -3073,6 +3136,13 @@ service ProjectService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
+  // Show the instructions the project's workers get, by kind of task, each with its value in the Summoning Circle, the
+  // repository's .agents/djinn.yaml and your own file; or set one text (--kind) in your own file, where it wins over
+  // the other two. --unset removes yours, and the layers below apply again.
+  rpc Instructions(ProjectServiceInstructionsRequest) returns (ProjectServiceInstructionsResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
   // Show or change the push strategy of a project: wish (one branch per wish) or azima (one branch per azima).
   rpc PushStrategy(ProjectServicePushStrategyRequest) returns (ProjectServicePushStrategyResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
@@ -3199,6 +3269,9 @@ message ProjectServiceShowResponse {
   // and when, the targeted tests, the setup of a fresh worktree; empty for a project that sets no check. The team's
   // own instructions to workers live in the repository's agent instructions (AGENTS.md), which every agent reads.
   string workers_brief = 17;
+  // The instructions the project's workers get, by kind (decision Q70 B), as the three layers resolve them: the
+  // general text first, then work, investigation, mockup and ifrit.
+  repeated WorkerInstruction instructions = 18;
 
   // The free-text problems and warnings, which notices replaced.
   reserved 5, 8;
@@ -3245,6 +3318,25 @@ message ProjectServiceSetPushRequest {
 message ProjectServiceSetPushResponse {
   // The project updated.
   Project project = 1;
+}
+
+message ProjectServiceInstructionsRequest {
+  // The project, by name (case ignored) or identifier.
+  string project = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.max_len = 100
+  ];
+  // The text to set: the general one, or a kind of task's. Unset: show them, change nothing.
+  InstructionKind kind = 2 [(buf.validate.field).enum.defined_only = true];
+  // The text; empty tells the kind nothing, over the layers below.
+  string text = 3 [(buf.validate.field).string.max_len = 2000];
+  // Remove your text instead: the repository's, then the Summoning Circle's, apply again.
+  bool unset = 4;
+}
+
+message ProjectServiceInstructionsResponse {
+  // The instructions as Djinn retains them now, the general text first.
+  repeated WorkerInstruction instructions = 1;
 }
 
 message ProjectServicePushStrategyRequest {
@@ -4737,6 +4829,13 @@ service LeadService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
+  // Show the workers' instructions on this machine, the Summoning Circle's, by kind of task: the default of every
+  // project, which a project's repository, then your own file of the project, win over, kind by kind; or set one text
+  // (--kind). --unset removes it.
+  rpc Instructions(LeadServiceInstructionsRequest) returns (LeadServiceInstructionsResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
 }
 
 // LeadPrompt is a choice the lead's agent shows in its terminal, waiting for the developer, as read from its screen:
@@ -5040,6 +5139,22 @@ message LeadServiceGetCircleResponse {
   repeated CircleModel models = 2;
   // Provider sign-in status and lead capability on this machine.
   repeated CircleProvider providers = 3;
+  // The workers' instructions on this machine, by kind: the default of every project.
+  WorkerInstructions instructions = 4;
+}
+
+message LeadServiceInstructionsRequest {
+  // The text to set: the general one, or a kind of task's. Unset: show them, change nothing.
+  InstructionKind kind = 1 [(buf.validate.field).enum.defined_only = true];
+  // The text; empty tells the kind nothing, over the general text.
+  string text = 2 [(buf.validate.field).string.max_len = 2000];
+  // Remove the text instead.
+  bool unset = 3;
+}
+
+message LeadServiceInstructionsResponse {
+  // The workers' instructions on this machine, after the change if any.
+  WorkerInstructions instructions = 1;
 }
 
 message LeadServiceSetCircleRequest {

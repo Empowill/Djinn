@@ -466,6 +466,8 @@ func (p *Projects) Show(
 		Project: project, Settings: SettingRows(filled.repo, filled.dev), Setup: settings.Setup, Checks: settings.Checks,
 		WatchCommands: settings.WatchCommands, ServeCommands: settings.ServeCommands, Notices: filled.notices,
 		Reference: filled.ref, WorkersBrief: settings.ChecksBrief(),
+		Instructions: ResolveInstructions(ReadMachineInstructions(p.Home), filled.repo.GetInstructions(),
+			filled.dev.GetInstructions()),
 	}
 	if dir := filled.config.Dir; dir != "" {
 		// What cannot be read here is said by the notices already: the page shows nothing of it.
