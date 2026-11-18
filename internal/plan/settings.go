@@ -976,11 +976,12 @@ func ValidateQuestionModel(workerProvider, questionProvider planv1.Provider, mod
 var devModelLine = regexp.MustCompile(`(?m)^[ \t]*(provider|model|question_provider|question_model)[ \t]*:.*(?:\r?\n|$)`)
 
 // migrateDeveloperSettingsFile moves the per-project provider/model choices of devFile, a developer's settings file,
-// to the Summoning Circle in home, for rows not configured yet, normalizing labels to canonical model IDs; then it drops
-// those lines from devFile. A value that cannot move (a provider or model this build refuses, or a question model whose
-// provider cannot run read-only) is dropped all the same, and so is every line once the circle is configured (a lead
-// seat or a row in settings.json): the circle chooses the workers' seats then, and the stale line only showed a wrong
-// provider in the project's settings (L20, Q56 A). No worker changes model. It returns an error, devFile left as it is,
+// to the Summoning Circle in home when it is not configured yet, normalizing labels to canonical model IDs; then it
+// drops those lines from devFile. A value that cannot move (a provider or model this build refuses, or a question model
+// whose provider cannot run read-only) is dropped all the same, and so is every line once the circle is configured (a
+// lead seat or a row in settings.json, a row set to "Same as lead" included: Q67): the circle chooses the workers'
+// seats then, and the stale line only showed a wrong provider in the project's settings (L20, Q56 A). The rows the
+// lines do not fill are written "Same as lead" (fillCircle). No worker changes model. It returns an error, devFile left as it is,
 // when devFile cannot be read as settings (a secret, a removed key, a line protobuf refuses) or the circle cannot be
 // written. A file without those lines is not written: running it twice changes nothing.
 func migrateDeveloperSettingsFile(home, devFile string) error {
@@ -1069,10 +1070,9 @@ func migrateDeveloperSettingsFile(home, devFile string) error {
 	if hasWorker || hasQuestion {
 		err := changeSettings(home, func(settings *uiv1.Settings) error {
 			setIfMissing := func(kind planv1.WorkerKind, p planv1.Provider, m string) {
-				for _, row := range settings.Circle {
-					if row.GetKind() == kind && (row.GetProvider() != planv1.Provider_PROVIDER_UNSPECIFIED || row.GetModel() != "") {
-						return
-					}
+				// A written row is configured, "Same as lead" included: the project's value never fills it (Q67).
+				if slices.ContainsFunc(settings.Circle, func(r *planv1.WorkerSeat) bool { return r.GetKind() == kind }) {
+					return
 				}
 				settings.Circle = setCircleRowSlice(settings.Circle, &planv1.WorkerSeat{
 					Kind:     kind,
@@ -1106,14 +1106,6 @@ func migrateDeveloperSettingsFile(home, devFile string) error {
 		}
 	}
 	return fsx.WriteAtomic(devFile, devModelLine.ReplaceAll(b, nil), 0o600)
-}
-
-// circleConfigured says whether settings choose the workers' seats themselves, so that ResolveWorkerSeat answers
-// explicit: a lead seat, or any row of the circle.
-func circleConfigured(settings *uiv1.Settings) bool {
-	lead := settings.GetLead()
-	return len(settings.GetCircle()) > 0 ||
-		lead != nil && (lead.GetProvider() != planv1.Provider_PROVIDER_UNSPECIFIED || lead.GetModel() != "")
 }
 
 // ResolveWishPushStrategy resolves the push strategy and its source for a wish, falling back to the project settings.
