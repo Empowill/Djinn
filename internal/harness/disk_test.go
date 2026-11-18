@@ -508,7 +508,9 @@ func TestDiskItems(t *testing.T) {
 		count       int32
 		djinn       bool
 	}
-	at := func(parts ...string) uint64 { return onDiskOf(t, filepath.Join(append([]string{fakeHome}, parts...)...)) }
+	at := func(parts ...string) uint64 {
+		return onDiskOf(t, filepath.Join(append([]string{fakeHome}, parts...)...))
+	}
 	oldBuild := at(".cache", "go-build", "01", "old-entry")
 	goBuildSize := oldBuild + at(".cache", "go-build", "02", "fresh-entry")
 	isolated := at(".cache", "w12-go-build", "aa", "entry") + at(".cache", "et4224-go-build", "bb", "entry")

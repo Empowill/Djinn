@@ -501,19 +501,20 @@ func (h *Harness) DiskItems() []*machinev1.DiskItem {
 
 // keepWhole gives an item whose walk ran out of time its previous size when that was bigger.
 func keepWhole(items, previous []*machinev1.DiskItem) []*machinev1.DiskItem {
-	for i, it := range items {
-		if !it.GetPartial() {
-			continue
-		}
-		for _, p := range previous {
-			if p.GetKind() == it.GetKind() && p.GetSizeBytes() > it.GetSizeBytes() {
-				kept, _ := proto.Clone(it).(*machinev1.DiskItem)
-				kept.SizeBytes, kept.ReclaimableBytes = p.GetSizeBytes(), p.GetReclaimableBytes()
-				items[i] = kept
+	out := make([]*machinev1.DiskItem, 0, len(items))
+	for _, it := range items {
+		if it.GetPartial() {
+			for _, p := range previous {
+				if p.GetKind() == it.GetKind() && p.GetSizeBytes() > it.GetSizeBytes() {
+					kept, _ := proto.Clone(it).(*machinev1.DiskItem)
+					kept.SizeBytes, kept.ReclaimableBytes = p.GetSizeBytes(), p.GetReclaimableBytes()
+					it = kept
+				}
 			}
 		}
+		out = append(out, it)
 	}
-	return sortedDiskItems(items)
+	return sortedDiskItems(out)
 }
 
 // measureDiskItems measures the known caches and stores on the machine (Go build cache, isolated *-go-build caches,
