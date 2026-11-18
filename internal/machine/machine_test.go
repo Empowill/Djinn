@@ -524,12 +524,15 @@ func TestPolicy_Room(t *testing.T) {
 		peak, held uint64
 		want       string
 	}{
-		{"room", s, 3 * GiB, 0, ""},
-		{"no margin left", s, 36 * GiB / 10, 0, "e2e peaks at 3.6 GiB, 4.0 GiB free"},
+		{"room", s, 3 * GiB, 100 << 20, ""},
+		{"no margin left", s, 36 * GiB / 10, 100 << 20, "e2e peaks at 3.6 GiB, 4.0 GiB free, 100 MiB of it for the commands holding a gate"},
+		{"alone", s, 12 * GiB, 0, ""},
+		{"capped", s, 12 * GiB, 100 << 20, "e2e peaks at 8.0 GiB (counted at 50% of 16.0 GiB), 4.0 GiB free, 100 MiB of it for the commands holding a gate"},
+		{"capped, room", Snapshot{MemoryTotal: 16 * GiB, MemoryAvailable: 15 * GiB}, 12 * GiB, GiB, ""},
 		{"held", s, 2 * GiB, 2 * GiB, "e2e peaks at 2.0 GiB, 4.0 GiB free, 2.0 GiB of it for the commands holding a gate"},
 		{"held beyond the free", s, 300 << 20, 6 * GiB, "e2e peaks at 300 MiB, 4.0 GiB free, 4.0 GiB of it for the commands holding a gate"},
 		{"never measured", s, 0, 6 * GiB, ""},
-		{"memory unknown", Snapshot{}, 3 * GiB, 0, ""},
+		{"memory unknown", Snapshot{}, 3 * GiB, GiB, ""},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

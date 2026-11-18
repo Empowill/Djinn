@@ -58,6 +58,8 @@ const (
 	CommandServiceListProcedure = "/machine.v1.CommandService/List"
 	// CommandServiceRecordProcedure is the fully-qualified name of the CommandService's Record RPC.
 	CommandServiceRecordProcedure = "/machine.v1.CommandService/Record"
+	// CommandServiceForgetProcedure is the fully-qualified name of the CommandService's Forget RPC.
+	CommandServiceForgetProcedure = "/machine.v1.CommandService/Forget"
 )
 
 // MachineServiceClient is a client for the machine.v1.MachineService service.
@@ -379,6 +381,10 @@ type CommandServiceClient interface {
 	// Record a run of a command: djinn gate run sends it once the command has ended by itself. The project is the
 	// task's, or the one whose folder holds the directory; a command outside any project is not recorded.
 	Record(context.Context, *connect.Request[v1.CommandServiceRecordRequest]) (*connect.Response[v1.CommandServiceRecordResponse], error)
+	// Forget what commands of a project were measured to cost: one command by its key (--command), the commands whose
+	// key starts with some words (--head), or all of the project's (--all); one of the three, no more. A cost learned
+	// wrong then stops holding the gates: the next run of each command is measured anew. Journaled; it cannot be undone.
+	Forget(context.Context, *connect.Request[v1.CommandServiceForgetRequest]) (*connect.Response[v1.CommandServiceForgetResponse], error)
 }
 
 // NewCommandServiceClient constructs a client for the machine.v1.CommandService service. By
@@ -405,6 +411,12 @@ func NewCommandServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(commandServiceMethods.ByName("Record")),
 			connect.WithClientOptions(opts...),
 		),
+		forget: connect.NewClient[v1.CommandServiceForgetRequest, v1.CommandServiceForgetResponse](
+			httpClient,
+			baseURL+CommandServiceForgetProcedure,
+			connect.WithSchema(commandServiceMethods.ByName("Forget")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -412,6 +424,7 @@ func NewCommandServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 type commandServiceClient struct {
 	list   *connect.Client[v1.CommandServiceListRequest, v1.CommandServiceListResponse]
 	record *connect.Client[v1.CommandServiceRecordRequest, v1.CommandServiceRecordResponse]
+	forget *connect.Client[v1.CommandServiceForgetRequest, v1.CommandServiceForgetResponse]
 }
 
 // List calls machine.v1.CommandService.List.
@@ -424,6 +437,11 @@ func (c *commandServiceClient) Record(ctx context.Context, req *connect.Request[
 	return c.record.CallUnary(ctx, req)
 }
 
+// Forget calls machine.v1.CommandService.Forget.
+func (c *commandServiceClient) Forget(ctx context.Context, req *connect.Request[v1.CommandServiceForgetRequest]) (*connect.Response[v1.CommandServiceForgetResponse], error) {
+	return c.forget.CallUnary(ctx, req)
+}
+
 // CommandServiceHandler is an implementation of the machine.v1.CommandService service.
 type CommandServiceHandler interface {
 	// List what the commands of the projects cost, the most run first.
@@ -431,6 +449,10 @@ type CommandServiceHandler interface {
 	// Record a run of a command: djinn gate run sends it once the command has ended by itself. The project is the
 	// task's, or the one whose folder holds the directory; a command outside any project is not recorded.
 	Record(context.Context, *connect.Request[v1.CommandServiceRecordRequest]) (*connect.Response[v1.CommandServiceRecordResponse], error)
+	// Forget what commands of a project were measured to cost: one command by its key (--command), the commands whose
+	// key starts with some words (--head), or all of the project's (--all); one of the three, no more. A cost learned
+	// wrong then stops holding the gates: the next run of each command is measured anew. Journaled; it cannot be undone.
+	Forget(context.Context, *connect.Request[v1.CommandServiceForgetRequest]) (*connect.Response[v1.CommandServiceForgetResponse], error)
 }
 
 // NewCommandServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -453,12 +475,20 @@ func NewCommandServiceHandler(svc CommandServiceHandler, opts ...connect.Handler
 		connect.WithSchema(commandServiceMethods.ByName("Record")),
 		connect.WithHandlerOptions(opts...),
 	)
+	commandServiceForgetHandler := connect.NewUnaryHandler(
+		CommandServiceForgetProcedure,
+		svc.Forget,
+		connect.WithSchema(commandServiceMethods.ByName("Forget")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/machine.v1.CommandService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case CommandServiceListProcedure:
 			commandServiceListHandler.ServeHTTP(w, r)
 		case CommandServiceRecordProcedure:
 			commandServiceRecordHandler.ServeHTTP(w, r)
+		case CommandServiceForgetProcedure:
+			commandServiceForgetHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -474,4 +504,8 @@ func (UnimplementedCommandServiceHandler) List(context.Context, *connect.Request
 
 func (UnimplementedCommandServiceHandler) Record(context.Context, *connect.Request[v1.CommandServiceRecordRequest]) (*connect.Response[v1.CommandServiceRecordResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("machine.v1.CommandService.Record is not implemented"))
+}
+
+func (UnimplementedCommandServiceHandler) Forget(context.Context, *connect.Request[v1.CommandServiceForgetRequest]) (*connect.Response[v1.CommandServiceForgetResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("machine.v1.CommandService.Forget is not implemented"))
 }

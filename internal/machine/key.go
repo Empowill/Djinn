@@ -44,15 +44,20 @@ func KeyArgs(args []string, dirs ...string) string {
 
 // Head is what a key starts with, the program and its subcommand: go test, go tool task lint, npm run build, npx
 // playwright test; python3 for an inline script (python3 - <<…). A command never measured is given the cost of the
-// others of its head in its project (Peaks.Cost). "" when the key has no word.
+// others of its head in its project (Peaks.Cost). "" when the key has no word, holds more than one command (gofmt -l .
+// ; go build: its peak is the heavier one's, which no other command of its first word has), or starts with a light
+// program (Light: sed -i, mv, cat): such a key neither lends its cost nor borrows one (W139).
 func Head(key string) string {
 	parts := keyParts(key, nil, 0)
-	if len(parts) == 0 {
+	if len(parts) != 1 {
 		return ""
 	}
 	words := parts[0].words
 	for len(words) > 0 && assignment(words[0]) {
 		words = words[1:]
+	}
+	if len(words) == 0 || Light(path.Base(words[0])) {
+		return ""
 	}
 	var head []string
 	for i, w := range words {
@@ -62,6 +67,36 @@ func Head(key string) string {
 		head = append(head, w)
 	}
 	return strings.Join(head, " ")
+}
+
+// Light says whether program, a command's first word past its folder, only reads or edits and runs nothing else: ls,
+// cat, sed, mv, djinn… A command made of light ones only passes the gates with no admission (gate.Plain), and a
+// command whose head is light lends its cost to none (Head). Anything else, a build, a test, a package manager, a
+// script, an interpreter, a loop, is admitted.
+func Light(program string) bool { return lightPrograms[program] }
+
+// lightPrograms are the commands that read or edit and run nothing else (Light).
+var lightPrograms = map[string]bool{
+	// Reading files and folders.
+	"ls": true, "cat": true, "head": true, "tail": true, "wc": true, "grep": true, "egrep": true, "fgrep": true,
+	"rg": true, "fd": true, "tree": true, "stat": true, "file": true, "du": true, "df": true, "less": true,
+	"more": true, "diff": true, "cmp": true, "comm": true, "od": true, "xxd": true, "hexdump": true, "strings": true,
+	"sha256sum": true, "sha1sum": true, "md5sum": true, "cksum": true, "realpath": true, "readlink": true,
+	"basename": true, "dirname": true, "find": true,
+	// Text in a pipe.
+	"echo": true, "printf": true, "sort": true, "uniq": true, "cut": true, "tr": true, "awk": true, "sed": true,
+	"jq": true, "column": true, "nl": true, "tee": true, "base64": true, "fold": true, "rev": true, "paste": true,
+	"join": true, "expand": true, "fmt": true,
+	// Editing files and folders.
+	"mkdir": true, "rmdir": true, "touch": true, "cp": true, "mv": true, "rm": true, "ln": true, "chmod": true,
+	"patch": true,
+	// The shell itself, and what tells about the machine.
+	"cd": true, "pwd": true, "true": true, "false": true, "test": true, "[": true, "export": true, "unset": true,
+	"which": true, "type": true, "date": true, "printenv": true, "id": true, "whoami": true,
+	"hostname": true, "uname": true, "ps": true, "pgrep": true, "free": true, "uptime": true, "nproc": true,
+	"exit": true,
+	// Djinn's own commands talk to Djinn; djinn gate run takes its gate.
+	"djinn": true,
 }
 
 // cut keeps the first KeyLength characters of key, whole words when it can, whole runes always.

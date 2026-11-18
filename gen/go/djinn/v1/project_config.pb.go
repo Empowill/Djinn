@@ -67,7 +67,12 @@ type ProjectConfig struct {
 	// highest it knows, an older one lifted to it first (plan.ProjectConfigVersion); a higher version, or one that is not
 	// a whole number from 1, leaves the whole file out, said with the file, the version read and the highest known: a
 	// newer Djinn wrote it, and this one does not read it wrong. Read, it holds the highest version Djinn knows.
-	Version       uint32 `protobuf:"varint,3,opt,name=version,proto3" json:"version,omitempty"`
+	Version uint32 `protobuf:"varint,3,opt,name=version,proto3" json:"version,omitempty"`
+	// false: the commands of the project's workers wait for no admission by the gates, whatever they cost: no Claude
+	// worker runs the gates' hook, no other agent waits on the heavy commands' wrappers. A gate declared here is then
+	// taken only by djinn gate run with its name; the checks of the merges and pushes still go through theirs. Not set,
+	// or true: they are admitted (Djinn's default).
+	Admit         *bool `protobuf:"varint,4,opt,name=admit,proto3,oneof" json:"admit,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -121,6 +126,13 @@ func (x *ProjectConfig) GetVersion() uint32 {
 		return x.Version
 	}
 	return 0
+}
+
+func (x *ProjectConfig) GetAdmit() bool {
+	if x != nil && x.Admit != nil {
+		return *x.Admit
+	}
+	return false
 }
 
 // ProjectGate is a gate a project declares in its djinn.yaml: the commands of its workers that rebuild a shared
@@ -200,13 +212,15 @@ var File_djinn_v1_project_config_proto protoreflect.FileDescriptor
 
 const file_djinn_v1_project_config_proto_rawDesc = "" +
 	"\n" +
-	"\x1ddjinn/v1/project_config.proto\x12\bdjinn.v1\x1a\x1bbuf/validate/validate.proto\x1a\x19djinn/v1/containers.proto\"\x96\x01\n" +
+	"\x1ddjinn/v1/project_config.proto\x12\bdjinn.v1\x1a\x1bbuf/validate/validate.proto\x1a\x19djinn/v1/containers.proto\"\xbb\x01\n" +
 	"\rProjectConfig\x124\n" +
 	"\n" +
 	"containers\x18\x01 \x01(\v2\x14.djinn.v1.ContainersR\n" +
 	"containers\x125\n" +
 	"\x05gates\x18\x02 \x03(\v2\x15.djinn.v1.ProjectGateB\b\xbaH\x05\x92\x01\x02\x10\bR\x05gates\x12\x18\n" +
-	"\aversion\x18\x03 \x01(\rR\aversion\"\xc1\x02\n" +
+	"\aversion\x18\x03 \x01(\rR\aversion\x12\x19\n" +
+	"\x05admit\x18\x04 \x01(\bH\x00R\x05admit\x88\x01\x01B\b\n" +
+	"\x06_admit\"\xc1\x02\n" +
 	"\vProjectGate\x12;\n" +
 	"\x04name\x18\x01 \x01(\tB'\xbaH$r\"2\x16^[a-z][a-z0-9-]{0,39}$Z\bcommandsR\x04name\x125\n" +
 	"\x05alone\x18\x02 \x03(\tB\x1f\xbaH\x1c\x92\x01\x19\"\x17r\x15\x10\x01\x18\xc8\x012\x0e^[^*\\s][^\\n]*$R\x05alone\x127\n" +
@@ -248,6 +262,7 @@ func file_djinn_v1_project_config_proto_init() {
 		return
 	}
 	file_djinn_v1_containers_proto_init()
+	file_djinn_v1_project_config_proto_msgTypes[0].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
