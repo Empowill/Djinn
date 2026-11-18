@@ -76,6 +76,8 @@ metadata:
 test("a project with something to fix: its gear and inbox line open its panel; the panel shows what to fix, its reference branch, where values come from and each skill's role", async ({
   page,
 }) => {
+  // The page is measured in both themes, three tabs each (W111): more than the default budget.
+  test.setTimeout(90_000);
   const folder = fs.realpathSync(
     fs.mkdtempSync(path.join(process.env.DJINN_E2E_HOME!, "lantern-")),
   );
@@ -227,7 +229,9 @@ test("a project with something to fix: its gear and inbox line open its panel; t
     await expect(toFix).toContainText("djinn inbox plug lantern/lamp-news");
 
     // The reference branch, its commit and where its name comes from; the copy on another branch, an information.
-    const reference = boxes.filter({ hasText: "Reference branch" });
+    const reference = boxes.filter({
+      has: page.locator(".config-line strong", { hasText: "Reference branch" }),
+    });
     await expect(reference).toContainText(`main origin/main at ${commit}`);
     await expect(reference.locator(".config-from")).toHaveText(
       "Djinn's default",
@@ -251,7 +255,7 @@ test("a project with something to fix: its gear and inbox line open its panel; t
       has: page.locator("h3", { hasText: "Checks" }),
     });
     await expect(checks.locator(".setting-row strong")).toHaveText("lint");
-    const team = checks.locator(".config-from");
+    const team = checks.locator(".setting-row .config-from");
     await expect(team).toHaveText("the team's file");
     await expect(team).toHaveAttribute(
       "title",
@@ -338,7 +342,11 @@ test("a project with something to fix: its gear and inbox line open its panel; t
       panel.locator(".inbox-source-row").filter({ hasText: "lamp-news" }),
     ).toContainText("Unplugged: runs nothing");
     await shotsAndContrast(page, panel);
-    await page.locator(".sidebar .plan-nav").click();
+    // Without an active wish the flying carpet has no entry: leave by the Hourglass.
+    await page
+      .locator(".sidebar")
+      .getByText("Hourglass", { exact: true })
+      .click();
     await expect(panel).toBeHidden();
     await expect(gear).toHaveAttribute(
       "aria-label",

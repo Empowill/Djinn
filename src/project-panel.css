@@ -285,7 +285,8 @@
   max-width: 64rem;
   padding-top: var(--space-4, 1rem);
 }
-.project-files {
+.project-page .project-where,
+.project-page .project-files {
   display: flex;
   flex-wrap: wrap;
   gap: 0.25rem 0.75rem;
@@ -503,4 +504,17 @@
 .project-circle > p > svg {
   flex: none;
   margin-top: 0.1875rem;
+}
+/* The page's secondary text, above the generic paragraph rules of the boxes and the page: 4.5:1 in both themes. */
+.project-page .settings-foot,
+.project-page .settings-lead,
+.project-page .project-tab-detail,
+.project-page .setting-note > td,
+.project-page .setting-key,
+.project-page .setting-absent,
+.project-page .settings-table code.setting-struck,
+.project-page .settings-table thead th,
+.project-page .gate-side,
+.project-page .permissions-list dt {
+  color: var(--n-9c);
 }

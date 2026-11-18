@@ -386,12 +386,6 @@ export function ReferenceBranch({
           )}
         </div>
       </div>
-      {reference && (
-        <WorkersStart
-          reference={reference}
-          strategy={shown?.project?.pushStrategy}
-        />
-      )}
       {notices.map((n) => (
         <div className="config-line" key={n.text}>
           <Info size={14} aria-hidden="true" />
