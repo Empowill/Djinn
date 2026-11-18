@@ -43,7 +43,7 @@ measure is going, with a button to measure again now. It draws a bar of the whol
 split into its sources: Go, Docker, Djinn, other caches, the home, the system, and what is left unmeasured. Below it,
 three tabs: **Djinn and its workers** (each project's worktrees and scratch, with the share of tasks ended, done or
 cancelled, that still keep theirs, summed above the list: how many folders the ended tasks leave, worktrees and
-scratch, and what they take, which Djinn frees by itself by the rules of [Task and worker](#task-and-worker);
+scratch, and what they take, part of which Djinn frees by itself by the rules of [Task and worker](#task-and-worker);
 Playwright, tilasms, logs, the data folder, and any isolated Go build caches),
 **Machine** (the Go build cache, the Go module and download caches, golangci-lint, Docker build cache, images and
 volumes when Docker is installed, pnpm, uv, pip, npm, and JetBrains), grouped by risk (**Safe**, **Rebuilds**, **Data

@@ -1502,7 +1502,8 @@ type FreeRule int32
 
 const (
 	FreeRule_FREE_RULE_UNSPECIFIED FreeRule = 0
-	// Done or cancelled 30 days ago: its branch stays.
+	// Done 30 days ago with its work integrated (Q81): its branch stays. A task cancelled, dropped, failed or stopped
+	// is never freed by its age.
 	FreeRule_FREE_RULE_AGE FreeRule = 1
 	// Its azima was validated, its request merged or closed as done by the developer or the lead: its local branch goes
 	// too.

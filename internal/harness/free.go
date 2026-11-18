@@ -24,7 +24,8 @@ import (
 )
 
 // Djinn frees by itself the worktrees and scratch of finished tasks, by the rules of Q75 (Task.freed):
-//   - a task done or cancelled 30 days ago (freeAfter): its worktree and scratch go, its branch stays;
+//   - a task done 30 days ago whose work is integrated (Q81): its worktree and scratch go, its branch stays; a task
+//     cancelled, done with its work dropped, failed or stopped is not freed by its age, only by its azima or wish;
 //   - a task of an azima validated, its request merged (Azima.merged, its pull request merged) or closed as done by the
 //     developer or the lead: at once, its local branch too;
 //   - a task of a wish granted, which validates all its azimas: the same, at once, in cascade.
@@ -32,7 +33,7 @@ import (
 // the remote, stays, and so do its scratch and its branch; a local branch with such commits stays. Each is logged with
 // why, on the task and on its azima. A remote branch is never touched. A task freed resumes by a fork (forkInstead).
 
-// freeAfter is how long after its end a task done or cancelled keeps its worktree and scratch (Q75).
+// freeAfter is how long after its end a task done and integrated keeps its worktree and scratch (Q75, Q81).
 const freeAfter = 30 * 24 * time.Hour
 
 // freeEvery is how often the freeing pass runs without being kicked: the age of a task passes without telling anyone.
@@ -204,7 +205,7 @@ func (h *Harness) setFreeing(p *machinev1.DiskFreeing) {
 }
 
 // freeJobs are the tasks the rules of Q75 free now: those of the wishes granted and the azimas validated first, then
-// those done or cancelled 30 days ago; each with something on disk, or a local branch to look at, and not looked at
+// those done and integrated 30 days ago; each with something on disk, or a local branch to look at, and not looked at
 // lately by the same rule.
 func (h *Harness) freeJobs(ctx context.Context) ([]freeJob, error) {
 	tasks, err := store.List[*planv1.Task](ctx, h.store, nil)
@@ -290,7 +291,8 @@ func freeOrder(r planv1.FreeRule) int {
 }
 
 // freeRuleOf is the rule of Q75 that frees t now, unspecified for none: its wish granted, an azima it is part of
-// validated, or done or cancelled 30 days ago. A cascade frees only a task finished whose work is not merging.
+// validated, or done 30 days ago with its work integrated (Q81: one status, done and integrated, frees by age). A
+// cascade frees only a task finished whose work is not merging.
 func freeRuleOf(t *planv1.Task, granted bool, byID map[string]*planv1.Task, now time.Time) planv1.FreeRule {
 	finished := freeFinished(t)
 	if finished && granted {
@@ -299,13 +301,19 @@ func freeRuleOf(t *planv1.Task, granted bool, byID map[string]*planv1.Task, now 
 	if finished && validatedAzima(t, byID) != nil {
 		return planv1.FreeRule_FREE_RULE_AZIMA
 	}
-	switch t.GetStatus() {
-	case planv1.TaskStatus_TASK_STATUS_DONE, planv1.TaskStatus_TASK_STATUS_CANCELLED:
+	if freeIntegrated(t) {
 		if end := endedAt(t); !end.IsZero() && !now.Before(end.Add(freeAfter)) {
 			return planv1.FreeRule_FREE_RULE_AGE
 		}
 	}
 	return planv1.FreeRule_FREE_RULE_UNSPECIFIED
+}
+
+// freeIntegrated tells a task done whose work is in its integration branch: merged, or committed into it. A task done
+// with its work dropped (done --drop) has no integration left, and one done with nothing to merge none either.
+func freeIntegrated(t *planv1.Task) bool {
+	return t.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE &&
+		t.GetIntegration().GetState() == planv1.IntegrationState_INTEGRATION_STATE_COMMITTED
 }
 
 // freeFinished tells a task no worker runs nor will run without a person, whose work is not merging: finished, or
@@ -578,7 +586,7 @@ func freeWhy(j freeJob) string {
 		}
 		return "its azima was validated"
 	}
-	return fmt.Sprintf("it ended %d days ago", int(freeAfter.Hours()/24))
+	return fmt.Sprintf("it ended %d days ago, its work integrated", int(freeAfter.Hours()/24))
 }
 
 // freeText is the event of the task j freed: what went and what stayed, and why.
