@@ -294,7 +294,7 @@ func TestLeadCallsFilesStayHere(t *testing.T) {
 		return next.RoundTrip(r)
 	})}
 
-	l.passes(t, "task", "spawn", l.dew, "--title", "Light at dusk", "--project-id", "djinn", "--later",
+	l.passes(t, "task", "spawn", l.other, "--title", "Light at dusk", "--project-id", "djinn", "--later",
 		"--prompt-file", files["prompt"])
 	spawns, err := store.Commands(t.Context(), l.db, func(cmd store.Command) bool {
 		return cmd.Method == planv1connect.TaskServiceSpawnProcedure
