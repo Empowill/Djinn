@@ -242,7 +242,10 @@ type Settings struct {
 	GatesOff []string
 	// InstallBuilds says whether a build of the running Djinn's line, once pushed, installs by itself (W554).
 	InstallBuilds bool
-	Warnings      []string
+	// Instructions are what the project's workers are told, by kind (W114, Q70 B), one row per text: from the
+	// repository's file and the developer's in ResolveSettings, with the Summoning Circle's below them in LoadSettings.
+	Instructions []*planv1.WorkerInstruction
+	Warnings     []string
 
 	ProviderFrom, ModelFrom, BudgetFrom, BranchFrom, GeneratedFrom, GenerateFrom, SetupFrom            planv1.SettingSource
 	ChecksFrom, AttemptsFrom, InstallFrom, TestOneFrom                                                 planv1.SettingSource
@@ -408,6 +411,7 @@ func ResolveSettings(repo, dev *planv1.ProjectSettings) Settings {
 			s.GatesOff, s.GatesOffFrom = f.settings.GetGatesOff(), f.from
 		}
 	}
+	s.Instructions = ResolveInstructions(nil, repo.GetInstructions(), dev.GetInstructions())
 	effective := s.QuestionProvider
 	if effective == planv1.Provider_PROVIDER_UNSPECIFIED {
 		if CanReadOnly(s.Provider) {
@@ -439,10 +443,12 @@ func settingsFiles(home string, project *planv1.Project) (repo, dev string) {
 }
 
 // LoadSettings reads the settings of project (nil outside any project): its repository's, then the developer's in
-// Djinn's data folder home. A file that cannot be read is an error that names it.
+// Djinn's data folder home; the workers' instructions take the Summoning Circle's, in home, below both. A file that
+// cannot be read is an error that names it.
 func LoadSettings(home string, project *planv1.Project) (Settings, error) {
 	repo, dev, warnings, problems := loadSettings(home, project)
 	s := ResolveSettings(repo, dev)
+	s.Instructions = ResolveInstructions(ReadMachineInstructions(home), repo.GetInstructions(), dev.GetInstructions())
 	s.Warnings = warnings
 	return s, errors.Join(problems...)
 }

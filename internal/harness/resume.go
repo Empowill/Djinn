@@ -515,6 +515,11 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 			return fmt.Errorf("project %s: %w", project.GetName(), err)
 		}
 		r.setChecks(settings)
+	} else if !r.watcher {
+		// Outside Git, its kind's instructions all the same (W114): a file that does not read gives none.
+		if s, err := plan.LoadSettings(h.home, project); err == nil {
+			r.instructions = s.InstructionsFor(workerKindOf(nil, t))
+		}
 	}
 	readOnly, perms := taskPermissions(t, prep.declared)
 	line := restartedLine

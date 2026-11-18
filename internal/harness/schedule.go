@@ -773,6 +773,11 @@ func (h *Harness) launchPlannedWithPreemption(ctx context.Context, t *planv1.Tas
 				r.fallback = fb
 			}
 		}
+	} else if t.GetProvider() != planv1.Provider_PROVIDER_WATCH {
+		// Outside Git, its kind's instructions all the same (W114): a file that does not read gives none.
+		if s, err := plan.LoadSettings(h.home, project); err == nil {
+			r.instructions = s.InstructionsFor(workerKindOf(nil, t))
+		}
 	}
 	_, err = h.launch(h.ctx, r, provider, project, prep, prompt)
 	return err

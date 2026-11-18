@@ -32,6 +32,11 @@ settings:
     - {name: test, command: go tool task test, when: push}
   test_one: go tool task test-pkg -- {pkg}
   install: go tool task install
+
+  # What the workers are told at their launch, by kind of task (see "Workers' instructions" below).
+  instructions:
+    general: Run the tasks, not the tools.
+    mockup: Draw each option in both themes.
 ```
 
 The fields are those of the message, by their proto name (`max_budget_usd`) or their JSON name (`maxBudgetUsd`). YAML
@@ -176,6 +181,27 @@ with `max_budget_usd: 0`; a task's flag cannot, as `0` there means "not given".
 Djinn reads both files each time a task is spawned, where [it reads the configuration](#where-djinn-reads-it), not from
 the task's worktree. A task keeps what it got: changing a file changes the next tasks only. No worker starts from what
 your copy has checked out, nor from its changes (W227, see [where a worker starts](#where-a-worker-starts)).
+
+## Workers' instructions
+
+`instructions` (`plan.v1.WorkerInstructions`, W114, decision Q70 B) is what the project's workers are told besides
+what Djinn says itself: a `general` text, and one for each kind of task that wants its own, `work`, `investigation`,
+`mockup` and `ifrit`, 2,000 characters each at most. A worker reads its kind's text right after its prompt, under the
+line "The project's instructions to its workers of this kind:", at its launch and when it starts again; a correction,
+review or question worker gets the general text, a watcher none. Nothing by agent: each agent has its own instructions
+outside Djinn.
+
+Three layers, kind by kind, unlike the other settings:
+
+1. **Your own file**: `instructions { mockup: "Dark first." }`, or `djinn project instructions <project> --kind mockup
+   --text …` (`--unset` takes it back), or the project's Workers' brief tab.
+2. **The repository's file**, under `settings: instructions:` in its `djinn.yaml`.
+3. **The Summoning Circle**: `instructions` in `settings.json` in Djinn's data folder, this machine's default for every
+   project; its Workers' instructions tab, or `djinn lead instructions --kind … --text …`.
+
+A kind no layer sets takes the general text retained; none at all, the workers get nothing more. A text written empty
+counts: it tells its kind nothing, over the layers below. `djinn project show` lists, in `instructions`, each text with
+its value in each layer, the one retained, where it comes from, and whether it is the general one.
 
 ## See where each setting comes from
 

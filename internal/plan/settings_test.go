@@ -503,6 +503,7 @@ func TestResolveSettings(t *testing.T) {
 			got.ServeCommands, got.ServeCommandsFrom = nil, 0
 			got.GatesOff, got.GatesOffFrom = nil, 0
 			got.InstallBuilds, got.InstallBuildsFrom = false, 0
+			got.Instructions = nil // TestResolveInstructions
 			if !reflect.DeepEqual(got, c.want) {
 				t.Errorf("%s: %+v; want %+v", c.name, got, c.want)
 			}

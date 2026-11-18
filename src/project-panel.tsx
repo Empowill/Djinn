@@ -42,6 +42,7 @@ const sourceKeys = {
   [SettingSource.REPOSITORY]: "project.from_team",
   [SettingSource.DEVELOPER]: "project.from_you",
   [SettingSource.WISH]: "project.from_wish",
+  [SettingSource.MACHINE]: "project.from_machine",
 } as const;
 
 // From says where a value comes from: Djinn's default, the team's file or yours; the file itself on hover.

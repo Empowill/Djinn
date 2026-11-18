@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
@@ -136,6 +137,42 @@ func TestBriefed(t *testing.T) {
 		task.setChecks(checks)
 		if got := briefed(task, "Fix it.", false); strings.Contains(got, ifritRule) || !strings.Contains(got, workerWaitRule) {
 			t.Errorf("a task's prompt: %q", got)
+		}
+	})
+
+	// W114, Q70 B: each worker reads its kind's instructions right after its prompt, before Djinn's rules; a kind
+	// without its own takes the general text; a watcher none, a project without instructions nothing more.
+	t.Run("instructions by kind", func(t *testing.T) {
+		settings := plan.ResolveSettings(&planv1.ProjectSettings{Instructions: &planv1.WorkerInstructions{
+			General: proto.String("Run the tasks, not the tools."), Mockup: proto.String("Draw both themes."),
+		}}, nil)
+		for _, tc := range []struct {
+			name string
+			r    *run
+			want string
+		}{
+			{"a mockup", &run{task: &planv1.Task{Branch: "w14-look", Provider: planv1.Provider_PROVIDER_CLAUDE,
+				Kind: planv1.TaskKind_TASK_KIND_MOCKUP}}, "Draw both themes."},
+			{"a work task", &run{task: &planv1.Task{Branch: "w15-fix", Provider: planv1.Provider_PROVIDER_CLAUDE}},
+				"Run the tasks, not the tools."},
+			{"an ifrit", &run{ifrit: true, task: &planv1.Task{Provider: planv1.Provider_PROVIDER_CLAUDE,
+				Kind: planv1.TaskKind_TASK_KIND_IFRIT}}, "Run the tasks, not the tools."},
+		} {
+			tc.r.setChecks(settings)
+			got := briefed(tc.r, "Do it.", false)
+			if !strings.HasPrefix(got, "Do it.\n\n"+instructionsHead+"\n\n"+tc.want+"\n\n") {
+				t.Errorf("%s: %q; want its instructions after its prompt", tc.name, got)
+			}
+		}
+		watcher := &run{watcher: true, task: &planv1.Task{Provider: planv1.Provider_PROVIDER_WATCH}}
+		watcher.setChecks(settings)
+		if got := briefed(watcher, "gh pr checks 12", false); strings.Contains(got, instructionsHead) {
+			t.Errorf("a watcher's command: %q", got)
+		}
+		none := &run{task: &planv1.Task{Branch: "w16-fix", Provider: planv1.Provider_PROVIDER_CLAUDE}}
+		none.setChecks(plan.ResolveSettings(nil, nil))
+		if got := briefed(none, "Do it.", false); strings.Contains(got, instructionsHead) {
+			t.Errorf("no instructions: %q", got)
 		}
 	})
 }

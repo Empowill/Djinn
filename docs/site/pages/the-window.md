@@ -86,7 +86,8 @@ corners, and back. On the rail, never on a background:
 ### The Summoning Circle
 
 The **Summoning Circle**, below the Grimoire in the side panel, is a page of the window, like the Grimoire: who works,
-on which account, with which model. It is the one place where the Djinn's agent, model and account are chosen: the top
+on which account, with which model, in a first tab **Agents and models**; a second tab, **Workers' instructions**, says
+what every worker is told. It is the one place where the Djinn's agent, model and account are chosen: the top
 of a wish or of the flying carpet has no selector of its own. It is also the first step of the onboarding: a window that
 opens with no agent able to lead opens on it, its entry marked with a yellow dot until one is set up. At the top, the agents: each one's version, where it stands, and the button that
 installs it or signs it in, its terminal opening below its line; **Check again** runs their status commands again.
@@ -111,6 +112,11 @@ the bulk model switcher (also in each wish's header, and on the command line wit
 previews and switches every open work, investigation, correction, review, and question worker task—plus defaults for
 future spawns—in one gesture, skipping watchers and finished tasks, and changing running tasks at their next start or
 restarting them immediately.
+
+The **Workers' instructions** tab holds this machine's text for each kind of task, the default of every project: a
+**General** text, then **Work**, **Investigation**, **Mockup** and **Ifrit**, each with its field, **Save**, and
+**Remove** once set. A kind left empty takes the general text. A project's djinn.yaml wins over it, then your own
+settings of the project, kind by kind: see [the project's configuration](#project-and-settings).
 
 ### The personal space
 

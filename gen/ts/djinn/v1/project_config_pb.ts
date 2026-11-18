@@ -36,6 +36,8 @@ export const file_djinn_v1_project_config: GenFile = /*@__PURE__*/
  *     setup: npm ci
  *     checks:
  *       - {name: lint, command: task lint, when: commit}
+ *     instructions:
+ *       general: Run the tasks, not the tools.
  *   containers:
  *     memory_mib: 8192
  *     pids: 2048
