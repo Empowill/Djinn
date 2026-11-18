@@ -1359,7 +1359,10 @@ func (q *Questions) Ask(
 		if linkWarnings, err = linkTilasms(ctx, tx, question); err != nil {
 			return err
 		}
-		return Ask(ctx, tx, question)
+		if err := Ask(ctx, tx, question); err != nil {
+			return err
+		}
+		return setHolds(ctx, tx, question, m.GetHolds())
 	})
 	if err != nil {
 		return nil, err

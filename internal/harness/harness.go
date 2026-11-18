@@ -1060,7 +1060,7 @@ func (h *Harness) spawn(
 			return nil, err
 		}
 	}
-	if task.DependsOn, err = resolveDeps(ctx, h.store, wish.GetId(), after(req)); err != nil {
+	if task.DependsOn, task.HoldQuestionIds, err = resolveAfter(ctx, h.store, wish.GetId(), after(req)); err != nil {
 		return nil, plan.Status(err)
 	}
 	if task.PartOf, err = resolveAzima(ctx, h.store, wish.GetId(), req.GetPartOf()); err != nil {
@@ -1307,6 +1307,19 @@ func spawner(task *planv1.Task) string {
 // after is what a spawn says comes before its task: --after, and --depends-on, its former name.
 func after(req *planv1.TaskServiceSpawnRequest) []string {
 	return append(slices.Clip(req.GetDependsOn()), req.GetAfter()...)
+}
+
+// resolveAfter resolves what a new task of the wish comes after (--after W1,Q64): the tasks it depends on, and the
+// open questions that hold it (W107), which it starts without once they are answered or withdrawn.
+func resolveAfter(ctx context.Context, r store.Reader, wishID string, names []string) (deps, holds []string, err error) {
+	questions, tasks := plan.SplitQuestions(names)
+	if holds, err = plan.HoldingQuestions(ctx, r, wishID, questions); err != nil {
+		return nil, nil, err
+	}
+	if deps, err = resolveDeps(ctx, r, wishID, tasks); err != nil {
+		return nil, nil, err
+	}
+	return deps, holds, nil
 }
 
 // plan creates a task that waits, with its prompt and why it waits, and the azima made for it, if any (own), closes the

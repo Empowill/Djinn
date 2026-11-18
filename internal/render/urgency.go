@@ -12,7 +12,8 @@ import (
 type Urgency int
 
 const (
-	// Blocking: a waiting task needs the answer. Djinn computes it from the tasks.
+	// Blocking: a waiting task needs the answer, or work it holds cannot start without it. Djinn computes it from the
+	// tasks.
 	Blocking Urgency = iota
 	// Move: a move only the developer can make (push a tag, merge a PR, install, etc.).
 	Move
@@ -22,13 +23,22 @@ const (
 	Later
 )
 
-// Blocked maps a question's id to the codes of the waiting tasks that need its answer: an edit question, or the
-// blocking question a worker asked (Task.wait_question_id).
+// Blocked maps a question's id to the codes of the tasks that need its answer: a waiting task's edit question, or the
+// blocking question its worker asked (Task.wait_question_id); or a question that holds work not started yet, a task
+// or an azima (Task.hold_question_ids). Only an open question is blocking: the caller asks of open ones.
 func Blocked(tasks []*planv1.Task) map[string][]string {
 	blocked := map[string][]string{}
 	for _, t := range tasks {
 		if id := WaitsOn(t); id != "" {
 			blocked[id] = append(blocked[id], t.GetCode())
+		}
+		if t.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING || t.GetStartTime() != nil {
+			continue
+		}
+		for _, id := range t.GetHoldQuestionIds() {
+			if !slices.Contains(blocked[id], t.GetCode()) {
+				blocked[id] = append(blocked[id], t.GetCode())
+			}
 		}
 	}
 	return blocked

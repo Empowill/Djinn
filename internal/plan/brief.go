@@ -209,7 +209,11 @@ func leadRules(projects []*planv1.Project, home string, driven bool) string {
 		"merge or open a pull request, create a release, try something on a machine Djinn does not have, " +
 		installMoveRule(projects, home) +
 		") is asked as a question (`djinn question ask --move`, with what exactly to run or click, and why now), " +
-		"the moment it becomes due; never left in a note. An answered question " +
+		"the moment it becomes due; never left in a note. A question is blocking when, without its answer, Djinn " +
+		"cannot start some work: name that work as you ask (`--holds W12,T16`, planned tasks or azimas not started), " +
+		"or plan the task after it (`djinn task spawn --after Q64`); the work waits for the answer, the question is " +
+		"blocking meanwhile, and the answer or a withdrawal releases it. Otherwise it waits on `--before` or " +
+		"`--move`, or it can wait. An answered question " +
 		"is a decision, resolved: do not bring it back to the developer; ask again, a new question, only on a real " +
 		"doubt: not understanding the answer is one. A block of kind decision is a decision too. A task that follows from one names it: `--decision Q03`, or " +
 		"the block's id.\n" +
@@ -467,6 +471,8 @@ func leadCommandsBrief(driven bool) string {
 		"a grey mark until you choose.\n" +
 		"- `djinn question ask \"🔐 <question>\" <wish> --options \"…\" --options \"…\" --recommendation \"…\" --icon 🔐` " +
 		"(the emoji its title starts with); `--context-file <file>` for its context, written with your Write tool; " +
+		"`--holds W12,T16` names the work that cannot start without the answer: it waits, and the question is " +
+		"blocking (`djinn question revise --holds` changes it, `--holds \"\"` releases it); " +
 		"`--before \"before the merge\"` says what the answer is needed before, without it the " +
 		"question can wait (a question a waiting task needs is blocking anyway); `--move` marks a move only the " +
 		"developer can make, with `--before` when it cannot wait. The bar \"N things wait for you\" is for what " +
@@ -1695,7 +1701,10 @@ func questionsBrief(b *strings.Builder, exp *planv1.WishExport) {
 			level := "can wait"
 			switch render.UrgencyOf(q, blocked) {
 			case render.Blocking:
-				level = "blocking: " + strings.Join(blocked[q.GetId()], ", ") + " waits"
+				level = "blocking: " + strings.Join(blocked[q.GetId()], ", ") + " wait"
+				if len(blocked[q.GetId()]) == 1 {
+					level += "s"
+				}
 			case render.Move:
 				level = "your move"
 			case render.Before:

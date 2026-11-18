@@ -1443,7 +1443,8 @@ const (
 	TaskHold_TASK_HOLD_LIMIT TaskHold = 4
 	// The network: down, or back and resuming the work it stopped one task per pass.
 	TaskHold_TASK_HOLD_NETWORK TaskHold = 5
-	// A blocking question that a task it depends on waits on: its answer continues that task.
+	// A blocking question: one that holds it or its azima (Task.hold_question_ids), whose answer releases it, or one
+	// that a task it depends on waits on, whose answer continues that task.
 	TaskHold_TASK_HOLD_QUESTION TaskHold = 6
 	// Its wish is paused or granted.
 	TaskHold_TASK_HOLD_WISH TaskHold = 7
@@ -6956,7 +6957,7 @@ type Task struct {
 	WaitQuestionId string `protobuf:"bytes,77,opt,name=wait_question_id,json=waitQuestionId,proto3" json:"wait_question_id,omitempty"`
 	// What holds the planned task that waits (wait_reason), as the scheduler's pass judged it: room on the machine (a
 	// slot, its load or memory, a write scope), its integration branch's push checks, a dependency, a usage limit, the
-	// network, or a dependency's blocking question. The window counts a wish's waiting workers by it, never by the
+	// network, an open question that holds it (hold_question_ids), or a dependency's blocking question. The window counts a wish's waiting workers by it, never by the
 	// reason's text. Unspecified while the scheduler has not judged it yet, and once it starts.
 	Hold TaskHold `protobuf:"varint,78,opt,name=hold,proto3,enum=plan.v1.TaskHold" json:"hold,omitempty"`
 	// The path of the task's scratch folder on disk (<data>/scratch/<project>/<task>), exported to its worker as
@@ -6968,9 +6969,15 @@ type Task struct {
 	Account string `protobuf:"bytes,80,opt,name=account,proto3" json:"account,omitempty"`
 	// How many characters (Unicode code points) the task's first prompt holds, from its PromptSize: computed on a
 	// QueryService read, never stored; 0 when unknown or without a prompt.
-	PromptLength  int64 `protobuf:"varint,81,opt,name=prompt_length,json=promptLength,proto3" json:"prompt_length,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	PromptLength int64 `protobuf:"varint,81,opt,name=prompt_length,json=promptLength,proto3" json:"prompt_length,omitempty"`
+	// The questions that hold it, by identifier (djinn question ask --holds W12, djinn task spawn --after Q64): work
+	// that cannot start without their answer. While one of them is open, the scheduler starts neither the task nor,
+	// for an azima, any part of it (TASK_HOLD_QUESTION), and the question is blocking. Its answer or its withdrawal
+	// releases it; the worker's first prompt then says the decision, or the withdrawal and its note. Kept once
+	// released, as a record of what it waited for.
+	HoldQuestionIds []string `protobuf:"bytes,82,rep,name=hold_question_ids,json=holdQuestionIds,proto3" json:"hold_question_ids,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *Task) Reset() {
@@ -7568,6 +7575,13 @@ func (x *Task) GetPromptLength() int64 {
 		return x.PromptLength
 	}
 	return 0
+}
+
+func (x *Task) GetHoldQuestionIds() []string {
+	if x != nil {
+		return x.HoldQuestionIds
+	}
+	return nil
 }
 
 // TaskHealth is how the scheduler judges a work task's worker (W188). It changes only when its state does: each change
@@ -11581,7 +11595,10 @@ type QuestionServiceReviseRequest struct {
 	// the question as it stands now, its current version only.
 	History bool `protobuf:"varint,12,opt,name=history,proto3" json:"history,omitempty"`
 	// Put it to sleep, revised, until these conditions hold (see djinn question sleep --until), in place of any it had.
-	SleepUntil    []string `protobuf:"bytes,13,rep,name=sleep_until,json=sleepUntil,proto3" json:"sleep_until,omitempty"`
+	SleepUntil []string `protobuf:"bytes,13,rep,name=sleep_until,json=sleepUntil,proto3" json:"sleep_until,omitempty"`
+	// The work it holds now (see djinn question ask --holds), in place of what it held: the tasks it no longer names
+	// are released. The former ones when not given; none when given empty (--holds "").
+	Holds         []string `protobuf:"bytes,14,rep,name=holds,proto3" json:"holds,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -11693,6 +11710,13 @@ func (x *QuestionServiceReviseRequest) GetSleepUntil() []string {
 	return nil
 }
 
+func (x *QuestionServiceReviseRequest) GetHolds() []string {
+	if x != nil {
+		return x.Holds
+	}
+	return nil
+}
+
 type QuestionServiceReviseResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The question, revised: its current version, and its rounds only when asked with history.
@@ -11788,7 +11812,12 @@ type QuestionServiceAskRequest struct {
 	// Djinn puts your task WAITING on the question, frees its slot and keeps its worktree, branch and session; the answer
 	// continues it with "Decision Qnn: ...", once a slot is free. One blocking question at a time, two per task; three
 	// that do not block.
-	Wait          bool `protobuf:"varint,14,opt,name=wait,proto3" json:"wait,omitempty"`
+	Wait bool `protobuf:"varint,14,opt,name=wait,proto3" json:"wait,omitempty"`
+	// The work Djinn cannot start without the answer: planned tasks or azimas of the wish that have not started, by
+	// code (W12, T16) or identifier. Repeat it, or separate them with commas: --holds W12,T16. Each waits for the
+	// question as for a dependency, an azima's parts with it, and the question is blocking while one waits; the answer
+	// releases them, a withdrawal too, and each worker starts with the decision, or the withdrawal's note.
+	Holds         []string `protobuf:"bytes,16,rep,name=holds,proto3" json:"holds,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -11912,6 +11941,13 @@ func (x *QuestionServiceAskRequest) GetWait() bool {
 		return x.Wait
 	}
 	return false
+}
+
+func (x *QuestionServiceAskRequest) GetHolds() []string {
+	if x != nil {
+		return x.Holds
+	}
+	return nil
 }
 
 type QuestionServiceAskResponse struct {
@@ -23126,8 +23162,10 @@ type TaskServiceSpawnRequest struct {
 	// makes a mockup task, framed like an investigation, that puts a tilasm's next version. correction, review and
 	// watcher are Djinn's own: a spawn never makes them.
 	Kind TaskKind `protobuf:"varint,16,opt,name=kind,proto3,enum=plan.v1.TaskKind" json:"kind,omitempty"`
-	// What comes before the task: tasks of the same wish that must be done first, by code (W1, T07) or identifier.
-	// Repeat it, or separate them with commas: --after W1,W2. Give a task what comes before it here, at its spawn.
+	// What comes before the task: tasks of the same wish that must be done first, by code (W1, T07) or identifier, or
+	// open questions of the wish it cannot start without, by code (Q64): the question holds it (see djinn question ask
+	// --holds) and is blocking until answered or withdrawn. Repeat it, or separate them with commas: --after W1,Q64.
+	// Give a task what comes before it here, at its spawn.
 	After []string `protobuf:"bytes,17,rep,name=after,proto3" json:"after,omitempty"`
 	// What comes after the task: planned tasks of the same wish, by code or identifier, that wait for it from now on.
 	// Each one gets the new task as one more dependency, in the same step as the spawn, so that no scheduler pass
@@ -28500,7 +28538,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x11cache_read_tokens\x18\x03 \x01(\x03R\x0fcacheReadTokens\x12,\n" +
 	"\x12cache_write_tokens\x18\x04 \x01(\x03R\x10cacheWriteTokens\x12\x19\n" +
 	"\bcost_usd\x18\x05 \x01(\x01R\acostUsd\x12'\n" +
-	"\x0fthinking_tokens\x18\x06 \x01(\x03R\x0ethinkingTokens\"\x9b\x1a\n" +
+	"\x0fthinking_tokens\x18\x06 \x01(\x03R\x0ethinkingTokens\"\xc7\x1a\n" +
 	"\x04Task\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\x12)\n" +
 	"\awish_id\x18\x02 \x01(\tB\x10\xa2\xf4\x18\fplan.v1.WishR\x06wishId\x122\n" +
@@ -28595,7 +28633,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x04hold\x18N \x01(\x0e2\x11.plan.v1.TaskHoldR\x04hold\x12\x18\n" +
 	"\ascratch\x18O \x01(\tR\ascratch\x12=\n" +
 	"\aaccount\x18P \x01(\tB#\xbaH \xd8\x01\x01r\x1b2\x19^[a-z0-9][a-z0-9-]{0,31}$R\aaccount\x12)\n" +
-	"\rprompt_length\x18Q \x01(\x03B\x04\xa8\xf4\x18\x01R\fpromptLength:\x13\xd2\xf3\x18\x0f\n" +
+	"\rprompt_length\x18Q \x01(\x03B\x04\xa8\xf4\x18\x01R\fpromptLength\x12*\n" +
+	"\x11hold_question_ids\x18R \x03(\tR\x0fholdQuestionIds:\x13\xd2\xf3\x18\x0f\n" +
 	"\awish_id\n" +
 	"\x04code\"\xaf\x01\n" +
 	"\n" +
@@ -28957,7 +28996,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x04note\x18\x02 \x01(\tB\b\xbaH\x05r\x03\x18\xc0>R\x04note\x12$\n" +
 	"\awish_id\x18\x03 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x06wishId\"Q\n" +
 	" QuestionServiceEnlightenResponse\x12-\n" +
-	"\bquestion\x18\x01 \x01(\v2\x11.plan.v1.QuestionR\bquestion\"\x8d\x05\n" +
+	"\bquestion\x18\x01 \x01(\v2\x11.plan.v1.QuestionR\bquestion\"\xb4\x05\n" +
 	"\x1cQuestionServiceReviseRequest\x128\n" +
 	"\bquestion\x18\x01 \x01(\v2\x14.plan.v1.QuestionRefB\x06\xbaH\x03\xc8\x01\x01R\bquestion\x12#\n" +
 	"\acontext\x18\x02 \x01(\tB\t\xbaH\x06r\x04\x18\xa0\x9c\x01R\acontext\x12(\n" +
@@ -28972,12 +29011,13 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x10\x04\"\x06r\x04\x18\xd0\xe8\fR\x04plan\x12\x18\n" +
 	"\ahistory\x18\f \x01(\bR\ahistory\x120\n" +
 	"\vsleep_until\x18\r \x03(\tB\x0f\xbaH\f\x92\x01\t\x10\x10\"\x05r\x03\x18\x80\x10R\n" +
-	"sleepUntilB\t\n" +
+	"sleepUntil\x12%\n" +
+	"\x05holds\x18\x0e \x03(\tB\x0f\xbaH\f\x92\x01\t\x10d\"\x05r\x03\x18\xe8\aR\x05holdsB\t\n" +
 	"\a_beforeB\b\n" +
 	"\x06_aboutJ\x04\b\b\x10\tJ\x04\b\v\x10\fR\fcontext_fileR\tplan_file\"j\n" +
 	"\x1dQuestionServiceReviseResponse\x12-\n" +
 	"\bquestion\x18\x01 \x01(\v2\x11.plan.v1.QuestionR\bquestion\x12\x1a\n" +
-	"\bwarnings\x18\x02 \x03(\tR\bwarnings\"\xfe\x04\n" +
+	"\bwarnings\x18\x02 \x03(\tR\bwarnings\"\xa7\x05\n" +
 	"\x19QuestionServiceAskRequest\x12\x1f\n" +
 	"\x04text\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\x18\xd0\x0fR\x04text\x12(\n" +
 	"\aoptions\x18\x02 \x03(\tB\x0e\xbaH\v\x92\x01\b\x10\x04\"\x04r\x02\x10\x01R\aoptions\x12$\n" +
@@ -28994,7 +29034,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x10\x04\"\x06r\x04\x18\xd0\xe8\fR\x04plan\x120\n" +
 	"\vsleep_until\x18\r \x03(\tB\x0f\xbaH\f\x92\x01\t\x10\x10\"\x05r\x03\x18\x80\x10R\n" +
 	"sleepUntil\x12\x12\n" +
-	"\x04wait\x18\x0e \x01(\bR\x04waitJ\x04\b\f\x10\rJ\x04\b\x0f\x10\x10R\tplan_fileR\fcontext_file\"g\n" +
+	"\x04wait\x18\x0e \x01(\bR\x04wait\x12'\n" +
+	"\x05holds\x18\x10 \x03(\tB\x11\xbaH\x0e\x92\x01\v\x10d\"\ar\x05\x10\x01\x18\xe8\aR\x05holdsJ\x04\b\f\x10\rJ\x04\b\x0f\x10\x10R\tplan_fileR\fcontext_file\"g\n" +
 	"\x1aQuestionServiceAskResponse\x12-\n" +
 	"\bquestion\x18\x01 \x01(\v2\x11.plan.v1.QuestionR\bquestion\x12\x1a\n" +
 	"\bwarnings\x18\x02 \x03(\tR\bwarnings\"\xde\x02\n" +

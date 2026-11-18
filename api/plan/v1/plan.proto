@@ -1492,7 +1492,7 @@ message Task {
   string wait_question_id = 77 [(djinn.v1.ref) = "plan.v1.Question"];
   // What holds the planned task that waits (wait_reason), as the scheduler's pass judged it: room on the machine (a
   // slot, its load or memory, a write scope), its integration branch's push checks, a dependency, a usage limit, the
-  // network, or a dependency's blocking question. The window counts a wish's waiting workers by it, never by the
+  // network, an open question that holds it (hold_question_ids), or a dependency's blocking question. The window counts a wish's waiting workers by it, never by the
   // reason's text. Unspecified while the scheduler has not judged it yet, and once it starts.
   TaskHold hold = 78;
   // The path of the task's scratch folder on disk (<data>/scratch/<project>/<task>), exported to its worker as
@@ -1508,6 +1508,12 @@ message Task {
   // How many characters (Unicode code points) the task's first prompt holds, from its PromptSize: computed on a
   // QueryService read, never stored; 0 when unknown or without a prompt.
   int64 prompt_length = 81 [(djinn.v1.query) = QUERY_HIDDEN];
+  // The questions that hold it, by identifier (djinn question ask --holds W12, djinn task spawn --after Q64): work
+  // that cannot start without their answer. While one of them is open, the scheduler starts neither the task nor,
+  // for an azima, any part of it (TASK_HOLD_QUESTION), and the question is blocking. Its answer or its withdrawal
+  // releases it; the worker's first prompt then says the decision, or the withdrawal and its note. Kept once
+  // released, as a record of what it waited for.
+  repeated string hold_question_ids = 82;
 }
 
 // TaskHold is what holds a planned task that waits (Task.hold).
@@ -1525,7 +1531,8 @@ enum TaskHold {
   TASK_HOLD_LIMIT = 4;
   // The network: down, or back and resuming the work it stopped one task per pass.
   TASK_HOLD_NETWORK = 5;
-  // A blocking question that a task it depends on waits on: its answer continues that task.
+  // A blocking question: one that holds it or its azima (Task.hold_question_ids), whose answer releases it, or one
+  // that a task it depends on waits on, whose answer continues that task.
   TASK_HOLD_QUESTION = 6;
   // Its wish is paused or granted.
   TASK_HOLD_WISH = 7;
@@ -2749,6 +2756,12 @@ message QuestionServiceReviseRequest {
     (buf.validate.field).repeated.max_items = 16,
     (buf.validate.field).repeated.items.string.max_len = 2048
   ];
+  // The work it holds now (see djinn question ask --holds), in place of what it held: the tasks it no longer names
+  // are released. The former ones when not given; none when given empty (--holds "").
+  repeated string holds = 14 [
+    (buf.validate.field).repeated.max_items = 100,
+    (buf.validate.field).repeated.items.string.max_len = 1000
+  ];
 }
 
 message QuestionServiceReviseResponse {
@@ -2827,6 +2840,15 @@ message QuestionServiceAskRequest {
   // The command line reads --context-file and sends its text as context (W621).
   reserved 15;
   reserved "context_file";
+  // The work Djinn cannot start without the answer: planned tasks or azimas of the wish that have not started, by
+  // code (W12, T16) or identifier. Repeat it, or separate them with commas: --holds W12,T16. Each waits for the
+  // question as for a dependency, an azima's parts with it, and the question is blocking while one waits; the answer
+  // releases them, a withdrawal too, and each worker starts with the decision, or the withdrawal's note.
+  repeated string holds = 16 [
+    (buf.validate.field).repeated.max_items = 100,
+    (buf.validate.field).repeated.items.string.min_len = 1,
+    (buf.validate.field).repeated.items.string.max_len = 1000
+  ];
 }
 
 message QuestionServiceAskResponse {
@@ -5659,8 +5681,10 @@ message TaskServiceSpawnRequest {
     defined_only: true
     not_in: [6, 7, 8]
   }];
-  // What comes before the task: tasks of the same wish that must be done first, by code (W1, T07) or identifier.
-  // Repeat it, or separate them with commas: --after W1,W2. Give a task what comes before it here, at its spawn.
+  // What comes before the task: tasks of the same wish that must be done first, by code (W1, T07) or identifier, or
+  // open questions of the wish it cannot start without, by code (Q64): the question holds it (see djinn question ask
+  // --holds) and is blocking until answered or withdrawn. Repeat it, or separate them with commas: --after W1,Q64.
+  // Give a task what comes before it here, at its spawn.
   repeated string after = 17 [
     (buf.validate.field).repeated.max_items = 100,
     (buf.validate.field).repeated.items.string.min_len = 1,

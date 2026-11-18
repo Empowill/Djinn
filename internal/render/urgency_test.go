@@ -92,7 +92,7 @@ func TestByUrgency(t *testing.T) {
 }
 
 // TestUrgencyOf: a question a waiting task needs is blocking, by its edit question or by the blocking question its
-// worker asked (W260), and no longer once the task is continued; a move needed before something is the developer's
+// worker asked (W260), and no longer once the task is continued; so is one that holds a planned task (W107); a move needed before something is the developer's
 // move; then before X; an install or proof move without before can wait, as a plain question does.
 func TestUrgencyOf(t *testing.T) {
 	t.Parallel()
@@ -111,6 +111,10 @@ func TestUrgencyOf(t *testing.T) {
 			&planv1.Task{Code: "W3", Status: waiting, WaitQuestionId: "w"}, Blocking},
 		{"worker's question once continued", &planv1.Question{Id: "w"},
 			&planv1.Task{Code: "W3", Status: planv1.TaskStatus_TASK_STATUS_RESUMING, WaitQuestionId: "w"}, Later},
+		{"holds a planned task (W107)", &planv1.Question{Id: "h"},
+			&planv1.Task{Code: "W4", Status: planv1.TaskStatus_TASK_STATUS_PENDING, HoldQuestionIds: []string{"h"}}, Blocking},
+		{"held a task that started", &planv1.Question{Id: "h"}, &planv1.Task{Code: "W4",
+			Status: planv1.TaskStatus_TASK_STATUS_RUNNING, StartTime: timestamppb.Now(), HoldQuestionIds: []string{"h"}}, Later},
 		{"move needed before", &planv1.Question{Id: "m", Move: true, Before: "before the release"}, nil, Move},
 		{"needed before", &planv1.Question{Id: "b", Before: "before the merge"}, nil, Before},
 		{"plain", &planv1.Question{Id: "a"}, nil, Later},

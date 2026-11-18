@@ -54,7 +54,7 @@ func (h *Harness) spawnAzima(ctx context.Context, procedure string, req *planv1.
 		Status: planv1.TaskStatus_TASK_STATUS_PENDING, Kind: planv1.TaskKind_TASK_KIND_AZIMA, CreateTime: timestamppb.Now(),
 		Draft: req.GetDraft(), Description: req.GetDescription(),
 	}
-	if task.DependsOn, err = resolveDeps(ctx, h.store, wish.GetId(), after(req)); err != nil {
+	if task.DependsOn, task.HoldQuestionIds, err = resolveAfter(ctx, h.store, wish.GetId(), after(req)); err != nil {
 		return nil, plan.Status(err)
 	}
 	if task.PartOf, err = resolveAzima(ctx, h.store, wish.GetId(), req.GetPartOf()); err != nil {

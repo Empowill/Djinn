@@ -80,7 +80,9 @@ A dependency is one reason among others. A planned task may also wait because:
 - **a merge of the wish is in conflict or red**, and its correction repairs the branch: the task waits until the
   correction's work is in, so that it starts from the repaired branch
   ([One repair at a time](#merges-and-corrections-one-repair-at-a-time));
-- **its write scope is taken**: outside Git only, two tasks of a project whose folders overlap never run together.
+- **its write scope is taken**: outside Git only, two tasks of a project whose folders overlap never run together;
+- **a question holds it**: the Djinn needs your answer before it can start it, so the question is blocking until you
+  answer or it is withdrawn ([Work a question holds](#question-and-move-work-a-question-holds)).
 
 These waits are about the machine and the moment, not about the plan: they never make a dependency.
 

@@ -93,6 +93,11 @@ func askedBy(ctx context.Context, tx store.Reader, task *planv1.Task, question *
 // DecisionPrompt is what continues, or is sent to, the worker that asked q, once q is answered, such as "Decision Q51:
 // Keep the cache (B) - the note. Go on with your task." for option B with a note.
 func DecisionPrompt(q *planv1.Question) string {
+	return decisionLine(q) + ". Go on with your task."
+}
+
+// decisionLine is the decision q took, as a worker reads it: "Decision Q51: Keep the cache (B) - the note".
+func decisionLine(q *planv1.Question) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Decision %s", q.GetCode())
 	if q.GetAnswer().GetActor() == planv1.Closer_CLOSER_LEAD {
@@ -108,7 +113,6 @@ func DecisionPrompt(q *planv1.Question) string {
 	if note := strings.TrimRight(strings.TrimSpace(q.GetAnswer().GetNote()), "."); note != "" {
 		b.WriteString(" - " + note)
 	}
-	b.WriteString(". Go on with your task.")
 	return b.String()
 }
 

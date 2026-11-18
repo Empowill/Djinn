@@ -129,13 +129,19 @@ export function waitsOn(task: Task): string {
   return task.waitQuestionId || task.editQuestionId;
 }
 
-// blocking maps a question to the codes of the tasks that wait for its answer.
+// blocking maps a question to the codes of the tasks that wait for its answer: a waiting task's, or work not started
+// that it holds (Task.holdQuestionIds), as internal/render.Blocked does.
 export function blocking(tasks: readonly Task[]): Map<string, string[]> {
   const out = new Map<string, string[]>();
+  const add = (id: string, code: string) => {
+    const codes = out.get(id) ?? [];
+    if (!codes.includes(code)) out.set(id, [...codes, code]);
+  };
   for (const task of tasks) {
     const id = waitsOn(task);
-    if (!id) continue;
-    out.set(id, [...(out.get(id) ?? []), task.code]);
+    if (id) add(id, task.code);
+    if (task.status !== TaskStatus.PENDING || task.startTime) continue;
+    for (const held of task.holdQuestionIds ?? []) add(held, task.code);
   }
   return out;
 }
