@@ -296,8 +296,24 @@ type Projects struct {
 // fillProject adds to project what is computed on every read, and returns what Djinn finds in its configuration:
 // project.to_fix counts the things to fix, project.first_fix says the first.
 func (p *Projects) fillProject(ctx context.Context, project *planv1.Project, wantRef bool) (Settings, []*planv1.ProjectNotice, *planv1.ProjectReference) {
+	filled := p.fillProjectFiles(ctx, project, wantRef)
+	return filled.settings, filled.notices, filled.ref
+}
+
+// projectFilled is what fillProject reads of a project: its settings, the files they come from, where Djinn reads its
+// configuration, its notices and its reference branch.
+type projectFilled struct {
+	settings  Settings
+	repo, dev *planv1.ProjectSettings
+	config    Config
+	notices   []*planv1.ProjectNotice
+	ref       *planv1.ProjectReference
+}
+
+// fillProjectFiles is fillProject, with the files the settings come from and where Djinn reads the configuration.
+func (p *Projects) fillProjectFiles(ctx context.Context, project *planv1.Project, wantRef bool) projectFilled {
 	if project == nil {
-		return Settings{}, nil, nil
+		return projectFilled{}
 	}
 	cfg := ProjectConfig(p.Home, project)
 	files := readSettingsFilesConfig(p.Home, project, cfg)
@@ -314,7 +330,7 @@ func (p *Projects) fillProject(ctx context.Context, project *planv1.Project, wan
 	notices, ref := p.projectNoticesWith(ctx, project, cfg, files, settings, wantRef)
 	project.ToFix = countToFix(notices)
 	project.FirstFix = firstFix(notices)
-	return settings, notices, ref
+	return projectFilled{settings: settings, repo: repo, dev: dev, config: cfg, notices: notices, ref: ref}
 }
 
 func (p *Projects) wishForProject(ctx context.Context, projectID, wishNameOrID string) (*planv1.Wish, error) {
@@ -444,11 +460,21 @@ func (p *Projects) Show(
 	if err != nil {
 		return nil, Status(err)
 	}
-	settings, notices, ref := p.fillProject(ctx, project, true)
+	filled := p.fillProjectFiles(ctx, project, true)
+	settings := filled.settings
 	out := &planv1.ProjectServiceShowResponse{
-		Project: project, Settings: settings.Rows(), Setup: settings.Setup, Checks: settings.Checks,
-		WatchCommands: settings.WatchCommands, ServeCommands: settings.ServeCommands, Notices: notices,
-		Reference: ref,
+		Project: project, Settings: SettingRows(filled.repo, filled.dev), Setup: settings.Setup, Checks: settings.Checks,
+		WatchCommands: settings.WatchCommands, ServeCommands: settings.ServeCommands, Notices: filled.notices,
+		Reference: filled.ref, WorkersBrief: settings.ChecksBrief(),
+	}
+	if dir := filled.config.Dir; dir != "" {
+		// What cannot be read here is said by the notices already: the page shows nothing of it.
+		if perms, _, err := ReadPermissions(dir); err == nil {
+			out.Permissions = perms
+		}
+		if read, err := ReadProjectConfig(dir); err == nil {
+			out.Containers = read.Config.GetContainers()
+		}
 	}
 	out.RepositoryFile, out.DeveloperFile = settingsFiles(p.Home, project)
 	if watches, err := store.List[*planv1.ConfigWatch](ctx, p.Store, store.Where{"project_id": project.GetId()}); err == nil && len(watches) > 0 {
@@ -621,7 +647,7 @@ func (p *Projects) Gates(
 	}
 	gates := LoadProjectGates(p.Home, project)
 	return connect.NewResponse(&planv1.ProjectServiceGatesResponse{
-		Gates: gates.Gates, File: gates.File, GatesOff: gates.Off, Warnings: gates.Warnings,
+		Gates: gates.Gates, File: gates.File, GatesOff: gates.Off, Warnings: gates.Warnings, OffGates: gates.OffGates,
 		DeveloperFile: DeveloperSettingsFile(p.Home, project.GetId()),
 	}), nil
 }

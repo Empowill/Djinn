@@ -401,6 +401,8 @@ type ProjectGates struct {
 	File string
 	// Off are the gates the developer turns off, from their own settings file (gates_off).
 	Off []string
+	// OffGates are the valid gates the developer turns off, as the file declares them, in its order.
+	OffGates []*djinnv1.ProjectGate
 	// Warnings say what is wrong in the declaration: the file unread, a gate left out and why, a pattern of one word.
 	Warnings []string
 }
@@ -430,7 +432,9 @@ func LoadProjectGates(home string, project *planv1.Project) ProjectGates {
 				"holds the gate of its name: left out")
 			continue
 		}
-		if !slices.Contains(out.Off, g.GetName()) {
+		if slices.Contains(out.Off, g.GetName()) {
+			out.OffGates = append(out.OffGates, g)
+		} else {
 			out.Gates = append(out.Gates, g)
 		}
 	}

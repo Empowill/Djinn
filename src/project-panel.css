@@ -1,5 +1,5 @@
-/* A project's configuration panel: the folder and remote under its name, then one box per part, what waits for you
-   first. Each box is rounded with a uniform border; the lines inside it are square, split by straight separators. */
+/* A project's settings page (project-page.tsx): the folder and remote under its name, what waits for you first, then
+   the tabs, one box per part. Each box is rounded with a uniform border; the lines inside it are square, split by straight separators. */
 .project-where {
   display: flex;
   flex-wrap: wrap;
@@ -175,38 +175,6 @@
 .skill-role.to-fix {
   color: var(--st-failed);
 }
-/* A setting: its name as the files write it, its value, where it comes from. */
-.config-setting {
-  display: grid;
-  grid-template-columns: minmax(8rem, auto) 1fr auto;
-  align-items: baseline;
-  gap: 0.75rem;
-  padding: 0.375rem 0;
-  font-size: var(--font-size-body, 0.75rem);
-  color: var(--n-c4);
-  overflow-wrap: anywhere;
-}
-.config-setting + .config-setting {
-  border-top: 1px solid var(--n-33);
-}
-.config-setting code {
-  color: var(--n-d1);
-}
-.config-setting .config-from {
-  margin-left: 0;
-}
-.config-more {
-  margin-top: 0.375rem;
-}
-.config-more > summary {
-  cursor: pointer;
-  padding: 0.375rem 0;
-  font-size: var(--font-size-body, 0.75rem);
-  color: var(--n-8f);
-}
-.config-more > summary:hover {
-  color: var(--n-d1);
-}
 .summoning-provider {
   display: inline-flex;
   align-items: center;
@@ -308,4 +276,245 @@
   min-width: 24rem;
   max-width: 34rem;
   padding: 0.75rem;
+}
+
+/* The project's settings page (W111): its tabs, then a table per group of settings, a column per side (the repository's
+   file, yours, the value retained). Secondary text keeps 4.5:1 in both themes on a box's ground (--n-20): --n-8f and
+   lighter in the dark theme, whose light reading is darker still (theme.css). */
+.project-body {
+  max-width: 64rem;
+  padding-top: var(--space-4, 1rem);
+}
+.project-page .project-where,
+.project-page .project-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.75rem;
+  margin-top: 0.25rem;
+  font: var(--font-size-body, 0.75rem) var(--mono);
+  color: var(--n-9c);
+}
+.project-files > span[title] {
+  cursor: help;
+}
+.project-tabs {
+  flex-wrap: wrap;
+  gap: 0.25rem 0.5rem;
+  margin: 1rem 0 0.25rem;
+}
+.project-unseen {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.125rem;
+  color: var(--st-failed);
+}
+.project-tab-detail,
+.project-tab-empty {
+  margin-top: 0.5rem;
+  font-size: var(--font-size-body, 0.75rem);
+  line-height: 1.6;
+  color: var(--n-9c);
+}
+.project-page .setting-row p,
+.project-page .config-line .muted-text,
+.project-page .muted-text {
+  color: var(--n-9c);
+}
+.project-page .config-from {
+  color: var(--n-9c);
+}
+.settings-lead,
+.settings-foot {
+  margin: 0.25rem 0 0.5rem;
+  font-size: var(--font-size-body, 0.75rem);
+  line-height: 1.6;
+  color: var(--n-9c);
+}
+.settings-foot {
+  margin: 0.625rem 0 0;
+}
+.settings-sub {
+  margin: 1rem 0 0.25rem;
+  font-size: var(--font-size-body, 0.75rem);
+  font-weight: 500;
+  color: var(--n-d1);
+}
+.settings-table {
+  width: 100%;
+  margin-top: 0.375rem;
+  border-collapse: collapse;
+  font-size: var(--font-size-body, 0.75rem);
+  color: var(--n-c4);
+}
+.settings-table thead th {
+  padding: 0.25rem 0.5rem 0.375rem 0;
+  border-bottom: 1px solid var(--n-38);
+  text-align: left;
+  font-size: var(--font-size-body, 0.75rem);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--n-9c);
+}
+.settings-table tbody th,
+.settings-table td {
+  padding: 0.5rem 0.5rem 0.5rem 0;
+  text-align: left;
+  vertical-align: baseline;
+  overflow-wrap: anywhere;
+}
+.settings-table tbody + tbody tr:first-child > *,
+.settings-table tbody tr + tr:not(.setting-note) > * {
+  border-top: 1px solid var(--n-33);
+}
+.settings-table tbody th {
+  width: 30%;
+  font-weight: 450;
+  color: var(--n-d1);
+}
+.setting-label {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem;
+}
+.setting-key {
+  display: block;
+  margin-top: 0.125rem;
+  font-size: var(--font-size-body, 0.75rem);
+  font-weight: 400;
+  color: var(--n-9c);
+}
+.settings-table code {
+  font-family: var(--mono);
+  color: var(--n-d1);
+}
+.settings-table .setting-key {
+  color: var(--n-9c);
+}
+.setting-absent {
+  color: var(--n-9c);
+}
+.settings-table code.setting-struck {
+  color: var(--n-9c);
+  text-decoration: line-through;
+}
+.setting-retained {
+  color: var(--n-de);
+}
+.settings-table td[data-side="retained"] .config-from {
+  display: block;
+  margin: 0.125rem 0 0;
+}
+.setting-note > td {
+  padding: 0 0 0.625rem;
+  line-height: 1.6;
+  color: var(--n-9c);
+}
+.setting-note .config-line,
+.setting-note .setting-row {
+  padding: 0.375rem 0 0;
+}
+.agents-table tbody th {
+  width: 18%;
+}
+.gate-card {
+  margin-top: 0.625rem;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--n-38);
+  border-radius: 0.375rem;
+}
+.gate-card.off {
+  border-style: dashed;
+}
+.gate-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+.gate-card-head > strong {
+  flex: 1;
+  font: 450 var(--font-size-body, 0.75rem) var(--mono);
+  color: var(--n-d1);
+}
+.gate-project {
+  color: var(--n-9c);
+}
+.gate-sides {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 0.5rem 1.25rem;
+  margin-top: 0.5rem;
+}
+.gate-side {
+  font-size: var(--font-size-body, 0.75rem);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--n-9c);
+}
+.gate-patterns {
+  margin: 0.25rem 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--font-size-body, 0.75rem);
+}
+.gate-patterns code {
+  font-family: var(--mono);
+  color: var(--n-d1);
+}
+.permissions-list {
+  display: grid;
+  grid-template-columns: minmax(10rem, 30%) 1fr;
+  gap: 0.5rem 1rem;
+  margin-top: 0.5rem;
+  font-size: var(--font-size-body, 0.75rem);
+}
+.permissions-list dt {
+  color: var(--n-9c);
+}
+.permissions-list dd {
+  margin: 0;
+  color: var(--n-d1);
+}
+.workers-brief {
+  margin-top: 0.5rem;
+  font-size: var(--font-size-body, 0.75rem);
+  line-height: 1.7;
+  white-space: pre-wrap;
+  color: var(--n-c4);
+}
+.project-circle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.project-circle > p {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  flex: 1 1 24rem;
+  font-size: var(--font-size-body, 0.75rem);
+  line-height: 1.6;
+  color: var(--n-c4);
+}
+.project-circle > p > svg {
+  flex: none;
+  margin-top: 0.1875rem;
+}
+/* The page's secondary text, above the generic paragraph rules of the boxes and the page: 4.5:1 in both themes. */
+.project-page .settings-foot,
+.project-page .settings-lead,
+.project-page .project-tab-detail,
+.project-page .setting-note > td,
+.project-page .setting-key,
+.project-page .setting-absent,
+.project-page .settings-table code.setting-struck,
+.project-page .settings-table thead th,
+.project-page .gate-side,
+.project-page .permissions-list dt {
+  color: var(--n-9c);
 }

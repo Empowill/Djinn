@@ -323,7 +323,9 @@ func TestProjectGates(t *testing.T) {
 		t.Errorf("warnings %q", res.GetWarnings())
 	}
 	if res, err := gates(proto.String("stack"), nil); err != nil || !slices.Equal(names(res), []string{"db"}) ||
-		!slices.Equal(res.GetGatesOff(), []string{"stack"}) {
+		!slices.Equal(res.GetGatesOff(), []string{"stack"}) || len(res.GetOffGates()) != 1 ||
+		res.GetOffGates()[0].GetName() != "stack" || len(res.GetOffGates()[0].GetAlone()) == 0 {
+		// The page shows a gate turned off with its patterns, to turn it back on knowing what it holds (W111).
 		t.Errorf("stack off: %v, %v", res, err)
 	}
 	if dev, err := ReadSettings(devFile); err != nil || !slices.Equal(dev.GetGatesOff(), []string{"stack"}) {
