@@ -253,6 +253,12 @@ is ignored, and the rest of the file applies: a warning under To fix names the f
 thing to fix, and leaves the gear grey. A file that does not parse, or a value of the wrong type or out of range, is a
 thing to fix: none of the file applies, the project's tasks do not spawn, and To fix names the file and the error.
 
+The file says the **version** of its schema, first: version 1, which a file without it is. Each Djinn knows versions up
+to its own, and reads an older one lifted to its own first. A file of a higher version, written for a newer Djinn, is
+refused rather than read wrong, as a version that is not a whole number from 1 is: To fix names the file, the version
+it read and the highest it knows, none of the file applies, and the project declares no gate until Djinn is updated or
+the file fixed.
+
 It holds the **team's settings**, under settings (above), the project's **gates** (Gates), and the **ceilings of the
 containers** the workers start with Docker: the memory of each container, swap
 included, in MiB (containers, then memory_mib), and its processes (containers, then pids). They stop a runaway, a fork
