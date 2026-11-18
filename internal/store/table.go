@@ -5,13 +5,18 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
+	"strconv"
 	"strings"
+	"time"
 
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
+	"google.golang.org/protobuf/types/dynamicpb"
 
 	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
+	"github.com/empowill/djinn/internal/logx"
 )
 
 // table maps one message to its table: id, the indexed fields as columns, and the payload.
@@ -21,7 +26,29 @@ type table struct {
 	id      protoreflect.FieldDescriptor
 	columns []protoreflect.FieldDescriptor // indexed fields, id aside
 	uniques [][]string
+	subsets []*subset
 }
+
+// subset is a partial index of a table (djinn.v1.subset): the rows whose payload holds marker, the bytes that encode
+// field at value, ordered by the columns by.
+type subset struct {
+	name   string
+	field  protoreflect.FieldDescriptor
+	value  protoreflect.Value
+	marker []byte
+	by     []string
+}
+
+// index is the name of the subset's index in t.
+func (s *subset) index(t *table) string { return t.name + "_subset_" + s.name }
+
+// where is the condition of the subset's index, which a read repeats word for word: SQLite uses a partial index only
+// for a query whose WHERE holds the index's own, and a bound parameter is never the same.
+func (s *subset) where() string { return fmt.Sprintf("instr(payload, X'%X') > 0", s.marker) }
+
+// holds tells whether m, decoded from a row of the subset's index, belongs to it: the marker may be found elsewhere in
+// the payload, such as in a text.
+func (s *subset) holds(m protoreflect.Message) bool { return m.Get(s.field).Equal(s.value) }
 
 func newTable(md protoreflect.MessageDescriptor) (*table, error) {
 	t := &table{md: md, name: snake(string(md.Name())), id: md.Fields().ByName("id")}
@@ -63,7 +90,71 @@ func newTable(md protoreflect.MessageDescriptor) (*table, error) {
 		}
 		t.uniques = append(t.uniques, g.GetFields())
 	}
+	subsets, _ := proto.GetExtension(md.Options(), djinnv1.E_Subset).([]*djinnv1.Subset)
+	for _, o := range subsets {
+		sub, err := t.newSubset(o)
+		if err != nil {
+			return nil, fmt.Errorf("entity %s: subset %q: %w", md.FullName(), o.GetName(), err)
+		}
+		t.subsets = append(t.subsets, sub)
+	}
 	return t, nil
+}
+
+// newSubset reads the option of a subset of t, whose fields by are t's columns already: a subset adds no column.
+func (t *table) newSubset(o *djinnv1.Subset) (*subset, error) {
+	if o.GetName() == "" || strings.ContainsFunc(o.GetName(), func(r rune) bool {
+		return (r < 'a' || r > 'z') && r != '_'
+	}) {
+		return nil, errors.New("a subset needs a name of lowercase letters")
+	}
+	if slices.ContainsFunc(t.subsets, func(s *subset) bool { return s.name == o.GetName() }) {
+		return nil, errors.New("two subsets have this name")
+	}
+	fd := t.md.Fields().ByName(protoreflect.Name(o.GetField()))
+	if fd == nil || fd.IsList() || fd.IsMap() {
+		return nil, fmt.Errorf("field %q is not a singular field", o.GetField())
+	}
+	var v protoreflect.Value
+	switch fd.Kind() {
+	case protoreflect.EnumKind:
+		ev := fd.Enum().Values().ByName(protoreflect.Name(o.GetValue()))
+		if ev == nil {
+			n, err := strconv.ParseInt(o.GetValue(), 10, 32)
+			if err != nil {
+				return nil, fmt.Errorf("%q is no value of %s", o.GetValue(), fd.Enum().FullName())
+			}
+			ev = fd.Enum().Values().ByNumber(protoreflect.EnumNumber(n))
+		}
+		if ev == nil || ev.Number() == 0 {
+			return nil, fmt.Errorf("%q is no value of %s, its zero aside", o.GetValue(), fd.Enum().FullName())
+		}
+		v = protoreflect.ValueOfEnum(ev.Number())
+	case protoreflect.Int64Kind:
+		n, err := strconv.ParseInt(o.GetValue(), 10, 64)
+		if err != nil || n <= 0 {
+			return nil, fmt.Errorf("%q is no positive number", o.GetValue())
+		}
+		v = protoreflect.ValueOfInt64(n)
+	default:
+		return nil, fmt.Errorf("field %s is a %s, not an enum or an int64", fd.Name(), fd.Kind())
+	}
+	if len(o.GetBy()) == 0 {
+		return nil, errors.New("a subset orders by one field at least")
+	}
+	for _, name := range o.GetBy() {
+		if t.column(name) == nil {
+			return nil, fmt.Errorf("%s is not an indexed field", name)
+		}
+	}
+	// The bytes that encode the field at its value, as Put writes the payload: its tag, then its value.
+	m := dynamicpb.NewMessage(t.md)
+	m.Set(fd, v)
+	marker, err := proto.Marshal(m)
+	if err != nil {
+		return nil, err
+	}
+	return &subset{name: o.GetName(), field: fd, value: v, marker: marker, by: o.GetBy()}, nil
 }
 
 // sqlType is the column type of an indexed field: text ignores case, like the names Djinn compares.
@@ -137,7 +228,46 @@ func (t *table) create(ctx context.Context, tx *sql.Tx, mt protoreflect.MessageT
 			return fmt.Errorf("unique %s: %w", strings.Join(fields, ", "), err)
 		}
 	}
+	for _, sub := range t.subsets {
+		quoted := make([]string, len(sub.by))
+		for i, f := range sub.by {
+			quoted[i] = quote(f)
+		}
+		want := `CREATE INDEX ` + quote(sub.index(t)) + ` ON ` + quote(t.name) + ` (` + strings.Join(quoted, ", ") +
+			`) WHERE ` + sub.where()
+		start := time.Now()
+		built, err := t.replaceIndex(ctx, tx, sub.index(t), want)
+		if err != nil {
+			return fmt.Errorf("subset %s: %w", sub.name, err)
+		}
+		if built {
+			// It reads the whole table, once: 1 to 2 s for 224 MB of events (W123).
+			logx.Took(slog.LevelInfo, "database index built", start, "index", sub.index(t))
+		}
+	}
 	return nil
+}
+
+// replaceIndex creates the index name by want, its whole statement, unless it exists as want says: one written
+// otherwise, by an older Djinn, is replaced. It tells whether it built the index.
+func (t *table) replaceIndex(ctx context.Context, tx *sql.Tx, name, want string) (bool, error) {
+	var have string
+	err := tx.QueryRowContext(ctx, `SELECT sql FROM sqlite_master WHERE type = 'index' AND name = ?`, name).Scan(&have)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+	case err != nil:
+		return false, err
+	case have == want:
+		return false, nil
+	default:
+		if _, err := tx.ExecContext(ctx, `DROP INDEX `+quote(name)); err != nil {
+			return false, err
+		}
+	}
+	if _, err := tx.ExecContext(ctx, want); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // unique creates the unique index of a group of fields. A row where a field of the group holds its zero value is
@@ -157,20 +287,7 @@ func (t *table) unique(ctx context.Context, tx *sql.Tx, fields []string) error {
 	name := t.name + "_unique_" + strings.Join(fields, "_")
 	want := `CREATE UNIQUE INDEX ` + quote(name) + ` ON ` + quote(t.name) + ` (` + strings.Join(quoted, ", ") +
 		`) WHERE ` + strings.Join(set, " AND ")
-	var have string
-	err := tx.QueryRowContext(ctx, `SELECT sql FROM sqlite_master WHERE type = 'index' AND name = ?`, name).Scan(&have)
-	switch {
-	case errors.Is(err, sql.ErrNoRows):
-	case err != nil:
-		return err
-	case have == want:
-		return nil
-	default:
-		if _, err := tx.ExecContext(ctx, `DROP INDEX `+quote(name)); err != nil {
-			return err
-		}
-	}
-	_, err = tx.ExecContext(ctx, want)
+	_, err := t.replaceIndex(ctx, tx, name, want)
 	return err
 }
 

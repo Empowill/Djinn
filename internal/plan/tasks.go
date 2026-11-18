@@ -8,8 +8,6 @@ import (
 	"strconv"
 	"strings"
 
-	"google.golang.org/protobuf/proto"
-
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/store"
 )
@@ -95,23 +93,29 @@ func ClosesCycle(task *planv1.Task, deps []string, azima string, tasks []*planv1
 	return ""
 }
 
-var promptKind = func() []byte {
-	b, _ := proto.Marshal(&planv1.TaskEvent{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT})
-	return b
-}()
-
-// FillPrompts sets each task's Prompt from its last prompt event in r, and fills each watcher's request link.
+// FillPrompts sets each task's Prompt from its last prompt event in r, and fills each watcher's request link. The
+// prompts of all tasks come in one statement per 500 tasks, through the index of the prompts (TaskEvent's subset
+// prompt), which holds them only: a page of a wish of a thousand tasks waited 30 s for the database's one connection
+// when it read each task's events apart (L25, W123).
 func FillPrompts(ctx context.Context, r store.Reader, tasks []*planv1.Task) error {
+	ids := make([]string, 0, len(tasks))
 	for _, t := range tasks {
-		events, err := store.ListAfter[*planv1.TaskEvent](
-			ctx, r, store.Where{"task_id": t.GetId()},
-			store.After{Field: "seq", Contains: [][]byte{promptKind}},
-		)
-		if err != nil {
-			return err
+		if t.GetId() != "" {
+			ids = append(ids, t.GetId())
 		}
-		if len(events) > 0 {
-			t.Prompt = events[len(events)-1].GetText()
+	}
+	prompts, err := store.InSubset[*planv1.TaskEvent](ctx, r, "prompt", ids)
+	if err != nil {
+		return err
+	}
+	// A task's prompts come oldest first: its last one stands.
+	last := make(map[string]string, len(tasks))
+	for _, ev := range prompts {
+		last[strings.ToLower(ev.GetTaskId())] = ev.GetText()
+	}
+	for _, t := range tasks {
+		if text, ok := last[strings.ToLower(t.GetId())]; ok {
+			t.Prompt = text
 		}
 	}
 	fillWatchLinks(ctx, r, tasks)

@@ -18,7 +18,7 @@ import (
 )
 
 func main() {
-	name := flag.String("size", bigwish.Real.Name, "the size: real or x10")
+	name := flag.String("size", bigwish.Real.Name, "the size: real, x10 or dew")
 	out := flag.String("o", "", "the file to write; a name ending in .json is written as JSON, any other as binary protobuf")
 	flag.Parse()
 	if err := run(*name, *out); err != nil {
