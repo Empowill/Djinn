@@ -295,7 +295,7 @@ func (p *holdsPusher) Reference(ctx context.Context, project *planv1.Project, na
 
 // TestProjectSetBranch (W149): djinn project set-branch writes the reference branch in the developer's own file,
 // never in the team's, and it wins over the team's; --unset takes it back. A branch the repository does not hold, a
-// project outside Git and a request naming both or neither are refused. The panel lists the remote's branches.
+// project outside Git and a request naming both or neither are refused. The settings page lists the remote's branches.
 func TestProjectSetBranch(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()

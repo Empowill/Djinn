@@ -1,7 +1,7 @@
 // The side panel's lists, read from the services: the flying carpet's entry with what waits for you there (questions,
 // new inbox items), the wishes, the active ones by rank and how many of the three places they take, then the paused
 // ones and the granted ones, each list in its own order; the projects, each with its branches out of sync with their
-// remote (project-sync.tsx) and its gear, which opens its panel and turns red with a small flame when its
+// remote (project-sync.tsx) and its gear, which opens its settings page and turns red with a small flame when its
 // configuration has something for you to fix (Project.to_fix); the Hourglass's entry at the bottom (the live metrics,
 // hourglass.tsx), and under it the Grimoire's, the documentation (docs.tsx), a page like the Hourglass, before the profile. The wishes' list shows the active ones, each with its counts on a second line, and three rows more;
 // it scrolls under the pointer. Every wish is dragged by its row, or moved with Alt+Arrow, within its list; while it is
@@ -832,7 +832,7 @@ export function ProjectFlame() {
   );
 }
 
-// ProjectGear opens a project's panel, as its name does; grey while all is well, red with its flame while its
+// ProjectGear opens a project's settings page, as its name does; grey while all is well, red with its flame while its
 // configuration has something for you to fix, which its tooltip counts.
 export function ProjectGear({
   project,

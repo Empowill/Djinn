@@ -7,7 +7,7 @@ import { projectSync, screens } from "./screens.mjs";
 
 const { s, h, live } = await screens();
 
-test("a project's panel lists the sources its skills declare: what each reads, how it stands, and Plug in or Unplug with what it does", async () => {
+test("a project's Skills tab lists the sources its skills declare: what each reads, how it stands, and Plug in or Unplug with what it does", async () => {
   const p1 = { id: "p1", name: "gong", git: true, directory: "/tmp/gong" };
   const sources = [
     {
@@ -167,7 +167,7 @@ test("the project view lists the setup and the checks, when each runs, and how e
   );
 });
 
-test("the project panel displays the push cadence setting, out-of-sync status, and push button", () => {
+test("the project's Integration and push tab displays the push cadence setting, out-of-sync status, and push button", () => {
   const p1 = {
     id: "p1",
     name: "app",
@@ -238,7 +238,7 @@ test("the project panel displays the push cadence setting, out-of-sync status, a
   );
 });
 
-// The reference branch chosen in the panel (W149): Change reads the remote's branches, the current one first when this
+// The reference branch chosen on the General tab (W149): Change reads the remote's branches, the current one first when this
 // copy lacks it; the choice goes to your own file, and when it is yours it can be taken back. Never an accent button.
 test("a project's reference branch is chosen from the remote's branches, and your choice taken back", async () => {
   const chosen = [];
@@ -333,9 +333,9 @@ test("a project's reference branch is chosen from the remote's branches, and you
   assert.match(unread.html(), /^<button[^>]*>Change<\/button>$/);
 });
 
-// The watcher commands a developer allows in a project, in its panel: each with a button that takes it back, and a
+// The watcher commands a developer allows in a project, on its Permissions tab: each with a button that takes it back, and a
 // field that allows one more, kept in their own settings.
-test("a project's panel lists the watcher commands you allow", () => {
+test("a project's Permissions tab lists the watcher commands you allow", () => {
   const html = s.renderToStaticMarkup(
     h(s.WatchCommands, {
       commands: ["go run ./.agents/skills/babysit-mr-acme/mrwatch"],
@@ -362,7 +362,7 @@ test("a project's panel lists the watcher commands you allow", () => {
   assert.doesNotMatch(none, /Take back/);
 });
 
-// The project's configuration panel (W148): a thing to fix says what it is, the error as read, and what settles it,
+// The project's settings page (W148): a thing to fix says what it is, the error as read, and what settles it,
 // a button never alone and never in the accent colour; the reference branch says its ref, commit and where its name
 // comes from; each skill says its role for Djinn; each setting where it comes from, those at the default folded.
 test("a project's configuration says what to fix, its reference branch, each skill's role and where each setting comes from", () => {
