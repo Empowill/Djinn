@@ -28813,7 +28813,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x05actor\x18\x01 \x01(\x0e2\x0f.plan.v1.CloserR\x05actor\x12;\n" +
 	"\vcreate_time\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"createTime\x12\x12\n" +
-	"\x04note\x18\x03 \x01(\tR\x04note\"\x99\x02\n" +
+	"\x04note\x18\x03 \x01(\tR\x04note\"\xd1\x02\n" +
 	"\tTaskEvent\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\x12\x17\n" +
 	"\atask_id\x18\x02 \x01(\tR\x06taskId\x12\x10\n" +
@@ -28823,9 +28823,10 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x05usage\x18\x06 \x01(\v2\x0e.plan.v1.UsageR\x05usage\x12\x10\n" +
 	"\x03raw\x18\a \x01(\tR\x03raw\x12;\n" +
 	"\vcreate_time\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"createTime:\x12\xd2\xf3\x18\x0e\n" +
+	"createTime:J\xd2\xf3\x18\x0e\n" +
 	"\atask_id\n" +
-	"\x03seq\"\xd7\x01\n" +
+	"\x03seq\xca\xf4\x184\n" +
+	"\x06prompt\x12\x04kind\x1a\x16TASK_EVENT_KIND_PROMPT\"\atask_id\"\x03seq\"\xd7\x01\n" +
 	"\bGateWait\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x122\n" +
 	"\x05asked\x18\x02 \x03(\v2\x1c.plan.v1.GateWait.AskedEntryR\x05asked\x121\n" +

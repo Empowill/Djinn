@@ -42,6 +42,21 @@ message Unique {
   repeated string fields = 1;
 }
 
+// Subset is a partial index of a stored message: the rows whose enum or int64 field holds one value, ordered by
+// indexed fields, for a read that wants those rows only, such as a task's prompts among all its events. The store keeps
+// it on the bytes that encode the field in the payload, with no column: it is built by reading the table once, where a
+// new column would write every row again.
+message Subset {
+  // Name of the subset, which a read names, and which names its index: <table>_subset_<name>.
+  string name = 1;
+  // The enum or int64 field, as written in the proto.
+  string field = 2;
+  // The field's value: the name of an enum value, or a number.
+  string value = 3;
+  // The indexed fields the index orders by, as written in the proto. A read gives the rows whose first is among values.
+  repeated string by = 4;
+}
+
 extend google.protobuf.MethodOptions {
   // Who may call the method. Only VISIBILITY_PUBLIC methods become commands.
   Visibility visibility = 51001;
@@ -67,6 +82,8 @@ extend google.protobuf.ServiceOptions {
 extend google.protobuf.MessageOptions {
   // Groups of fields that must be unique among stored messages of this type.
   repeated Unique unique = 51002;
+  // Partial indexes of the stored messages of this type.
+  repeated Subset subset = 51017;
 }
 
 extend google.protobuf.FieldOptions {

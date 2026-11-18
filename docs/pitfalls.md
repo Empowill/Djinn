@@ -374,6 +374,13 @@ the code does not say by itself; remove one when a change makes it false.
   bound `seq > ?`: a `store.ListAfter` on a task's events walks every event of the task and reads each payload. To
   read a task's first events, `store.Oldest` walks the `task_id` index in rowid order and stops when asked: the prompt
   sizes of 2,673 tasks read in 0.3 s, against 8.8 s by `ListAfter` (W616). *Where:* `internal/store`.
+- **A subset's index needs its own WHERE, word for word.** A `(djinn.v1.subset)` option (TaskEvent's `prompt`) makes a
+  partial index on the bytes that encode a field's value in the payload, `instr(payload, X'2001') > 0`: SQLite uses it
+  only for a query that holds that very text, never a bound parameter, and without `ANALYZE` it may still prefer the
+  `task_id` index. Read a subset with `store.InSubset`, which writes both and drops the rows whose text only holds the
+  bytes; `store.ListAfter` with `Contains` walks every event of each task (W123). Adding a subset builds its index at
+  the next `djinn up`, reading the whole table once: 1 to 2 s for 224 MB of events, logged as `database index built`.
+  *Where:* `internal/store/table.go`.
 - **Read the real database read-only.** No `sqlite3` on the machine: a throwaway Go program with `modernc.org/sqlite`
   and `file:<path>?mode=ro`, decoding payloads with `gen/go/plan/v1`. The `command` table (the journal: seq, actor,
   at, method, request) tells a freeze (calls journaled, follow-ups missing) from a crash (`harness/recover` at the

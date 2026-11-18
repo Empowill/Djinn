@@ -609,7 +609,7 @@ func (w *Wishes) ifritWaits() map[string][]string {
 
 // buildBrief is BuildBrief, saying who waits for the gates of each lit ifrit as waits does.
 func buildBrief(ctx context.Context, r store.Reader, home, wishID string, waits map[string][]string) (Brief, error) {
-	exp, projects, err := collect(ctx, r, wishID, noEvents)
+	exp, projects, err := collectOf(ctx, r, wishID, noEvents, wishMethods)
 	if err != nil {
 		return Brief{}, err
 	}
@@ -1462,7 +1462,7 @@ func globalBrief(ctx context.Context, r store.Reader, home string, wishesOnly bo
 		b.WriteString("No active wishes.\n\n")
 	} else {
 		for i, wish := range actives {
-			exp, _, err := collect(ctx, r, wish.GetId(), noEvents)
+			exp, _, err := collectOf(ctx, r, wish.GetId(), noEvents, wishMethods)
 			if err != nil {
 				return "", err
 			}
