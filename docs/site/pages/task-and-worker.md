@@ -91,8 +91,8 @@ cancelled.
 
 Djinn never loses work: a worktree with changes not committed stays, with its scratch and branch, and so does a local
 branch with commits found neither in the integration branch nor on the remote. Djinn writes why on the task, and on
-its azima a line per task of the cascade: how far it is, what it freed, what it kept and why. A remote branch is never
-touched.
+its azima a line per task of the cascade: how far it is, what it freed, what it kept and why; a wish just granted shows
+its cascade in a band under its header (see the wish page). A remote branch is never touched.
 
 Only a task done waits out the 30 days: its work merged, or with nothing to merge, such as an investigation, a mockup,
 or a worker that ended done with no commit of its own. A task cancelled, failed or stopped, or done with its work

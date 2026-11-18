@@ -7,8 +7,10 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	machinev1 "github.com/empowill/djinn/gen/go/machine/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
@@ -387,6 +389,15 @@ func TestFreeAzimaValidated(t *testing.T) {
 		p.GetAzimas()[1].GetDone() != 1 || p.GetKept() != 1 {
 		t.Errorf("progress = %v", p)
 	}
+	wantKept := &machinev1.DiskFreeingKept{TaskId: w2.GetId(), Part: machinev1.DiskFreeingPart_DISK_FREEING_PART_WORKTREE,
+		Reason: machinev1.DiskFreeingReason_DISK_FREEING_REASON_UNPUSHED, Commits: 1,
+		Detail: "1 commits found neither in djinn/payroll nor on the remote"}
+	if k := p.GetAzimas()[0].GetKeptItems(); len(k) != 1 || !proto.Equal(k[0], wantKept) {
+		t.Errorf("T1 kept = %v, want W2's worktree, 1 commit not pushed", k)
+	}
+	if k := p.GetAzimas()[1].GetKeptItems(); len(k) != 0 {
+		t.Errorf("T2 kept = %v, want none", k)
+	}
 
 	// A pass right after looks at nothing again: W2 waits freeKeptAgain.
 	e.h.freePass(t.Context())
@@ -410,6 +421,11 @@ func TestFreeGrantCascade(t *testing.T) {
 	}
 	dirty := e.task(t, "W9", planv1.TaskStatus_TASK_STATUS_STOPPED, time.Minute, func(task *planv1.Task) { task.PartOf = a2.GetId() })
 	writeFile(t, dirty.GetWorktree(), "draft.txt", "not committed")
+	// W8 is part of no azima, its worktree gone already: its scratch goes, its branch, never pushed, stays.
+	unpushed := e.task(t, "W8", planv1.TaskStatus_TASK_STATUS_DONE, time.Minute, nil)
+	if err := removeWorktree(t.Context(), e.repo, unpushed.GetWorktree(), false); err != nil {
+		t.Fatal(err)
+	}
 	for _, task := range tasks { // Merged into the project's main: none holds work any more.
 		if _, err := git(t.Context(), e.repo, "merge", "--quiet", "--no-ff", "--no-edit", task.GetBranch()); err != nil {
 			t.Fatal(err)
@@ -432,12 +448,30 @@ func TestFreeGrantCascade(t *testing.T) {
 	if texts := e.statusTexts(t, dirty); len(texts) != 1 || !strings.Contains(texts[0], "worktree kept: it holds changes not committed") {
 		t.Errorf("W9 events = %q", texts)
 	}
-	p := e.h.Freeing()
-	if p.GetTotal() != 4 || p.GetDone() != 4 || p.GetKept() != 1 || len(p.GetWishIds()) != 1 || p.GetWishIds()[0] != e.wish.GetId() {
-		t.Errorf("progress = %v, want 4 done, 1 kept, the wish named", p)
+	if exists(unpushed.GetScratch()) || !e.hasBranch(t, unpushed.GetBranch()) {
+		t.Error("W8 keeps its scratch, or lost its branch not pushed")
 	}
-	if a := p.GetAzimas(); len(a) != 2 || a[0].GetTotal() != 2 || a[1].GetTotal() != 2 || a[1].GetKept() != 1 {
-		t.Errorf("progress by azima = %v", a)
+	p := e.h.Freeing()
+	if p.GetTotal() != 5 || p.GetDone() != 5 || p.GetKept() != 2 || len(p.GetWishIds()) != 1 || p.GetWishIds()[0] != e.wish.GetId() {
+		t.Errorf("progress = %v, want 5 done, 2 kept, the wish named", p)
+	}
+	a := p.GetAzimas()
+	if len(a) != 3 || a[0].GetAzimaId() != "" || a[0].GetWishId() != e.wish.GetId() || a[0].GetTotal() != 1 ||
+		a[1].GetAzimaId() != a1.GetId() || a[1].GetTotal() != 2 || a[2].GetTotal() != 2 || a[2].GetKept() != 1 {
+		t.Fatalf("progress by azima = %v, want the tasks of no azima first, then T1 and T2", a)
+	}
+	if a[0].GetFreedBytes() == 0 || a[1].GetFreedBytes() == 0 {
+		t.Errorf("freed bytes = %d, %d, want some", a[0].GetFreedBytes(), a[1].GetFreedBytes())
+	}
+	if k := a[0].GetKeptItems(); len(k) != 1 || k[0].GetTaskId() != unpushed.GetId() ||
+		k[0].GetPart() != machinev1.DiskFreeingPart_DISK_FREEING_PART_BRANCH ||
+		k[0].GetReason() != machinev1.DiskFreeingReason_DISK_FREEING_REASON_UNPUSHED || k[0].GetCommits() != 1 {
+		t.Errorf("W8 kept = %v, want its branch, 1 commit not pushed", k)
+	}
+	if k := a[2].GetKeptItems(); len(k) != 1 || k[0].GetTaskId() != dirty.GetId() ||
+		k[0].GetPart() != machinev1.DiskFreeingPart_DISK_FREEING_PART_WORKTREE ||
+		k[0].GetReason() != machinev1.DiskFreeingReason_DISK_FREEING_REASON_UNCOMMITTED {
+		t.Errorf("W9 kept = %v, want its worktree, changes not committed", k)
 	}
 }
 

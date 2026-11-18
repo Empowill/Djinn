@@ -159,13 +159,60 @@ message DiskFreeing {
 
 // DiskFreeingAzima is how far a freeing pass is in the tasks of one azima (DiskFreeing).
 message DiskFreeingAzima {
-  // The azima, by identifier, and its wish.
+  // The azima, by identifier, and its wish. The tasks of a wish granted that are part of no azima come as one more
+  // entry, its azima_id empty.
   string azima_id = 1;
   string wish_id = 2;
   int32 total = 3;
   int32 done = 4;
   uint64 freed_bytes = 5;
   int32 kept = 6;
+  // What the pass kept of its tasks, and why, in the order it looked at them: the window's cascade band says it.
+  repeated DiskFreeingKept kept_items = 7;
+}
+
+// DiskFreeingKept is a part of a task the freeing pass kept, and why: it never loses work.
+message DiskFreeingKept {
+  // The task, by identifier.
+  string task_id = 1;
+  // What stayed: its worktree (and with it its scratch and branch), its scratch, its local branch, or the whole task.
+  DiskFreeingPart part = 2;
+  // Why it stayed.
+  DiskFreeingReason reason = 3;
+  // For an unpushed reason, how many commits are found neither in the integration branch nor on the remote.
+  int32 commits = 4;
+  // The reason as Djinn's log says it, in English: the error, or the path holding the changes.
+  string detail = 5;
+}
+
+// DiskFreeingPart is what of a task the freeing pass kept (DiskFreeingKept).
+enum DiskFreeingPart {
+  // Not set.
+  DISK_FREEING_PART_UNSPECIFIED = 0;
+  // Its worktree, and with it its scratch and its local branch.
+  DISK_FREEING_PART_WORKTREE = 1;
+  // Its scratch folder.
+  DISK_FREEING_PART_SCRATCH = 2;
+  // Its local branch.
+  DISK_FREEING_PART_BRANCH = 3;
+  // The whole task: it runs again, or could not be read.
+  DISK_FREEING_PART_TASK = 4;
+}
+
+// DiskFreeingReason is why the freeing pass kept a part of a task (DiskFreeingKept).
+enum DiskFreeingReason {
+  // Not set.
+  DISK_FREEING_REASON_UNSPECIFIED = 0;
+  // The worktree holds changes not committed.
+  DISK_FREEING_REASON_UNCOMMITTED = 1;
+  // Commits found neither in the integration branch nor on the remote: the only copy of them.
+  DISK_FREEING_REASON_UNPUSHED = 2;
+  // The task runs again.
+  DISK_FREEING_REASON_RUNNING = 3;
+  // The project's folder is not on this machine.
+  DISK_FREEING_REASON_NO_PROJECT = 4;
+  // An error: detail says which.
+  DISK_FREEING_REASON_ERROR = 5;
 }
 
 // DiskFolder is a folder measured on disk, with what its files take on it: the blocks they hold, which counts what the

@@ -111,13 +111,15 @@ func (s *service) disk(snap Snapshot) *machinev1.Disk {
 	case s.diskItems != nil:
 		items = s.diskItems()
 	}
-	if snap.Disk == nil && len(folders) == 0 && len(items) == 0 {
+	var freeing *machinev1.DiskFreeing
+	if s.diskFreeing != nil {
+		freeing = s.diskFreeing()
+	}
+	// A cascade shows in the window before the disk is measured: the band of a granted wish follows it.
+	if snap.Disk == nil && len(folders) == 0 && len(items) == 0 && freeing == nil {
 		return nil
 	}
-	out := &machinev1.Disk{Folders: folders, Items: items}
-	if s.diskFreeing != nil {
-		out.Freeing = s.diskFreeing()
-	}
+	out := &machinev1.Disk{Folders: folders, Items: items, Freeing: freeing}
 	if s.diskState != nil {
 		at, measuring := s.diskState()
 		out.Measuring = measuring

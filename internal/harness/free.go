@@ -123,7 +123,73 @@ type freeJob struct {
 type freed struct {
 	bytes                        uint64
 	worktree, scratch, branchCut bool
-	kept                         []string
+	kept                         []kept
+}
+
+// kept is a part of a task the pass kept, and why: the window's band reads the part and the reason, the log the text.
+type kept struct {
+	part   machinev1.DiskFreeingPart
+	why    keepWhy
+	branch string // for a branch part, its name
+}
+
+// keepWhy is why work stays (holdsWork, unsaved); its zero value holds none.
+type keepWhy struct {
+	reason  machinev1.DiskFreeingReason
+	commits int
+	detail  string // the error, or the folder holding changes
+}
+
+func (w keepWhy) none() bool {
+	return w.reason == machinev1.DiskFreeingReason_DISK_FREEING_REASON_UNSPECIFIED
+}
+
+// keepErr is why work stays when err stopped the pass from looking.
+func keepErr(what string, err error) keepWhy {
+	return keepWhy{reason: machinev1.DiskFreeingReason_DISK_FREEING_REASON_ERROR, detail: what + err.Error()}
+}
+
+// String says why, as the log and the task's event read it.
+func (w keepWhy) String() string {
+	switch w.reason {
+	case machinev1.DiskFreeingReason_DISK_FREEING_REASON_UNCOMMITTED:
+		return "it holds changes not committed, " + w.detail
+	case machinev1.DiskFreeingReason_DISK_FREEING_REASON_UNPUSHED:
+		return fmt.Sprintf("%d commits found neither in %s nor on the remote", w.commits, w.detail)
+	case machinev1.DiskFreeingReason_DISK_FREEING_REASON_RUNNING:
+		return "it runs again"
+	case machinev1.DiskFreeingReason_DISK_FREEING_REASON_NO_PROJECT:
+		return fmt.Sprintf("the project's folder %q is not on this machine", w.detail)
+	}
+	return w.detail
+}
+
+// String says what stayed and why, as the log and the task's event read it.
+func (k kept) String() string {
+	switch k.part {
+	case machinev1.DiskFreeingPart_DISK_FREEING_PART_WORKTREE:
+		return "worktree kept: " + k.why.String()
+	case machinev1.DiskFreeingPart_DISK_FREEING_PART_SCRATCH:
+		return "scratch kept: " + k.why.String()
+	case machinev1.DiskFreeingPart_DISK_FREEING_PART_BRANCH:
+		return "branch " + k.branch + " kept: " + k.why.String()
+	}
+	return k.why.String()
+}
+
+// proto is k for the window, of task id.
+func (k kept) proto(id string) *machinev1.DiskFreeingKept {
+	return &machinev1.DiskFreeingKept{TaskId: id, Part: k.part, Reason: k.why.reason, Commits: int32(k.why.commits),
+		Detail: k.why.String()}
+}
+
+// keptTexts is ks as the log reads them, joined.
+func keptTexts(ks []kept) string {
+	texts := make([]string, len(ks))
+	for i, k := range ks {
+		texts[i] = k.String()
+	}
+	return strings.Join(texts, "; ")
 }
 
 // freePass frees what the rules of Q75 free now, the azimas validated and wishes granted first, and records how far it
@@ -148,13 +214,14 @@ func (h *Harness) freePass(ctx context.Context) {
 		if j.rule == planv1.FreeRule_FREE_RULE_GRANT && !slices.Contains(progress.WishIds, j.task.GetWishId()) {
 			progress.WishIds = append(progress.WishIds, j.task.GetWishId())
 		}
-		if j.azima == nil || j.rule == planv1.FreeRule_FREE_RULE_AGE {
+		key, ok := cascadeKey(j)
+		if !ok {
 			continue
 		}
-		a := byAzima[j.azima.GetId()]
+		a := byAzima[key]
 		if a == nil {
-			a = &machinev1.DiskFreeingAzima{AzimaId: j.azima.GetId(), WishId: j.azima.GetWishId()}
-			byAzima[j.azima.GetId()] = a
+			a = &machinev1.DiskFreeingAzima{AzimaId: j.azima.GetId(), WishId: j.task.GetWishId()}
+			byAzima[key] = a
 			progress.Azimas = append(progress.Azimas, a)
 		}
 		a.Total++
@@ -168,13 +235,16 @@ func (h *Harness) freePass(ctx context.Context) {
 		h.free.mu.Lock()
 		progress.Done++
 		progress.FreedBytes += got.bytes
-		a := byAzima[j.azima.GetId()]
-		if j.rule == planv1.FreeRule_FREE_RULE_AGE {
-			a = nil
+		var a *machinev1.DiskFreeingAzima
+		if key, ok := cascadeKey(j); ok {
+			a = byAzima[key]
 		}
 		if a != nil {
 			a.Done++
 			a.FreedBytes += got.bytes
+			for _, k := range got.kept {
+				a.KeptItems = append(a.KeptItems, k.proto(j.task.GetId()))
+			}
 		}
 		if len(got.kept) > 0 {
 			progress.Kept++
@@ -184,7 +254,7 @@ func (h *Harness) freePass(ctx context.Context) {
 		}
 		h.free.looked[j.task.GetId()] = freeLook{rule: j.rule, at: h.now(), kept: len(got.kept) > 0}
 		var line string
-		if a != nil {
+		if a != nil && j.azima != nil {
 			line = azimaFreeLine(a, j.task, got)
 		}
 		h.free.mu.Unlock()
@@ -196,6 +266,20 @@ func (h *Harness) freePass(ctx context.Context) {
 	logx.L().Info("free the folders of finished tasks", "loop", "free", "tasks", progress.GetDone(),
 		"kept", progress.GetKept(), "freed", gbText(progress.GetFreedBytes()), "took", h.now().Sub(start).Round(time.Millisecond))
 	h.notify()
+}
+
+// cascadeKey is the entry of DiskFreeing.azimas j counts in, false for none: its azima's, or for a task of a wish
+// granted part of no azima, its wish's. A task freed by its age is part of no cascade.
+func cascadeKey(j freeJob) (string, bool) {
+	switch {
+	case j.rule == planv1.FreeRule_FREE_RULE_AGE:
+		return "", false
+	case j.azima != nil:
+		return j.azima.GetId(), true
+	case j.rule == planv1.FreeRule_FREE_RULE_GRANT:
+		return "wish:" + j.task.GetWishId(), true
+	}
+	return "", false
 }
 
 // setFreeing makes p the pass the window follows.
@@ -450,17 +534,20 @@ func (h *Harness) freeTask(ctx context.Context, j freeJob) freed {
 	defer h.sched.Unlock()
 	t, err := store.Get[*planv1.Task](ctx, h.store, j.task.GetId())
 	if err != nil {
-		got.kept = append(got.kept, "its task could not be read: "+err.Error())
+		got.kept = append(got.kept, kept{part: machinev1.DiskFreeingPart_DISK_FREEING_PART_TASK,
+			why: keepErr("its task could not be read: ", err)})
 		return got
 	}
 	if h.running(t.GetId()) || !freeFinished(t) {
-		got.kept = append(got.kept, "it runs again")
+		got.kept = append(got.kept, kept{part: machinev1.DiskFreeingPart_DISK_FREEING_PART_TASK,
+			why: keepWhy{reason: machinev1.DiskFreeingReason_DISK_FREEING_REASON_RUNNING}})
 		return got
 	}
 	dir := j.project.GetDirectory()
 	branchCut := freeBranchRule(j.rule, t, j.project)
 	if len(trees) > 0 && (dir == "" || !isDir(dir)) {
-		got.kept = append(got.kept, fmt.Sprintf("worktree kept: the project's folder %q is not on this machine", dir))
+		got.kept = append(got.kept, kept{part: machinev1.DiskFreeingPart_DISK_FREEING_PART_WORKTREE,
+			why: keepWhy{reason: machinev1.DiskFreeingReason_DISK_FREEING_REASON_NO_PROJECT, detail: dir}})
 	}
 	safe := func() []string { return h.safeTips(ctx, dir, t, !branchCut) }
 	treeKept := len(got.kept) > 0
@@ -468,12 +555,13 @@ func (h *Harness) freeTask(ctx context.Context, j freeJob) freed {
 		if treeKept {
 			break
 		}
-		if why := holdsWork(ctx, dir, wt, safe()); why != "" {
-			got.kept, treeKept = append(got.kept, "worktree kept: "+why), true
+		if why := holdsWork(ctx, dir, wt, safe()); !why.none() {
+			got.kept, treeKept = append(got.kept, kept{part: machinev1.DiskFreeingPart_DISK_FREEING_PART_WORKTREE, why: why}), true
 			break
 		}
 		if err := removeWorktree(ctx, dir, wt, false); err != nil {
-			got.kept, treeKept = append(got.kept, "worktree kept: "+err.Error()), true
+			got.kept, treeKept = append(got.kept, kept{part: machinev1.DiskFreeingPart_DISK_FREEING_PART_WORKTREE,
+				why: keepErr("", err)}), true
 			break
 		}
 		got.worktree, got.bytes = true, got.bytes+sizes[wt]
@@ -483,7 +571,7 @@ func (h *Harness) freeTask(ctx context.Context, j freeJob) freed {
 	}
 	for _, s := range scratch {
 		if err := os.RemoveAll(s); err != nil {
-			got.kept = append(got.kept, "scratch kept: "+err.Error())
+			got.kept = append(got.kept, kept{part: machinev1.DiskFreeingPart_DISK_FREEING_PART_SCRATCH, why: keepErr("", err)})
 			continue
 		}
 		got.scratch, got.bytes = true, got.bytes+sizes[s]
@@ -496,12 +584,15 @@ func (h *Harness) freeTask(ctx context.Context, j freeJob) freed {
 	if err != nil || tip == "" {
 		return got // Gone already.
 	}
-	if why := unsaved(ctx, dir, tip, safe()); why != "" {
-		got.kept = append(got.kept, "branch "+t.GetBranch()+" kept: "+why)
+	branch := func(why keepWhy) kept {
+		return kept{part: machinev1.DiskFreeingPart_DISK_FREEING_PART_BRANCH, why: why, branch: t.GetBranch()}
+	}
+	if why := unsaved(ctx, dir, tip, safe()); !why.none() {
+		got.kept = append(got.kept, branch(why))
 		return got
 	}
 	if _, err := git(ctx, dir, "branch", "-D", t.GetBranch()); err != nil {
-		got.kept = append(got.kept, "branch "+t.GetBranch()+" kept: "+err.Error())
+		got.kept = append(got.kept, branch(keepErr("", err)))
 		return got
 	}
 	got.branchCut = true
@@ -541,26 +632,26 @@ func (h *Harness) safeTips(ctx context.Context, dir string, t *planv1.Task, keep
 	return tips
 }
 
-// holdsWork says why the worktree wt holds work, "" when it holds none: changes not committed, or a HEAD with commits
-// found neither in the safe tips (safeTips) nor on the remote.
-func holdsWork(ctx context.Context, dir, wt string, safe []string) string {
+// holdsWork says why the worktree wt holds work, none when it holds none: changes not committed, or a HEAD with
+// commits found neither in the safe tips (safeTips) nor on the remote.
+func holdsWork(ctx context.Context, dir, wt string, safe []string) keepWhy {
 	status, err := gitRaw(ctx, wt, "status", "--porcelain")
 	if err != nil {
-		return "its status could not be read: " + err.Error()
+		return keepErr("its status could not be read: ", err)
 	}
 	if strings.TrimSpace(status) != "" {
-		return "it holds changes not committed, " + wt
+		return keepWhy{reason: machinev1.DiskFreeingReason_DISK_FREEING_REASON_UNCOMMITTED, detail: wt}
 	}
 	head, err := git(ctx, wt, "rev-parse", "--verify", "--quiet", "HEAD^{commit}")
 	if err != nil || head == "" {
-		return "" // A worktree without a commit holds none.
+		return keepWhy{} // A worktree without a commit holds none.
 	}
 	return unsaved(ctx, dir, head, safe)
 }
 
 // unsaved says how many commits of tip are found neither in the safe tips nor on any remote of the repository of dir,
-// "" for none.
-func unsaved(ctx context.Context, dir, tip string, safe []string) string {
+// none for none.
+func unsaved(ctx context.Context, dir, tip string, safe []string) keepWhy {
 	args := []string{"rev-list", "--count", tip, "--not", "--remotes"}
 	var names []string
 	for _, s := range safe {
@@ -572,20 +663,21 @@ func unsaved(ctx context.Context, dir, tip string, safe []string) string {
 	}
 	out, err := git(ctx, dir, args...)
 	if err != nil {
-		return "its commits could not be counted: " + err.Error()
+		return keepErr("its commits could not be counted: ", err)
 	}
 	n, err := strconv.Atoi(out)
 	if err != nil {
-		return fmt.Sprintf("git rev-list: %q is not a count", out)
+		return keepWhy{reason: machinev1.DiskFreeingReason_DISK_FREEING_REASON_ERROR,
+			detail: fmt.Sprintf("git rev-list: %q is not a count", out)}
 	}
 	if n == 0 {
-		return ""
+		return keepWhy{}
 	}
 	where := "the integration branch"
 	if len(names) > 0 {
 		where = strings.Join(names, ", ")
 	}
-	return fmt.Sprintf("%d commits found neither in %s nor on the remote", n, where)
+	return keepWhy{reason: machinev1.DiskFreeingReason_DISK_FREEING_REASON_UNPUSHED, commits: n, detail: where}
 }
 
 // freeWhy says the rule that freed a task, for its event.
@@ -625,7 +717,9 @@ func freeText(j freeJob, got freed) string {
 			parts = append(parts, "branch "+b+" kept")
 		}
 	}
-	parts = append(parts, got.kept...)
+	for _, k := range got.kept {
+		parts = append(parts, k.String())
+	}
 	if len(parts) == 0 {
 		return ""
 	}
@@ -643,7 +737,7 @@ func freeText(j freeJob, got freed) string {
 func azimaFreeLine(a *machinev1.DiskFreeingAzima, t *planv1.Task, got freed) string {
 	what := t.GetCode() + " freed"
 	if len(got.kept) > 0 {
-		what = t.GetCode() + " " + strings.Join(got.kept, "; ")
+		what = t.GetCode() + " " + keptTexts(got.kept)
 	}
 	return fmt.Sprintf("freeing its tasks' folders: %d/%d, %s freed, %d kept; %s", a.GetDone(), a.GetTotal(),
 		gbText(a.GetFreedBytes()), a.GetKept(), what)
@@ -657,7 +751,7 @@ func (h *Harness) recordFreed(ctx context.Context, j freeJob, got freed, azimaLi
 		return
 	}
 	if len(got.kept) > 0 {
-		logx.L().Warn("kept a finished task's folders", "loop", "free", "task", j.task.GetCode(), "why", strings.Join(got.kept, "; "))
+		logx.L().Warn("kept a finished task's folders", "loop", "free", "task", j.task.GetCode(), "why", keptTexts(got.kept))
 	} else {
 		logx.L().Info("freed a finished task's folders", "loop", "free", "task", j.task.GetCode(), "rule", j.rule.String(),
 			"freed", gbText(got.bytes), "branch_deleted", got.branchCut)
