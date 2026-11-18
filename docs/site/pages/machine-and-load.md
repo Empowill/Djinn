@@ -38,10 +38,13 @@ interruption and thaw; a frozen worker's time is left out of its budget. You cho
 thaws what it froze. On a laptop where the browser leaves Djinn little room, 5 % comes fast: choose 3 %, or Off. A flag
 of djinn up, or its environment variable, fixes the percent for one run instead, and the Circle then says so.
 
-**The disk.** The **Disk** tab of the Hourglass draws a bar of the whole disk (with the 30 GB and 10 GB guard marks),
+**The disk.** The **Disk** tab of the Hourglass says at its top, in grey, when it last measured the disk, or that a
+measure is going, with a button to measure again now. It draws a bar of the whole disk (with the 30 GB and 10 GB guard marks),
 split into its sources: Go, Docker, Djinn, other caches, the home, the system, and what is left unmeasured. Below it,
 three tabs: **Djinn and its workers** (each project's worktrees and scratch, with the share of tasks ended, done or
-cancelled, that still keep theirs; Playwright, tilasms, logs, the data folder, and any isolated Go build caches),
+cancelled, that still keep theirs, summed above the list: how many folders the ended tasks leave, worktrees and
+scratch, and what they take; Djinn removes none of them; Playwright, tilasms, logs, the data folder, and any isolated
+Go build caches),
 **Machine** (the Go build cache, the Go module and download caches, golangci-lint, Docker build cache, images and
 volumes when Docker is installed, pnpm, uv, pip, npm, and JetBrains), grouped by risk (**Safe**, **Rebuilds**, **Data
 loss**) with each item's size, what its cleanup frees, and the command to copy (plus one row at the bottom to copy all
@@ -51,7 +54,7 @@ the system folders on the same disk, without what the other tabs count.
 
 Sizes count what files take on the disk, as du does: on an encrypted home, a small file takes far more than its
 length. Each folder has its own time to be measured: one that runs out keeps its last whole size, or shows a floor
-(≥). A measure that took long holds longer before the next, a few times a day at most for a slow disk; the rest of the
+(≥). A measure holds 5 minutes while the page shows; one that took long holds longer before the next, a few times a day at most for a slow disk; the rest of the
 disk is measured by a slow pass in the background every 6 hours, kept across restarts. What stays unmeasured is what
 no pass reads (folders only root reads, the file system's own records) and what changed since: it should stay small.
 

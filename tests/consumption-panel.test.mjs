@@ -495,3 +495,83 @@ test("the disk tab names what fills the disk: worktrees split by ended tasks, th
   assert.match(html, /≥ 23 GB/);
   assert.match(html, /Measured by a slow pass every 6 hours/);
 });
+
+test("the disk tab says when it measured, measures again on its button, and sums what ended tasks leave", () => {
+  const gib = 1024n ** 3n;
+  const folders = [
+    {
+      path: "/home/dev/.config/djinn/projects/p1/worktrees",
+      kind: "worktrees",
+      project: "dolmen",
+      sizeBytes: 120n * gib,
+      endedBytes: 100n * gib,
+      count: 3,
+      endedCount: 2,
+    },
+    {
+      path: "/home/dev/.config/djinn/projects/p2/worktrees",
+      kind: "worktrees",
+      project: "djinn",
+      sizeBytes: 30n * gib,
+      endedBytes: 20n * gib,
+      count: 5,
+      endedCount: 4,
+      partial: true,
+    },
+    {
+      path: "/home/dev/.config/djinn/scratch/p1",
+      kind: "scratch",
+      project: "dolmen",
+      sizeBytes: 10n * gib,
+      endedBytes: 6n * gib,
+      count: 2,
+      endedCount: 1,
+    },
+    { path: "/home/dev/.config/djinn/logs", kind: "logs", sizeBytes: 1n * gib },
+  ];
+  const disk = {
+    availableBytes: 100n * gib,
+    totalBytes: 500n * gib,
+    folders,
+    items: [],
+    measureTime: {
+      seconds: BigInt(new Date(2026, 10, 18, 14, 32).getTime() / 1000),
+      nanos: 0,
+    },
+  };
+  let asked = 0;
+  const sec = live(s.DiskSection, { disk, onMeasure: () => asked++ });
+  let html = sec.html();
+
+  // The top says when it measured; the button measures again.
+  assert.match(
+    html,
+    /<div class="resource-disk-measure"><span>Measured [^<]*Nov[^<]*:32[^<]*<\/span>/,
+  );
+  const button = sec.all("icon-button");
+  assert.equal(button.length, 1);
+  assert.equal(button[0].props.label, "Measure again now");
+  assert.equal(button[0].props.disabled, false);
+
+  // Djinn's tab: the residues of 7 ended task folders, 126 GB, a floor as one walk ran out of time.
+  assert.match(
+    html,
+    /Left by ended tasks: 7 folders, ≥ 126 GB \(6 worktrees, 1 scratch\)\. Djinn removes none of them\./,
+  );
+
+  // The click: the measure goes, the button waits for it.
+  button[0].props.onClick();
+  assert.equal(asked, 1);
+  html = sec.html();
+  assert.match(html, /<span>Measuring now…<\/span>/);
+  assert.equal(sec.all("icon-button")[0].props.disabled, true);
+
+  // Never measured: it says so; without onMeasure, no button; no ended folder, no residue line.
+  const bare = live(s.DiskSection, {
+    disk: { ...disk, measureTime: undefined, folders: folders.slice(3) },
+  });
+  html = bare.html();
+  assert.match(html, /No measure yet/);
+  assert.equal(bare.all("icon-button").length, 0);
+  assert.doesNotMatch(html, /Left by ended tasks/);
+});
