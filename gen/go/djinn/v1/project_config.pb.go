@@ -37,6 +37,7 @@ const (
 // A value out of its bounds there leaves the whole file out too, and the project's tasks wait until it is fixed. Djinn
 // no longer reads .agents/settings.txtpb, where they lived before: one left there is a warning.
 //
+//	version: 1
 //	settings:
 //	  setup: npm ci
 //	  checks:
@@ -59,7 +60,12 @@ type ProjectConfig struct {
 	// project's own commands; the machine's bounds (its pressure, its memory, the turn of the heavy commands, Djinn's
 	// merges first) hold for every command, declared or not. A developer turns one off on their machine with djinn
 	// project gates --off.
-	Gates         []*ProjectGate `protobuf:"bytes,2,rep,name=gates,proto3" json:"gates,omitempty"`
+	Gates []*ProjectGate `protobuf:"bytes,2,rep,name=gates,proto3" json:"gates,omitempty"`
+	// The version of the file's schema, first in the file: 1 when it has none. Djinn reads every version up to the
+	// highest it knows, an older one lifted to it first (plan.ProjectConfigVersion); a higher version, or one that is not
+	// a whole number from 1, leaves the whole file out, said with the file, the version read and the highest known: a
+	// newer Djinn wrote it, and this one does not read it wrong. Read, it holds the highest version Djinn knows.
+	Version       uint32 `protobuf:"varint,3,opt,name=version,proto3" json:"version,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -106,6 +112,13 @@ func (x *ProjectConfig) GetGates() []*ProjectGate {
 		return x.Gates
 	}
 	return nil
+}
+
+func (x *ProjectConfig) GetVersion() uint32 {
+	if x != nil {
+		return x.Version
+	}
+	return 0
 }
 
 // ProjectGate is a gate a project declares in its djinn.yaml: the commands of its workers that rebuild a shared
@@ -185,12 +198,13 @@ var File_djinn_v1_project_config_proto protoreflect.FileDescriptor
 
 const file_djinn_v1_project_config_proto_rawDesc = "" +
 	"\n" +
-	"\x1ddjinn/v1/project_config.proto\x12\bdjinn.v1\x1a\x1bbuf/validate/validate.proto\x1a\x19djinn/v1/containers.proto\"|\n" +
+	"\x1ddjinn/v1/project_config.proto\x12\bdjinn.v1\x1a\x1bbuf/validate/validate.proto\x1a\x19djinn/v1/containers.proto\"\x96\x01\n" +
 	"\rProjectConfig\x124\n" +
 	"\n" +
 	"containers\x18\x01 \x01(\v2\x14.djinn.v1.ContainersR\n" +
 	"containers\x125\n" +
-	"\x05gates\x18\x02 \x03(\v2\x15.djinn.v1.ProjectGateB\b\xbaH\x05\x92\x01\x02\x10\bR\x05gates\"\xc1\x02\n" +
+	"\x05gates\x18\x02 \x03(\v2\x15.djinn.v1.ProjectGateB\b\xbaH\x05\x92\x01\x02\x10\bR\x05gates\x12\x18\n" +
+	"\aversion\x18\x03 \x01(\rR\aversion\"\xc1\x02\n" +
 	"\vProjectGate\x12;\n" +
 	"\x04name\x18\x01 \x01(\tB'\xbaH$r\"2\x16^[a-z][a-z0-9-]{0,39}$Z\bcommandsR\x04name\x125\n" +
 	"\x05alone\x18\x02 \x03(\tB\x1f\xbaH\x1c\x92\x01\x19\"\x17r\x15\x10\x01\x18\xc8\x012\x0e^[^*\\s][^\\n]*$R\x05alone\x127\n" +

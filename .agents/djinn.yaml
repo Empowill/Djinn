@@ -1,5 +1,8 @@
 # What this repository tells Djinn (djinn.v1.ProjectConfig), read on origin/main: docs/team-settings.md.
 
+# The version of this file's schema: a Djinn that knows only lower versions refuses the file, rather than read it wrong.
+version: 1
+
 # The settings the team shares (plan.v1.ProjectSettings). Your own file, in Djinn's data folder, wins setting by setting.
 settings:
   # Djinn integrates finished work by itself. npm ci makes a fresh worktree ready (ESLint, the protoc plugins); a
