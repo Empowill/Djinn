@@ -229,3 +229,35 @@ func TestLeadCallsQuestionCode(t *testing.T) {
 	l.refused(t, 1, []string{"question", "get", "Q01"}, "2 wishes have a question Q01",
 		"--wish-id "+docs+" (Ship the docs)")
 }
+
+// TestLeadCallsPlanProjectByName (W117): a plan's project-id names the project as --project-id does, by name: the
+// lead's call of 18/11/2026, djinn question revise Q552 --plan-file with "project-id: dolmen" in a wish on dolmen, was
+// refused "not one of the wish's". A project the wish does not have is refused with the command that adds it.
+func TestLeadCallsPlanProjectByName(t *testing.T) {
+	t.Parallel()
+	l := newLeadCalls(t)
+	wish := l.wish(t, "Ship the lead calls")
+	l.passes(t, "wish", "add-project", wish, "djinn")
+	plan := filepath.Join(t.TempDir(), "plan-a.md")
+	if err := os.WriteFile(plan, []byte("option: A\ntitle: Light the lamp\nproject-id: Djinn\n\nLight it.\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	l.passes(t, "question", "ask", "Light it?", wish, "--options", "A : light it", "--options", "B : wait",
+		"--plan-file", plan)
+	q, err := l.questions.Get(t.Context(), connect.NewRequest(&planv1.QuestionServiceGetRequest{
+		Question: &planv1.QuestionRef{Ref: &planv1.QuestionRef_Code{Code: "Q01"}}, WishId: wish,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plans := q.Msg.GetQuestion().GetPlans(); len(plans) != 1 || plans[0].GetProjectId() != l.projects["djinn"] {
+		t.Errorf("plans %v, want plan A in djinn, %s", plans, l.projects["djinn"])
+	}
+
+	other := l.wish(t, "Ship the docs")
+	l.refused(t, 1, []string{"question", "ask", "Light it?", other, "--options", "A : light it", "--plan-file", plan},
+		"the plan for A names project djinn, not one of the wish's (shop): add it first with djinn wish add-project "+
+			other+" --project-id djinn")
+	l.refused(t, 1, []string{"question", "revise", "Q01", "--wish-id", wish, "--plan", "option: A\ntitle: x\nproject-id: nope"},
+		"the plan for A names project nope, which Djinn does not have; the wish's: shop or djinn")
+}

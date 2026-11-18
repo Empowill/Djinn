@@ -507,7 +507,9 @@ func TestCutAzimaBranch(t *testing.T) {
 		_, err = in.tasks.Spawn(ctx, connect.NewRequest(&planv1.TaskServiceSpawnRequest{
 			WishId: in.wishID, Title: "Builds on W1", Prompt: "build", PartOf: t2.GetCode(), DependsOn: []string{w1.GetCode()}, Later: true,
 		}))
-		refused("spawn work of T2 after W1", err, "(T2 after T1)")
+		// W117: the lead's spawn of 18/11/2026 (--part-of T92 --after W875, a part of T85) learns what to change.
+		refused("spawn work of T2 after W1", err, "(T2 after T1); a task waits only for tasks of its own azima: "+
+			"drop from --after what is part of another, or spawn the task part of that one")
 
 		w2 := work("W2", t2.GetId())
 		_, err = in.tasks.Depend(ctx, connect.NewRequest(&planv1.TaskServiceDependRequest{TaskId: w2.GetId(), After: []string{"W1"}}))

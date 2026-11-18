@@ -28,16 +28,35 @@ import (
 	"github.com/empowill/djinn/internal/store"
 )
 
+// workerFlags are the flags of req that only a worker uses, as the command line names them: an azima refuses them,
+// naming each one given (W117: the lead's --tilasm on an azima, 18/11/2026, was told the whole list).
+func workerFlags(req *planv1.TaskServiceSpawnRequest) []string {
+	var flags []string
+	for _, f := range []struct {
+		given bool
+		flag  string
+	}{
+		{req.GetPrompt() != "", "--prompt"}, {req.GetProvider() != planv1.Provider_PROVIDER_UNSPECIFIED, "--provider"},
+		{req.GetModel() != "", "--model"}, {req.GetMaxBudgetUsd() != 0, "--max-budget-usd"},
+		{len(req.GetWriteScopes()) > 0, "--write-scopes"}, {req.GetLater(), "--later"}, {req.GetFork() != "", "--fork"},
+		{req.GetFromLead(), "--from-lead"}, {req.GetRestart(), "--restart"}, {len(req.GetTilasm()) > 0, "--tilasm"},
+		{req.GetUrgent(), "--urgent"}, {req.GetFeedback(), "--feedback"}, {req.GetMinutes() != 0, "--minutes"},
+		{req.GetRepair(), "--repair"},
+	} {
+		if f.given {
+			flags = append(flags, f.flag)
+		}
+	}
+	return flags
+}
+
 // spawnAzima makes an azima of the wish: a task of kind AZIMA, coded T1, T2… after the highest one ever, which no worker
 // runs. What only a worker uses is refused.
 func (h *Harness) spawnAzima(ctx context.Context, procedure string, req *planv1.TaskServiceSpawnRequest) (*planv1.Task, error) {
-	if req.GetPrompt() != "" || req.GetProvider() != planv1.Provider_PROVIDER_UNSPECIFIED || req.GetModel() != "" ||
-		req.GetMaxBudgetUsd() != 0 || len(req.GetWriteScopes()) > 0 || req.GetLater() || req.GetFork() != "" ||
-		req.GetFromLead() || req.GetRestart() || len(req.GetTilasm()) > 0 || req.GetUrgent() ||
-		req.GetFeedback() || req.GetMinutes() != 0 || req.GetRepair() {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New(
-			"an azima has no worker: no prompt, provider, model, budget, write scope, --later, --fork, --from-lead, "+
-				"--restart, --tilasm, --urgent, --feedback, --minutes or --repair"))
+	if flags := workerFlags(req); len(flags) > 0 {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf(
+			"an azima has no worker: run it again without %s; a worker's flags go to the tasks part of the azima",
+			plan.OrList(flags)))
 	}
 	logx.Lock(&h.sched, "scheduler")
 	defer h.sched.Unlock()

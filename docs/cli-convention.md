@@ -96,6 +96,10 @@ of such a command; its request has no wish), else in every wish. A wish's flag a
 where the request names it `wish`, `--wish` where it names it `wish_id`, when that field is the wish the request acts
 in (a UUID), never a destination such as `djinn task move --wish`.
 
+A question's plan names its project the same way (W117): `project-id: dolmen` in a `--plan` or a `--plan-file` is
+resolved by the server, by name (case ignored) or identifier, and kept as the identifier. A project Djinn has but the
+wish has not is refused with the command that adds it, `djinn wish add-project <wish> --project-id <name>`.
+
 A field `wish`, `wish_id` or `wish_ids` that wants a UUID, positional or a flag, and the command line's own `--wish-id`,
 take a wish's title too (W481): its exact title, case and outer spaces ignored, else the start of only one title; among
 several, the only one not granted. The command line lists the wishes and sends the identifier. A start that several

@@ -142,7 +142,7 @@ func TestAskPlans(t *testing.T) {
 		"option: A\ntitle: x\nblocks: W3":       "the plan for A blocks W3, which is done: a plan blocks planned tasks only",
 		"option: A\ntitle: x\npart-of: W1":      "is part of W1, which is work, not an azima",
 		"option: A\ntitle: x\ntilasm: L09":      "tilasm L09 is not a tilasm of the wish",
-		"option: A\ntitle: x\nproject-id: nope": "names project nope, not one of the wish's",
+		"option: A\ntitle: x\nproject-id: nope": "names project nope, which Djinn does not have",
 	} {
 		t.Run(want, func(t *testing.T) {
 			if _, err := c.askPlans(t, &planv1.QuestionServiceAskRequest{WishId: wishID, Options: []string{"Olive", "Paraffin"},
