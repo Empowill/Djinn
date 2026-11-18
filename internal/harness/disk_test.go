@@ -433,6 +433,65 @@ func TestDiskFolders(t *testing.T) {
 	}
 }
 
+// TestMeasureDisk (W135): the Disk tab's button measures again at once, inside the 5 minutes a measure holds, and
+// DiskState says when the last whole measure ended and whether one goes; a second press while one goes starts none.
+func TestMeasureDisk(t *testing.T) {
+	t.Parallel()
+	if diskFoldersEvery != 5*time.Minute || passEvery(time.Second) != 5*time.Minute {
+		t.Errorf("a quick measure holds %v (diskFoldersEvery %v); want 5 minutes", passEvery(time.Second), diskFoldersEvery)
+	}
+	start := time.Date(2026, 11, 18, 14, 0, 0, 0, time.UTC)
+	clock := &fakeClock{at: start}
+	e := up(t, folder(t), WithClock(clock.now), withDiskTest(folder(t), 0))
+	logs := filepath.Join(e.h.home, "logs")
+	writeFile(t, logs, "djinn.log", strings.Repeat("l", 10_000))
+
+	if at, measuring := e.h.DiskState(); !at.IsZero() || measuring {
+		t.Errorf("DiskState() before any measure = %v, %v; want zero, false", at, measuring)
+	}
+	e.h.DiskFolders()
+	e.h.DiskItems()
+	e.h.disk.wg.Wait()
+	if at, measuring := e.h.DiskState(); !at.Equal(start) || measuring {
+		t.Errorf("DiskState() after the first measure = %v, %v; want %v, false", at, measuring, start)
+	}
+
+	// A minute later the measure still holds; the button walks again anyway.
+	writeFile(t, logs, "more.log", strings.Repeat("m", 20_000))
+	clock.set(start.Add(time.Minute))
+	if already := e.h.MeasureDisk(); already {
+		t.Error("MeasureDisk() = already; want a new measure")
+	}
+	e.h.disk.wg.Wait()
+	want := onDiskOf(t, filepath.Join(logs, "djinn.log"), filepath.Join(logs, "more.log"))
+	var got uint64
+	for _, f := range e.h.DiskFolders() {
+		if f.GetPath() == logs {
+			got = f.GetSizeBytes()
+		}
+	}
+	if got != want {
+		t.Errorf("logs after MeasureDisk = %d; want %d, the new file counted", got, want)
+	}
+	if at, _ := e.h.DiskState(); !at.Equal(start.Add(time.Minute)) {
+		t.Errorf("DiskState() after MeasureDisk = %v; want %v", at, start.Add(time.Minute))
+	}
+
+	// A measure going: the button starts none, and the state says it goes.
+	e.h.disk.mu.Lock()
+	e.h.disk.measuring = true
+	e.h.disk.mu.Unlock()
+	if already := e.h.MeasureDisk(); !already {
+		t.Error("MeasureDisk() while one goes = a new one; want already")
+	}
+	if _, measuring := e.h.DiskState(); !measuring {
+		t.Error("DiskState() while one goes = not measuring")
+	}
+	e.h.disk.mu.Lock()
+	e.h.disk.measuring = false
+	e.h.disk.mu.Unlock()
+}
+
 // TestDiskItems (T65): DiskItems measures known machine and Djinn caches (go-build with 6h reclaimable cutoff,
 // isolated *-go-build caches marked djinn=true, go/pkg/mod, Docker via `docker system df`, JetBrains, pnpm, pip, uv,
 // npm), biggest first, and omits Docker rows when docker is absent.

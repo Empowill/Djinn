@@ -2,6 +2,7 @@ package machine
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"runtime"
 	"slices"
@@ -54,6 +55,12 @@ func WithDiskItems(fn func() []*machinev1.DiskItem) HandlerOption {
 	return func(s *service) { s.diskItems = fn }
 }
 
+// WithDiskMeasure sets the functions telling when the disk was last measured whole and whether a measure is going
+// (the harness's DiskState), and measuring it again now (its MeasureDisk).
+func WithDiskMeasure(state func() (time.Time, bool), measure func() bool) HandlerOption {
+	return func(s *service) { s.diskState, s.measureDisk = state, measure }
+}
+
 // Handler returns the Connect handler of MachineService on m, and its path prefix. running counts the workers that
 // run now, uses lists what each one uses; nil counts and lists none.
 func Handler(m *Monitor, running func() int, uses func() []*machinev1.WorkerUse, opts ...HandlerOption) (string, http.Handler) {
@@ -76,6 +83,8 @@ type service struct {
 	network     func() *timestamppb.Timestamp
 	diskFolders func() []*machinev1.DiskFolder
 	diskItems   func() []*machinev1.DiskItem
+	diskState   func() (time.Time, bool)
+	measureDisk func() bool
 }
 
 func (s *service) disk(snap Snapshot) *machinev1.Disk {
@@ -99,12 +108,28 @@ func (s *service) disk(snap Snapshot) *machinev1.Disk {
 		return nil
 	}
 	out := &machinev1.Disk{Folders: folders, Items: items}
+	if s.diskState != nil {
+		at, measuring := s.diskState()
+		out.Measuring = measuring
+		if !at.IsZero() {
+			out.MeasureTime = timestamppb.New(at)
+		}
+	}
 	if d := snap.Disk; d != nil {
 		out.Path = d.Path
 		out.TotalBytes = d.Total
 		out.AvailableBytes = d.Available
 	}
 	return out
+}
+
+func (s *service) MeasureDisk(
+	context.Context, *connect.Request[machinev1.MachineServiceMeasureDiskRequest],
+) (*connect.Response[machinev1.MachineServiceMeasureDiskResponse], error) {
+	if s.measureDisk == nil {
+		return nil, connect.NewError(connect.CodeUnavailable, errors.New("no disk is measured here"))
+	}
+	return connect.NewResponse(&machinev1.MachineServiceMeasureDiskResponse{Already: s.measureDisk()}), nil
 }
 
 func (s *service) Show(

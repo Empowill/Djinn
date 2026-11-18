@@ -499,6 +499,45 @@ func (h *Harness) DiskItems() []*machinev1.DiskItem {
 	return out
 }
 
+// MeasureDisk measures Djinn's folders and the caches again now, as the Disk tab's button asks, whatever the age of
+// the last measure; it says already, and starts none, when one is going. The measure that runs out of time on a folder
+// keeps its last whole size, as any other. It deletes nothing.
+func (h *Harness) MeasureDisk() (already bool) {
+	d := &h.disk
+	d.mu.Lock()
+	if d.measuring || d.itemsMeasuring {
+		d.mu.Unlock()
+		return true
+	}
+	d.measuredAt = time.Time{}
+	d.itemsMeasuredAt = time.Time{}
+	d.mu.Unlock()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		h.DiskItems()
+	}()
+	h.DiskFolders()
+	<-done
+	return false
+}
+
+// DiskState says when Djinn's folders and the caches were last measured whole, the older of the two (zero before both
+// were), and whether a measure of either is going now.
+func (h *Harness) DiskState() (at time.Time, measuring bool) {
+	d := &h.disk
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	measuring = d.measuring || d.itemsMeasuring
+	if d.measuredAt.IsZero() || d.itemsMeasuredAt.IsZero() {
+		return time.Time{}, measuring
+	}
+	if d.itemsMeasuredAt.Before(d.measuredAt) {
+		return d.itemsMeasuredAt, measuring
+	}
+	return d.measuredAt, measuring
+}
+
 // keepWhole gives an item whose walk ran out of time its previous size when that was bigger.
 func keepWhole(items, previous []*machinev1.DiskItem) []*machinev1.DiskItem {
 	out := make([]*machinev1.DiskItem, 0, len(items))

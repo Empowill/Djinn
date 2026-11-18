@@ -23,6 +23,12 @@ service MachineService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option idempotency_level = NO_SIDE_EFFECTS;
   }
+  // MeasureDisk measures the disk's folders and caches again now, without waiting for the last measure to age: the
+  // next Series shows the walk going, then its sizes. Nothing is deleted; a measure already going goes on.
+  rpc MeasureDisk(MachineServiceMeasureDiskRequest) returns (MachineServiceMeasureDiskResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
 }
 
 // Pressure is how much of the time tasks of the machine waited for a resource: the pressure stall information of
@@ -120,6 +126,11 @@ message Disk {
   // Known caches and stores on the machine, biggest first, with the command that cleans each, what it frees and its
   // risk. Djinn never runs a cleanup command: it only displays it.
   repeated DiskItem items = 5;
+  // When Djinn's folders and the caches were last measured whole: the older of the two measures; unset before the
+  // first one ends.
+  google.protobuf.Timestamp measure_time = 6;
+  // Whether a measure of the folders or the caches is going now.
+  bool measuring = 7;
 }
 
 // DiskFolder is a folder measured on disk, with what its files take on it: the blocks they hold, which counts what the
@@ -233,6 +244,13 @@ message MachineServiceSeriesResponse {
   string worker_measure = 4;
   // Disk space and the main folders that use it, biggest first.
   Disk disk = 5;
+}
+
+message MachineServiceMeasureDiskRequest {}
+
+message MachineServiceMeasureDiskResponse {
+  // Whether a measure was already going: it goes on, and no other starts.
+  bool already = 1;
 }
 
 message MachineSeries {

@@ -13,7 +13,7 @@ import {
   useState,
 } from "react";
 import type { Timestamp } from "@bufbuild/protobuf/wkt";
-import { ChevronDown, ChevronRight, Eye } from "lucide-react";
+import { ChevronDown, ChevronRight, Eye, RotateCw } from "lucide-react";
 
 import {
   type Project,
@@ -816,14 +816,49 @@ function DiskFolderRow({
   );
 }
 
+// endedResidues sums what the tasks that ended (done, cancelled, or no longer known) leave in the projects'
+// worktrees and scratch folders: how many folders, how many of them worktrees and scratch, what they take, and whether
+// a walk ran out of time, the size then a floor.
+export function endedResidues(folders: readonly DiskFolder[]): {
+  count: number;
+  worktrees: number;
+  scratch: number;
+  bytes: number;
+  partial: boolean;
+} {
+  const out = { count: 0, worktrees: 0, scratch: 0, bytes: 0, partial: false };
+  for (const f of folders) {
+    if (f.kind !== "worktrees" && f.kind !== "scratch") continue;
+    const ended = f.endedCount ?? 0;
+    if (ended === 0) continue;
+    out.count += ended;
+    if (f.kind === "worktrees") out.worktrees += ended;
+    else out.scratch += ended;
+    out.bytes += Number(f.endedBytes ?? 0n);
+    out.partial ||= !!f.partial;
+  }
+  return out;
+}
+
 // The whole disk bar, Djinn's folders and isolated Go caches, and the machine's caches grouped by cleanup risk (L48).
 export const DiskSection = memo(function DiskSection({
   disk,
   initialView,
+  onMeasure,
 }: {
   disk?: Disk;
   initialView?: "djinn" | "machine" | "rest";
+  // Measures the folders and caches again now (MachineService.MeasureDisk); without it, no button.
+  onMeasure?: () => void;
 }) {
+  // Asked is the button's click until the next read says the measure goes.
+  const [asked, setAsked] = useState(false);
+  useEffect(() => setAsked(false), [disk]);
+  const measuring = asked || !!disk?.measuring;
+  const measure = useCallback(() => {
+    setAsked(true);
+    onMeasure?.();
+  }, [onMeasure]);
   const items = useMemo(
     () =>
       [...(disk?.items ?? [])].sort((a, b) =>
@@ -863,6 +898,8 @@ export const DiskSection = memo(function DiskSection({
         : measuredFolders,
     [measuredFolders, machineItems.length],
   );
+
+  const residues = useMemo(() => endedResidues(folders), [folders]);
 
   const [view, setView] = useState<"djinn" | "machine" | "rest">(
     initialView ?? (machineItems.length > 0 ? "machine" : "djinn"),
@@ -1097,6 +1134,29 @@ export const DiskSection = memo(function DiskSection({
           </span>
         )}
       </h4>
+      {disk && (
+        <div className="resource-disk-measure">
+          <span>
+            {measuring
+              ? t("consumption.disk_measuring")
+              : disk.measureTime
+                ? t("consumption.disk_measured", {
+                    when: when(disk.measureTime),
+                  })
+                : t("consumption.disk_not_measured")}
+          </span>
+          {onMeasure && (
+            <TooltipButton
+              className="icon-button"
+              label={t("consumption.disk_measure_again")}
+              onClick={measure}
+              disabled={measuring}
+            >
+              <RotateCw size={14} aria-hidden="true" />
+            </TooltipButton>
+          )}
+        </div>
+      )}
       {total > 0 && (
         <>
           <div
@@ -1195,6 +1255,16 @@ export const DiskSection = memo(function DiskSection({
           )}
           {activeView === "djinn" ? (
             <div className="resource-disk-djinn">
+              {residues.count > 0 && (
+                <p className="resource-disk-residues">
+                  {t("consumption.disk_residues", {
+                    count: residues.count,
+                    size: diskSize(residues.bytes, residues.partial),
+                    worktrees: residues.worktrees,
+                    scratch: residues.scratch,
+                  })}
+                </p>
+              )}
               <div className="resource-disk-list" role="list">
                 {folders.map((f) => (
                   <DiskFolderRow
@@ -1322,6 +1392,10 @@ export function ConsumptionPanel({
       stop();
     };
   }, [djinn, folded, minutes]);
+
+  const measureDisk = useCallback(() => {
+    void djinn?.clients.machine.measureDisk({}).catch(() => null);
+  }, [djinn]);
 
   const open = useCallback(
     (wishId: string, taskId: string) =>
@@ -1563,7 +1637,9 @@ export function ConsumptionPanel({
               </section>
             )}
 
-            {tab === "disk" && <DiskSection disk={data?.disk} />}
+            {tab === "disk" && (
+              <DiskSection disk={data?.disk} onMeasure={measureDisk} />
+            )}
           </div>
         </>
       )}

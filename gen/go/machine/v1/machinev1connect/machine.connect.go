@@ -43,6 +43,9 @@ const (
 	MachineServiceShowProcedure = "/machine.v1.MachineService/Show"
 	// MachineServiceSeriesProcedure is the fully-qualified name of the MachineService's Series RPC.
 	MachineServiceSeriesProcedure = "/machine.v1.MachineService/Series"
+	// MachineServiceMeasureDiskProcedure is the fully-qualified name of the MachineService's
+	// MeasureDisk RPC.
+	MachineServiceMeasureDiskProcedure = "/machine.v1.MachineService/MeasureDisk"
 	// GateServiceHoldProcedure is the fully-qualified name of the GateService's Hold RPC.
 	GateServiceHoldProcedure = "/machine.v1.GateService/Hold"
 	// GateServiceListProcedure is the fully-qualified name of the GateService's List RPC.
@@ -64,6 +67,9 @@ type MachineServiceClient interface {
 	Show(context.Context, *connect.Request[v1.MachineServiceShowRequest]) (*connect.Response[v1.MachineServiceShowResponse], error)
 	// Series returns the CPU and memory measurement series of running workers, the machine total and djinn itself over the last N minutes.
 	Series(context.Context, *connect.Request[v1.MachineServiceSeriesRequest]) (*connect.Response[v1.MachineServiceSeriesResponse], error)
+	// MeasureDisk measures the disk's folders and caches again now, without waiting for the last measure to age: the
+	// next Series shows the walk going, then its sizes. Nothing is deleted; a measure already going goes on.
+	MeasureDisk(context.Context, *connect.Request[v1.MachineServiceMeasureDiskRequest]) (*connect.Response[v1.MachineServiceMeasureDiskResponse], error)
 }
 
 // NewMachineServiceClient constructs a client for the machine.v1.MachineService service. By
@@ -91,13 +97,20 @@ func NewMachineServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
+		measureDisk: connect.NewClient[v1.MachineServiceMeasureDiskRequest, v1.MachineServiceMeasureDiskResponse](
+			httpClient,
+			baseURL+MachineServiceMeasureDiskProcedure,
+			connect.WithSchema(machineServiceMethods.ByName("MeasureDisk")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // machineServiceClient implements MachineServiceClient.
 type machineServiceClient struct {
-	show   *connect.Client[v1.MachineServiceShowRequest, v1.MachineServiceShowResponse]
-	series *connect.Client[v1.MachineServiceSeriesRequest, v1.MachineServiceSeriesResponse]
+	show        *connect.Client[v1.MachineServiceShowRequest, v1.MachineServiceShowResponse]
+	series      *connect.Client[v1.MachineServiceSeriesRequest, v1.MachineServiceSeriesResponse]
+	measureDisk *connect.Client[v1.MachineServiceMeasureDiskRequest, v1.MachineServiceMeasureDiskResponse]
 }
 
 // Show calls machine.v1.MachineService.Show.
@@ -110,6 +123,11 @@ func (c *machineServiceClient) Series(ctx context.Context, req *connect.Request[
 	return c.series.CallUnary(ctx, req)
 }
 
+// MeasureDisk calls machine.v1.MachineService.MeasureDisk.
+func (c *machineServiceClient) MeasureDisk(ctx context.Context, req *connect.Request[v1.MachineServiceMeasureDiskRequest]) (*connect.Response[v1.MachineServiceMeasureDiskResponse], error) {
+	return c.measureDisk.CallUnary(ctx, req)
+}
+
 // MachineServiceHandler is an implementation of the machine.v1.MachineService service.
 type MachineServiceHandler interface {
 	// Show the machine: its cores, memory, disk and GPUs, the live load and pressure, the most workers Djinn runs at
@@ -117,6 +135,9 @@ type MachineServiceHandler interface {
 	Show(context.Context, *connect.Request[v1.MachineServiceShowRequest]) (*connect.Response[v1.MachineServiceShowResponse], error)
 	// Series returns the CPU and memory measurement series of running workers, the machine total and djinn itself over the last N minutes.
 	Series(context.Context, *connect.Request[v1.MachineServiceSeriesRequest]) (*connect.Response[v1.MachineServiceSeriesResponse], error)
+	// MeasureDisk measures the disk's folders and caches again now, without waiting for the last measure to age: the
+	// next Series shows the walk going, then its sizes. Nothing is deleted; a measure already going goes on.
+	MeasureDisk(context.Context, *connect.Request[v1.MachineServiceMeasureDiskRequest]) (*connect.Response[v1.MachineServiceMeasureDiskResponse], error)
 }
 
 // NewMachineServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -140,12 +161,20 @@ func NewMachineServiceHandler(svc MachineServiceHandler, opts ...connect.Handler
 		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
+	machineServiceMeasureDiskHandler := connect.NewUnaryHandler(
+		MachineServiceMeasureDiskProcedure,
+		svc.MeasureDisk,
+		connect.WithSchema(machineServiceMethods.ByName("MeasureDisk")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/machine.v1.MachineService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case MachineServiceShowProcedure:
 			machineServiceShowHandler.ServeHTTP(w, r)
 		case MachineServiceSeriesProcedure:
 			machineServiceSeriesHandler.ServeHTTP(w, r)
+		case MachineServiceMeasureDiskProcedure:
+			machineServiceMeasureDiskHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -161,6 +190,10 @@ func (UnimplementedMachineServiceHandler) Show(context.Context, *connect.Request
 
 func (UnimplementedMachineServiceHandler) Series(context.Context, *connect.Request[v1.MachineServiceSeriesRequest]) (*connect.Response[v1.MachineServiceSeriesResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("machine.v1.MachineService.Series is not implemented"))
+}
+
+func (UnimplementedMachineServiceHandler) MeasureDisk(context.Context, *connect.Request[v1.MachineServiceMeasureDiskRequest]) (*connect.Response[v1.MachineServiceMeasureDiskResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("machine.v1.MachineService.MeasureDisk is not implemented"))
 }
 
 // GateServiceClient is a client for the machine.v1.GateService service.
