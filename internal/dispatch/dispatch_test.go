@@ -2112,6 +2112,63 @@ func TestHeld(t *testing.T) {
 		}
 	})
 
+	// TestQuestionHolds (W107): a task an open question holds, or a part of an azima it holds, waits for its answer,
+	// held by the question, even on a free machine; answered or withdrawn, or gone, the question holds nothing, and the
+	// task starts.
+	t.Run("question_holds", func(t *testing.T) {
+		t.Parallel()
+		now := time.Date(2026, 11, 18, 9, 0, 0, 0, time.UTC)
+		wish := &planv1.Wish{Id: "w", State: planv1.WishState_WISH_STATE_ACTIVE, Rank: 1}
+		task := func(id string, edit func(*planv1.Task)) *planv1.Task {
+			t := &planv1.Task{Id: id, WishId: "w", Code: id, Status: planv1.TaskStatus_TASK_STATUS_PENDING, Scheduled: true,
+				Provider: planv1.Provider_PROVIDER_CODEX, CreateTime: timestamppb.New(now.Add(-time.Hour))}
+			if edit != nil {
+				edit(t)
+			}
+			return t
+		}
+		tasks := []*planv1.Task{
+			task("W2", func(t *planv1.Task) { t.HoldQuestionIds = []string{"q64"} }),
+			task("T3", func(t *planv1.Task) { t.Kind, t.HoldQuestionIds = planv1.TaskKind_TASK_KIND_AZIMA, []string{"q65"} }),
+			task("W4", func(t *planv1.Task) { t.PartOf = "T3" }),
+			task("W5", nil),
+		}
+		pass := func(open map[string]bool) map[string]Decision {
+			got := map[string]Decision{}
+			sit := New(tasks, []*planv1.Wish{wish}, nil, &Machine{Slots: 8, Rule: "test"}).At(now)
+			sit.WithQuestions(func(id string) (string, bool) {
+				if id == "gone" {
+					return "", false
+				}
+				return strings.ToUpper(id), open[id]
+			})
+			for _, d := range sit.Pass() {
+				got[d.Task.GetId()] = d
+			}
+			return got
+		}
+		got := pass(map[string]bool{"q64": true, "q65": true})
+		for id, code := range map[string]string{"W2": "Q64", "W4": "Q65"} {
+			if d := got[id]; d.Hold != planv1.TaskHold_TASK_HOLD_QUESTION || d.Why != "waits for the answer to "+code+", which holds it" {
+				t.Errorf("%s: why %q, hold %v; want held by %s", id, d.Why, d.Hold, code)
+			}
+		}
+		if d := got["W5"]; d.Why != "" || d.Failed != "" {
+			t.Errorf("W5, held by nothing: why %q, failed %q", d.Why, d.Failed)
+		}
+		tasks[0].HoldQuestionIds = append(tasks[0].HoldQuestionIds, "gone")
+		got = pass(map[string]bool{"q65": true})
+		if d := got["W2"]; d.Why != "" || d.Hold != planv1.TaskHold_TASK_HOLD_UNSPECIFIED {
+			t.Errorf("W2, its question settled and one gone: why %q, hold %v; want it started", d.Why, d.Hold)
+		}
+		if d := got["W4"]; d.Hold != planv1.TaskHold_TASK_HOLD_QUESTION {
+			t.Errorf("W4, its azima still held: why %q, hold %v", d.Why, d.Hold)
+		}
+		if d := pass(nil)["W4"]; d.Why != "" {
+			t.Errorf("W4, its azima's question settled: why %q; want it started", d.Why)
+		}
+	})
+
 	// TestMockupNotHeld (W268): a mockup changes no code of its project, so no hold of the other workers' state applies
 	// to it: on a red branch, while a correction settles a merge's conflict, or while one repairs red checks, the work
 	// waits and the mockup starts, at the clock the pass reads.

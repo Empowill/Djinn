@@ -68,9 +68,10 @@ type Situation struct {
 	isAncestor AncestryChecker
 	ancestry   map[[2]string]bool // (branchHead, integrationHead) -> isAncestor
 	isRunning  func(taskID string) bool
-	// questionCode is the code of a question by its identifier (Q51), for the reason of a task whose dependency waits
-	// on a blocking question; "" when unknown.
-	questionCode func(id string) string
+	// question tells a question's code by its identifier (Q51), for the reason of a task whose dependency waits on a
+	// blocking question, and whether it is open, for a task it holds (Task.hold_question_ids); "" and false when
+	// unknown. Nil: every question a task holds is open.
+	question func(id string) (code string, open bool)
 	// network is what the network allows now (W285); nil: it holds nothing back.
 	network *Network
 	// accounts tells why no sign-in of a task's agent may take its worker now, and whether a task that waits for its
@@ -165,11 +166,30 @@ func (s *Situation) WithAncestry(branchHead BranchResolver, isAncestor AncestryC
 	return s
 }
 
-// WithQuestions equips the situation with what names a question by its identifier: a task whose dependency waits on
-// a blocking question (Task.wait_question_id) waits "for Q51".
-func (s *Situation) WithQuestions(code func(id string) string) *Situation {
-	s.questionCode = code
+// WithQuestions equips the situation with what tells a question by its identifier, its code and whether it is open:
+// a task whose dependency waits on a blocking question (Task.wait_question_id) waits "for Q51", and a question holds
+// a task (Task.hold_question_ids) only while it is open.
+func (s *Situation) WithQuestions(question func(id string) (code string, open bool)) *Situation {
+	s.question = question
 	return s
+}
+
+// questionHeld names the open question that holds t, or the azima t is part of (Task.hold_question_ids): "Q64"; ""
+// when none does.
+func (s *Situation) questionHeld(t *planv1.Task) string {
+	ids := t.GetHoldQuestionIds()
+	if a, ok := s.byID[t.GetPartOf()]; ok {
+		ids = append(slices.Clip(ids), a.GetHoldQuestionIds()...)
+	}
+	for _, id := range ids {
+		if s.question == nil {
+			return "its question"
+		}
+		if code, open := s.question(id); open {
+			return cmp.Or(code, "its question")
+		}
+	}
+	return ""
 }
 
 // WithRunning equips the situation with a function to check if a task currently has an active worker run.
@@ -559,6 +579,9 @@ func (s *Situation) held(t *planv1.Task) (why, failed string, hold planv1.TaskHo
 		return "its wish is " + strings.ToLower(strings.TrimPrefix(wish.GetState().String(), "WISH_STATE_")), "",
 			planv1.TaskHold_TASK_HOLD_WISH
 	}
+	if code := s.questionHeld(t); code != "" {
+		return "waits for the answer to " + code + ", which holds it", "", planv1.TaskHold_TASK_HOLD_QUESTION
+	}
 	hold = planv1.TaskHold_TASK_HOLD_DEPENDENCY
 	for _, id := range t.GetDependsOn() {
 		d, ok := s.byID[id]
@@ -651,8 +674,8 @@ func (s *Situation) waitCode(d *planv1.Task) string {
 	if id == "" {
 		return ""
 	}
-	if s.questionCode != nil {
-		if code := s.questionCode(id); code != "" {
+	if s.question != nil {
+		if code, _ := s.question(id); code != "" {
 			return code
 		}
 	}

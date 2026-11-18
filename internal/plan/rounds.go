@@ -151,6 +151,11 @@ func (q *Questions) Revise(
 					return err
 				}
 			}
+			if len(m.GetHolds()) > 0 {
+				if err := setHolds(ctx, tx, question, m.GetHolds()); err != nil {
+					return err
+				}
+			}
 			var err error
 			if linkWarnings, err = linkTilasms(ctx, tx, question); err != nil {
 				return err

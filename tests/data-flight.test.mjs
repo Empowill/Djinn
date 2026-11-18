@@ -494,6 +494,33 @@ test("a wish's workers that wait, by what holds them: the server's hold, never t
   assert.equal(f.waitCount(undefined), 0);
 });
 
+test("a question blocks the waiting task that needs it, and the work not started it holds (W107)", () => {
+  const S = f.TaskStatus;
+  const blocks = f.blocking([
+    { code: "W1", status: S.WAITING, waitQuestionId: "q1" },
+    { code: "W2", status: S.PENDING, holdQuestionIds: ["q1", "q2"] },
+    {
+      code: "T3",
+      status: S.PENDING,
+      kind: f.TaskKind.AZIMA,
+      holdQuestionIds: ["q2"],
+    },
+    // Started, or done: it holds nothing any more.
+    {
+      code: "W4",
+      status: S.RUNNING,
+      startTime: at(1),
+      holdQuestionIds: ["q3"],
+    },
+    { code: "W5", status: S.DONE, holdQuestionIds: ["q3"] },
+    { code: "W6", status: S.PENDING },
+  ]);
+  assert.deepEqual(Object.fromEntries(blocks), {
+    q1: ["W1", "W2"],
+    q2: ["W2", "T3"],
+  });
+});
+
 test("the seat counts every task of Djinn QoL that waits, the red branch's and the dependencies' too (W329, W334)", () => {
   const S = f.TaskStatus;
   const H = f.TaskHold;

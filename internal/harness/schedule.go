@@ -440,12 +440,12 @@ func (h *Harness) situation(ctx context.Context, tasks []*planv1.Task) (*dispatc
 	h.seedAccountLimits(tasks, now)
 	sit := dispatch.New(tasks, wishes, projectGit, m).At(now).WithNetwork(h.netView()).WithAccounts(h.accountWaits(now))
 	sit.WithAncestry(branchHead, isAncestor)
-	sit.WithQuestions(func(id string) string {
+	sit.WithQuestions(func(id string) (string, bool) {
 		q, err := store.Get[*planv1.Question](ctx, h.store, id)
 		if err != nil {
-			return ""
+			return "", false
 		}
-		return q.GetCode()
+		return q.GetCode(), q.GetAnswer() == nil && q.GetWithdrawal() == nil
 	})
 	// The branch each task's work merges into, read only (laneKnown): a red push check holds only that branch's
 	// tasks (W630). Asked only of a task whose wish has a hold or a repair in its project.
@@ -671,6 +671,10 @@ func (h *Harness) launchPlannedWithPreemption(ctx context.Context, t *planv1.Tas
 		h.failPlanned(ctx, t, err.Error())
 		return nil
 	}
+	// The questions that held it are settled: its worker reads how (W107).
+	if held := plan.HeldPrompt(ctx, h.store, t); held != "" {
+		prompt = strings.TrimRight(prompt, "\n") + "\n\n" + held
+	}
 	var project *planv1.Project
 	if t.GetProjectId() != "" {
 		p, err := store.Get[*planv1.Project](ctx, h.store, t.GetProjectId())
@@ -731,10 +735,12 @@ func (h *Harness) launchPlannedWithPreemption(ctx context.Context, t *planv1.Tas
 		if wish, err = store.Get[*planv1.Wish](ctx, tx, t.GetWishId()); err != nil {
 			return err
 		}
-		if prep, err = prepare(ctx, tx, h.home, t, wish, project); err != nil {
+		// Journaled first: preparing it may ask its edit question, a write (W107 found it failing every planned task
+		// outside Git).
+		if err := tx.Journal(actorHarness, methodSchedule, t); err != nil {
 			return err
 		}
-		if err := tx.Journal(actorHarness, methodSchedule, t); err != nil {
+		if prep, err = prepare(ctx, tx, h.home, t, wish, project); err != nil {
 			return err
 		}
 		if err := tx.Put(t); err != nil {
