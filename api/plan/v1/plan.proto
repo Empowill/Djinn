@@ -5,6 +5,8 @@ syntax = "proto3";
 package plan.v1;
 
 import "buf/validate/validate.proto";
+import "djinn/v1/agents.proto";
+import "djinn/v1/containers.proto";
 import "djinn/v1/load.proto";
 import "djinn/v1/options.proto";
 import "djinn/v1/project_config.proto";
@@ -560,6 +562,11 @@ message ProjectSetting {
   string value = 2;
   // Where it comes from.
   SettingSource source = 3;
+  // Its value in the repository's file alone, as text like value; unset when that file does not set it.
+  optional string repository = 4;
+  // Its value in your own file alone, as text like value; unset when your file does not set it. It wins over the
+  // repository's.
+  optional string developer = 5;
 }
 
 // A wish is what you ask Djinn for, and what it works to grant. It may span several projects.
@@ -3178,6 +3185,17 @@ message ProjectServiceShowResponse {
   repeated string watch_commands = 9;
   // The serve commands you allow in the project for yourself (djinn project allow --serve), from your own file.
   repeated string serve_commands = 10;
+  // The project's .agents/permissions.txtpb, read where Djinn reads its configuration (on the reference branch, see
+  // reference): what its workers may do, translated for each agent. Unset when the project has none, or when it cannot
+  // be read (a notice says why).
+  djinn.v1.Permissions permissions = 15;
+  // The ceilings of the containers its workers start, as the project's djinn.yaml sets them; unset, or a field at 0:
+  // Djinn's default.
+  djinn.v1.Containers containers = 16;
+  // What Djinn adds to the first prompt of each worker that edits the project, from its settings: the checks it runs
+  // and when, the targeted tests, the setup of a fresh worktree; empty for a project that sets no check. The team's
+  // own instructions to workers live in the repository's agent instructions (AGENTS.md), which every agent reads.
+  string workers_brief = 17;
 
   // The free-text problems and warnings, which notices replaced.
   reserved 5, 8;
@@ -3298,6 +3316,8 @@ message ProjectServiceGatesResponse {
   string developer_file = 4;
   // What Djinn found wrong in the declaration: a gate left out, and why; a pattern of one word.
   repeated string warnings = 5;
+  // The gates you turn off that the project declares, as it declares them, in the file's order.
+  repeated djinn.v1.ProjectGate off_gates = 6;
 }
 
 message ProjectServiceForgetSyncRequest {

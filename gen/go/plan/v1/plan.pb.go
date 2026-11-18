@@ -4553,7 +4553,12 @@ type ProjectSetting struct {
 	// generated globs are joined by commas; the checks by "; ", each "lint: go tool task lint (commit, push)".
 	Value string `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
 	// Where it comes from.
-	Source        SettingSource `protobuf:"varint,3,opt,name=source,proto3,enum=plan.v1.SettingSource" json:"source,omitempty"`
+	Source SettingSource `protobuf:"varint,3,opt,name=source,proto3,enum=plan.v1.SettingSource" json:"source,omitempty"`
+	// Its value in the repository's file alone, as text like value; unset when that file does not set it.
+	Repository *string `protobuf:"bytes,4,opt,name=repository,proto3,oneof" json:"repository,omitempty"`
+	// Its value in your own file alone, as text like value; unset when your file does not set it. It wins over the
+	// repository's.
+	Developer     *string `protobuf:"bytes,5,opt,name=developer,proto3,oneof" json:"developer,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4607,6 +4612,20 @@ func (x *ProjectSetting) GetSource() SettingSource {
 		return x.Source
 	}
 	return SettingSource_SETTING_SOURCE_UNSPECIFIED
+}
+
+func (x *ProjectSetting) GetRepository() string {
+	if x != nil && x.Repository != nil {
+		return *x.Repository
+	}
+	return ""
+}
+
+func (x *ProjectSetting) GetDeveloper() string {
+	if x != nil && x.Developer != nil {
+		return *x.Developer
+	}
+	return ""
 }
 
 // A wish is what you ask Djinn for, and what it works to grant. It may span several projects.
@@ -13143,6 +13162,17 @@ type ProjectServiceShowResponse struct {
 	WatchCommands []string `protobuf:"bytes,9,rep,name=watch_commands,json=watchCommands,proto3" json:"watch_commands,omitempty"`
 	// The serve commands you allow in the project for yourself (djinn project allow --serve), from your own file.
 	ServeCommands []string `protobuf:"bytes,10,rep,name=serve_commands,json=serveCommands,proto3" json:"serve_commands,omitempty"`
+	// The project's .agents/permissions.txtpb, read where Djinn reads its configuration (on the reference branch, see
+	// reference): what its workers may do, translated for each agent. Unset when the project has none, or when it cannot
+	// be read (a notice says why).
+	Permissions *v1.Permissions `protobuf:"bytes,15,opt,name=permissions,proto3" json:"permissions,omitempty"`
+	// The ceilings of the containers its workers start, as the project's djinn.yaml sets them; unset, or a field at 0:
+	// Djinn's default.
+	Containers *v1.Containers `protobuf:"bytes,16,opt,name=containers,proto3" json:"containers,omitempty"`
+	// What Djinn adds to the first prompt of each worker that edits the project, from its settings: the checks it runs
+	// and when, the targeted tests, the setup of a fresh worktree; empty for a project that sets no check. The team's
+	// own instructions to workers live in the repository's agent instructions (AGENTS.md), which every agent reads.
+	WorkersBrief  string `protobuf:"bytes,17,opt,name=workers_brief,json=workersBrief,proto3" json:"workers_brief,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -13259,6 +13289,27 @@ func (x *ProjectServiceShowResponse) GetServeCommands() []string {
 		return x.ServeCommands
 	}
 	return nil
+}
+
+func (x *ProjectServiceShowResponse) GetPermissions() *v1.Permissions {
+	if x != nil {
+		return x.Permissions
+	}
+	return nil
+}
+
+func (x *ProjectServiceShowResponse) GetContainers() *v1.Containers {
+	if x != nil {
+		return x.Containers
+	}
+	return nil
+}
+
+func (x *ProjectServiceShowResponse) GetWorkersBrief() string {
+	if x != nil {
+		return x.WorkersBrief
+	}
+	return ""
 }
 
 type ProjectServicePushRequest struct {
@@ -13799,7 +13850,9 @@ type ProjectServiceGatesResponse struct {
 	// Your settings file, in Djinn's data folder.
 	DeveloperFile string `protobuf:"bytes,4,opt,name=developer_file,json=developerFile,proto3" json:"developer_file,omitempty"`
 	// What Djinn found wrong in the declaration: a gate left out, and why; a pattern of one word.
-	Warnings      []string `protobuf:"bytes,5,rep,name=warnings,proto3" json:"warnings,omitempty"`
+	Warnings []string `protobuf:"bytes,5,rep,name=warnings,proto3" json:"warnings,omitempty"`
+	// The gates you turn off that the project declares, as it declares them, in the file's order.
+	OffGates      []*v1.ProjectGate `protobuf:"bytes,6,rep,name=off_gates,json=offGates,proto3" json:"off_gates,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -13865,6 +13918,13 @@ func (x *ProjectServiceGatesResponse) GetDeveloperFile() string {
 func (x *ProjectServiceGatesResponse) GetWarnings() []string {
 	if x != nil {
 		return x.Warnings
+	}
+	return nil
+}
+
+func (x *ProjectServiceGatesResponse) GetOffGates() []*v1.ProjectGate {
+	if x != nil {
+		return x.OffGates
 	}
 	return nil
 }
@@ -28141,7 +28201,7 @@ var File_plan_v1_plan_proto protoreflect.FileDescriptor
 
 const file_plan_v1_plan_proto_rawDesc = "" +
 	"\n" +
-	"\x12plan/v1/plan.proto\x12\aplan.v1\x1a\x1bbuf/validate/validate.proto\x1a\x13djinn/v1/load.proto\x1a\x16djinn/v1/options.proto\x1a\x1ddjinn/v1/project_config.proto\x1a\x19google/protobuf/any.proto\x1a\x1egoogle/protobuf/duration.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x14plan/v1/tilasm.proto\"\x86\x04\n" +
+	"\x12plan/v1/plan.proto\x12\aplan.v1\x1a\x1bbuf/validate/validate.proto\x1a\x15djinn/v1/agents.proto\x1a\x19djinn/v1/containers.proto\x1a\x13djinn/v1/load.proto\x1a\x16djinn/v1/options.proto\x1a\x1ddjinn/v1/project_config.proto\x1a\x19google/protobuf/any.proto\x1a\x1egoogle/protobuf/duration.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x14plan/v1/tilasm.proto\"\x86\x04\n" +
 	"\aProject\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1c\n" +
@@ -28325,11 +28385,18 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x04name\x18\x01 \x01(\tB&\xbaH#r!\x10\x01\x18(2\x1b^[A-Za-z0-9][A-Za-z0-9_-]*$R\x04name\x12$\n" +
 	"\acommand\x18\x02 \x01(\tB\n" +
 	"\xbaH\ar\x05\x10\x01\x18\xf4\x03R\acommand\x12;\n" +
-	"\x04when\x18\x03 \x03(\x0e2\x12.plan.v1.CheckWhenB\x13\xbaH\x10\x92\x01\r\b\x01\x18\x01\"\a\x82\x01\x04\x10\x01 \x00R\x04when\"j\n" +
+	"\x04when\x18\x03 \x03(\x0e2\x12.plan.v1.CheckWhenB\x13\xbaH\x10\x92\x01\r\b\x01\x18\x01\"\a\x82\x01\x04\x10\x01 \x00R\x04when\"\xcf\x01\n" +
 	"\x0eProjectSetting\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value\x12.\n" +
-	"\x06source\x18\x03 \x01(\x0e2\x16.plan.v1.SettingSourceR\x06source\"\x9d\a\n" +
+	"\x06source\x18\x03 \x01(\x0e2\x16.plan.v1.SettingSourceR\x06source\x12#\n" +
+	"\n" +
+	"repository\x18\x04 \x01(\tH\x00R\n" +
+	"repository\x88\x01\x01\x12!\n" +
+	"\tdeveloper\x18\x05 \x01(\tH\x01R\tdeveloper\x88\x01\x01B\r\n" +
+	"\v_repositoryB\f\n" +
+	"\n" +
+	"_developer\"\x9d\a\n" +
 	"\x04Wish\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12\x1f\n" +
@@ -29108,7 +29175,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\bprojects\x18\x01 \x03(\v2\x10.plan.v1.ProjectR\bprojects\"A\n" +
 	"\x19ProjectServiceShowRequest\x12$\n" +
 	"\aproject\x18\x01 \x01(\tB\n" +
-	"\xbaH\a\xc8\x01\x01r\x02\x18dR\aproject\"\xc8\x04\n" +
+	"\xbaH\a\xc8\x01\x01r\x02\x18dR\aproject\"\xdc\x05\n" +
 	"\x1aProjectServiceShowResponse\x12*\n" +
 	"\aproject\x18\x01 \x01(\v2\x10.plan.v1.ProjectR\aproject\x123\n" +
 	"\bsettings\x18\x02 \x03(\v2\x17.plan.v1.ProjectSettingR\bsettings\x12'\n" +
@@ -29122,7 +29189,12 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x06checks\x18\a \x03(\v2\x15.plan.v1.ProjectCheckR\x06checks\x12%\n" +
 	"\x0ewatch_commands\x18\t \x03(\tR\rwatchCommands\x12%\n" +
 	"\x0eserve_commands\x18\n" +
-	" \x03(\tR\rserveCommandsJ\x04\b\x05\x10\x06J\x04\b\b\x10\tR\bproblemsR\bwarnings\"\x9e\x01\n" +
+	" \x03(\tR\rserveCommands\x127\n" +
+	"\vpermissions\x18\x0f \x01(\v2\x15.djinn.v1.PermissionsR\vpermissions\x124\n" +
+	"\n" +
+	"containers\x18\x10 \x01(\v2\x14.djinn.v1.ContainersR\n" +
+	"containers\x12#\n" +
+	"\rworkers_brief\x18\x11 \x01(\tR\fworkersBriefJ\x04\b\x05\x10\x06J\x04\b\b\x10\tR\bproblemsR\bwarnings\"\x9e\x01\n" +
 	"\x19ProjectServicePushRequest\x12$\n" +
 	"\aproject\x18\x01 \x01(\tB\n" +
 	"\xbaH\a\xc8\x01\x01r\x02\x18dR\aproject\x12 \n" +
@@ -29169,13 +29241,14 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x03off\x18\x02 \x01(\tB\x1d\xbaH\x1ar\x182\x16^[a-z][a-z0-9-]{0,39}$H\x00R\x03off\x88\x01\x01\x122\n" +
 	"\x02on\x18\x03 \x01(\tB\x1d\xbaH\x1ar\x182\x16^[a-z][a-z0-9-]{0,39}$H\x01R\x02on\x88\x01\x01B\x06\n" +
 	"\x04_offB\x05\n" +
-	"\x03_on\"\xbe\x01\n" +
+	"\x03_on\"\xf2\x01\n" +
 	"\x1bProjectServiceGatesResponse\x12+\n" +
 	"\x05gates\x18\x01 \x03(\v2\x15.djinn.v1.ProjectGateR\x05gates\x12\x12\n" +
 	"\x04file\x18\x02 \x01(\tR\x04file\x12\x1b\n" +
 	"\tgates_off\x18\x03 \x03(\tR\bgatesOff\x12%\n" +
 	"\x0edeveloper_file\x18\x04 \x01(\tR\rdeveloperFile\x12\x1a\n" +
-	"\bwarnings\x18\x05 \x03(\tR\bwarnings\"l\n" +
+	"\bwarnings\x18\x05 \x03(\tR\bwarnings\x122\n" +
+	"\toff_gates\x18\x06 \x03(\v2\x15.djinn.v1.ProjectGateR\boffGates\"l\n" +
 	"\x1fProjectServiceForgetSyncRequest\x12$\n" +
 	"\aproject\x18\x01 \x01(\tB\n" +
 	"\xbaH\a\xc8\x01\x01r\x02\x18dR\aproject\x12#\n" +
@@ -31036,10 +31109,12 @@ var file_plan_v1_plan_proto_goTypes = []any{
 	nil,                                        // 388: plan.v1.GateWait.AskedEntry
 	(*timestamppb.Timestamp)(nil),              // 389: google.protobuf.Timestamp
 	(*durationpb.Duration)(nil),                // 390: google.protobuf.Duration
-	(*v1.ProjectGate)(nil),                     // 391: djinn.v1.ProjectGate
-	(v1.LoadNotch)(0),                          // 392: djinn.v1.LoadNotch
-	(*TilasmExport)(nil),                       // 393: plan.v1.TilasmExport
-	(*anypb.Any)(nil),                          // 394: google.protobuf.Any
+	(*v1.Permissions)(nil),                     // 391: djinn.v1.Permissions
+	(*v1.Containers)(nil),                      // 392: djinn.v1.Containers
+	(*v1.ProjectGate)(nil),                     // 393: djinn.v1.ProjectGate
+	(v1.LoadNotch)(0),                          // 394: djinn.v1.LoadNotch
+	(*TilasmExport)(nil),                       // 395: plan.v1.TilasmExport
+	(*anypb.Any)(nil),                          // 396: google.protobuf.Any
 }
 var file_plan_v1_plan_proto_depIdxs = []int32{
 	389, // 0: plan.v1.Project.create_time:type_name -> google.protobuf.Timestamp
@@ -31264,443 +31339,446 @@ var file_plan_v1_plan_proto_depIdxs = []int32{
 	49,  // 219: plan.v1.ProjectServiceShowResponse.watch:type_name -> plan.v1.ConfigWatch
 	50,  // 220: plan.v1.ProjectServiceShowResponse.changes:type_name -> plan.v1.ConfigChange
 	56,  // 221: plan.v1.ProjectServiceShowResponse.checks:type_name -> plan.v1.ProjectCheck
-	62,  // 222: plan.v1.ProjectServicePushResponse.push:type_name -> plan.v1.IntegrationPush
-	4,   // 223: plan.v1.ProjectServiceSetPushRequest.push:type_name -> plan.v1.ProjectPush
-	46,  // 224: plan.v1.ProjectServiceSetPushResponse.project:type_name -> plan.v1.Project
-	8,   // 225: plan.v1.ProjectServicePushStrategyRequest.strategy:type_name -> plan.v1.PushStrategy
-	8,   // 226: plan.v1.ProjectServicePushStrategyResponse.strategy:type_name -> plan.v1.PushStrategy
-	6,   // 227: plan.v1.ProjectServicePushStrategyResponse.source:type_name -> plan.v1.SettingSource
-	391, // 228: plan.v1.ProjectServiceGatesResponse.gates:type_name -> djinn.v1.ProjectGate
-	159, // 229: plan.v1.ProjectServicePullResponse.pulls:type_name -> plan.v1.BranchPull
-	50,  // 230: plan.v1.ProjectServiceAcknowledgeResponse.changes:type_name -> plan.v1.ConfigChange
-	48,  // 231: plan.v1.ProjectServiceSetBranchResponse.reference:type_name -> plan.v1.ProjectReference
-	166, // 232: plan.v1.SkillServiceSummonResponse.skill:type_name -> plan.v1.Skill
-	166, // 233: plan.v1.SkillServiceListResponse.skills:type_name -> plan.v1.Skill
-	46,  // 234: plan.v1.SkillServiceUnsummonResponse.project:type_name -> plan.v1.Project
-	38,  // 235: plan.v1.InboxItem.state:type_name -> plan.v1.InboxState
-	389, // 236: plan.v1.InboxItem.create_time:type_name -> google.protobuf.Timestamp
-	110, // 237: plan.v1.InboxItem.route:type_name -> plan.v1.Route
-	389, // 238: plan.v1.InboxItem.settle_time:type_name -> google.protobuf.Timestamp
-	175, // 239: plan.v1.InboxSource.last_run:type_name -> plan.v1.SourceRun
-	389, // 240: plan.v1.SourceRun.end_time:type_name -> google.protobuf.Timestamp
-	389, // 241: plan.v1.SourceRun.failing_since:type_name -> google.protobuf.Timestamp
-	389, // 242: plan.v1.PluggedSource.create_time:type_name -> google.protobuf.Timestamp
-	389, // 243: plan.v1.DeclinedSource.create_time:type_name -> google.protobuf.Timestamp
-	174, // 244: plan.v1.InboxServiceSourcesResponse.sources:type_name -> plan.v1.InboxSource
-	174, // 245: plan.v1.InboxServicePlugResponse.source:type_name -> plan.v1.InboxSource
-	174, // 246: plan.v1.InboxServiceUnplugResponse.source:type_name -> plan.v1.InboxSource
-	173, // 247: plan.v1.InboxServiceListResponse.items:type_name -> plan.v1.InboxItem
-	173, // 248: plan.v1.InboxServiceDismissResponse.item:type_name -> plan.v1.InboxItem
-	32,  // 249: plan.v1.InboxServiceRouteRequest.choice:type_name -> plan.v1.Choice
-	173, // 250: plan.v1.InboxServiceRouteResponse.item:type_name -> plan.v1.InboxItem
-	110, // 251: plan.v1.WishServiceRouteResponse.route:type_name -> plan.v1.Route
-	104, // 252: plan.v1.WishServiceRouteResponse.question:type_name -> plan.v1.Question
-	39,  // 253: plan.v1.WishServiceWatchResponse.changes:type_name -> plan.v1.Change
-	194, // 254: plan.v1.WishServiceWatchResponse.changed:type_name -> plan.v1.WishChanges
-	392, // 255: plan.v1.WishServiceWatchResponse.load:type_name -> djinn.v1.LoadNotch
-	78,  // 256: plan.v1.WishChanges.tasks:type_name -> plan.v1.Task
-	104, // 257: plan.v1.WishChanges.questions:type_name -> plan.v1.Question
-	298, // 258: plan.v1.WishChanges.blocks:type_name -> plan.v1.Block
-	16,  // 259: plan.v1.WishServiceAllowRequest.mode:type_name -> plan.v1.Allowance
-	58,  // 260: plan.v1.WishServiceAllowResponse.wish:type_name -> plan.v1.Wish
-	7,   // 261: plan.v1.WishServiceSetIntegrationRequest.push_mode:type_name -> plan.v1.PushMode
-	8,   // 262: plan.v1.WishServiceSetIntegrationRequest.push_strategy:type_name -> plan.v1.PushStrategy
-	58,  // 263: plan.v1.WishServiceSetIntegrationResponse.wish:type_name -> plan.v1.Wish
-	8,   // 264: plan.v1.WishServicePushStrategyRequest.strategy:type_name -> plan.v1.PushStrategy
-	8,   // 265: plan.v1.WishServicePushStrategyResponse.strategy:type_name -> plan.v1.PushStrategy
-	6,   // 266: plan.v1.WishServicePushStrategyResponse.source:type_name -> plan.v1.SettingSource
-	58,  // 267: plan.v1.WishServiceGrantResponse.wish:type_name -> plan.v1.Wish
-	58,  // 268: plan.v1.WishServicePauseResponse.wish:type_name -> plan.v1.Wish
-	58,  // 269: plan.v1.WishServiceActivateResponse.wish:type_name -> plan.v1.Wish
-	58,  // 270: plan.v1.WishServiceActivateResponse.paused:type_name -> plan.v1.Wish
-	58,  // 271: plan.v1.WishServiceDeleteResponse.wish:type_name -> plan.v1.Wish
-	213, // 272: plan.v1.WishServiceDeleteResponse.kept:type_name -> plan.v1.KeptWorktree
-	58,  // 273: plan.v1.WishServiceMoveResponse.wishes:type_name -> plan.v1.Wish
-	58,  // 274: plan.v1.WishServiceMoveResponse.paused:type_name -> plan.v1.Wish
-	58,  // 275: plan.v1.WishServiceReorderResponse.wishes:type_name -> plan.v1.Wish
-	8,   // 276: plan.v1.WishServiceMakeRequest.push_strategy:type_name -> plan.v1.PushStrategy
-	58,  // 277: plan.v1.WishServiceMakeResponse.wish:type_name -> plan.v1.Wish
-	58,  // 278: plan.v1.WishServiceListResponse.wishes:type_name -> plan.v1.Wish
-	58,  // 279: plan.v1.WishServiceImportResponse.wish:type_name -> plan.v1.Wish
-	243, // 280: plan.v1.WishServiceImportResponse.projects:type_name -> plan.v1.ProjectMatch
-	58,  // 281: plan.v1.WishServiceImportDataResponse.wish:type_name -> plan.v1.Wish
-	243, // 282: plan.v1.WishServiceImportDataResponse.projects:type_name -> plan.v1.ProjectMatch
-	58,  // 283: plan.v1.WishServiceDescribeResponse.wish:type_name -> plan.v1.Wish
-	58,  // 284: plan.v1.WishServiceRenameResponse.wish:type_name -> plan.v1.Wish
-	58,  // 285: plan.v1.WishServiceIconResponse.wish:type_name -> plan.v1.Wish
-	236, // 286: plan.v1.WishServiceIconsResponse.icons:type_name -> plan.v1.WishIcon
-	58,  // 287: plan.v1.WishServiceAddProjectResponse.wish:type_name -> plan.v1.Wish
-	244, // 288: plan.v1.WishServiceSnapshotResponse.export:type_name -> plan.v1.WishExport
-	46,  // 289: plan.v1.WishServiceSnapshotResponse.projects:type_name -> plan.v1.Project
-	46,  // 290: plan.v1.ProjectMatch.project:type_name -> plan.v1.Project
-	40,  // 291: plan.v1.ProjectMatch.match:type_name -> plan.v1.ProjectMatchKind
-	389, // 292: plan.v1.WishExport.create_time:type_name -> google.protobuf.Timestamp
-	58,  // 293: plan.v1.WishExport.wish:type_name -> plan.v1.Wish
-	245, // 294: plan.v1.WishExport.projects:type_name -> plan.v1.ProjectRef
-	78,  // 295: plan.v1.WishExport.tasks:type_name -> plan.v1.Task
-	101, // 296: plan.v1.WishExport.events:type_name -> plan.v1.TaskEvent
-	104, // 297: plan.v1.WishExport.questions:type_name -> plan.v1.Question
-	298, // 298: plan.v1.WishExport.blocks:type_name -> plan.v1.Block
-	246, // 299: plan.v1.WishExport.commands:type_name -> plan.v1.Command
-	393, // 300: plan.v1.WishExport.tilasms:type_name -> plan.v1.TilasmExport
-	69,  // 301: plan.v1.WishExport.lead_batches:type_name -> plan.v1.LeadBatch
-	389, // 302: plan.v1.Command.at:type_name -> google.protobuf.Timestamp
-	394, // 303: plan.v1.Command.request:type_name -> google.protobuf.Any
-	20,  // 304: plan.v1.LeadServiceSetRequest.provider:type_name -> plan.v1.Provider
-	67,  // 305: plan.v1.LeadServiceSetResponse.lead:type_name -> plan.v1.Lead
-	20,  // 306: plan.v1.LeadServiceResumeRequest.provider:type_name -> plan.v1.Provider
-	67,  // 307: plan.v1.LeadServiceResumeResponse.lead:type_name -> plan.v1.Lead
-	67,  // 308: plan.v1.LeadServiceGetResponse.lead:type_name -> plan.v1.Lead
-	247, // 309: plan.v1.LeadServiceGetResponse.prompt:type_name -> plan.v1.LeadPrompt
-	254, // 310: plan.v1.LeadServiceGetResponse.exit:type_name -> plan.v1.LeadExit
-	69,  // 311: plan.v1.LeadServiceGetResponse.batch:type_name -> plan.v1.LeadBatch
-	74,  // 312: plan.v1.LeadServiceGetResponse.seat:type_name -> plan.v1.LeadSeat
-	70,  // 313: plan.v1.LeadServiceGetResponse.accounts:type_name -> plan.v1.Account
-	75,  // 314: plan.v1.LeadServiceGetResponse.limit:type_name -> plan.v1.LeadLimit
-	73,  // 315: plan.v1.LeadServiceGetResponse.circle:type_name -> plan.v1.WorkerSeat
-	69,  // 316: plan.v1.LeadServiceGetResponse.journal:type_name -> plan.v1.LeadBatch
-	390, // 317: plan.v1.LeadServiceWatchRequest.timeout:type_name -> google.protobuf.Duration
-	298, // 318: plan.v1.LeadServiceSayResponse.block:type_name -> plan.v1.Block
-	69,  // 319: plan.v1.LeadServiceJournalResponse.batches:type_name -> plan.v1.LeadBatch
-	69,  // 320: plan.v1.LeadSession.batch:type_name -> plan.v1.LeadBatch
-	265, // 321: plan.v1.LeadServiceSessionsResponse.sessions:type_name -> plan.v1.LeadSession
-	69,  // 322: plan.v1.LeadServiceShowResponse.batch:type_name -> plan.v1.LeadBatch
-	20,  // 323: plan.v1.LeadServiceMoveRequest.provider:type_name -> plan.v1.Provider
-	74,  // 324: plan.v1.LeadServiceMoveResponse.seat:type_name -> plan.v1.LeadSeat
-	20,  // 325: plan.v1.CircleModel.provider:type_name -> plan.v1.Provider
-	20,  // 326: plan.v1.CircleProvider.provider:type_name -> plan.v1.Provider
-	73,  // 327: plan.v1.LeadServiceGetCircleResponse.rows:type_name -> plan.v1.WorkerSeat
-	272, // 328: plan.v1.LeadServiceGetCircleResponse.models:type_name -> plan.v1.CircleModel
-	273, // 329: plan.v1.LeadServiceGetCircleResponse.providers:type_name -> plan.v1.CircleProvider
-	14,  // 330: plan.v1.LeadServiceSetCircleRequest.kind:type_name -> plan.v1.WorkerKind
-	20,  // 331: plan.v1.LeadServiceSetCircleRequest.provider:type_name -> plan.v1.Provider
-	73,  // 332: plan.v1.LeadServiceSetCircleResponse.rows:type_name -> plan.v1.WorkerSeat
-	272, // 333: plan.v1.LeadServiceSetCircleResponse.models:type_name -> plan.v1.CircleModel
-	273, // 334: plan.v1.LeadServiceSetCircleResponse.providers:type_name -> plan.v1.CircleProvider
-	70,  // 335: plan.v1.LeadServiceAccountsResponse.accounts:type_name -> plan.v1.Account
-	74,  // 336: plan.v1.LeadServiceAccountsResponse.seat:type_name -> plan.v1.LeadSeat
-	71,  // 337: plan.v1.LeadServiceAccountsResponse.usage:type_name -> plan.v1.AccountUsage
-	44,  // 338: plan.v1.LeadServiceAccountsResponse.mode:type_name -> plan.v1.AccountMode
-	74,  // 339: plan.v1.LeadServicePinResponse.seat:type_name -> plan.v1.LeadSeat
-	20,  // 340: plan.v1.LeadServiceAddAccountRequest.provider:type_name -> plan.v1.Provider
-	70,  // 341: plan.v1.LeadServiceAddAccountResponse.account:type_name -> plan.v1.Account
-	20,  // 342: plan.v1.LeadServicePauseAccountRequest.provider:type_name -> plan.v1.Provider
-	20,  // 343: plan.v1.LeadServiceResumeAccountRequest.provider:type_name -> plan.v1.Provider
-	389, // 344: plan.v1.Block.create_time:type_name -> google.protobuf.Timestamp
-	389, // 345: plan.v1.Block.update_time:type_name -> google.protobuf.Timestamp
-	113, // 346: plan.v1.Block.marks:type_name -> plan.v1.Mark
-	298, // 347: plan.v1.BlockServicePutResponse.block:type_name -> plan.v1.Block
-	298, // 348: plan.v1.BlockServiceListResponse.blocks:type_name -> plan.v1.Block
-	113, // 349: plan.v1.Marked.mark:type_name -> plan.v1.Mark
-	305, // 350: plan.v1.MarkServicePutRequest.target:type_name -> plan.v1.MarkTarget
-	37,  // 351: plan.v1.MarkServicePutRequest.kind:type_name -> plan.v1.MarkKind
-	306, // 352: plan.v1.MarkServicePutResponse.marked:type_name -> plan.v1.Marked
-	306, // 353: plan.v1.MarkServiceListResponse.marks:type_name -> plan.v1.Marked
-	20,  // 354: plan.v1.TaskServiceSpawnRequest.provider:type_name -> plan.v1.Provider
-	25,  // 355: plan.v1.TaskServiceSpawnRequest.kind:type_name -> plan.v1.TaskKind
-	78,  // 356: plan.v1.TaskServiceSpawnResponse.task:type_name -> plan.v1.Task
-	17,  // 357: plan.v1.TaskServiceListRequest.status:type_name -> plan.v1.TaskStatus
-	78,  // 358: plan.v1.TaskServiceListResponse.tasks:type_name -> plan.v1.Task
-	317, // 359: plan.v1.TaskServiceOverlapsResponse.tasks:type_name -> plan.v1.TaskFiles
-	318, // 360: plan.v1.TaskServiceOverlapsResponse.overlaps:type_name -> plan.v1.TaskOverlap
-	17,  // 361: plan.v1.TaskFiles.status:type_name -> plan.v1.TaskStatus
-	41,  // 362: plan.v1.TaskFiles.source:type_name -> plan.v1.TaskFilesSource
-	78,  // 363: plan.v1.TaskServiceGetResponse.task:type_name -> plan.v1.Task
-	43,  // 364: plan.v1.DiffLine.kind:type_name -> plan.v1.DiffLineKind
-	321, // 365: plan.v1.DiffLine.tokens:type_name -> plan.v1.DiffToken
-	322, // 366: plan.v1.DiffHunk.lines:type_name -> plan.v1.DiffLine
-	42,  // 367: plan.v1.TaskDiffFile.status:type_name -> plan.v1.DiffStatus
-	42,  // 368: plan.v1.TaskFileDiff.status:type_name -> plan.v1.DiffStatus
-	323, // 369: plan.v1.TaskFileDiff.hunks:type_name -> plan.v1.DiffHunk
-	326, // 370: plan.v1.TaskServiceDiffRequest.task:type_name -> plan.v1.TaskRef
-	324, // 371: plan.v1.TaskServiceDiffResponse.files:type_name -> plan.v1.TaskDiffFile
-	325, // 372: plan.v1.TaskServiceDiffResponse.file:type_name -> plan.v1.TaskFileDiff
-	78,  // 373: plan.v1.TaskServiceStopResponse.task:type_name -> plan.v1.Task
-	101, // 374: plan.v1.TaskServiceSendResponse.event:type_name -> plan.v1.TaskEvent
-	78,  // 375: plan.v1.TaskServicePauseResponse.task:type_name -> plan.v1.Task
-	78,  // 376: plan.v1.TaskServiceResumeResponse.task:type_name -> plan.v1.Task
-	78,  // 377: plan.v1.TaskServiceStartResponse.task:type_name -> plan.v1.Task
-	101, // 378: plan.v1.TaskServiceWatchResponse.event:type_name -> plan.v1.TaskEvent
-	78,  // 379: plan.v1.TaskServiceCleanResponse.task:type_name -> plan.v1.Task
-	344, // 380: plan.v1.TaskServiceDependRequest.also:type_name -> plan.v1.TaskAfter
-	78,  // 381: plan.v1.TaskServiceDependResponse.task:type_name -> plan.v1.Task
-	78,  // 382: plan.v1.TaskServiceDependResponse.also:type_name -> plan.v1.Task
-	78,  // 383: plan.v1.TaskServiceGroupResponse.task:type_name -> plan.v1.Task
-	78,  // 384: plan.v1.TaskServiceDeleteResponse.task:type_name -> plan.v1.Task
-	30,  // 385: plan.v1.TaskServiceDoneRequest.by:type_name -> plan.v1.Closer
-	78,  // 386: plan.v1.TaskServiceDoneResponse.task:type_name -> plan.v1.Task
-	30,  // 387: plan.v1.TaskServiceCancelRequest.by:type_name -> plan.v1.Closer
-	78,  // 388: plan.v1.TaskServiceCancelResponse.task:type_name -> plan.v1.Task
-	30,  // 389: plan.v1.TaskServiceContinueRequest.by:type_name -> plan.v1.Closer
-	78,  // 390: plan.v1.TaskServiceContinueResponse.task:type_name -> plan.v1.Task
-	20,  // 391: plan.v1.TaskServiceUpdateRequest.provider:type_name -> plan.v1.Provider
-	78,  // 392: plan.v1.TaskServiceUpdateResponse.task:type_name -> plan.v1.Task
-	78,  // 393: plan.v1.TaskServiceDescribeResponse.task:type_name -> plan.v1.Task
-	78,  // 394: plan.v1.TaskServiceOpenResponse.task:type_name -> plan.v1.Task
-	78,  // 395: plan.v1.TaskServiceMoveResponse.task:type_name -> plan.v1.Task
-	78,  // 396: plan.v1.TaskServiceRankResponse.azimas:type_name -> plan.v1.Task
-	83,  // 397: plan.v1.TaskServiceCommentResponse.comment:type_name -> plan.v1.TaskComment
-	78,  // 398: plan.v1.TaskServiceCommentResponse.task:type_name -> plan.v1.Task
-	30,  // 399: plan.v1.TaskServiceTurnCommentsRequest.by:type_name -> plan.v1.Closer
-	78,  // 400: plan.v1.TaskServiceTurnCommentsResponse.task:type_name -> plan.v1.Task
-	20,  // 401: plan.v1.TaskServiceUpdateModelsRequest.provider:type_name -> plan.v1.Provider
-	20,  // 402: plan.v1.TaskServiceUpdateModelsResponse.provider:type_name -> plan.v1.Provider
-	78,  // 403: plan.v1.TaskServiceUpdateModelsResponse.tasks:type_name -> plan.v1.Task
-	78,  // 404: plan.v1.TaskServiceUpdateModelsResponse.skipped:type_name -> plan.v1.Task
-	73,  // 405: plan.v1.TaskServiceUpdateModelsResponse.circle:type_name -> plan.v1.WorkerSeat
-	92,  // 406: plan.v1.ServeServiceRunResponse.serve:type_name -> plan.v1.Serve
-	92,  // 407: plan.v1.ServeServiceListResponse.serves:type_name -> plan.v1.Serve
-	92,  // 408: plan.v1.ServeServiceStopResponse.serve:type_name -> plan.v1.Serve
-	78,  // 409: plan.v1.PlanServiceSyncResponse.azimas:type_name -> plan.v1.Task
-	44,  // 410: plan.v1.LeadServiceAccountModeRequest.mode:type_name -> plan.v1.AccountMode
-	44,  // 411: plan.v1.LeadServiceAccountModeResponse.mode:type_name -> plan.v1.AccountMode
-	45,  // 412: plan.v1.LeadServiceUnlimitedRequest.unlimited:type_name -> plan.v1.UnlimitedSetting
-	45,  // 413: plan.v1.LeadServiceUnlimitedResponse.unlimited:type_name -> plan.v1.UnlimitedSetting
-	60,  // 414: plan.v1.WishPush.HoldsEntry.value:type_name -> plan.v1.PushHold
-	389, // 415: plan.v1.GateWait.AskedEntry.value:type_name -> google.protobuf.Timestamp
-	123, // 416: plan.v1.QuestionService.Ask:input_type -> plan.v1.QuestionServiceAskRequest
-	125, // 417: plan.v1.QuestionService.Answer:input_type -> plan.v1.QuestionServiceAnswerRequest
-	127, // 418: plan.v1.QuestionService.List:input_type -> plan.v1.QuestionServiceListRequest
-	129, // 419: plan.v1.QuestionService.Get:input_type -> plan.v1.QuestionServiceGetRequest
-	119, // 420: plan.v1.QuestionService.Enlighten:input_type -> plan.v1.QuestionServiceEnlightenRequest
-	121, // 421: plan.v1.QuestionService.Revise:input_type -> plan.v1.QuestionServiceReviseRequest
-	131, // 422: plan.v1.QuestionService.Move:input_type -> plan.v1.QuestionServiceMoveRequest
-	133, // 423: plan.v1.QuestionService.Withdraw:input_type -> plan.v1.QuestionServiceWithdrawRequest
-	135, // 424: plan.v1.QuestionService.Later:input_type -> plan.v1.QuestionServiceLaterRequest
-	137, // 425: plan.v1.QuestionService.Sleep:input_type -> plan.v1.QuestionServiceSleepRequest
-	117, // 426: plan.v1.QuestionService.Launch:input_type -> plan.v1.QuestionServiceLaunchRequest
-	139, // 427: plan.v1.ProjectService.Add:input_type -> plan.v1.ProjectServiceAddRequest
-	141, // 428: plan.v1.ProjectService.List:input_type -> plan.v1.ProjectServiceListRequest
-	143, // 429: plan.v1.ProjectService.Show:input_type -> plan.v1.ProjectServiceShowRequest
-	145, // 430: plan.v1.ProjectService.Push:input_type -> plan.v1.ProjectServicePushRequest
-	147, // 431: plan.v1.ProjectService.SetPush:input_type -> plan.v1.ProjectServiceSetPushRequest
-	149, // 432: plan.v1.ProjectService.PushStrategy:input_type -> plan.v1.ProjectServicePushStrategyRequest
-	151, // 433: plan.v1.ProjectService.Allow:input_type -> plan.v1.ProjectServiceAllowRequest
-	153, // 434: plan.v1.ProjectService.Gates:input_type -> plan.v1.ProjectServiceGatesRequest
-	155, // 435: plan.v1.ProjectService.ForgetSync:input_type -> plan.v1.ProjectServiceForgetSyncRequest
-	157, // 436: plan.v1.ProjectService.Pull:input_type -> plan.v1.ProjectServicePullRequest
-	160, // 437: plan.v1.ProjectService.Branches:input_type -> plan.v1.ProjectServiceBranchesRequest
-	162, // 438: plan.v1.ProjectService.SetBranch:input_type -> plan.v1.ProjectServiceSetBranchRequest
-	163, // 439: plan.v1.ProjectService.Acknowledge:input_type -> plan.v1.ProjectServiceAcknowledgeRequest
-	167, // 440: plan.v1.SkillService.Summon:input_type -> plan.v1.SkillServiceSummonRequest
-	169, // 441: plan.v1.SkillService.List:input_type -> plan.v1.SkillServiceListRequest
-	171, // 442: plan.v1.SkillService.Unsummon:input_type -> plan.v1.SkillServiceUnsummonRequest
-	184, // 443: plan.v1.InboxService.List:input_type -> plan.v1.InboxServiceListRequest
-	186, // 444: plan.v1.InboxService.Dismiss:input_type -> plan.v1.InboxServiceDismissRequest
-	188, // 445: plan.v1.InboxService.Route:input_type -> plan.v1.InboxServiceRouteRequest
-	178, // 446: plan.v1.InboxService.Sources:input_type -> plan.v1.InboxServiceSourcesRequest
-	180, // 447: plan.v1.InboxService.Plug:input_type -> plan.v1.InboxServicePlugRequest
-	182, // 448: plan.v1.InboxService.Unplug:input_type -> plan.v1.InboxServiceUnplugRequest
-	218, // 449: plan.v1.WishService.Make:input_type -> plan.v1.WishServiceMakeRequest
-	220, // 450: plan.v1.WishService.List:input_type -> plan.v1.WishServiceListRequest
-	222, // 451: plan.v1.WishService.Export:input_type -> plan.v1.WishServiceExportRequest
-	224, // 452: plan.v1.WishService.Import:input_type -> plan.v1.WishServiceImportRequest
-	226, // 453: plan.v1.WishService.ImportData:input_type -> plan.v1.WishServiceImportDataRequest
-	228, // 454: plan.v1.WishService.Describe:input_type -> plan.v1.WishServiceDescribeRequest
-	230, // 455: plan.v1.WishService.Rename:input_type -> plan.v1.WishServiceRenameRequest
-	232, // 456: plan.v1.WishService.Icon:input_type -> plan.v1.WishServiceIconRequest
-	234, // 457: plan.v1.WishService.Icons:input_type -> plan.v1.WishServiceIconsRequest
-	237, // 458: plan.v1.WishService.AddProject:input_type -> plan.v1.WishServiceAddProjectRequest
-	239, // 459: plan.v1.WishService.Brief:input_type -> plan.v1.WishServiceBriefRequest
-	241, // 460: plan.v1.WishService.Snapshot:input_type -> plan.v1.WishServiceSnapshotRequest
-	199, // 461: plan.v1.WishService.Allow:input_type -> plan.v1.WishServiceAllowRequest
-	201, // 462: plan.v1.WishService.SetIntegration:input_type -> plan.v1.WishServiceSetIntegrationRequest
-	203, // 463: plan.v1.WishService.PushStrategy:input_type -> plan.v1.WishServicePushStrategyRequest
-	205, // 464: plan.v1.WishService.Grant:input_type -> plan.v1.WishServiceGrantRequest
-	207, // 465: plan.v1.WishService.Pause:input_type -> plan.v1.WishServicePauseRequest
-	209, // 466: plan.v1.WishService.Activate:input_type -> plan.v1.WishServiceActivateRequest
-	211, // 467: plan.v1.WishService.Delete:input_type -> plan.v1.WishServiceDeleteRequest
-	214, // 468: plan.v1.WishService.Move:input_type -> plan.v1.WishServiceMoveRequest
-	216, // 469: plan.v1.WishService.Reorder:input_type -> plan.v1.WishServiceReorderRequest
-	195, // 470: plan.v1.WishService.Render:input_type -> plan.v1.WishServiceRenderRequest
-	197, // 471: plan.v1.WishService.Sync:input_type -> plan.v1.WishServiceSyncRequest
-	190, // 472: plan.v1.WishService.Route:input_type -> plan.v1.WishServiceRouteRequest
-	192, // 473: plan.v1.WishService.Watch:input_type -> plan.v1.WishServiceWatchRequest
-	248, // 474: plan.v1.LeadService.Set:input_type -> plan.v1.LeadServiceSetRequest
-	250, // 475: plan.v1.LeadService.Resume:input_type -> plan.v1.LeadServiceResumeRequest
-	252, // 476: plan.v1.LeadService.Get:input_type -> plan.v1.LeadServiceGetRequest
-	294, // 477: plan.v1.LeadService.Brief:input_type -> plan.v1.LeadServiceBriefRequest
-	296, // 478: plan.v1.LeadService.Notes:input_type -> plan.v1.LeadServiceNotesRequest
-	255, // 479: plan.v1.LeadService.Watch:input_type -> plan.v1.LeadServiceWatchRequest
-	257, // 480: plan.v1.LeadService.Event:input_type -> plan.v1.LeadServiceEventRequest
-	259, // 481: plan.v1.LeadService.Tell:input_type -> plan.v1.LeadServiceTellRequest
-	261, // 482: plan.v1.LeadService.Say:input_type -> plan.v1.LeadServiceSayRequest
-	263, // 483: plan.v1.LeadService.Journal:input_type -> plan.v1.LeadServiceJournalRequest
-	266, // 484: plan.v1.LeadService.Sessions:input_type -> plan.v1.LeadServiceSessionsRequest
-	268, // 485: plan.v1.LeadService.Show:input_type -> plan.v1.LeadServiceShowRequest
-	270, // 486: plan.v1.LeadService.Move:input_type -> plan.v1.LeadServiceMoveRequest
-	278, // 487: plan.v1.LeadService.Accounts:input_type -> plan.v1.LeadServiceAccountsRequest
-	284, // 488: plan.v1.LeadService.AddAccount:input_type -> plan.v1.LeadServiceAddAccountRequest
-	286, // 489: plan.v1.LeadService.RemoveAccount:input_type -> plan.v1.LeadServiceRemoveAccountRequest
-	288, // 490: plan.v1.LeadService.PauseAccount:input_type -> plan.v1.LeadServicePauseAccountRequest
-	290, // 491: plan.v1.LeadService.ResumeAccount:input_type -> plan.v1.LeadServiceResumeAccountRequest
-	280, // 492: plan.v1.LeadService.Order:input_type -> plan.v1.LeadServiceOrderRequest
-	282, // 493: plan.v1.LeadService.Pin:input_type -> plan.v1.LeadServicePinRequest
-	292, // 494: plan.v1.LeadService.Choose:input_type -> plan.v1.LeadServiceChooseRequest
-	382, // 495: plan.v1.LeadService.AccountMode:input_type -> plan.v1.LeadServiceAccountModeRequest
-	384, // 496: plan.v1.LeadService.Unlimited:input_type -> plan.v1.LeadServiceUnlimitedRequest
-	274, // 497: plan.v1.LeadService.GetCircle:input_type -> plan.v1.LeadServiceGetCircleRequest
-	276, // 498: plan.v1.LeadService.SetCircle:input_type -> plan.v1.LeadServiceSetCircleRequest
-	299, // 499: plan.v1.BlockService.Put:input_type -> plan.v1.BlockServicePutRequest
-	301, // 500: plan.v1.BlockService.List:input_type -> plan.v1.BlockServiceListRequest
-	303, // 501: plan.v1.BlockService.Delete:input_type -> plan.v1.BlockServiceDeleteRequest
-	307, // 502: plan.v1.MarkService.Put:input_type -> plan.v1.MarkServicePutRequest
-	309, // 503: plan.v1.MarkService.List:input_type -> plan.v1.MarkServiceListRequest
-	311, // 504: plan.v1.TaskService.Spawn:input_type -> plan.v1.TaskServiceSpawnRequest
-	313, // 505: plan.v1.TaskService.List:input_type -> plan.v1.TaskServiceListRequest
-	315, // 506: plan.v1.TaskService.Overlaps:input_type -> plan.v1.TaskServiceOverlapsRequest
-	319, // 507: plan.v1.TaskService.Get:input_type -> plan.v1.TaskServiceGetRequest
-	327, // 508: plan.v1.TaskService.Diff:input_type -> plan.v1.TaskServiceDiffRequest
-	329, // 509: plan.v1.TaskService.Stop:input_type -> plan.v1.TaskServiceStopRequest
-	333, // 510: plan.v1.TaskService.Pause:input_type -> plan.v1.TaskServicePauseRequest
-	335, // 511: plan.v1.TaskService.Resume:input_type -> plan.v1.TaskServiceResumeRequest
-	337, // 512: plan.v1.TaskService.Start:input_type -> plan.v1.TaskServiceStartRequest
-	339, // 513: plan.v1.TaskService.Watch:input_type -> plan.v1.TaskServiceWatchRequest
-	341, // 514: plan.v1.TaskService.Clean:input_type -> plan.v1.TaskServiceCleanRequest
-	343, // 515: plan.v1.TaskService.Depend:input_type -> plan.v1.TaskServiceDependRequest
-	346, // 516: plan.v1.TaskService.Group:input_type -> plan.v1.TaskServiceGroupRequest
-	348, // 517: plan.v1.TaskService.Delete:input_type -> plan.v1.TaskServiceDeleteRequest
-	350, // 518: plan.v1.TaskService.Done:input_type -> plan.v1.TaskServiceDoneRequest
-	352, // 519: plan.v1.TaskService.Cancel:input_type -> plan.v1.TaskServiceCancelRequest
-	354, // 520: plan.v1.TaskService.Continue:input_type -> plan.v1.TaskServiceContinueRequest
-	331, // 521: plan.v1.TaskService.Send:input_type -> plan.v1.TaskServiceSendRequest
-	356, // 522: plan.v1.TaskService.Update:input_type -> plan.v1.TaskServiceUpdateRequest
-	358, // 523: plan.v1.TaskService.Describe:input_type -> plan.v1.TaskServiceDescribeRequest
-	360, // 524: plan.v1.TaskService.Open:input_type -> plan.v1.TaskServiceOpenRequest
-	362, // 525: plan.v1.TaskService.Move:input_type -> plan.v1.TaskServiceMoveRequest
-	364, // 526: plan.v1.TaskService.Rank:input_type -> plan.v1.TaskServiceRankRequest
-	366, // 527: plan.v1.TaskService.Comment:input_type -> plan.v1.TaskServiceCommentRequest
-	368, // 528: plan.v1.TaskService.TurnComments:input_type -> plan.v1.TaskServiceTurnCommentsRequest
-	370, // 529: plan.v1.TaskService.UpdateModels:input_type -> plan.v1.TaskServiceUpdateModelsRequest
-	372, // 530: plan.v1.ServeService.Run:input_type -> plan.v1.ServeServiceRunRequest
-	374, // 531: plan.v1.ServeService.List:input_type -> plan.v1.ServeServiceListRequest
-	376, // 532: plan.v1.ServeService.Stop:input_type -> plan.v1.ServeServiceStopRequest
-	378, // 533: plan.v1.ServeService.Logs:input_type -> plan.v1.ServeServiceLogsRequest
-	380, // 534: plan.v1.PlanService.Sync:input_type -> plan.v1.PlanServiceSyncRequest
-	124, // 535: plan.v1.QuestionService.Ask:output_type -> plan.v1.QuestionServiceAskResponse
-	126, // 536: plan.v1.QuestionService.Answer:output_type -> plan.v1.QuestionServiceAnswerResponse
-	128, // 537: plan.v1.QuestionService.List:output_type -> plan.v1.QuestionServiceListResponse
-	130, // 538: plan.v1.QuestionService.Get:output_type -> plan.v1.QuestionServiceGetResponse
-	120, // 539: plan.v1.QuestionService.Enlighten:output_type -> plan.v1.QuestionServiceEnlightenResponse
-	122, // 540: plan.v1.QuestionService.Revise:output_type -> plan.v1.QuestionServiceReviseResponse
-	132, // 541: plan.v1.QuestionService.Move:output_type -> plan.v1.QuestionServiceMoveResponse
-	134, // 542: plan.v1.QuestionService.Withdraw:output_type -> plan.v1.QuestionServiceWithdrawResponse
-	136, // 543: plan.v1.QuestionService.Later:output_type -> plan.v1.QuestionServiceLaterResponse
-	138, // 544: plan.v1.QuestionService.Sleep:output_type -> plan.v1.QuestionServiceSleepResponse
-	118, // 545: plan.v1.QuestionService.Launch:output_type -> plan.v1.QuestionServiceLaunchResponse
-	140, // 546: plan.v1.ProjectService.Add:output_type -> plan.v1.ProjectServiceAddResponse
-	142, // 547: plan.v1.ProjectService.List:output_type -> plan.v1.ProjectServiceListResponse
-	144, // 548: plan.v1.ProjectService.Show:output_type -> plan.v1.ProjectServiceShowResponse
-	146, // 549: plan.v1.ProjectService.Push:output_type -> plan.v1.ProjectServicePushResponse
-	148, // 550: plan.v1.ProjectService.SetPush:output_type -> plan.v1.ProjectServiceSetPushResponse
-	150, // 551: plan.v1.ProjectService.PushStrategy:output_type -> plan.v1.ProjectServicePushStrategyResponse
-	152, // 552: plan.v1.ProjectService.Allow:output_type -> plan.v1.ProjectServiceAllowResponse
-	154, // 553: plan.v1.ProjectService.Gates:output_type -> plan.v1.ProjectServiceGatesResponse
-	156, // 554: plan.v1.ProjectService.ForgetSync:output_type -> plan.v1.ProjectServiceForgetSyncResponse
-	158, // 555: plan.v1.ProjectService.Pull:output_type -> plan.v1.ProjectServicePullResponse
-	161, // 556: plan.v1.ProjectService.Branches:output_type -> plan.v1.ProjectServiceBranchesResponse
-	165, // 557: plan.v1.ProjectService.SetBranch:output_type -> plan.v1.ProjectServiceSetBranchResponse
-	164, // 558: plan.v1.ProjectService.Acknowledge:output_type -> plan.v1.ProjectServiceAcknowledgeResponse
-	168, // 559: plan.v1.SkillService.Summon:output_type -> plan.v1.SkillServiceSummonResponse
-	170, // 560: plan.v1.SkillService.List:output_type -> plan.v1.SkillServiceListResponse
-	172, // 561: plan.v1.SkillService.Unsummon:output_type -> plan.v1.SkillServiceUnsummonResponse
-	185, // 562: plan.v1.InboxService.List:output_type -> plan.v1.InboxServiceListResponse
-	187, // 563: plan.v1.InboxService.Dismiss:output_type -> plan.v1.InboxServiceDismissResponse
-	189, // 564: plan.v1.InboxService.Route:output_type -> plan.v1.InboxServiceRouteResponse
-	179, // 565: plan.v1.InboxService.Sources:output_type -> plan.v1.InboxServiceSourcesResponse
-	181, // 566: plan.v1.InboxService.Plug:output_type -> plan.v1.InboxServicePlugResponse
-	183, // 567: plan.v1.InboxService.Unplug:output_type -> plan.v1.InboxServiceUnplugResponse
-	219, // 568: plan.v1.WishService.Make:output_type -> plan.v1.WishServiceMakeResponse
-	221, // 569: plan.v1.WishService.List:output_type -> plan.v1.WishServiceListResponse
-	223, // 570: plan.v1.WishService.Export:output_type -> plan.v1.WishServiceExportResponse
-	225, // 571: plan.v1.WishService.Import:output_type -> plan.v1.WishServiceImportResponse
-	227, // 572: plan.v1.WishService.ImportData:output_type -> plan.v1.WishServiceImportDataResponse
-	229, // 573: plan.v1.WishService.Describe:output_type -> plan.v1.WishServiceDescribeResponse
-	231, // 574: plan.v1.WishService.Rename:output_type -> plan.v1.WishServiceRenameResponse
-	233, // 575: plan.v1.WishService.Icon:output_type -> plan.v1.WishServiceIconResponse
-	235, // 576: plan.v1.WishService.Icons:output_type -> plan.v1.WishServiceIconsResponse
-	238, // 577: plan.v1.WishService.AddProject:output_type -> plan.v1.WishServiceAddProjectResponse
-	240, // 578: plan.v1.WishService.Brief:output_type -> plan.v1.WishServiceBriefResponse
-	242, // 579: plan.v1.WishService.Snapshot:output_type -> plan.v1.WishServiceSnapshotResponse
-	200, // 580: plan.v1.WishService.Allow:output_type -> plan.v1.WishServiceAllowResponse
-	202, // 581: plan.v1.WishService.SetIntegration:output_type -> plan.v1.WishServiceSetIntegrationResponse
-	204, // 582: plan.v1.WishService.PushStrategy:output_type -> plan.v1.WishServicePushStrategyResponse
-	206, // 583: plan.v1.WishService.Grant:output_type -> plan.v1.WishServiceGrantResponse
-	208, // 584: plan.v1.WishService.Pause:output_type -> plan.v1.WishServicePauseResponse
-	210, // 585: plan.v1.WishService.Activate:output_type -> plan.v1.WishServiceActivateResponse
-	212, // 586: plan.v1.WishService.Delete:output_type -> plan.v1.WishServiceDeleteResponse
-	215, // 587: plan.v1.WishService.Move:output_type -> plan.v1.WishServiceMoveResponse
-	217, // 588: plan.v1.WishService.Reorder:output_type -> plan.v1.WishServiceReorderResponse
-	196, // 589: plan.v1.WishService.Render:output_type -> plan.v1.WishServiceRenderResponse
-	198, // 590: plan.v1.WishService.Sync:output_type -> plan.v1.WishServiceSyncResponse
-	191, // 591: plan.v1.WishService.Route:output_type -> plan.v1.WishServiceRouteResponse
-	193, // 592: plan.v1.WishService.Watch:output_type -> plan.v1.WishServiceWatchResponse
-	249, // 593: plan.v1.LeadService.Set:output_type -> plan.v1.LeadServiceSetResponse
-	251, // 594: plan.v1.LeadService.Resume:output_type -> plan.v1.LeadServiceResumeResponse
-	253, // 595: plan.v1.LeadService.Get:output_type -> plan.v1.LeadServiceGetResponse
-	295, // 596: plan.v1.LeadService.Brief:output_type -> plan.v1.LeadServiceBriefResponse
-	297, // 597: plan.v1.LeadService.Notes:output_type -> plan.v1.LeadServiceNotesResponse
-	256, // 598: plan.v1.LeadService.Watch:output_type -> plan.v1.LeadServiceWatchResponse
-	258, // 599: plan.v1.LeadService.Event:output_type -> plan.v1.LeadServiceEventResponse
-	260, // 600: plan.v1.LeadService.Tell:output_type -> plan.v1.LeadServiceTellResponse
-	262, // 601: plan.v1.LeadService.Say:output_type -> plan.v1.LeadServiceSayResponse
-	264, // 602: plan.v1.LeadService.Journal:output_type -> plan.v1.LeadServiceJournalResponse
-	267, // 603: plan.v1.LeadService.Sessions:output_type -> plan.v1.LeadServiceSessionsResponse
-	269, // 604: plan.v1.LeadService.Show:output_type -> plan.v1.LeadServiceShowResponse
-	271, // 605: plan.v1.LeadService.Move:output_type -> plan.v1.LeadServiceMoveResponse
-	279, // 606: plan.v1.LeadService.Accounts:output_type -> plan.v1.LeadServiceAccountsResponse
-	285, // 607: plan.v1.LeadService.AddAccount:output_type -> plan.v1.LeadServiceAddAccountResponse
-	287, // 608: plan.v1.LeadService.RemoveAccount:output_type -> plan.v1.LeadServiceRemoveAccountResponse
-	289, // 609: plan.v1.LeadService.PauseAccount:output_type -> plan.v1.LeadServicePauseAccountResponse
-	291, // 610: plan.v1.LeadService.ResumeAccount:output_type -> plan.v1.LeadServiceResumeAccountResponse
-	281, // 611: plan.v1.LeadService.Order:output_type -> plan.v1.LeadServiceOrderResponse
-	283, // 612: plan.v1.LeadService.Pin:output_type -> plan.v1.LeadServicePinResponse
-	293, // 613: plan.v1.LeadService.Choose:output_type -> plan.v1.LeadServiceChooseResponse
-	383, // 614: plan.v1.LeadService.AccountMode:output_type -> plan.v1.LeadServiceAccountModeResponse
-	385, // 615: plan.v1.LeadService.Unlimited:output_type -> plan.v1.LeadServiceUnlimitedResponse
-	275, // 616: plan.v1.LeadService.GetCircle:output_type -> plan.v1.LeadServiceGetCircleResponse
-	277, // 617: plan.v1.LeadService.SetCircle:output_type -> plan.v1.LeadServiceSetCircleResponse
-	300, // 618: plan.v1.BlockService.Put:output_type -> plan.v1.BlockServicePutResponse
-	302, // 619: plan.v1.BlockService.List:output_type -> plan.v1.BlockServiceListResponse
-	304, // 620: plan.v1.BlockService.Delete:output_type -> plan.v1.BlockServiceDeleteResponse
-	308, // 621: plan.v1.MarkService.Put:output_type -> plan.v1.MarkServicePutResponse
-	310, // 622: plan.v1.MarkService.List:output_type -> plan.v1.MarkServiceListResponse
-	312, // 623: plan.v1.TaskService.Spawn:output_type -> plan.v1.TaskServiceSpawnResponse
-	314, // 624: plan.v1.TaskService.List:output_type -> plan.v1.TaskServiceListResponse
-	316, // 625: plan.v1.TaskService.Overlaps:output_type -> plan.v1.TaskServiceOverlapsResponse
-	320, // 626: plan.v1.TaskService.Get:output_type -> plan.v1.TaskServiceGetResponse
-	328, // 627: plan.v1.TaskService.Diff:output_type -> plan.v1.TaskServiceDiffResponse
-	330, // 628: plan.v1.TaskService.Stop:output_type -> plan.v1.TaskServiceStopResponse
-	334, // 629: plan.v1.TaskService.Pause:output_type -> plan.v1.TaskServicePauseResponse
-	336, // 630: plan.v1.TaskService.Resume:output_type -> plan.v1.TaskServiceResumeResponse
-	338, // 631: plan.v1.TaskService.Start:output_type -> plan.v1.TaskServiceStartResponse
-	340, // 632: plan.v1.TaskService.Watch:output_type -> plan.v1.TaskServiceWatchResponse
-	342, // 633: plan.v1.TaskService.Clean:output_type -> plan.v1.TaskServiceCleanResponse
-	345, // 634: plan.v1.TaskService.Depend:output_type -> plan.v1.TaskServiceDependResponse
-	347, // 635: plan.v1.TaskService.Group:output_type -> plan.v1.TaskServiceGroupResponse
-	349, // 636: plan.v1.TaskService.Delete:output_type -> plan.v1.TaskServiceDeleteResponse
-	351, // 637: plan.v1.TaskService.Done:output_type -> plan.v1.TaskServiceDoneResponse
-	353, // 638: plan.v1.TaskService.Cancel:output_type -> plan.v1.TaskServiceCancelResponse
-	355, // 639: plan.v1.TaskService.Continue:output_type -> plan.v1.TaskServiceContinueResponse
-	332, // 640: plan.v1.TaskService.Send:output_type -> plan.v1.TaskServiceSendResponse
-	357, // 641: plan.v1.TaskService.Update:output_type -> plan.v1.TaskServiceUpdateResponse
-	359, // 642: plan.v1.TaskService.Describe:output_type -> plan.v1.TaskServiceDescribeResponse
-	361, // 643: plan.v1.TaskService.Open:output_type -> plan.v1.TaskServiceOpenResponse
-	363, // 644: plan.v1.TaskService.Move:output_type -> plan.v1.TaskServiceMoveResponse
-	365, // 645: plan.v1.TaskService.Rank:output_type -> plan.v1.TaskServiceRankResponse
-	367, // 646: plan.v1.TaskService.Comment:output_type -> plan.v1.TaskServiceCommentResponse
-	369, // 647: plan.v1.TaskService.TurnComments:output_type -> plan.v1.TaskServiceTurnCommentsResponse
-	371, // 648: plan.v1.TaskService.UpdateModels:output_type -> plan.v1.TaskServiceUpdateModelsResponse
-	373, // 649: plan.v1.ServeService.Run:output_type -> plan.v1.ServeServiceRunResponse
-	375, // 650: plan.v1.ServeService.List:output_type -> plan.v1.ServeServiceListResponse
-	377, // 651: plan.v1.ServeService.Stop:output_type -> plan.v1.ServeServiceStopResponse
-	379, // 652: plan.v1.ServeService.Logs:output_type -> plan.v1.ServeServiceLogsResponse
-	381, // 653: plan.v1.PlanService.Sync:output_type -> plan.v1.PlanServiceSyncResponse
-	535, // [535:654] is the sub-list for method output_type
-	416, // [416:535] is the sub-list for method input_type
-	416, // [416:416] is the sub-list for extension type_name
-	416, // [416:416] is the sub-list for extension extendee
-	0,   // [0:416] is the sub-list for field type_name
+	391, // 222: plan.v1.ProjectServiceShowResponse.permissions:type_name -> djinn.v1.Permissions
+	392, // 223: plan.v1.ProjectServiceShowResponse.containers:type_name -> djinn.v1.Containers
+	62,  // 224: plan.v1.ProjectServicePushResponse.push:type_name -> plan.v1.IntegrationPush
+	4,   // 225: plan.v1.ProjectServiceSetPushRequest.push:type_name -> plan.v1.ProjectPush
+	46,  // 226: plan.v1.ProjectServiceSetPushResponse.project:type_name -> plan.v1.Project
+	8,   // 227: plan.v1.ProjectServicePushStrategyRequest.strategy:type_name -> plan.v1.PushStrategy
+	8,   // 228: plan.v1.ProjectServicePushStrategyResponse.strategy:type_name -> plan.v1.PushStrategy
+	6,   // 229: plan.v1.ProjectServicePushStrategyResponse.source:type_name -> plan.v1.SettingSource
+	393, // 230: plan.v1.ProjectServiceGatesResponse.gates:type_name -> djinn.v1.ProjectGate
+	393, // 231: plan.v1.ProjectServiceGatesResponse.off_gates:type_name -> djinn.v1.ProjectGate
+	159, // 232: plan.v1.ProjectServicePullResponse.pulls:type_name -> plan.v1.BranchPull
+	50,  // 233: plan.v1.ProjectServiceAcknowledgeResponse.changes:type_name -> plan.v1.ConfigChange
+	48,  // 234: plan.v1.ProjectServiceSetBranchResponse.reference:type_name -> plan.v1.ProjectReference
+	166, // 235: plan.v1.SkillServiceSummonResponse.skill:type_name -> plan.v1.Skill
+	166, // 236: plan.v1.SkillServiceListResponse.skills:type_name -> plan.v1.Skill
+	46,  // 237: plan.v1.SkillServiceUnsummonResponse.project:type_name -> plan.v1.Project
+	38,  // 238: plan.v1.InboxItem.state:type_name -> plan.v1.InboxState
+	389, // 239: plan.v1.InboxItem.create_time:type_name -> google.protobuf.Timestamp
+	110, // 240: plan.v1.InboxItem.route:type_name -> plan.v1.Route
+	389, // 241: plan.v1.InboxItem.settle_time:type_name -> google.protobuf.Timestamp
+	175, // 242: plan.v1.InboxSource.last_run:type_name -> plan.v1.SourceRun
+	389, // 243: plan.v1.SourceRun.end_time:type_name -> google.protobuf.Timestamp
+	389, // 244: plan.v1.SourceRun.failing_since:type_name -> google.protobuf.Timestamp
+	389, // 245: plan.v1.PluggedSource.create_time:type_name -> google.protobuf.Timestamp
+	389, // 246: plan.v1.DeclinedSource.create_time:type_name -> google.protobuf.Timestamp
+	174, // 247: plan.v1.InboxServiceSourcesResponse.sources:type_name -> plan.v1.InboxSource
+	174, // 248: plan.v1.InboxServicePlugResponse.source:type_name -> plan.v1.InboxSource
+	174, // 249: plan.v1.InboxServiceUnplugResponse.source:type_name -> plan.v1.InboxSource
+	173, // 250: plan.v1.InboxServiceListResponse.items:type_name -> plan.v1.InboxItem
+	173, // 251: plan.v1.InboxServiceDismissResponse.item:type_name -> plan.v1.InboxItem
+	32,  // 252: plan.v1.InboxServiceRouteRequest.choice:type_name -> plan.v1.Choice
+	173, // 253: plan.v1.InboxServiceRouteResponse.item:type_name -> plan.v1.InboxItem
+	110, // 254: plan.v1.WishServiceRouteResponse.route:type_name -> plan.v1.Route
+	104, // 255: plan.v1.WishServiceRouteResponse.question:type_name -> plan.v1.Question
+	39,  // 256: plan.v1.WishServiceWatchResponse.changes:type_name -> plan.v1.Change
+	194, // 257: plan.v1.WishServiceWatchResponse.changed:type_name -> plan.v1.WishChanges
+	394, // 258: plan.v1.WishServiceWatchResponse.load:type_name -> djinn.v1.LoadNotch
+	78,  // 259: plan.v1.WishChanges.tasks:type_name -> plan.v1.Task
+	104, // 260: plan.v1.WishChanges.questions:type_name -> plan.v1.Question
+	298, // 261: plan.v1.WishChanges.blocks:type_name -> plan.v1.Block
+	16,  // 262: plan.v1.WishServiceAllowRequest.mode:type_name -> plan.v1.Allowance
+	58,  // 263: plan.v1.WishServiceAllowResponse.wish:type_name -> plan.v1.Wish
+	7,   // 264: plan.v1.WishServiceSetIntegrationRequest.push_mode:type_name -> plan.v1.PushMode
+	8,   // 265: plan.v1.WishServiceSetIntegrationRequest.push_strategy:type_name -> plan.v1.PushStrategy
+	58,  // 266: plan.v1.WishServiceSetIntegrationResponse.wish:type_name -> plan.v1.Wish
+	8,   // 267: plan.v1.WishServicePushStrategyRequest.strategy:type_name -> plan.v1.PushStrategy
+	8,   // 268: plan.v1.WishServicePushStrategyResponse.strategy:type_name -> plan.v1.PushStrategy
+	6,   // 269: plan.v1.WishServicePushStrategyResponse.source:type_name -> plan.v1.SettingSource
+	58,  // 270: plan.v1.WishServiceGrantResponse.wish:type_name -> plan.v1.Wish
+	58,  // 271: plan.v1.WishServicePauseResponse.wish:type_name -> plan.v1.Wish
+	58,  // 272: plan.v1.WishServiceActivateResponse.wish:type_name -> plan.v1.Wish
+	58,  // 273: plan.v1.WishServiceActivateResponse.paused:type_name -> plan.v1.Wish
+	58,  // 274: plan.v1.WishServiceDeleteResponse.wish:type_name -> plan.v1.Wish
+	213, // 275: plan.v1.WishServiceDeleteResponse.kept:type_name -> plan.v1.KeptWorktree
+	58,  // 276: plan.v1.WishServiceMoveResponse.wishes:type_name -> plan.v1.Wish
+	58,  // 277: plan.v1.WishServiceMoveResponse.paused:type_name -> plan.v1.Wish
+	58,  // 278: plan.v1.WishServiceReorderResponse.wishes:type_name -> plan.v1.Wish
+	8,   // 279: plan.v1.WishServiceMakeRequest.push_strategy:type_name -> plan.v1.PushStrategy
+	58,  // 280: plan.v1.WishServiceMakeResponse.wish:type_name -> plan.v1.Wish
+	58,  // 281: plan.v1.WishServiceListResponse.wishes:type_name -> plan.v1.Wish
+	58,  // 282: plan.v1.WishServiceImportResponse.wish:type_name -> plan.v1.Wish
+	243, // 283: plan.v1.WishServiceImportResponse.projects:type_name -> plan.v1.ProjectMatch
+	58,  // 284: plan.v1.WishServiceImportDataResponse.wish:type_name -> plan.v1.Wish
+	243, // 285: plan.v1.WishServiceImportDataResponse.projects:type_name -> plan.v1.ProjectMatch
+	58,  // 286: plan.v1.WishServiceDescribeResponse.wish:type_name -> plan.v1.Wish
+	58,  // 287: plan.v1.WishServiceRenameResponse.wish:type_name -> plan.v1.Wish
+	58,  // 288: plan.v1.WishServiceIconResponse.wish:type_name -> plan.v1.Wish
+	236, // 289: plan.v1.WishServiceIconsResponse.icons:type_name -> plan.v1.WishIcon
+	58,  // 290: plan.v1.WishServiceAddProjectResponse.wish:type_name -> plan.v1.Wish
+	244, // 291: plan.v1.WishServiceSnapshotResponse.export:type_name -> plan.v1.WishExport
+	46,  // 292: plan.v1.WishServiceSnapshotResponse.projects:type_name -> plan.v1.Project
+	46,  // 293: plan.v1.ProjectMatch.project:type_name -> plan.v1.Project
+	40,  // 294: plan.v1.ProjectMatch.match:type_name -> plan.v1.ProjectMatchKind
+	389, // 295: plan.v1.WishExport.create_time:type_name -> google.protobuf.Timestamp
+	58,  // 296: plan.v1.WishExport.wish:type_name -> plan.v1.Wish
+	245, // 297: plan.v1.WishExport.projects:type_name -> plan.v1.ProjectRef
+	78,  // 298: plan.v1.WishExport.tasks:type_name -> plan.v1.Task
+	101, // 299: plan.v1.WishExport.events:type_name -> plan.v1.TaskEvent
+	104, // 300: plan.v1.WishExport.questions:type_name -> plan.v1.Question
+	298, // 301: plan.v1.WishExport.blocks:type_name -> plan.v1.Block
+	246, // 302: plan.v1.WishExport.commands:type_name -> plan.v1.Command
+	395, // 303: plan.v1.WishExport.tilasms:type_name -> plan.v1.TilasmExport
+	69,  // 304: plan.v1.WishExport.lead_batches:type_name -> plan.v1.LeadBatch
+	389, // 305: plan.v1.Command.at:type_name -> google.protobuf.Timestamp
+	396, // 306: plan.v1.Command.request:type_name -> google.protobuf.Any
+	20,  // 307: plan.v1.LeadServiceSetRequest.provider:type_name -> plan.v1.Provider
+	67,  // 308: plan.v1.LeadServiceSetResponse.lead:type_name -> plan.v1.Lead
+	20,  // 309: plan.v1.LeadServiceResumeRequest.provider:type_name -> plan.v1.Provider
+	67,  // 310: plan.v1.LeadServiceResumeResponse.lead:type_name -> plan.v1.Lead
+	67,  // 311: plan.v1.LeadServiceGetResponse.lead:type_name -> plan.v1.Lead
+	247, // 312: plan.v1.LeadServiceGetResponse.prompt:type_name -> plan.v1.LeadPrompt
+	254, // 313: plan.v1.LeadServiceGetResponse.exit:type_name -> plan.v1.LeadExit
+	69,  // 314: plan.v1.LeadServiceGetResponse.batch:type_name -> plan.v1.LeadBatch
+	74,  // 315: plan.v1.LeadServiceGetResponse.seat:type_name -> plan.v1.LeadSeat
+	70,  // 316: plan.v1.LeadServiceGetResponse.accounts:type_name -> plan.v1.Account
+	75,  // 317: plan.v1.LeadServiceGetResponse.limit:type_name -> plan.v1.LeadLimit
+	73,  // 318: plan.v1.LeadServiceGetResponse.circle:type_name -> plan.v1.WorkerSeat
+	69,  // 319: plan.v1.LeadServiceGetResponse.journal:type_name -> plan.v1.LeadBatch
+	390, // 320: plan.v1.LeadServiceWatchRequest.timeout:type_name -> google.protobuf.Duration
+	298, // 321: plan.v1.LeadServiceSayResponse.block:type_name -> plan.v1.Block
+	69,  // 322: plan.v1.LeadServiceJournalResponse.batches:type_name -> plan.v1.LeadBatch
+	69,  // 323: plan.v1.LeadSession.batch:type_name -> plan.v1.LeadBatch
+	265, // 324: plan.v1.LeadServiceSessionsResponse.sessions:type_name -> plan.v1.LeadSession
+	69,  // 325: plan.v1.LeadServiceShowResponse.batch:type_name -> plan.v1.LeadBatch
+	20,  // 326: plan.v1.LeadServiceMoveRequest.provider:type_name -> plan.v1.Provider
+	74,  // 327: plan.v1.LeadServiceMoveResponse.seat:type_name -> plan.v1.LeadSeat
+	20,  // 328: plan.v1.CircleModel.provider:type_name -> plan.v1.Provider
+	20,  // 329: plan.v1.CircleProvider.provider:type_name -> plan.v1.Provider
+	73,  // 330: plan.v1.LeadServiceGetCircleResponse.rows:type_name -> plan.v1.WorkerSeat
+	272, // 331: plan.v1.LeadServiceGetCircleResponse.models:type_name -> plan.v1.CircleModel
+	273, // 332: plan.v1.LeadServiceGetCircleResponse.providers:type_name -> plan.v1.CircleProvider
+	14,  // 333: plan.v1.LeadServiceSetCircleRequest.kind:type_name -> plan.v1.WorkerKind
+	20,  // 334: plan.v1.LeadServiceSetCircleRequest.provider:type_name -> plan.v1.Provider
+	73,  // 335: plan.v1.LeadServiceSetCircleResponse.rows:type_name -> plan.v1.WorkerSeat
+	272, // 336: plan.v1.LeadServiceSetCircleResponse.models:type_name -> plan.v1.CircleModel
+	273, // 337: plan.v1.LeadServiceSetCircleResponse.providers:type_name -> plan.v1.CircleProvider
+	70,  // 338: plan.v1.LeadServiceAccountsResponse.accounts:type_name -> plan.v1.Account
+	74,  // 339: plan.v1.LeadServiceAccountsResponse.seat:type_name -> plan.v1.LeadSeat
+	71,  // 340: plan.v1.LeadServiceAccountsResponse.usage:type_name -> plan.v1.AccountUsage
+	44,  // 341: plan.v1.LeadServiceAccountsResponse.mode:type_name -> plan.v1.AccountMode
+	74,  // 342: plan.v1.LeadServicePinResponse.seat:type_name -> plan.v1.LeadSeat
+	20,  // 343: plan.v1.LeadServiceAddAccountRequest.provider:type_name -> plan.v1.Provider
+	70,  // 344: plan.v1.LeadServiceAddAccountResponse.account:type_name -> plan.v1.Account
+	20,  // 345: plan.v1.LeadServicePauseAccountRequest.provider:type_name -> plan.v1.Provider
+	20,  // 346: plan.v1.LeadServiceResumeAccountRequest.provider:type_name -> plan.v1.Provider
+	389, // 347: plan.v1.Block.create_time:type_name -> google.protobuf.Timestamp
+	389, // 348: plan.v1.Block.update_time:type_name -> google.protobuf.Timestamp
+	113, // 349: plan.v1.Block.marks:type_name -> plan.v1.Mark
+	298, // 350: plan.v1.BlockServicePutResponse.block:type_name -> plan.v1.Block
+	298, // 351: plan.v1.BlockServiceListResponse.blocks:type_name -> plan.v1.Block
+	113, // 352: plan.v1.Marked.mark:type_name -> plan.v1.Mark
+	305, // 353: plan.v1.MarkServicePutRequest.target:type_name -> plan.v1.MarkTarget
+	37,  // 354: plan.v1.MarkServicePutRequest.kind:type_name -> plan.v1.MarkKind
+	306, // 355: plan.v1.MarkServicePutResponse.marked:type_name -> plan.v1.Marked
+	306, // 356: plan.v1.MarkServiceListResponse.marks:type_name -> plan.v1.Marked
+	20,  // 357: plan.v1.TaskServiceSpawnRequest.provider:type_name -> plan.v1.Provider
+	25,  // 358: plan.v1.TaskServiceSpawnRequest.kind:type_name -> plan.v1.TaskKind
+	78,  // 359: plan.v1.TaskServiceSpawnResponse.task:type_name -> plan.v1.Task
+	17,  // 360: plan.v1.TaskServiceListRequest.status:type_name -> plan.v1.TaskStatus
+	78,  // 361: plan.v1.TaskServiceListResponse.tasks:type_name -> plan.v1.Task
+	317, // 362: plan.v1.TaskServiceOverlapsResponse.tasks:type_name -> plan.v1.TaskFiles
+	318, // 363: plan.v1.TaskServiceOverlapsResponse.overlaps:type_name -> plan.v1.TaskOverlap
+	17,  // 364: plan.v1.TaskFiles.status:type_name -> plan.v1.TaskStatus
+	41,  // 365: plan.v1.TaskFiles.source:type_name -> plan.v1.TaskFilesSource
+	78,  // 366: plan.v1.TaskServiceGetResponse.task:type_name -> plan.v1.Task
+	43,  // 367: plan.v1.DiffLine.kind:type_name -> plan.v1.DiffLineKind
+	321, // 368: plan.v1.DiffLine.tokens:type_name -> plan.v1.DiffToken
+	322, // 369: plan.v1.DiffHunk.lines:type_name -> plan.v1.DiffLine
+	42,  // 370: plan.v1.TaskDiffFile.status:type_name -> plan.v1.DiffStatus
+	42,  // 371: plan.v1.TaskFileDiff.status:type_name -> plan.v1.DiffStatus
+	323, // 372: plan.v1.TaskFileDiff.hunks:type_name -> plan.v1.DiffHunk
+	326, // 373: plan.v1.TaskServiceDiffRequest.task:type_name -> plan.v1.TaskRef
+	324, // 374: plan.v1.TaskServiceDiffResponse.files:type_name -> plan.v1.TaskDiffFile
+	325, // 375: plan.v1.TaskServiceDiffResponse.file:type_name -> plan.v1.TaskFileDiff
+	78,  // 376: plan.v1.TaskServiceStopResponse.task:type_name -> plan.v1.Task
+	101, // 377: plan.v1.TaskServiceSendResponse.event:type_name -> plan.v1.TaskEvent
+	78,  // 378: plan.v1.TaskServicePauseResponse.task:type_name -> plan.v1.Task
+	78,  // 379: plan.v1.TaskServiceResumeResponse.task:type_name -> plan.v1.Task
+	78,  // 380: plan.v1.TaskServiceStartResponse.task:type_name -> plan.v1.Task
+	101, // 381: plan.v1.TaskServiceWatchResponse.event:type_name -> plan.v1.TaskEvent
+	78,  // 382: plan.v1.TaskServiceCleanResponse.task:type_name -> plan.v1.Task
+	344, // 383: plan.v1.TaskServiceDependRequest.also:type_name -> plan.v1.TaskAfter
+	78,  // 384: plan.v1.TaskServiceDependResponse.task:type_name -> plan.v1.Task
+	78,  // 385: plan.v1.TaskServiceDependResponse.also:type_name -> plan.v1.Task
+	78,  // 386: plan.v1.TaskServiceGroupResponse.task:type_name -> plan.v1.Task
+	78,  // 387: plan.v1.TaskServiceDeleteResponse.task:type_name -> plan.v1.Task
+	30,  // 388: plan.v1.TaskServiceDoneRequest.by:type_name -> plan.v1.Closer
+	78,  // 389: plan.v1.TaskServiceDoneResponse.task:type_name -> plan.v1.Task
+	30,  // 390: plan.v1.TaskServiceCancelRequest.by:type_name -> plan.v1.Closer
+	78,  // 391: plan.v1.TaskServiceCancelResponse.task:type_name -> plan.v1.Task
+	30,  // 392: plan.v1.TaskServiceContinueRequest.by:type_name -> plan.v1.Closer
+	78,  // 393: plan.v1.TaskServiceContinueResponse.task:type_name -> plan.v1.Task
+	20,  // 394: plan.v1.TaskServiceUpdateRequest.provider:type_name -> plan.v1.Provider
+	78,  // 395: plan.v1.TaskServiceUpdateResponse.task:type_name -> plan.v1.Task
+	78,  // 396: plan.v1.TaskServiceDescribeResponse.task:type_name -> plan.v1.Task
+	78,  // 397: plan.v1.TaskServiceOpenResponse.task:type_name -> plan.v1.Task
+	78,  // 398: plan.v1.TaskServiceMoveResponse.task:type_name -> plan.v1.Task
+	78,  // 399: plan.v1.TaskServiceRankResponse.azimas:type_name -> plan.v1.Task
+	83,  // 400: plan.v1.TaskServiceCommentResponse.comment:type_name -> plan.v1.TaskComment
+	78,  // 401: plan.v1.TaskServiceCommentResponse.task:type_name -> plan.v1.Task
+	30,  // 402: plan.v1.TaskServiceTurnCommentsRequest.by:type_name -> plan.v1.Closer
+	78,  // 403: plan.v1.TaskServiceTurnCommentsResponse.task:type_name -> plan.v1.Task
+	20,  // 404: plan.v1.TaskServiceUpdateModelsRequest.provider:type_name -> plan.v1.Provider
+	20,  // 405: plan.v1.TaskServiceUpdateModelsResponse.provider:type_name -> plan.v1.Provider
+	78,  // 406: plan.v1.TaskServiceUpdateModelsResponse.tasks:type_name -> plan.v1.Task
+	78,  // 407: plan.v1.TaskServiceUpdateModelsResponse.skipped:type_name -> plan.v1.Task
+	73,  // 408: plan.v1.TaskServiceUpdateModelsResponse.circle:type_name -> plan.v1.WorkerSeat
+	92,  // 409: plan.v1.ServeServiceRunResponse.serve:type_name -> plan.v1.Serve
+	92,  // 410: plan.v1.ServeServiceListResponse.serves:type_name -> plan.v1.Serve
+	92,  // 411: plan.v1.ServeServiceStopResponse.serve:type_name -> plan.v1.Serve
+	78,  // 412: plan.v1.PlanServiceSyncResponse.azimas:type_name -> plan.v1.Task
+	44,  // 413: plan.v1.LeadServiceAccountModeRequest.mode:type_name -> plan.v1.AccountMode
+	44,  // 414: plan.v1.LeadServiceAccountModeResponse.mode:type_name -> plan.v1.AccountMode
+	45,  // 415: plan.v1.LeadServiceUnlimitedRequest.unlimited:type_name -> plan.v1.UnlimitedSetting
+	45,  // 416: plan.v1.LeadServiceUnlimitedResponse.unlimited:type_name -> plan.v1.UnlimitedSetting
+	60,  // 417: plan.v1.WishPush.HoldsEntry.value:type_name -> plan.v1.PushHold
+	389, // 418: plan.v1.GateWait.AskedEntry.value:type_name -> google.protobuf.Timestamp
+	123, // 419: plan.v1.QuestionService.Ask:input_type -> plan.v1.QuestionServiceAskRequest
+	125, // 420: plan.v1.QuestionService.Answer:input_type -> plan.v1.QuestionServiceAnswerRequest
+	127, // 421: plan.v1.QuestionService.List:input_type -> plan.v1.QuestionServiceListRequest
+	129, // 422: plan.v1.QuestionService.Get:input_type -> plan.v1.QuestionServiceGetRequest
+	119, // 423: plan.v1.QuestionService.Enlighten:input_type -> plan.v1.QuestionServiceEnlightenRequest
+	121, // 424: plan.v1.QuestionService.Revise:input_type -> plan.v1.QuestionServiceReviseRequest
+	131, // 425: plan.v1.QuestionService.Move:input_type -> plan.v1.QuestionServiceMoveRequest
+	133, // 426: plan.v1.QuestionService.Withdraw:input_type -> plan.v1.QuestionServiceWithdrawRequest
+	135, // 427: plan.v1.QuestionService.Later:input_type -> plan.v1.QuestionServiceLaterRequest
+	137, // 428: plan.v1.QuestionService.Sleep:input_type -> plan.v1.QuestionServiceSleepRequest
+	117, // 429: plan.v1.QuestionService.Launch:input_type -> plan.v1.QuestionServiceLaunchRequest
+	139, // 430: plan.v1.ProjectService.Add:input_type -> plan.v1.ProjectServiceAddRequest
+	141, // 431: plan.v1.ProjectService.List:input_type -> plan.v1.ProjectServiceListRequest
+	143, // 432: plan.v1.ProjectService.Show:input_type -> plan.v1.ProjectServiceShowRequest
+	145, // 433: plan.v1.ProjectService.Push:input_type -> plan.v1.ProjectServicePushRequest
+	147, // 434: plan.v1.ProjectService.SetPush:input_type -> plan.v1.ProjectServiceSetPushRequest
+	149, // 435: plan.v1.ProjectService.PushStrategy:input_type -> plan.v1.ProjectServicePushStrategyRequest
+	151, // 436: plan.v1.ProjectService.Allow:input_type -> plan.v1.ProjectServiceAllowRequest
+	153, // 437: plan.v1.ProjectService.Gates:input_type -> plan.v1.ProjectServiceGatesRequest
+	155, // 438: plan.v1.ProjectService.ForgetSync:input_type -> plan.v1.ProjectServiceForgetSyncRequest
+	157, // 439: plan.v1.ProjectService.Pull:input_type -> plan.v1.ProjectServicePullRequest
+	160, // 440: plan.v1.ProjectService.Branches:input_type -> plan.v1.ProjectServiceBranchesRequest
+	162, // 441: plan.v1.ProjectService.SetBranch:input_type -> plan.v1.ProjectServiceSetBranchRequest
+	163, // 442: plan.v1.ProjectService.Acknowledge:input_type -> plan.v1.ProjectServiceAcknowledgeRequest
+	167, // 443: plan.v1.SkillService.Summon:input_type -> plan.v1.SkillServiceSummonRequest
+	169, // 444: plan.v1.SkillService.List:input_type -> plan.v1.SkillServiceListRequest
+	171, // 445: plan.v1.SkillService.Unsummon:input_type -> plan.v1.SkillServiceUnsummonRequest
+	184, // 446: plan.v1.InboxService.List:input_type -> plan.v1.InboxServiceListRequest
+	186, // 447: plan.v1.InboxService.Dismiss:input_type -> plan.v1.InboxServiceDismissRequest
+	188, // 448: plan.v1.InboxService.Route:input_type -> plan.v1.InboxServiceRouteRequest
+	178, // 449: plan.v1.InboxService.Sources:input_type -> plan.v1.InboxServiceSourcesRequest
+	180, // 450: plan.v1.InboxService.Plug:input_type -> plan.v1.InboxServicePlugRequest
+	182, // 451: plan.v1.InboxService.Unplug:input_type -> plan.v1.InboxServiceUnplugRequest
+	218, // 452: plan.v1.WishService.Make:input_type -> plan.v1.WishServiceMakeRequest
+	220, // 453: plan.v1.WishService.List:input_type -> plan.v1.WishServiceListRequest
+	222, // 454: plan.v1.WishService.Export:input_type -> plan.v1.WishServiceExportRequest
+	224, // 455: plan.v1.WishService.Import:input_type -> plan.v1.WishServiceImportRequest
+	226, // 456: plan.v1.WishService.ImportData:input_type -> plan.v1.WishServiceImportDataRequest
+	228, // 457: plan.v1.WishService.Describe:input_type -> plan.v1.WishServiceDescribeRequest
+	230, // 458: plan.v1.WishService.Rename:input_type -> plan.v1.WishServiceRenameRequest
+	232, // 459: plan.v1.WishService.Icon:input_type -> plan.v1.WishServiceIconRequest
+	234, // 460: plan.v1.WishService.Icons:input_type -> plan.v1.WishServiceIconsRequest
+	237, // 461: plan.v1.WishService.AddProject:input_type -> plan.v1.WishServiceAddProjectRequest
+	239, // 462: plan.v1.WishService.Brief:input_type -> plan.v1.WishServiceBriefRequest
+	241, // 463: plan.v1.WishService.Snapshot:input_type -> plan.v1.WishServiceSnapshotRequest
+	199, // 464: plan.v1.WishService.Allow:input_type -> plan.v1.WishServiceAllowRequest
+	201, // 465: plan.v1.WishService.SetIntegration:input_type -> plan.v1.WishServiceSetIntegrationRequest
+	203, // 466: plan.v1.WishService.PushStrategy:input_type -> plan.v1.WishServicePushStrategyRequest
+	205, // 467: plan.v1.WishService.Grant:input_type -> plan.v1.WishServiceGrantRequest
+	207, // 468: plan.v1.WishService.Pause:input_type -> plan.v1.WishServicePauseRequest
+	209, // 469: plan.v1.WishService.Activate:input_type -> plan.v1.WishServiceActivateRequest
+	211, // 470: plan.v1.WishService.Delete:input_type -> plan.v1.WishServiceDeleteRequest
+	214, // 471: plan.v1.WishService.Move:input_type -> plan.v1.WishServiceMoveRequest
+	216, // 472: plan.v1.WishService.Reorder:input_type -> plan.v1.WishServiceReorderRequest
+	195, // 473: plan.v1.WishService.Render:input_type -> plan.v1.WishServiceRenderRequest
+	197, // 474: plan.v1.WishService.Sync:input_type -> plan.v1.WishServiceSyncRequest
+	190, // 475: plan.v1.WishService.Route:input_type -> plan.v1.WishServiceRouteRequest
+	192, // 476: plan.v1.WishService.Watch:input_type -> plan.v1.WishServiceWatchRequest
+	248, // 477: plan.v1.LeadService.Set:input_type -> plan.v1.LeadServiceSetRequest
+	250, // 478: plan.v1.LeadService.Resume:input_type -> plan.v1.LeadServiceResumeRequest
+	252, // 479: plan.v1.LeadService.Get:input_type -> plan.v1.LeadServiceGetRequest
+	294, // 480: plan.v1.LeadService.Brief:input_type -> plan.v1.LeadServiceBriefRequest
+	296, // 481: plan.v1.LeadService.Notes:input_type -> plan.v1.LeadServiceNotesRequest
+	255, // 482: plan.v1.LeadService.Watch:input_type -> plan.v1.LeadServiceWatchRequest
+	257, // 483: plan.v1.LeadService.Event:input_type -> plan.v1.LeadServiceEventRequest
+	259, // 484: plan.v1.LeadService.Tell:input_type -> plan.v1.LeadServiceTellRequest
+	261, // 485: plan.v1.LeadService.Say:input_type -> plan.v1.LeadServiceSayRequest
+	263, // 486: plan.v1.LeadService.Journal:input_type -> plan.v1.LeadServiceJournalRequest
+	266, // 487: plan.v1.LeadService.Sessions:input_type -> plan.v1.LeadServiceSessionsRequest
+	268, // 488: plan.v1.LeadService.Show:input_type -> plan.v1.LeadServiceShowRequest
+	270, // 489: plan.v1.LeadService.Move:input_type -> plan.v1.LeadServiceMoveRequest
+	278, // 490: plan.v1.LeadService.Accounts:input_type -> plan.v1.LeadServiceAccountsRequest
+	284, // 491: plan.v1.LeadService.AddAccount:input_type -> plan.v1.LeadServiceAddAccountRequest
+	286, // 492: plan.v1.LeadService.RemoveAccount:input_type -> plan.v1.LeadServiceRemoveAccountRequest
+	288, // 493: plan.v1.LeadService.PauseAccount:input_type -> plan.v1.LeadServicePauseAccountRequest
+	290, // 494: plan.v1.LeadService.ResumeAccount:input_type -> plan.v1.LeadServiceResumeAccountRequest
+	280, // 495: plan.v1.LeadService.Order:input_type -> plan.v1.LeadServiceOrderRequest
+	282, // 496: plan.v1.LeadService.Pin:input_type -> plan.v1.LeadServicePinRequest
+	292, // 497: plan.v1.LeadService.Choose:input_type -> plan.v1.LeadServiceChooseRequest
+	382, // 498: plan.v1.LeadService.AccountMode:input_type -> plan.v1.LeadServiceAccountModeRequest
+	384, // 499: plan.v1.LeadService.Unlimited:input_type -> plan.v1.LeadServiceUnlimitedRequest
+	274, // 500: plan.v1.LeadService.GetCircle:input_type -> plan.v1.LeadServiceGetCircleRequest
+	276, // 501: plan.v1.LeadService.SetCircle:input_type -> plan.v1.LeadServiceSetCircleRequest
+	299, // 502: plan.v1.BlockService.Put:input_type -> plan.v1.BlockServicePutRequest
+	301, // 503: plan.v1.BlockService.List:input_type -> plan.v1.BlockServiceListRequest
+	303, // 504: plan.v1.BlockService.Delete:input_type -> plan.v1.BlockServiceDeleteRequest
+	307, // 505: plan.v1.MarkService.Put:input_type -> plan.v1.MarkServicePutRequest
+	309, // 506: plan.v1.MarkService.List:input_type -> plan.v1.MarkServiceListRequest
+	311, // 507: plan.v1.TaskService.Spawn:input_type -> plan.v1.TaskServiceSpawnRequest
+	313, // 508: plan.v1.TaskService.List:input_type -> plan.v1.TaskServiceListRequest
+	315, // 509: plan.v1.TaskService.Overlaps:input_type -> plan.v1.TaskServiceOverlapsRequest
+	319, // 510: plan.v1.TaskService.Get:input_type -> plan.v1.TaskServiceGetRequest
+	327, // 511: plan.v1.TaskService.Diff:input_type -> plan.v1.TaskServiceDiffRequest
+	329, // 512: plan.v1.TaskService.Stop:input_type -> plan.v1.TaskServiceStopRequest
+	333, // 513: plan.v1.TaskService.Pause:input_type -> plan.v1.TaskServicePauseRequest
+	335, // 514: plan.v1.TaskService.Resume:input_type -> plan.v1.TaskServiceResumeRequest
+	337, // 515: plan.v1.TaskService.Start:input_type -> plan.v1.TaskServiceStartRequest
+	339, // 516: plan.v1.TaskService.Watch:input_type -> plan.v1.TaskServiceWatchRequest
+	341, // 517: plan.v1.TaskService.Clean:input_type -> plan.v1.TaskServiceCleanRequest
+	343, // 518: plan.v1.TaskService.Depend:input_type -> plan.v1.TaskServiceDependRequest
+	346, // 519: plan.v1.TaskService.Group:input_type -> plan.v1.TaskServiceGroupRequest
+	348, // 520: plan.v1.TaskService.Delete:input_type -> plan.v1.TaskServiceDeleteRequest
+	350, // 521: plan.v1.TaskService.Done:input_type -> plan.v1.TaskServiceDoneRequest
+	352, // 522: plan.v1.TaskService.Cancel:input_type -> plan.v1.TaskServiceCancelRequest
+	354, // 523: plan.v1.TaskService.Continue:input_type -> plan.v1.TaskServiceContinueRequest
+	331, // 524: plan.v1.TaskService.Send:input_type -> plan.v1.TaskServiceSendRequest
+	356, // 525: plan.v1.TaskService.Update:input_type -> plan.v1.TaskServiceUpdateRequest
+	358, // 526: plan.v1.TaskService.Describe:input_type -> plan.v1.TaskServiceDescribeRequest
+	360, // 527: plan.v1.TaskService.Open:input_type -> plan.v1.TaskServiceOpenRequest
+	362, // 528: plan.v1.TaskService.Move:input_type -> plan.v1.TaskServiceMoveRequest
+	364, // 529: plan.v1.TaskService.Rank:input_type -> plan.v1.TaskServiceRankRequest
+	366, // 530: plan.v1.TaskService.Comment:input_type -> plan.v1.TaskServiceCommentRequest
+	368, // 531: plan.v1.TaskService.TurnComments:input_type -> plan.v1.TaskServiceTurnCommentsRequest
+	370, // 532: plan.v1.TaskService.UpdateModels:input_type -> plan.v1.TaskServiceUpdateModelsRequest
+	372, // 533: plan.v1.ServeService.Run:input_type -> plan.v1.ServeServiceRunRequest
+	374, // 534: plan.v1.ServeService.List:input_type -> plan.v1.ServeServiceListRequest
+	376, // 535: plan.v1.ServeService.Stop:input_type -> plan.v1.ServeServiceStopRequest
+	378, // 536: plan.v1.ServeService.Logs:input_type -> plan.v1.ServeServiceLogsRequest
+	380, // 537: plan.v1.PlanService.Sync:input_type -> plan.v1.PlanServiceSyncRequest
+	124, // 538: plan.v1.QuestionService.Ask:output_type -> plan.v1.QuestionServiceAskResponse
+	126, // 539: plan.v1.QuestionService.Answer:output_type -> plan.v1.QuestionServiceAnswerResponse
+	128, // 540: plan.v1.QuestionService.List:output_type -> plan.v1.QuestionServiceListResponse
+	130, // 541: plan.v1.QuestionService.Get:output_type -> plan.v1.QuestionServiceGetResponse
+	120, // 542: plan.v1.QuestionService.Enlighten:output_type -> plan.v1.QuestionServiceEnlightenResponse
+	122, // 543: plan.v1.QuestionService.Revise:output_type -> plan.v1.QuestionServiceReviseResponse
+	132, // 544: plan.v1.QuestionService.Move:output_type -> plan.v1.QuestionServiceMoveResponse
+	134, // 545: plan.v1.QuestionService.Withdraw:output_type -> plan.v1.QuestionServiceWithdrawResponse
+	136, // 546: plan.v1.QuestionService.Later:output_type -> plan.v1.QuestionServiceLaterResponse
+	138, // 547: plan.v1.QuestionService.Sleep:output_type -> plan.v1.QuestionServiceSleepResponse
+	118, // 548: plan.v1.QuestionService.Launch:output_type -> plan.v1.QuestionServiceLaunchResponse
+	140, // 549: plan.v1.ProjectService.Add:output_type -> plan.v1.ProjectServiceAddResponse
+	142, // 550: plan.v1.ProjectService.List:output_type -> plan.v1.ProjectServiceListResponse
+	144, // 551: plan.v1.ProjectService.Show:output_type -> plan.v1.ProjectServiceShowResponse
+	146, // 552: plan.v1.ProjectService.Push:output_type -> plan.v1.ProjectServicePushResponse
+	148, // 553: plan.v1.ProjectService.SetPush:output_type -> plan.v1.ProjectServiceSetPushResponse
+	150, // 554: plan.v1.ProjectService.PushStrategy:output_type -> plan.v1.ProjectServicePushStrategyResponse
+	152, // 555: plan.v1.ProjectService.Allow:output_type -> plan.v1.ProjectServiceAllowResponse
+	154, // 556: plan.v1.ProjectService.Gates:output_type -> plan.v1.ProjectServiceGatesResponse
+	156, // 557: plan.v1.ProjectService.ForgetSync:output_type -> plan.v1.ProjectServiceForgetSyncResponse
+	158, // 558: plan.v1.ProjectService.Pull:output_type -> plan.v1.ProjectServicePullResponse
+	161, // 559: plan.v1.ProjectService.Branches:output_type -> plan.v1.ProjectServiceBranchesResponse
+	165, // 560: plan.v1.ProjectService.SetBranch:output_type -> plan.v1.ProjectServiceSetBranchResponse
+	164, // 561: plan.v1.ProjectService.Acknowledge:output_type -> plan.v1.ProjectServiceAcknowledgeResponse
+	168, // 562: plan.v1.SkillService.Summon:output_type -> plan.v1.SkillServiceSummonResponse
+	170, // 563: plan.v1.SkillService.List:output_type -> plan.v1.SkillServiceListResponse
+	172, // 564: plan.v1.SkillService.Unsummon:output_type -> plan.v1.SkillServiceUnsummonResponse
+	185, // 565: plan.v1.InboxService.List:output_type -> plan.v1.InboxServiceListResponse
+	187, // 566: plan.v1.InboxService.Dismiss:output_type -> plan.v1.InboxServiceDismissResponse
+	189, // 567: plan.v1.InboxService.Route:output_type -> plan.v1.InboxServiceRouteResponse
+	179, // 568: plan.v1.InboxService.Sources:output_type -> plan.v1.InboxServiceSourcesResponse
+	181, // 569: plan.v1.InboxService.Plug:output_type -> plan.v1.InboxServicePlugResponse
+	183, // 570: plan.v1.InboxService.Unplug:output_type -> plan.v1.InboxServiceUnplugResponse
+	219, // 571: plan.v1.WishService.Make:output_type -> plan.v1.WishServiceMakeResponse
+	221, // 572: plan.v1.WishService.List:output_type -> plan.v1.WishServiceListResponse
+	223, // 573: plan.v1.WishService.Export:output_type -> plan.v1.WishServiceExportResponse
+	225, // 574: plan.v1.WishService.Import:output_type -> plan.v1.WishServiceImportResponse
+	227, // 575: plan.v1.WishService.ImportData:output_type -> plan.v1.WishServiceImportDataResponse
+	229, // 576: plan.v1.WishService.Describe:output_type -> plan.v1.WishServiceDescribeResponse
+	231, // 577: plan.v1.WishService.Rename:output_type -> plan.v1.WishServiceRenameResponse
+	233, // 578: plan.v1.WishService.Icon:output_type -> plan.v1.WishServiceIconResponse
+	235, // 579: plan.v1.WishService.Icons:output_type -> plan.v1.WishServiceIconsResponse
+	238, // 580: plan.v1.WishService.AddProject:output_type -> plan.v1.WishServiceAddProjectResponse
+	240, // 581: plan.v1.WishService.Brief:output_type -> plan.v1.WishServiceBriefResponse
+	242, // 582: plan.v1.WishService.Snapshot:output_type -> plan.v1.WishServiceSnapshotResponse
+	200, // 583: plan.v1.WishService.Allow:output_type -> plan.v1.WishServiceAllowResponse
+	202, // 584: plan.v1.WishService.SetIntegration:output_type -> plan.v1.WishServiceSetIntegrationResponse
+	204, // 585: plan.v1.WishService.PushStrategy:output_type -> plan.v1.WishServicePushStrategyResponse
+	206, // 586: plan.v1.WishService.Grant:output_type -> plan.v1.WishServiceGrantResponse
+	208, // 587: plan.v1.WishService.Pause:output_type -> plan.v1.WishServicePauseResponse
+	210, // 588: plan.v1.WishService.Activate:output_type -> plan.v1.WishServiceActivateResponse
+	212, // 589: plan.v1.WishService.Delete:output_type -> plan.v1.WishServiceDeleteResponse
+	215, // 590: plan.v1.WishService.Move:output_type -> plan.v1.WishServiceMoveResponse
+	217, // 591: plan.v1.WishService.Reorder:output_type -> plan.v1.WishServiceReorderResponse
+	196, // 592: plan.v1.WishService.Render:output_type -> plan.v1.WishServiceRenderResponse
+	198, // 593: plan.v1.WishService.Sync:output_type -> plan.v1.WishServiceSyncResponse
+	191, // 594: plan.v1.WishService.Route:output_type -> plan.v1.WishServiceRouteResponse
+	193, // 595: plan.v1.WishService.Watch:output_type -> plan.v1.WishServiceWatchResponse
+	249, // 596: plan.v1.LeadService.Set:output_type -> plan.v1.LeadServiceSetResponse
+	251, // 597: plan.v1.LeadService.Resume:output_type -> plan.v1.LeadServiceResumeResponse
+	253, // 598: plan.v1.LeadService.Get:output_type -> plan.v1.LeadServiceGetResponse
+	295, // 599: plan.v1.LeadService.Brief:output_type -> plan.v1.LeadServiceBriefResponse
+	297, // 600: plan.v1.LeadService.Notes:output_type -> plan.v1.LeadServiceNotesResponse
+	256, // 601: plan.v1.LeadService.Watch:output_type -> plan.v1.LeadServiceWatchResponse
+	258, // 602: plan.v1.LeadService.Event:output_type -> plan.v1.LeadServiceEventResponse
+	260, // 603: plan.v1.LeadService.Tell:output_type -> plan.v1.LeadServiceTellResponse
+	262, // 604: plan.v1.LeadService.Say:output_type -> plan.v1.LeadServiceSayResponse
+	264, // 605: plan.v1.LeadService.Journal:output_type -> plan.v1.LeadServiceJournalResponse
+	267, // 606: plan.v1.LeadService.Sessions:output_type -> plan.v1.LeadServiceSessionsResponse
+	269, // 607: plan.v1.LeadService.Show:output_type -> plan.v1.LeadServiceShowResponse
+	271, // 608: plan.v1.LeadService.Move:output_type -> plan.v1.LeadServiceMoveResponse
+	279, // 609: plan.v1.LeadService.Accounts:output_type -> plan.v1.LeadServiceAccountsResponse
+	285, // 610: plan.v1.LeadService.AddAccount:output_type -> plan.v1.LeadServiceAddAccountResponse
+	287, // 611: plan.v1.LeadService.RemoveAccount:output_type -> plan.v1.LeadServiceRemoveAccountResponse
+	289, // 612: plan.v1.LeadService.PauseAccount:output_type -> plan.v1.LeadServicePauseAccountResponse
+	291, // 613: plan.v1.LeadService.ResumeAccount:output_type -> plan.v1.LeadServiceResumeAccountResponse
+	281, // 614: plan.v1.LeadService.Order:output_type -> plan.v1.LeadServiceOrderResponse
+	283, // 615: plan.v1.LeadService.Pin:output_type -> plan.v1.LeadServicePinResponse
+	293, // 616: plan.v1.LeadService.Choose:output_type -> plan.v1.LeadServiceChooseResponse
+	383, // 617: plan.v1.LeadService.AccountMode:output_type -> plan.v1.LeadServiceAccountModeResponse
+	385, // 618: plan.v1.LeadService.Unlimited:output_type -> plan.v1.LeadServiceUnlimitedResponse
+	275, // 619: plan.v1.LeadService.GetCircle:output_type -> plan.v1.LeadServiceGetCircleResponse
+	277, // 620: plan.v1.LeadService.SetCircle:output_type -> plan.v1.LeadServiceSetCircleResponse
+	300, // 621: plan.v1.BlockService.Put:output_type -> plan.v1.BlockServicePutResponse
+	302, // 622: plan.v1.BlockService.List:output_type -> plan.v1.BlockServiceListResponse
+	304, // 623: plan.v1.BlockService.Delete:output_type -> plan.v1.BlockServiceDeleteResponse
+	308, // 624: plan.v1.MarkService.Put:output_type -> plan.v1.MarkServicePutResponse
+	310, // 625: plan.v1.MarkService.List:output_type -> plan.v1.MarkServiceListResponse
+	312, // 626: plan.v1.TaskService.Spawn:output_type -> plan.v1.TaskServiceSpawnResponse
+	314, // 627: plan.v1.TaskService.List:output_type -> plan.v1.TaskServiceListResponse
+	316, // 628: plan.v1.TaskService.Overlaps:output_type -> plan.v1.TaskServiceOverlapsResponse
+	320, // 629: plan.v1.TaskService.Get:output_type -> plan.v1.TaskServiceGetResponse
+	328, // 630: plan.v1.TaskService.Diff:output_type -> plan.v1.TaskServiceDiffResponse
+	330, // 631: plan.v1.TaskService.Stop:output_type -> plan.v1.TaskServiceStopResponse
+	334, // 632: plan.v1.TaskService.Pause:output_type -> plan.v1.TaskServicePauseResponse
+	336, // 633: plan.v1.TaskService.Resume:output_type -> plan.v1.TaskServiceResumeResponse
+	338, // 634: plan.v1.TaskService.Start:output_type -> plan.v1.TaskServiceStartResponse
+	340, // 635: plan.v1.TaskService.Watch:output_type -> plan.v1.TaskServiceWatchResponse
+	342, // 636: plan.v1.TaskService.Clean:output_type -> plan.v1.TaskServiceCleanResponse
+	345, // 637: plan.v1.TaskService.Depend:output_type -> plan.v1.TaskServiceDependResponse
+	347, // 638: plan.v1.TaskService.Group:output_type -> plan.v1.TaskServiceGroupResponse
+	349, // 639: plan.v1.TaskService.Delete:output_type -> plan.v1.TaskServiceDeleteResponse
+	351, // 640: plan.v1.TaskService.Done:output_type -> plan.v1.TaskServiceDoneResponse
+	353, // 641: plan.v1.TaskService.Cancel:output_type -> plan.v1.TaskServiceCancelResponse
+	355, // 642: plan.v1.TaskService.Continue:output_type -> plan.v1.TaskServiceContinueResponse
+	332, // 643: plan.v1.TaskService.Send:output_type -> plan.v1.TaskServiceSendResponse
+	357, // 644: plan.v1.TaskService.Update:output_type -> plan.v1.TaskServiceUpdateResponse
+	359, // 645: plan.v1.TaskService.Describe:output_type -> plan.v1.TaskServiceDescribeResponse
+	361, // 646: plan.v1.TaskService.Open:output_type -> plan.v1.TaskServiceOpenResponse
+	363, // 647: plan.v1.TaskService.Move:output_type -> plan.v1.TaskServiceMoveResponse
+	365, // 648: plan.v1.TaskService.Rank:output_type -> plan.v1.TaskServiceRankResponse
+	367, // 649: plan.v1.TaskService.Comment:output_type -> plan.v1.TaskServiceCommentResponse
+	369, // 650: plan.v1.TaskService.TurnComments:output_type -> plan.v1.TaskServiceTurnCommentsResponse
+	371, // 651: plan.v1.TaskService.UpdateModels:output_type -> plan.v1.TaskServiceUpdateModelsResponse
+	373, // 652: plan.v1.ServeService.Run:output_type -> plan.v1.ServeServiceRunResponse
+	375, // 653: plan.v1.ServeService.List:output_type -> plan.v1.ServeServiceListResponse
+	377, // 654: plan.v1.ServeService.Stop:output_type -> plan.v1.ServeServiceStopResponse
+	379, // 655: plan.v1.ServeService.Logs:output_type -> plan.v1.ServeServiceLogsResponse
+	381, // 656: plan.v1.PlanService.Sync:output_type -> plan.v1.PlanServiceSyncResponse
+	538, // [538:657] is the sub-list for method output_type
+	419, // [419:538] is the sub-list for method input_type
+	419, // [419:419] is the sub-list for extension type_name
+	419, // [419:419] is the sub-list for extension extendee
+	0,   // [0:419] is the sub-list for field type_name
 }
 
 func init() { file_plan_v1_plan_proto_init() }
@@ -31710,6 +31788,7 @@ func file_plan_v1_plan_proto_init() {
 	}
 	file_plan_v1_tilasm_proto_init()
 	file_plan_v1_plan_proto_msgTypes[9].OneofWrappers = []any{}
+	file_plan_v1_plan_proto_msgTypes[11].OneofWrappers = []any{}
 	file_plan_v1_plan_proto_msgTypes[70].OneofWrappers = []any{
 		(*QuestionRef_Code)(nil),
 		(*QuestionRef_Id)(nil),

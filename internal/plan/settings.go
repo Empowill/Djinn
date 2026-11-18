@@ -636,6 +636,31 @@ func (s Settings) Rows() []*planv1.ProjectSetting {
 	}
 }
 
+// SettingRows are the settings Djinn retains from the repository's file repo and the developer's dev, either nil when
+// there is none, each with its value in each file alone: unset where that file does not set it.
+func SettingRows(repo, dev *planv1.ProjectSettings) []*planv1.ProjectSetting {
+	rows := ResolveSettings(repo, dev).Rows()
+	byName := make(map[string]*planv1.ProjectSetting, len(rows))
+	for _, r := range rows {
+		byName[r.GetName()] = r
+	}
+	if repo != nil {
+		for _, r := range ResolveSettings(repo, nil).Rows() {
+			if r.GetSource() == planv1.SettingSource_SETTING_SOURCE_REPOSITORY {
+				byName[r.GetName()].Repository = proto.String(r.GetValue())
+			}
+		}
+	}
+	if dev != nil {
+		for _, r := range ResolveSettings(nil, dev).Rows() {
+			if r.GetSource() == planv1.SettingSource_SETTING_SOURCE_DEVELOPER {
+				byName[r.GetName()].Developer = proto.String(r.GetValue())
+			}
+		}
+	}
+	return rows
+}
+
 // questionProviderName is the name of the question provider, as the settings write it: "" when not set.
 func questionProviderName(p planv1.Provider) string {
 	if p == planv1.Provider_PROVIDER_UNSPECIFIED {

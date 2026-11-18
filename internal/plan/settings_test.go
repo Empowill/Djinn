@@ -997,6 +997,88 @@ func TestProjectShow(t *testing.T) {
 	}
 }
 
+// TestProjectShowFiles (W111): the project's page shows each setting's value in the repository's file, in your own and
+// the one Djinn retains; the permissions and the containers' ceilings as the project declares them, and the brief its
+// workers get from its settings.
+func TestProjectShowFiles(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	home := t.TempDir()
+	c := serve(t, WithHome(home))
+	dir := t.TempDir()
+	add, err := c.projects.Add(ctx, connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: dir, Name: "app"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	project := add.Msg.GetProject()
+	show := func() *planv1.ProjectServiceShowResponse {
+		t.Helper()
+		res, err := c.projects.Show(ctx, connect.NewRequest(&planv1.ProjectServiceShowRequest{Project: "app"}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res.Msg
+	}
+	// name: repository | developer -> value, an unset side written "-".
+	row := func(res *planv1.ProjectServiceShowResponse, name string) string {
+		side := func(v *string) string {
+			if v == nil {
+				return "-"
+			}
+			return *v
+		}
+		for _, s := range res.GetSettings() {
+			if s.GetName() == name {
+				return side(s.Repository) + " | " + side(s.Developer) + " -> " + s.GetValue()
+			}
+		}
+		return "absent"
+	}
+
+	res := show()
+	if got := row(res, "install"); got != "- | - -> " {
+		t.Errorf("no file, install: %s; want neither file", got)
+	}
+	if res.GetPermissions() != nil || res.GetContainers() != nil || res.GetWorkersBrief() != "" {
+		t.Errorf("no file: permissions %v, containers %v, brief %q; want none", res.GetPermissions(), res.GetContainers(),
+			res.GetWorkersBrief())
+	}
+
+	writeSettings(t, filepath.Join(dir, ".agents", "djinn.yaml"), teamYAML("max_budget_usd: 10\ninstall: go tool task install\n"+
+		"setup: npm ci\nchecks:\n  - {name: lint, command: go tool task lint, when: commit}\n")+
+		"containers:\n  memory_mib: 2048\n")
+	writeSettings(t, filepath.Join(dir, ".agents", "permissions.txtpb"),
+		"edit: true\ncommands: \"git status\"\ndenied_commands: \"git push\"\n")
+	devFile := DeveloperSettingsFile(home, project.GetId())
+	// Your own file turns the install off, and allows a watcher command for you.
+	writeSettings(t, devFile, "max_budget_usd: 15\ninstall: \"\"\nwatch_commands: \"gh pr checks\"\n")
+	res = show()
+	for name, want := range map[string]string{
+		"max_budget_usd":      "10 | 15 -> 15",
+		"install":             "go tool task install |  -> ",
+		"setup":               "npm ci | - -> npm ci",
+		"branch":              "- | - -> {code}-{slug}-{uuid8}",
+		"watch_commands":      "- | gh pr checks -> gh pr checks",
+		"checks":              "lint: go tool task lint (commit) | - -> lint: go tool task lint (commit)",
+		"correction_attempts": "- | - -> 2",
+	} {
+		if got := row(res, name); got != want {
+			t.Errorf("%s: %s; want %s", name, got, want)
+		}
+	}
+	if p := res.GetPermissions(); !p.GetEdit() || !slices.Equal(p.GetCommands(), []string{"git status"}) ||
+		!slices.Equal(p.GetDeniedCommands(), []string{"git push"}) {
+		t.Errorf("permissions = %v; want the file's", p)
+	}
+	if got := res.GetContainers().GetMemoryMib(); got != 2048 {
+		t.Errorf("containers memory = %d; want 2048", got)
+	}
+	if brief := res.GetWorkersBrief(); !strings.Contains(brief, "`djinn gate run lint -- go tool task lint`") ||
+		!strings.Contains(brief, "A fresh worktree needs `npm ci` first.") {
+		t.Errorf("workers brief = %q; want the checks and the setup", brief)
+	}
+}
+
 // atCommit is a check run before each commit.
 func atCommit(name, command string) *planv1.ProjectCheck {
 	return &planv1.ProjectCheck{Name: name, Command: command, When: []planv1.CheckWhen{planv1.CheckWhen_CHECK_WHEN_COMMIT}}
