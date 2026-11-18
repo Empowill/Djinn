@@ -45,7 +45,7 @@ import { EmptyState } from "./empty-art";
 import { platformShortcut, TooltipButton, TooltipLabel } from "./tooltip";
 import { useDjinnVersion, versionLines } from "./version";
 import { useInboxCount } from "./inbox";
-import { ProjectPanel } from "./project-panel";
+import { PROJECT_PAGE, ProjectPage, projectPageOf } from "./project-page";
 import { CIRCLE, SummoningCircle } from "./summoning-circle";
 import { AddProject, MakeWish, Settings } from "./wish-dialogs";
 import { Docs, GRIMOIRE } from "./docs";
@@ -130,7 +130,6 @@ export function WishApp() {
   const driven = useData((s) => s.leadDrive !== undefined);
   const leadless = agentEnv !== undefined && !leadReady(agentEnv, driven);
   const [making, setMaking] = useState(false);
-  const [projectId, setProjectId] = useState("");
   const [toast, setToast] = useState("");
   const makeBackAction = useRef<(() => void) | null>(null);
   const [makeBackInSetup, setMakeBackInSetup] = useState(false);
@@ -291,15 +290,21 @@ export function WishApp() {
   const hourglass = !chosen && !pendingWish && selected === HOURGLASS;
   const grimoire = !chosen && !pendingWish && selected === GRIMOIRE;
   const circle = !chosen && !pendingWish && selected === CIRCLE;
+  // A project's settings, a page of its own (W111): the project by its identifier, while Djinn knows it.
+  const projectId = chosen || pendingWish ? "" : projectPageOf(selected);
+  const project = projectId
+    ? projects.find((p) => p.id === projectId)
+    : undefined;
   const plan =
     !hourglass &&
     !grimoire &&
     !circle &&
+    !project &&
     !chosen &&
     !pendingWish &&
     (selected === PLAN || active.length > 0);
   const wish =
-    plan || hourglass || grimoire || circle
+    plan || hourglass || grimoire || circle || project
       ? undefined
       : (chosen ?? pendingWish ?? wishes[0]);
   // No agent could lead yet: the agents are read again on leaving the Circle (it reads its own while shown) or closing
@@ -347,7 +352,9 @@ export function WishApp() {
           ? HOURGLASS
           : grimoire
             ? GRIMOIRE
-            : wish?.id,
+            : project
+              ? PROJECT_PAGE + project.id
+              : wish?.id,
     (page) => {
       if (page) setSelected(page);
     },
@@ -417,7 +424,6 @@ export function WishApp() {
       ),
     [clients],
   );
-  const project = projects.find((p) => p.id === projectId);
 
   const move = (wishId: string, to: number) =>
     void clients.wishes
@@ -568,7 +574,7 @@ export function WishApp() {
             selectedProjectId={projectId}
             collapsed={collapsed}
             onSelectWish={openWish}
-            onSelectProject={setProjectId}
+            onSelectProject={(id) => showPage(PROJECT_PAGE + id)}
             onMove={move}
             onReorder={reorder}
             onNewProject={() => setModal("project")}
@@ -650,11 +656,18 @@ export function WishApp() {
               <Docs />
             ) : circle ? (
               <SummoningCircle onAgents={setAgentEnv} />
+            ) : project ? (
+              <ProjectPage
+                key={project.id}
+                project={project}
+                onToast={setToast}
+                onOpenCircle={() => showPage(CIRCLE)}
+              />
             ) : plan ? (
               <FlightPlan
                 wishes={active}
                 onOpen={setSelected}
-                onOpenProject={setProjectId}
+                onOpenProject={(id) => showPage(PROJECT_PAGE + id)}
                 onToast={setToast}
               />
             ) : wish ? (
@@ -689,13 +702,6 @@ export function WishApp() {
           />
         )}
         {modal === "settings" && <Settings onClose={() => setModal(null)} />}
-        {project && modal !== "make" && (
-          <ProjectPanel
-            project={project}
-            onClose={() => setProjectId("")}
-            onToast={setToast}
-          />
-        )}
       </AnimatePresence>
       <Toast text={toast} onClose={closeToast} />
       <DjinnEye live={live} />

@@ -142,13 +142,19 @@ export {
   ConfigChanges,
   NoticeLine,
   ProjectChecks,
-  ProjectPanel,
-  ProjectSettings,
   ReferenceBranch,
   SkillLine,
   ToFixBox,
   WatchCommands,
+  WorkersStart,
 } from "@/src/project-panel.tsx";
+export {
+  PROJECT_PAGE,
+  PROJECT_TABS,
+  ProjectPage,
+  SettingsTable,
+  projectPageOf,
+} from "@/src/project-page.tsx";
 export {
   BrakeSection,
   CIRCLE_ROWS,
