@@ -65,6 +65,17 @@ func TestService_Show(t *testing.T) {
 					t.Errorf("show: %v", got)
 				}
 			}},
+		// W147: the freeing pass comes before the disk is measured, for the cascade band of a granted wish.
+		{name: "freeing before the disk", notch: djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM,
+			s: Snapshot{Cores: 4, MemoryTotal: 8 * GiB, MemoryAvailable: 4 * GiB},
+			opts: []HandlerOption{WithDiskFreeing(func() *machinev1.DiskFreeing {
+				return &machinev1.DiskFreeing{Total: 2, Azimas: []*machinev1.DiskFreeingAzima{{WishId: "w1", Total: 2}}}
+			})},
+			check: func(t *testing.T, got *machinev1.Machine) {
+				if f := got.GetDisk().GetFreeing(); f.GetTotal() != 2 || len(f.GetAzimas()) != 1 {
+					t.Errorf("freeing = %v; want the pass", f)
+				}
+			}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

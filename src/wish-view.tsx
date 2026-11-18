@@ -164,6 +164,7 @@ import {
 } from "./wish-head";
 import { LeadMessage } from "./lead-message";
 import { useEyeNeeds } from "./djinn-eye";
+import { FreeingBand } from "./freeing-band";
 import { PageHeader, PageHeaderAction } from "./page-header";
 import { TooltipButton } from "./tooltip";
 import { usePlace } from "./view-history";
@@ -1366,6 +1367,7 @@ export function WishView({
             <Machine active={running > 0} />
           </div>
         </div>
+        <FreeingBand wish={wish} tasks={detail.tasks} />
 
         <div className="overview-content">
           <ViewTabs

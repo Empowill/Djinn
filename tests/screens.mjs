@@ -240,7 +240,23 @@ export {
 } from "@/src/consumption-panel.tsx";
 export { ResourceChart } from "@/src/resource-chart.tsx";
 export {
+  CascadePace,
+  FreeingBandView,
+  MIN_STEP,
+  MIN_TOTAL,
+  SUMMARY_MS,
+  STALE_MS,
+  cascadeOf,
+  keptText,
+  shownAt,
+  shownTimes,
+  stepOf,
+  summaryText,
+} from "@/src/freeing-band.tsx";
+export {
   CommandService,
+  DiskFreeingPart,
+  DiskFreeingReason,
   DiskRisk,
   GateMode,
   GateService,
