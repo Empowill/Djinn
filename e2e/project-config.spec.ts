@@ -201,14 +201,18 @@ test("a project with something to fix: its gear and inbox line open its panel; t
     await expect(line).toHaveCount(1);
     await expect(line).toContainText("1 thing to fix");
     await expect(line).toContainText(notice.text);
-    const panel = page.getByRole("dialog", { name: "lantern" });
+    // The settings are a page of the window, in tabs (W111).
+    const panel = page.locator(".project-page");
+    const tab = (name: string) =>
+      panel.getByRole("tab", { name, exact: false }).click();
     await line.getByRole("button", { name: "Open its configuration" }).click();
     await expect(panel).toBeVisible();
-    await page.keyboard.press("Escape");
+    await page.locator(".sidebar .plan-nav").click();
     await expect(panel).toBeHidden();
 
     await gear.click();
     await expect(panel.locator(".eyebrow")).toHaveText("PROJECT CONFIGURATION");
+    await expect(panel.getByRole("tab")).toHaveCount(8);
 
     // To fix first: the source this machine has not decided on, its two choices and what each changes.
     const boxes = panel.locator(".config-box");
@@ -232,18 +236,6 @@ test("a project with something to fix: its gear and inbox line open its panel; t
       "Your copy has feature checked out, not the reference branch origin/main",
     );
     await expect(reference).toContainText("no worker starts from your copy");
-    // Where workers start, for each push strategy, the project's own marked (W227): never from the copy.
-    await expect(reference).toContainText("Where workers start");
-    await expect(reference).toContainText(
-      "Per wish: from the wish's integration branch; a new wish's is main",
-    );
-    await expect(reference).toContainText(
-      "Per azima: an azima's work from its own branch, cut from origin/main",
-    );
-    await expect(reference.locator(".badge")).toHaveText(
-      "this project's default",
-    );
-    await expect(reference).toContainText("Never from your copy");
     const shots = process.env.PROJECT_SHOTS;
     if (shots) {
       await reference.scrollIntoViewIfNeeded();
@@ -252,7 +244,9 @@ test("a project with something to fix: its gear and inbox line open its panel; t
       });
     }
 
-    // Where each value comes from: the team's file names the check and merge_main, the file itself on hover.
+    // Where each value comes from: the team's file names the check and merge_main, the file itself on hover; the
+    // checks are sourced as djinn.yaml (C10).
+    await tab("Gates and checks");
     const checks = boxes.filter({
       has: page.locator("h3", { hasText: "Checks" }),
     });
@@ -263,19 +257,24 @@ test("a project with something to fix: its gear and inbox line open its panel; t
       "title",
       path.join(directory, ".agents", "djinn.yaml"),
     );
-    const settings = boxes.filter({
-      has: page.locator("h3", { hasText: "Settings" }),
-    });
-    await expect(
-      settings
-        .locator(".config-setting")
-        .filter({ has: page.locator("code", { hasText: /^merge_main$/ }) }),
-    ).toContainText("the team's file");
-    await expect(settings.locator(".config-more summary")).toContainText(
-      "at Djinn's default",
+    await expect(checks.locator("h3 .config-from")).toHaveText("djinn.yaml");
+    await tab("Integration and push");
+    const mergeMain = panel.locator('tr[data-setting="merge_main"]');
+    await expect(mergeMain.locator('[data-side="repository"]')).toHaveText(
+      "off",
     );
+    await expect(mergeMain.locator('[data-side="local"]')).toHaveText("absent");
+    await expect(mergeMain.locator('[data-side="retained"]')).toContainText(
+      "the team's file",
+    );
+    // Where workers start, for each push strategy, the project's own marked (W227): never from the copy.
+    await expect(panel).toContainText(
+      "Per wish: from the wish's integration branch; a new wish's is main",
+    );
+    await expect(panel).toContainText("Never from your copy");
 
     // Each skill's role for Djinn.
+    await tab("Skills");
     const skillBox = boxes.filter({
       has: page.locator("h3", { hasText: "Skills (3)" }),
     });
@@ -289,6 +288,7 @@ test("a project with something to fix: its gear and inbox line open its panel; t
       skillBox.locator(".skill-row").filter({ hasText: "lamp-news" }),
     ).toContainText("Inbox source");
 
+    await tab("General");
     // The reference branch chosen in the panel (W149): Change lists the remote's branches; the choice is written in
     // your own file, never in the team's, and wins over its name; djinn project set-branch --unset takes it back.
     await reference.getByRole("button", { name: "Change" }).click();
@@ -333,10 +333,12 @@ test("a project with something to fix: its gear and inbox line open its panel; t
     // Saying no settles it: nothing left to fix, the source unplugged on this machine, the gear grey, the inbox line gone.
     await toFix.getByRole("button", { name: "Say no" }).click();
     await expect(panel.locator(".config-box.to-fix")).toHaveCount(0);
+    await tab("Skills");
     await expect(
       panel.locator(".inbox-source-row").filter({ hasText: "lamp-news" }),
     ).toContainText("Unplugged: runs nothing");
-    await page.keyboard.press("Escape");
+    await shotsAndContrast(page, panel);
+    await page.locator(".sidebar .plan-nav").click();
     await expect(panel).toBeHidden();
     await expect(gear).toHaveAttribute(
       "aria-label",
@@ -364,3 +366,68 @@ test("a project with something to fix: its gear and inbox line open its panel; t
     } catch {}
   }
 });
+
+// shotsAndContrast measures the page's secondary text against the ground under it, in both themes: 4.5:1 at least
+// (W111); PROJECT_SHOTS=<folder> also writes a shot of each theme.
+async function shotsAndContrast(
+  page: import("@playwright/test").Page,
+  panel: import("@playwright/test").Locator,
+) {
+  for (const theme of ["dark", "light"]) {
+    await page.evaluate((t) => {
+      document.documentElement.dataset.theme = t;
+    }, theme);
+    for (const name of ["General", "Integration and push", "Permissions"]) {
+      await panel.getByRole("tab", { name, exact: false }).click();
+      const worst = await panel.evaluate((root) => {
+        const lin = (c: number) =>
+          c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+        const lum = (rgb: string) => {
+          const [r, g, b] = (rgb.match(/[\d.]+/g) ?? []).map(Number);
+          return (
+            0.2126 * lin(r / 255) +
+            0.7152 * lin(g / 255) +
+            0.0722 * lin(b / 255)
+          );
+        };
+        const ground = (el: Element | null): string => {
+          for (; el; el = el.parentElement) {
+            const bg = getComputedStyle(el).backgroundColor;
+            if (bg && !bg.startsWith("rgba(0, 0, 0, 0)") && !/, 0\)$/.test(bg))
+              return bg;
+          }
+          return getComputedStyle(document.body).backgroundColor;
+        };
+        let min = { ratio: 99, text: "" };
+        const sel =
+          ".settings-table th, .setting-key, .setting-absent, .setting-struck, .settings-foot, .settings-lead, .project-tab-detail, .config-from, .setting-note td";
+        for (const el of root.querySelectorAll(sel)) {
+          if (!(el as HTMLElement).offsetParent || !el.textContent?.trim())
+            continue;
+          const a = lum(getComputedStyle(el).color);
+          const b = lum(ground(el));
+          const ratio = (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+          if (ratio < min.ratio)
+            min = {
+              ratio,
+              text: `${el.className}: ${el.textContent.slice(0, 40)}`,
+            };
+        }
+        return min;
+      });
+      expect(
+        worst.ratio,
+        `${theme} ${name}: ${worst.text}`,
+      ).toBeGreaterThanOrEqual(4.5);
+    }
+    const shots = process.env.PROJECT_SHOTS;
+    if (shots) {
+      await panel.getByRole("tab", { name: "General" }).click();
+      await page.screenshot({
+        path: path.join(shots, `project-page-${theme}.png`),
+        fullPage: true,
+      });
+    }
+  }
+  await page.evaluate(() => delete document.documentElement.dataset.theme);
+}

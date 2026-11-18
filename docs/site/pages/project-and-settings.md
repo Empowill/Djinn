@@ -27,8 +27,8 @@ Two projects never share a name, nor a folder, case ignored. The folder must exi
 Djinn's command line adds a project too: see the [Command line](#commands).
 
 > **Example.** You add the folder of your web application as "app". The side panel lists it; a click on it shows its
-> configuration: its folder, its remote on GitHub, its reference branch main, its two checks (lint before a commit,
-> tests before a push), each from the team's file, and its skills with their role. You make the wish "Let customers
+> settings: its folder, its remote on GitHub, its reference branch main, its two checks (lint before a commit, tests
+> before a push) from djinn.yaml under Gates and checks, and its skills with their role. You make the wish "Let customers
 > export their invoices as PDF" on app.
 
 ### In Git or not
@@ -50,22 +50,29 @@ its remote, then by its name.
 
 ## The project's configuration
 
-A click on a project in the side panel, on its name or on its gear, opens its configuration, as Djinn reads it on this
-machine. Under its name, its folder, its remote and whether it is a Git repository; then one box per part, what waits
-for you first:
+A click on a project in the side panel, on its name or on its gear, opens its settings: a page of the window, like the
+Summoning Circle, as Djinn reads them on this machine. Under its name, its folder, its remote and whether it is a Git
+repository; the reference branch and the commit Djinn read; and where the values come from, the repository's
+djinn.yaml and your own file (each file's path on hover). **To fix** stays above the tabs, first, only when something
+waits for you or Djinn warns: in red, what Djinn finds that you must settle; after it, quieter, what Djinn ignores in a
+file and goes on without. Each in one sentence, the error as Djinn read it, and what settles it: a source to decide on
+has **Plug in** and **Say no**, a summoned skill no longer found **Unsummon**, a file to correct names the file. See
+below.
 
-| Part | What it shows |
+Each setting shows in a table with three values: the **repository**'s, as djinn.yaml sets it; the **local** one, in
+your own file on this machine; and the one **retained**, with where it comes from. A side that does not set it says
+**absent**; a repository's value your file overrides is struck.
+
+| Tab | What it shows |
 | --- | --- |
-| To fix | First, only when something waits for you or Djinn warns: in red, what Djinn finds that you must settle; after it, quieter, what Djinn ignores in a file and goes on without. Each in one sentence, the error as Djinn read it, and what settles it. A source to decide on has its two choices, **Plug in** and **Say no**, each with what it changes; a summoned skill no longer found has **Unsummon**; a file to correct names the file; a command that does it is there to copy. See below. |
-| Reference branch | The branch Djinn reads the project's configuration on, keeps the wishes up to date with, that azimas are cut from and that pull requests aim at: its name, the ref Djinn merges it from and the commit it points at, and where its name comes from (Djinn's default, the team's file or yours). Under it, **Where workers start**, for each push strategy, the project's own marked: per wish, from the wish's integration branch, the reference branch for a new wish; per azima, an azima's work from its own branch, cut from the remote's reference branch, and work of no azima from the wish's integration branch. Never from your copy. When your copy has another branch checked out, a line says so. **Change** lists the remote's branches as your copy last fetched them; **Choose** writes the one you pick in your own file, never in the repository, and when the choice is yours the list offers to take it back. See below. |
-| Worth knowing | The information Djinn finds: nothing waits for you. |
-| Checks | The setup and the checks Djinn runs on finished work, where each comes from, and how each last ran: passed on which commit, when, in how long, or why it failed. |
-| Inbox sources | The sources its skills declare on this machine: what each reads, how its last run went, and **Plug in** or **Unplug**, with what that does. See [Inbox](#inbox). |
-| Skills | The project's skills, the folder each lives in, and those it uses from another project, marked **from** that project. Each says its role for Djinn: the wish template it offers, the inbox source it declares, the babysit of the project's pull requests; or know-how for the workers alone. A skill Djinn cannot read, or cannot use in part, sends you to To fix. |
-| What changed on the reference branch | The journal of changes: each commit of the reference branch that changed the configuration, when, which and who, and what it changed in sentences. One that waits for your look has the flame and **Seen**; the others say they were applied. When Djinn could not fetch the branch, it says why, as git said it. See below. |
-| Push cadence | **Standard** or **On demand**, where it comes from, and each branch Djinn pushes that differs from its remote, with a button to push it. See [Push](#push). |
-| Settings | Every other setting, its value and where it comes from: those a file sets first, those at Djinn's default folded under them. Hovering where a value comes from shows the file. |
-| Watcher commands you allow | The commands a [watcher](#watcher) may run here for you, with **Allow** and **Take back**. |
+| General | Worth knowing, the information Djinn finds. The **reference branch**: its name, the ref and commit Djinn reads, where its name comes from; **Change** lists the remote's branches and **Choose** writes the one you pick in your own file, never in the repository. The **branches**: the reference branch and the names of the workers' branches. The **life of a worktree**: **Prepare**, required, the setup that makes a fresh worktree ready, with its last run; **Install after a push**, optional, on or off: on, once Djinn pushed the integration branch the window proposes to install it; off without an install command. Writing an empty install in your own file turns it off on this machine alone. |
+| Worker defaults | What the project gives a worker when neither its task nor the [Summoning Circle](#the-window) names anything, with a link to the Circle, which comes first: agent, model, budget per task, correction attempts, Enlighten me; the question workers' agent, model and budget; the **ceilings of the containers** its workers start, set in djinn.yaml only. |
+| Gates and checks | The **checks** from djinn.yaml, when each runs and how each last ran; the targeted test command; the **named gates** djinn.yaml declares, each with its commands alone and beside, read-only, and how a command is matched. A gate can be turned off on this machine, and back on, in your own file; it is added only in the repository. See [Gates](#gates). |
+| Integration and push | The push cadence, **Standard** or **On demand**, and each branch Djinn pushes that differs from its remote (see [Push](#push)); the branch of new wishes, per wish or per azima, a default each wish changes in its own settings, with where workers start: never from your copy; main brought in and how often; the generated files and the command that makes them again; the babysit of pull requests, which a skill of the project does, not Djinn itself; when to ask to install, and whether releases and builds install by themselves. |
+| Workers' brief | What Djinn adds, as it stands, to the first prompt of each worker that edits the project, drawn from its settings: the checks it runs and when, the targeted tests, the setup of a fresh worktree. The team's own instructions to workers live in the repository's agent instructions, AGENTS.md, which every agent reads. |
+| Skills | The project's skills, the folder each lives in, and those it uses from another project, marked **from** that project, each with its role for Djinn: a wish template, an inbox source, the babysit, or know-how for the workers alone. Under them, the **inbox sources** they declare on this machine, with **Plug in** or **Unplug**. See [Inbox](#inbox). |
+| Permissions | The repository's permissions file as read on the reference branch: editing, what is not listed, the network, the commands allowed and denied. **Where it applies**: Djinn translates it for the agent of each worker of the project, at launch. Claude gets an allow or deny rule per command, and refuses the rest in listed mode; Codex has each command's approval accepted by Djinn only when listed, in listed mode, its own reviewer deciding in auto mode; Antigravity gets a grant per command, every command in auto mode. A watcher or an ifrit's serve that Djinn runs itself runs a listed command, one a skill declares, or one you add; a denied command never runs. It does not apply to a question worker, a task outside any project, nor a project without the file. Then the **additions on this machine**: the commands you allow a watcher and an ifrit's serve, with **Allow** and **Take back**, in your own file. See [Rights](#rights). |
+| Changes on main | The journal of changes: each commit of the reference branch that changed the configuration, when, which and who, and what it changed in sentences. One that waits for your look has the flame and **Seen**, and the tab counts them; the others say they were applied. When Djinn could not fetch the branch, it says why, as git said it. See below. |
 
 No button of the configuration is in the accent colour: none is a recommendation.
 
