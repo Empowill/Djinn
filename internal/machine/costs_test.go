@@ -117,7 +117,7 @@ func sharedCosts(t *testing.T) *costsRig {
 }
 
 // record records a run and returns the command's cost after it.
-func (r *costsRig) record(t *testing.T, req *machinev1.CommandServiceRecordRequest) *machinev1.CommandCost {
+func (r *costsRig) record(t testing.TB, req *machinev1.CommandServiceRecordRequest) *machinev1.CommandCost {
 	t.Helper()
 	res, err := r.client.Record(t.Context(), connect.NewRequest(req))
 	if err != nil {

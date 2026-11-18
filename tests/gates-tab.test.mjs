@@ -74,25 +74,42 @@ const live = [
   },
 ];
 
-test("the waits by gate: a median, a 90th percentile, the longest and those over 5 s, over the recent runs", () => {
-  const waits = s.gateWaits(costs);
-  assert.deepEqual(
-    waits.map(({ gate, holds, p50, p90, max, long }) => ({
-      gate,
-      holds,
-      p50,
-      p90,
-      max,
-      long,
-    })),
-    [
-      { gate: "lint", holds: 5, p50: 0, p90: 12, max: 12, long: 1 },
-      { gate: "test", holds: 2, p50: 0, p90: 7, max: 7, long: 1 },
-    ],
-  );
-  // The newest run under a gate is its last hold.
-  assert.equal(waits[0].last.run.waitSeconds, 12);
-});
+// The summary the server sums over every command (machine.Summary): the figures and the waits by gate.
+const summary = {
+  asked: 22,
+  ran: 21,
+  holds: 7,
+  p50WaitSeconds: 0,
+  p90WaitSeconds: 12,
+  maxWaitSeconds: 12,
+  longWaits: 2,
+  peak: { ...costs[0], recentRuns: [] },
+  gates: [
+    {
+      gate: "lint",
+      holds: 5,
+      p50Seconds: 0,
+      p90Seconds: 12,
+      maxSeconds: 12,
+      long: 1,
+      last: costs[0].recentRuns[4],
+      lastCommand: "go tool task lint",
+    },
+    {
+      gate: "test",
+      holds: 2,
+      p50Seconds: 0,
+      p90Seconds: 7,
+      maxSeconds: 7,
+      long: 1,
+      last: costs[1].recentRuns[1],
+      lastCommand: "go tool task test",
+    },
+  ],
+};
+// The page the server sends: the most total time first, without the runs.
+const brief = (c) => ({ ...c, recentRuns: [] });
+const page = [costs[1], costs[0], costs[2]].map(brief);
 
 test("the Gates tab: its figures, the gates now with who holds and who waits, the last hour, the commands by total time, the waits by gate", () => {
   const html = s.renderToStaticMarkup(
@@ -101,7 +118,9 @@ test("the Gates tab: its figures, the gates now with who holds and who waits, th
       onWorker: () => {},
       onTask: () => {},
       initialGates: live,
-      initialCommands: costs,
+      initialCommands: page,
+      initialTotal: 60,
+      initialSummary: summary,
       initialHistory: {
         startTime: at(t3 - 3600n),
         readTime: at(t3),
@@ -171,9 +190,11 @@ test("the Gates tab: its figures, the gates now with who holds and who waits, th
     "c-lint: go tool task lint djinn lint 15 40s 10m 3 GB 2m50s 0s · 12s",
     "c-build: npm run build old-project — 2 30s 1m — — 0s · 0s",
   ]);
+  // The page: 1 to 3 of 60, the next one asked by a button.
+  assert.match(html, /<span class="muted-text">1–3 of 60<\/span>/);
   assert.match(
     html,
-    /<button type="button" class="gates-command-open" aria-expanded="false" disabled="">/,
+    /<button type="button" class="gates-pager-step" aria-label="Previous commands" title="Previous commands" disabled="">/,
   );
 
   // The waits by gate.
@@ -190,6 +211,198 @@ test("the Gates tab says when nothing is known yet", () => {
   assert.match(html, /No named gate was asked for over this period\./);
   assert.match(html, /No command has run under a gate yet\./);
   assert.match(html, /No run under a gate measured yet\./);
+  assert.doesNotMatch(html, /gates-pager/);
+});
+
+test("a command opens on its last 20 runs, then all on demand; one opened from the lanes off the page shows above it", () => {
+  const many = {
+    ...costs[0],
+    runs: 30,
+    recentRuns: runsOf("lint", Array(30).fill(0)),
+  };
+  const html = s.renderToStaticMarkup(
+    h(s.GatesTab, {
+      tasks,
+      initialCommands: [brief(costs[1])],
+      initialTotal: 2,
+      initialOpened: many,
+    }),
+  );
+  const rows = [
+    ...html.matchAll(/<tr id="command-([\w-]+)" class="([^"]+)"/g),
+  ].map(([, id, cls]) => `${id} ${cls}`);
+  assert.deepEqual(rows, [
+    "c-lint gates-command is-picked",
+    "c-test gates-command is-top",
+  ]);
+  assert.match(html, /Its last 30 runs, the newest first/);
+  assert.equal(html.match(/<tr><td>\d\d\/\d\d /g)?.length, 20);
+  assert.match(
+    html,
+    /<button type="button" class="text-link gates-more">Show all 30 runs<\/button>/,
+  );
+});
+
+test("past six free gates and eight gates' waits, the rest folds behind a link", () => {
+  const gates = Array.from({ length: 11 }, (_, i) => ({
+    gate: `g${String(i).padStart(2, "0")}`,
+    holds: 20 - i,
+    p50Seconds: 0,
+    p90Seconds: 1,
+    maxSeconds: 2,
+    long: 0,
+    lastCommand: "true",
+  }));
+  const html = s.renderToStaticMarkup(
+    h(s.GatesTab, { initialSummary: { ...summary, gates } }),
+  );
+  assert.equal(
+    html.match(/<span class="gates-gate-state">free<\/span>/g)?.length,
+    6,
+  );
+  assert.match(html, />5 more free gates<\/button>/);
+  assert.equal(html.match(/class="gates-wait-row"/g)?.length, 8);
+  assert.match(html, />3 more gates<\/button>/);
+});
+
+test("a read of the history after the last one lays what changed over the window kept", () => {
+  const ago = (seconds) => at(t3 - BigInt(seconds));
+  const iv = (command, asked, release) => ({
+    gate: "lint",
+    command,
+    taskId: "task-w1",
+    askedTime: ago(asked),
+    grantTime: ago(asked),
+    releaseTime: release === null ? undefined : ago(release),
+  });
+  const run = (taskId, from, to) => ({
+    taskId,
+    startTime: ago(from),
+    endTime: to === null ? undefined : ago(to),
+  });
+  const prev = {
+    startTime: ago(3600),
+    readTime: ago(60),
+    intervals: [
+      iv("gone", 4000, 3700),
+      iv("kept", 3000, 2000),
+      iv("again", 200, 90),
+      iv("held", 100, null),
+    ],
+    runs: [
+      run("ended", 3500, 3000),
+      run("closed", 400, null),
+      run("stopped", 300, null),
+      run("old", 9000, 3650),
+    ],
+  };
+  // Read after 2 minutes before the last read, 30 s later: the window moved 30 s.
+  const next = {
+    startTime: ago(3570),
+    readTime: at(t3),
+    intervals: [iv("again", 200, 90), iv("new", 50, 20), iv("held", 100, null)],
+    runs: [run("closed", 400, 10)],
+  };
+  const merged = s.mergeHistory(prev, next);
+  assert.deepEqual(
+    merged.intervals.map((i) => i.command),
+    ["kept", "again", "new", "held"],
+  );
+  assert.deepEqual(
+    merged.runs.map((r) => `${r.taskId}${r.endTime ? "" : " open"}`),
+    ["ended", "closed"],
+  );
+  assert.equal(merged.readTime, next.readTime);
+});
+
+// heavy is the load of a busy Djinn: 5,400 commands (the real store had 5,348 on 18/11/2026), 20 of them with 200
+// runs; a day of 1,200 intervals over 7 gates and 320 worker runs; 6 gates held, 3 waiting each.
+function heavy() {
+  const end = Number(t3);
+  const ts = (sec) => at(BigInt(Math.floor(sec)));
+  const names = ["lint", "test", "e2e", "codegen", "stack", "paid", "fmt"];
+  const all = Array.from({ length: 5400 }, (_, i) => ({
+    id: `c${i}`,
+    projectId: "p1",
+    projectName: "djinn",
+    command: `go tool task e2e -- e2e/spec-${i}.spec.ts`,
+    runs: 1 + (i % 50),
+    asked: 2 + (i % 50),
+    seconds: 10 + (i % 600),
+    cpuSeconds: 20,
+    peakMemoryBytes: BigInt(1 + (i % 7)) * gib,
+    p50WaitSeconds: 0,
+    p95WaitSeconds: i % 9,
+    gate: names[i % 7],
+    recentRuns: runsOf(
+      names[i % 7],
+      Array(i < 20 ? 200 : i % 3 ? 0 : 1).fill(3),
+    ),
+  }));
+  const intervals = Array.from({ length: 1200 }, (_, i) => {
+    const r = end - i * 72;
+    return {
+      gate: names[i % 7],
+      command: `go tool task ${names[i % 7]}`,
+      project: "djinn",
+      taskId: `t${i % 400}`,
+      taskCode: `W${i % 400}`,
+      taskKind: i % 5,
+      askedTime: ts(r - 120),
+      grantTime: ts(r - 100 + (i % 3) * 30),
+      releaseTime: ts(r),
+    };
+  });
+  const runs = Array.from({ length: 320 }, (_, i) => ({
+    taskId: `t${i}`,
+    code: `W${i}`,
+    kind: i % 5,
+    startTime: ts(end - 86400 + i * 250),
+    endTime: ts(end - 86400 + i * 250 + 3600),
+  }));
+  const gates = names.slice(0, 6).map((name, i) => ({
+    name,
+    holder: `W${i} (Task): go tool task ${name}`,
+    holderTaskId: "task-w1",
+    since: ts(end - 60),
+    waiting: ["W10: a", "W11: b", "outside"],
+    waitingTaskIds: ["task-w2"],
+    takesSlot: false,
+    ifrit: false,
+  }));
+  return {
+    all,
+    gates,
+    history: { startTime: ts(end - 86400), readTime: ts(end), intervals, runs },
+  };
+}
+
+// Under a heavy load the tab renders a page of the commands, never all: under 1.5 s and 0.6 MB of markup on a loaded
+// machine (it rendered every command before W124: 1.3 to 2.3 s and 5.2 MB at load 17 to 30, 220 to 390 ms of which the
+// lanes and the Sankey).
+test("the Gates tab under a heavy load renders a page of the commands, under 1.5 s", () => {
+  const { all, gates, history } = heavy();
+  const props = {
+    tasks,
+    initialGates: gates,
+    initialCommands: all.slice(0, s.PAGE).map(brief),
+    initialTotal: all.length,
+    initialSummary: { ...summary, gates: summary.gates },
+    initialHistory: history,
+    initialPeriod: 1440,
+  };
+  const times = [];
+  let html = "";
+  for (let i = 0; i < 3; i++) {
+    const start = performance.now();
+    html = s.renderToStaticMarkup(h(s.GatesTab, props));
+    times.push(performance.now() - start);
+  }
+  const median = times.sort((a, b) => a - b)[1];
+  assert.equal(html.match(/<tr id="command-/g)?.length, s.PAGE);
+  assert.match(html, /1–25 of 5400/);
+  assert.ok(html.length < 600_000, `${html.length} characters of markup`);
+  assert.ok(median < 1500, `rendered in ${times.map(Math.round)} ms`);
 });
 
 test("a link to a gate opens the Hourglass on its Gates tab", () => {

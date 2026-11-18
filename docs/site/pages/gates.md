@@ -197,12 +197,17 @@ shared.
 - **The Hourglass**, on its **Gates** tab, shows who holds each gate now and who waits; draws, over the last hour, 6
   hours or day, one lane per gate under the workers that run, each request in its task's colour, hatched while it waits
   for its gate; follows the named gates' requests from their task's kind to their gate to their wait; and lists each
-  command admitted under a gate, the most total time first, with what it cost and how long it waited.
+  command admitted under a gate, the most total time first, with what it cost and how long it waited. It stays light
+  under load: its figures and the waits for each gate come summed over every command, the commands come 25 to a page,
+  and a command's recent runs only when you open its line (20, then all on a click). Past six free gates and eight
+  gates' waits, the rest folds behind a link. After its first read, the tab asks the history only for what changed.
 - **The project's configuration** lists the checks with how each last ran: on which commit, when, in how long, or why
   it failed.
 
-Djinn's command line lists, per command, what it cost: CPU time, peak memory, duration. Its history of the gates
-gives the last hour of holds and runs, or the minutes you name, up to a week.
+Djinn's command line lists, per command, what it cost: CPU time, peak memory, duration; a page at a time, the most
+total time first, with or without each command's runs, and the summary of the gates over them all when you ask. Its
+history of the gates gives the last hour of holds and runs, or the minutes you name, up to a week, or only what changed
+after a time you name.
 Its list of gates marks a lit ifrit's gates with the time they go back at the latest, and the Djinn's brief says who
 waits on an ifrit, so that the Djinn offers you to end it.
 

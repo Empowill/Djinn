@@ -89,6 +89,15 @@ test("leaving the Hourglass stops its reads and its timers", async () => {
     JSON.stringify(gates.reads),
   );
   assert.equal(gates.reads.series, 0);
+  // The history whole at first; the commands a page, brief, with the summary of them all.
+  assert.equal(gates.reads.historyAfter[0], false);
+  assert.deepEqual(gates.reads.commandAsks[0], {
+    byTotal: true,
+    brief: true,
+    summary: true,
+    pageSize: s.PAGE,
+    pageToken: "",
+  });
   // Over a day or 6 hours, the history is read over the window chosen, and less often: its timer stops all the same.
   for (const minutes of [360, 1440]) {
     const window = await leaves(() =>
