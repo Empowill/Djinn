@@ -85,7 +85,7 @@ cancelled.
 
 | When | What goes | What stays |
 |---|---|---|
-| A task done 30 days ago, its work merged into the integration branch | Its worktree and scratch | Its branch |
+| A task done 30 days ago, its work merged into the integration branch, or with nothing to merge | Its worktree and scratch | Its branch |
 | Its azima validated: its pull request merged, or marked done by you or the Djinn | At once, its worktree, scratch and local branch | The remote's branch |
 | Its wish granted, which validates all its azimas | The same, at once, for every task of the wish | The remote's branch |
 
@@ -94,9 +94,10 @@ branch with commits found neither in the integration branch nor on the remote. D
 its azima a line per task of the cascade: how far it is, what it freed, what it kept and why. A remote branch is never
 touched.
 
-Only a task done with its work merged waits out the 30 days. A task cancelled, failed or stopped, or done with its work
-dropped, keeps its worktree and scratch until its azima is validated or its wish granted: what it left may still be
-looked at.
+Only a task done waits out the 30 days: its work merged, or with nothing to merge, such as an investigation, a mockup,
+or a worker that ended done with no commit of its own. A task cancelled, failed or stopped, or done with its work
+dropped or marked done by hand, keeps its worktree and scratch until its azima is validated or its wish granted: what
+it left may still be looked at.
 
 A task of a wish without a project runs outside any project: read only, in an empty folder of its own. That suits
 research.

@@ -42,10 +42,10 @@ of djinn up, or its environment variable, fixes the percent for one run instead,
 measure is going, with a button to measure again now. It draws a bar of the whole disk (with the 30 GB and 10 GB guard marks),
 split into its sources: Go, Docker, Djinn, other caches, the home, the system, and what is left unmeasured. Below it,
 three tabs: **Djinn and its workers** (each project's worktrees and scratch, with the share Djinn frees by itself by
-the rules of [Task and worker](#task-and-worker): that of the tasks done with their work integrated, freed 30 days
-after their end, and apart what the other finished tasks take, freed once their azima is validated or their wish
-granted; both summed above the list, how many folders and what they take; a folder Djinn no longer knows counts in
-neither;
+the rules of [Task and worker](#task-and-worker): that of the tasks done with their work integrated or nothing to
+merge, freed 30 days after their end, and apart what the other finished tasks take, freed once their azima is
+validated or their wish granted; both summed above the list, how many folders and what they take; a folder Djinn no
+longer knows counts in neither;
 Playwright, tilasms, logs, the data folder, and any isolated Go build caches),
 **Machine** (the Go build cache, the Go module and download caches, golangci-lint, Docker build cache, images and
 volumes when Docker is installed, pnpm, uv, pip, npm, and JetBrains), grouped by risk (**Safe**, **Rebuilds**, **Data

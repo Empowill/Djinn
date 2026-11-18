@@ -63,9 +63,9 @@ func putDiskTask(
 }
 
 // TestDiskFreedShare (W144, Q81): the Disk tab's share of the worktrees and scratch the freeing pass frees by age counts
-// by the pass's own predicate (freeIntegrated): a task done with its work integrated only. A task cancelled, failed,
-// stopped, done with its work dropped or done with nothing integrated counts apart, in what the cascade of its azima
-// or wish frees; one live, or that Djinn no longer knows, in neither.
+// by the pass's own predicate (freeIntegrated): a task done with its work integrated, or with nothing to merge (Q84 B).
+// A task cancelled, failed, stopped or done with its work dropped counts apart, in what the cascade of its azima or
+// wish frees; one live, or that Djinn no longer knows, in neither.
 func TestDiskFreedShare(t *testing.T) {
 	t.Parallel()
 	e := up(t, t.TempDir())
@@ -75,13 +75,13 @@ func TestDiskFreedShare(t *testing.T) {
 	}
 	done, cancelled := planv1.TaskStatus_TASK_STATUS_DONE, planv1.TaskStatus_TASK_STATUS_CANCELLED
 	merged := put("W1", done, committed)
+	nothing := put("W7", done, nil)
 	cascade := map[string]string{
 		"cancelled":            put("W2", cancelled, nil),
 		"cancelled integrated": put("W3", cancelled, committed),
 		"failed":               put("W4", planv1.TaskStatus_TASK_STATUS_FAILED, nil),
 		"stopped":              put("W5", planv1.TaskStatus_TASK_STATUS_STOPPED, nil),
 		"done dropped":         put("W6", done, dropped),
-		"done not integrated":  put("W7", done, nil),
 	}
 	neither := map[string]string{
 		"running": put("W8", planv1.TaskStatus_TASK_STATUS_RUNNING, nil),
@@ -92,21 +92,22 @@ func TestDiskFreedShare(t *testing.T) {
 	}
 
 	dir := diskDir{path: filepath.Join(t.TempDir(), "worktrees"), kind: folderWorktrees, project: projectID}
-	children := map[string]uint64{merged: 1000}
+	children := map[string]uint64{merged: 1000, nothing: 1000}
 	for _, id := range cascade {
 		children[id] = 100
 	}
 	for _, id := range neither {
 		children[id] = 10
 	}
-	walks := map[string]walked{filepath.Clean(dir.path): {bytes: 1630, children: children}}
+	walks := map[string]walked{filepath.Clean(dir.path): {bytes: 2530, children: children}}
 	got := e.h.toDiskFolders(t.Context(), true, []diskDir{dir}, walks, nil, time.Time{})
 	if len(got) != 1 {
 		t.Fatalf("rows = %v; want the worktrees", got)
 	}
 	f := got[0]
-	if f.GetCount() != 10 || f.GetIntegratedCount() != 1 || f.GetIntegratedBytes() != 1000 {
-		t.Errorf("worktrees = %v; want 10 task folders, the one done and merged freed by age, 1000 bytes", f)
+	if f.GetCount() != 10 || f.GetIntegratedCount() != 2 || f.GetIntegratedBytes() != 2000 {
+		t.Errorf("worktrees = %v; want 10 task folders, the two done, merged or with nothing to merge, freed by age, "+
+			"2000 bytes", f)
 	}
 	if f.GetCascadeCount() != int32(len(cascade)) || f.GetCascadeBytes() != uint64(100*len(cascade)) {
 		t.Errorf("worktrees = %v; want %d folders, %d bytes, of tasks the cascade frees: %v", f, len(cascade),
