@@ -359,7 +359,7 @@ test("an inbox card says its kind and the fact, what Djinn will do, and what eac
     /<strong class="option-letter">C<\/strong><p>Dismiss<\/p><p class="inbox-effect">It will not come back here; nothing is said or marked at the source\.<\/p>/,
   );
   assert.match(html, /Rub the lamp · A/);
-  // The sources are not listed in the inbox: their project's panel holds them.
+  // The sources are not listed in the inbox: their project's Skills tab holds them.
   assert.doesNotMatch(html, /inbox-source-row|Plug in|Unplug/);
 });
 
@@ -475,7 +475,7 @@ test("the inbox hides when nothing waits, however many sources the skills declar
   assert.doesNotMatch(cannot, /failed run/);
 });
 
-test("a project with something to fix takes one line in the inbox, under the cards: its red gear, its name and count, the first thing to fix from the first paint, and the button that opens its panel", async () => {
+test("a project with something to fix takes one line in the inbox, under the cards: its red gear, its name and count, the first thing to fix from the first paint, and the button that opens its settings page", async () => {
   const lamp = wish(
     "01a11833-a440-7479-a067-52615c91da71",
     "Ship the lamp",
@@ -535,13 +535,13 @@ test("a project with something to fix takes one line in the inbox, under the car
     /<span class="inbox-kind">Project shop<\/span><span class="inbox-project-count">2 things to fix<\/span>/,
   );
   // The first thing to fix as Djinn says it, from the first paint: no sentence comes later to grow the line under the
-  // reader. Then the button that opens the panel.
+  // reader. Then the button that opens the settings page.
   assert.ok(html.includes(`<p>${first}</p>`), html);
   assert.match(
     html,
     /<button class="button small secondary">Open its configuration<\/button><\/article>/,
   );
-  // A project that says none: a sentence that sends to the panel.
+  // A project that says none: a sentence that sends to the settings page.
   assert.match(
     await render([{ id: "p2", name: "shop", toFix: 1 }]),
     /<p>Djinn waits for you on its configuration/,

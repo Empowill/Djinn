@@ -88,7 +88,7 @@ export function FlightPlan({
   // The active wishes, by rank.
   wishes: Wish[];
   onOpen: (wishId: string) => void;
-  // Opens a project's panel, from its line in the inbox.
+  // Opens a project's settings page, from its line in the inbox.
   onOpenProject?: (projectId: string) => void;
   onToast: (text: string) => void;
 }) {

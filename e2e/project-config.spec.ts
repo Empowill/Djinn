@@ -1,11 +1,11 @@
-// A project's gear in the menu and its configuration panel, against the real djinn up --browser (see global-setup.ts):
+// A project's gear in the menu and its settings page, against the real djinn up --browser (see global-setup.ts):
 // a Git project whose copy has another branch checked out than its reference, with the team's settings, a skill that
 // offers a wish template, one that is know-how alone, and one that offers an inbox source this machine has not decided
 // on. Its gear turns red with a small flame, which flickers by transform and opacity only and stands still in a window
 // at rest; folded, the flame passes onto its folder; the flying carpet's inbox gives the project one line. Both open
-// the panel, which says what to fix first, the reference branch (chosen in your own file or taken back from the CLI),
-// the checks and settings with where each comes from, and each skill's role. Saying no to the source settles it: the
-// gear goes grey and the line goes. PROJECT_SHOTS=<folder> also writes the panel's reference box there.
+// its settings page, which says what to fix first, the reference branch (chosen in your own file or taken back from
+// the CLI), the checks and settings with where each comes from, and each skill's role. Saying no to the source settles
+// it: the gear goes grey and the line goes. PROJECT_SHOTS=<folder> also writes the page's reference box there.
 import { expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";

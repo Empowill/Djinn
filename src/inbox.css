@@ -106,7 +106,7 @@
   text-align: right;
 }
 /* A project with something to fix, in one line: its red gear and flame, its name and count, one sentence, and the
-   button that opens its panel. */
+   button that opens its settings page. */
 .inbox-card.inbox-project {
   display: flex;
   align-items: center;

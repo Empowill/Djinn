@@ -4,9 +4,9 @@
 // destination first, and "Dismiss" last; and a source plugged in on this machine that fails, with how to fix it or
 // unplug it. Nothing is made until you click, and Djinn never answers a source. Under the cards, one line per project
 // whose configuration has something for you to fix (Project.to_fix): its gear in the menu turns red, and the line opens
-// the same panel; the detail stays there, never twice. Empty, the inbox is hidden: the sources themselves live in their
-// project's panel (InboxSources), plugged in there. The cards come as they arrived, the oldest first: a new one comes
-// after the others and moves none of them while you read (AGENTS.md, Interface).
+// the same settings page; the detail stays there, under To fix, never twice. Empty, the inbox is hidden: the sources
+// themselves live on their project's Skills tab (InboxSources), plugged in there. The cards come as they arrived, the
+// oldest first: a new one comes after the others and moves none of them while you read (AGENTS.md, Interface).
 import { timestampMs } from "@bufbuild/protobuf/wkt";
 import { Inbox as InboxIcon, Lamp, Plug, Settings, Unplug } from "lucide-react";
 import { memo, useMemo, useState } from "react";
@@ -56,7 +56,7 @@ export function Inbox({
 }: {
   // Shows the wish an item went to.
   onOpen: (wishId: string) => void;
-  // Opens a project's panel, as its gear does.
+  // Opens a project's settings page, as its gear does.
   onOpenProject?: (projectId: string) => void;
   onToast: (text: string) => void;
 }) {
@@ -149,7 +149,7 @@ function sourceState(src: InboxSource): string {
 }
 
 // InboxSources lists the sources a project's skills declare, each with what it reads, how it stands on this machine,
-// and a button that plugs it in or unplugs it, what that does said under it. The project's panel shows it.
+// and a button that plugs it in or unplugs it, what that does said under it. The project's Skills tab shows it.
 export function InboxSources({
   sources,
   onToast,
@@ -471,8 +471,8 @@ const SourceCard = memo(function SourceCard({
 
 // ProjectLine is a project whose configuration has something for you to fix, in one line: its red gear, its name and
 // how many things, the first of them in one sentence as Djinn finds it (Project.first_fix, from its first paint: a
-// sentence fetched after would grow the line under the reader), and the button that opens its panel, where each one is
-// said with what settles it.
+// sentence fetched after would grow the line under the reader), and the button that opens its settings page, where
+// each one is said with what settles it, under To fix.
 const ProjectLine = memo(function ProjectLine({
   project,
   onOpenProject,
