@@ -41,11 +41,84 @@ func TestOnDisk(t *testing.T) {
 	}
 }
 
+// putDiskTask stores a task of status, changed by mod when not nil, and returns its id.
+func putDiskTask(
+	t *testing.T, e *env, wishID, projectID, code string, status planv1.TaskStatus, mod func(*planv1.Task),
+) string {
+	t.Helper()
+	task := &planv1.Task{Id: store.NewID(), WishId: wishID, ProjectId: projectID, Code: code, Title: "Measure",
+		Status: status, CreateTime: timestamppb.Now(), EndTime: timestamppb.Now()}
+	if mod != nil {
+		mod(task)
+	}
+	if err := e.db.Tx(t.Context(), func(tx *store.Tx) error {
+		if err := tx.Journal("test", "put", task); err != nil {
+			return err
+		}
+		return tx.Put(task)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return task.GetId()
+}
+
+// TestDiskFreedShare (W144, Q81): the Disk tab's share of the worktrees and scratch the freeing pass frees by age counts
+// by the pass's own predicate (freeIntegrated): a task done with its work integrated only. A task cancelled, failed,
+// stopped, done with its work dropped or done with nothing integrated counts apart, in what the cascade of its azima
+// or wish frees; one live, or that Djinn no longer knows, in neither.
+func TestDiskFreedShare(t *testing.T) {
+	t.Parallel()
+	e := up(t, t.TempDir())
+	wishID, projectID := e.wish(t, folder(t))
+	put := func(code string, status planv1.TaskStatus, mod func(*planv1.Task)) string {
+		return putDiskTask(t, e, wishID, projectID, code, status, mod)
+	}
+	done, cancelled := planv1.TaskStatus_TASK_STATUS_DONE, planv1.TaskStatus_TASK_STATUS_CANCELLED
+	merged := put("W1", done, committed)
+	cascade := map[string]string{
+		"cancelled":            put("W2", cancelled, nil),
+		"cancelled integrated": put("W3", cancelled, committed),
+		"failed":               put("W4", planv1.TaskStatus_TASK_STATUS_FAILED, nil),
+		"stopped":              put("W5", planv1.TaskStatus_TASK_STATUS_STOPPED, nil),
+		"done dropped":         put("W6", done, dropped),
+		"done not integrated":  put("W7", done, nil),
+	}
+	neither := map[string]string{
+		"running": put("W8", planv1.TaskStatus_TASK_STATUS_RUNNING, nil),
+		"done, still merging": put("W9", done, func(task *planv1.Task) {
+			task.Integration = &planv1.TaskIntegration{State: planv1.IntegrationState_INTEGRATION_STATE_PENDING}
+		}),
+		"no longer known": "gone",
+	}
+
+	dir := diskDir{path: filepath.Join(t.TempDir(), "worktrees"), kind: folderWorktrees, project: projectID}
+	children := map[string]uint64{merged: 1000}
+	for _, id := range cascade {
+		children[id] = 100
+	}
+	for _, id := range neither {
+		children[id] = 10
+	}
+	walks := map[string]walked{filepath.Clean(dir.path): {bytes: 1630, children: children}}
+	got := e.h.toDiskFolders(t.Context(), true, []diskDir{dir}, walks, nil, time.Time{})
+	if len(got) != 1 {
+		t.Fatalf("rows = %v; want the worktrees", got)
+	}
+	f := got[0]
+	if f.GetCount() != 10 || f.GetIntegratedCount() != 1 || f.GetIntegratedBytes() != 1000 {
+		t.Errorf("worktrees = %v; want 10 task folders, the one done and merged freed by age, 1000 bytes", f)
+	}
+	if f.GetCascadeCount() != int32(len(cascade)) || f.GetCascadeBytes() != uint64(100*len(cascade)) {
+		t.Errorf("worktrees = %v; want %d folders, %d bytes, of tasks the cascade frees: %v", f, len(cascade),
+			100*len(cascade), cascade)
+	}
+}
+
 // TestDiskRestLeavesLittleUnmeasured (W122, L26): on 18/11/2026 the Disk tab left ~700 GB "not measured": the
 // developer's repositories, the browsers' and editors' folders, ~/go/.go, a crash dump, none of which any row counted.
 // The slow pass names each entry of the home, those of ~/.cache, ~/.local/share and ~/go one by one, without the
 // folders the other rows count: the rows sum up to what the home takes, to the byte. The worktrees and scratch say
-// what ended tasks' take, and the lead hears these sources when the disk fills.
+// what the freeing pass frees of them, and the lead hears these sources when the disk fills.
 func TestDiskRestLeavesLittleUnmeasured(t *testing.T) {
 	fakeHome := t.TempDir()
 	t.Setenv("HOME", fakeHome)
@@ -62,23 +135,11 @@ func TestDiskRestLeavesLittleUnmeasured(t *testing.T) {
 	wishID, projectID := e.wish(t, folder(t))
 	t.Setenv("PATH", t.TempDir()) // No docker.
 
-	put := func(code string, status planv1.TaskStatus) string {
-		task := &planv1.Task{Id: store.NewID(), WishId: wishID, ProjectId: projectID, Code: code, Title: "Measure",
-			Status: status, CreateTime: timestamppb.Now()}
-		if err := e.db.Tx(t.Context(), func(tx *store.Tx) error {
-			if err := tx.Journal("test", "put", task); err != nil {
-				return err
-			}
-			return tx.Put(task)
-		}); err != nil {
-			t.Fatal(err)
-		}
-		return task.GetId()
-	}
-	done, live := put("W1", planv1.TaskStatus_TASK_STATUS_DONE), put("W2", planv1.TaskStatus_TASK_STATUS_STOPPED)
+	done := putDiskTask(t, e, wishID, projectID, "W1", planv1.TaskStatus_TASK_STATUS_DONE, committed)
+	stopped := putDiskTask(t, e, wishID, projectID, "W2", planv1.TaskStatus_TASK_STATUS_STOPPED, nil)
 	worktrees := filepath.Join(data, "projects", projectID, "worktrees")
 	writeFile(t, worktrees, done+"/main.go", strings.Repeat("d", 40_000))
-	writeFile(t, worktrees, live+"/main.go", strings.Repeat("l", 10_000))
+	writeFile(t, worktrees, stopped+"/main.go", strings.Repeat("l", 10_000))
 	writeFile(t, worktrees, "gone/main.go", strings.Repeat("g", 5_000)) // A task Djinn no longer knows.
 	writeFile(t, filepath.Join(data, "scratch", projectID), done+"/bench.txt", strings.Repeat("s", 8_000))
 
@@ -136,17 +197,19 @@ func TestDiskRestLeavesLittleUnmeasured(t *testing.T) {
 	}
 
 	trees := byPath[worktrees]
-	ended := onDiskOf(t, filepath.Join(worktrees, done, "main.go"), filepath.Join(worktrees, "gone", "main.go"))
+	integrated := onDiskOf(t, filepath.Join(worktrees, done, "main.go"))
 	if trees == nil || trees.GetKind() != folderWorktrees || trees.GetProject() == "" || trees.GetCount() != 3 ||
-		trees.GetEndedCount() != 2 || trees.GetEndedBytes() != ended {
-		t.Errorf("worktrees = %v; want its project's name, 3 task folders, 2 ended taking %d bytes", trees, ended)
+		trees.GetIntegratedCount() != 1 || trees.GetIntegratedBytes() != integrated || trees.GetCascadeCount() != 1 {
+		t.Errorf("worktrees = %v; want its project's name, 3 task folders, 1 done and integrated taking %d bytes, "+
+			"1 stopped", trees, integrated)
 	}
-	if scratch := byPath[filepath.Join(data, "scratch", projectID)]; scratch == nil || scratch.GetEndedCount() != 1 {
-		t.Errorf("scratch = %v; want the project's scratch, its one task ended", scratch)
+	if scratch := byPath[filepath.Join(data, "scratch", projectID)]; scratch == nil || scratch.GetIntegratedCount() != 1 {
+		t.Errorf("scratch = %v; want the project's scratch, its one task done and integrated", scratch)
 	}
 
 	detail := fullDetail(e.h.diskSources(time.Second), 20)
-	for _, name := range []string{"~/empowill ", "the worktrees of " + trees.GetProject() + " ", "of it ended tasks'"} {
+	for _, name := range []string{"~/empowill ", "the worktrees of " + trees.GetProject() + " ",
+		"of it freed 30 days after its tasks' end"} {
 		if !strings.Contains(detail, name) {
 			t.Errorf("the lead's detail %q does not name %q", detail, name)
 		}

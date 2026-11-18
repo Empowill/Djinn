@@ -423,11 +423,11 @@ test("the disk tab: whole-machine bar with guard marks, Machine items grouped by
   assert.doesNotMatch(html, /\/home\/dev\/\.npm/);
   assert.match(
     html,
-    /A worktree stays after its task ends until its work is merged and the folder is clean/,
+    /Djinn frees the worktree and scratch of a task done with its work integrated 30 days after its end/,
   );
 });
 
-test("the disk tab names what fills the disk: worktrees split by ended tasks, the slow pass's home and system folders, a small unmeasured share", () => {
+test("the disk tab names what fills the disk: worktrees split by what Djinn frees, the slow pass's home and system folders, a small unmeasured share", () => {
   const gib = 1024n ** 3n;
   const disk = {
     availableBytes: 171n * gib,
@@ -438,9 +438,11 @@ test("the disk tab names what fills the disk: worktrees split by ended tasks, th
         kind: "worktrees",
         project: "dolmen",
         sizeBytes: 120n * gib,
-        endedBytes: 100n * gib,
+        integratedBytes: 100n * gib,
         count: 3,
-        endedCount: 2,
+        integratedCount: 2,
+        cascadeBytes: 15n * gib,
+        cascadeCount: 1,
       },
       { path: "/home/dev/.config/djinn", kind: "data", sizeBytes: 125n * gib },
       { path: "~/.cache/google-chrome", kind: "home", sizeBytes: 300n * gib },
@@ -479,11 +481,14 @@ test("the disk tab names what fills the disk: worktrees split by ended tasks, th
   assert.match(html, /title="What no pass reads: folders only root reads/);
   assert.match(html, /Rest of the disk\s*<b>373 GB<\/b>/);
 
-  // Djinn's tab: the worktrees named by their project, with what ended tasks take.
+  // Djinn's tab: the worktrees named by their project, with what the freeing pass frees by age, and on top by cascade.
   sec.all("resource-disk-subtab")[0].props.onClick();
   html = sec.html();
   assert.match(html, /Worktrees · dolmen/);
-  assert.match(html, /100 GB of ended tasks \(2 of 3 folders\)/);
+  assert.match(
+    html,
+    /100 GB freed 30 days after the end \(2 of 3 folders\) · 15 GB more once validated \(1\)/,
+  );
 
   // The rest: each entry of the home, the small ones summed, the system folders, a partial walk a floor.
   sec.all("resource-disk-subtab")[2].props.onClick();
@@ -496,7 +501,7 @@ test("the disk tab names what fills the disk: worktrees split by ended tasks, th
   assert.match(html, /Measured by a slow pass every 6 hours/);
 });
 
-test("the disk tab says when it measured, measures again on its button, and sums what ended tasks leave", () => {
+test("the disk tab says when it measured, measures again on its button, and sums what Djinn frees of the tasks finished", () => {
   const gib = 1024n ** 3n;
   const folders = [
     {
@@ -504,18 +509,18 @@ test("the disk tab says when it measured, measures again on its button, and sums
       kind: "worktrees",
       project: "dolmen",
       sizeBytes: 120n * gib,
-      endedBytes: 100n * gib,
+      integratedBytes: 100n * gib,
       count: 3,
-      endedCount: 2,
+      integratedCount: 2,
     },
     {
       path: "/home/dev/.config/djinn/projects/p2/worktrees",
       kind: "worktrees",
       project: "djinn",
       sizeBytes: 30n * gib,
-      endedBytes: 20n * gib,
+      integratedBytes: 20n * gib,
       count: 5,
-      endedCount: 4,
+      integratedCount: 4,
       partial: true,
     },
     {
@@ -523,9 +528,11 @@ test("the disk tab says when it measured, measures again on its button, and sums
       kind: "scratch",
       project: "dolmen",
       sizeBytes: 10n * gib,
-      endedBytes: 6n * gib,
+      integratedBytes: 6n * gib,
       count: 2,
-      endedCount: 1,
+      integratedCount: 1,
+      cascadeBytes: 3n * gib,
+      cascadeCount: 1,
     },
     { path: "/home/dev/.config/djinn/logs", kind: "logs", sizeBytes: 1n * gib },
   ];
@@ -553,10 +560,15 @@ test("the disk tab says when it measured, measures again on its button, and sums
   assert.equal(button[0].props.label, "Measure again now");
   assert.equal(button[0].props.disabled, false);
 
-  // Djinn's tab: the residues of 7 ended task folders, 126 GB, a floor as one walk ran out of time.
+  // Djinn's tab: 7 folders of tasks done and integrated, 126 GB, a floor as one walk ran out of time; on top, the one
+  // its azima or wish frees.
   assert.match(
     html,
-    /Left by ended tasks: 7 folders, ≥ 126 GB \(6 worktrees, 1 scratch\)\. Djinn removes none of them\./,
+    /Freed by Djinn 30 days after their end, tasks done with their work integrated: 7 folders, ≥ 126 GB \(6 worktrees, 1 scratch\)\./,
+  );
+  assert.match(
+    html,
+    /On top, once their azima is validated or their wish granted, the other finished tasks: 1 folder, ≥ 3 GB\./,
   );
 
   // The click: the measure goes, the button waits for it.
@@ -566,12 +578,12 @@ test("the disk tab says when it measured, measures again on its button, and sums
   assert.match(html, /<span>Measuring now…<\/span>/);
   assert.equal(sec.all("icon-button")[0].props.disabled, true);
 
-  // Never measured: it says so; without onMeasure, no button; no ended folder, no residue line.
+  // Never measured: it says so; without onMeasure, no button; no task folder, no residue line.
   const bare = live(s.DiskSection, {
     disk: { ...disk, measureTime: undefined, folders: folders.slice(3) },
   });
   html = bare.html();
   assert.match(html, /No measure yet/);
   assert.equal(bare.all("icon-button").length, 0);
-  assert.doesNotMatch(html, /Left by ended tasks/);
+  assert.doesNotMatch(html, /Freed by Djinn|On top, once/);
 });

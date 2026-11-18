@@ -279,8 +279,8 @@ func fullDetail(sources []diskSource, n int) string {
 				b.WriteString("; ")
 			}
 			b.WriteString(s.name + " " + gbText(s.bytes))
-			if s.ended > 0 {
-				b.WriteString(", " + gbText(s.ended) + " of it ended tasks'")
+			if s.integrated > 0 {
+				b.WriteString(", " + gbText(s.integrated) + " of it freed 30 days after its tasks' end")
 			}
 			if s.partial {
 				b.WriteString(" at least")

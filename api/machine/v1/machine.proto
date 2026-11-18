@@ -183,15 +183,21 @@ message DiskFolder {
   string kind = 4;
   // Name of the project whose worktrees or scratch these are.
   string project = 5;
-  // Of the worktrees or scratch, the folders of tasks ended (done or cancelled) or that Djinn no longer knows, in
-  // bytes; the rest is live tasks'.
-  uint64 ended_bytes = 6;
+  // Of the worktrees or scratch, the folders of tasks done with their work integrated, in bytes: what the freeing pass
+  // frees by itself 30 days after their end (Q81), by the same predicate.
+  uint64 integrated_bytes = 6;
   // How many task folders the worktrees or scratch hold; how many entries the "~" row of kind home sums.
   int32 count = 7;
-  // How many of them are ended tasks'.
-  int32 ended_count = 8;
+  // How many of them are such tasks'.
+  int32 integrated_count = 8;
   // When the folder was last walked.
   google.protobuf.Timestamp measure_time = 9;
+  // Of the worktrees or scratch, the folders of the other tasks finished (cancelled, failed, stopped, done with their
+  // work dropped or not integrated), in bytes: what the freeing pass frees on top once their azima is validated or
+  // their wish granted. A task Djinn no longer knows counts in neither: Djinn never frees its folder.
+  uint64 cascade_bytes = 10;
+  // How many of them are those tasks'.
+  int32 cascade_count = 11;
 }
 
 // DiskRisk is what happens when a DiskItem's cleanup command runs.
