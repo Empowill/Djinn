@@ -407,9 +407,9 @@ func TestTaskModel(t *testing.T) {
 		}
 	})
 
-	// An old per-project setting with "Gemini 4 Argon (High)" migrates once to
+	// An old per-project setting with "Gemini 4 Argon (High)" migrates at start (Migrate) to
 	// the Summoning Circle as canonical model ID "gemini-4-argon-high", is removed from the project settings file, and
-	// Antigravity.args passes --model gemini-4-argon-high to agy (W383, W400).
+	// Antigravity.args passes --model gemini-4-argon-high to agy (W383, W400, W103).
 	t.Run("argon_round_trip", func(t *testing.T) {
 		t.Parallel()
 
@@ -420,6 +420,7 @@ func TestTaskModel(t *testing.T) {
 		wishID, projectID := e.wish(t, t.TempDir())
 
 		writeFile(t, home, "projects/"+projectID+"/settings.txtpb", "provider: PROVIDER_ANTIGRAVITY\nmodel: \"Gemini 4 Argon (High)\"\n")
+		plan.Migrate(home) // djinn up moves the legacy per-project setting to the circle (W103).
 
 		res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
 			WishId: wishID, Title: "Migrated Argon task", Prompt: "text ok",
