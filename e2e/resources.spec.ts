@@ -14,6 +14,7 @@ import os from "node:os";
 import path from "node:path";
 
 import {
+  CommandServiceListRequestSchema,
   CommandServiceListResponseSchema,
   GateMode,
   GateServiceHistoryRequestSchema,
@@ -305,53 +306,90 @@ async function routeResources(
       ),
     });
   });
-  // The commands of every project, one at rest among them.
-  await page.route("**/machine.v1.CommandService/List", (route) =>
-    route.fulfill({
+  // The commands of every project, one at rest among them, answered as the server does since W124: the most total
+  // time first (runs times mean seconds), one command by id or by text, and the summary of the gates over them all.
+  const costs = [
+    {
+      ...cost(randomUUID(), "go tool task e2e", "e2e", 3, 600, 0),
+      projectName: "a project at rest",
+    },
+    cost(projectId, "go tool task e2e", "e2e", 2, 840, 30),
+    cost(
+      projectId,
+      "go tool task e2e -- e2e/wish-render.spec.ts",
+      "e2e",
+      6,
+      95,
+      12,
+    ),
+    cost(
+      projectId,
+      "go tool task e2e -- e2e/resources.spec.ts",
+      "e2e",
+      3,
+      40,
+      0,
+    ),
+    cost(projectId, "go tool task lint", "lint", 20, 55, 4),
+    cost(
+      projectId,
+      "go test -tags headless ./internal/machine/",
+      "test",
+      9,
+      12,
+      1,
+    ),
+    cost(projectId, "go test ./internal/store/", "test", 4, 3, 0),
+  ].map((c) => ({ ...c, id: randomUUID() }));
+  const waits = (gate: string) => {
+    const runs = costs
+      .filter((c) => c.gate === gate)
+      .flatMap((c) => c.recentRuns);
+    const seconds = runs.map((r) => r.waitSeconds).sort((a, b) => a - b);
+    return {
+      gate,
+      holds: runs.length,
+      p50Seconds: seconds[Math.ceil(seconds.length / 2) - 1],
+      p90Seconds: seconds[Math.ceil(seconds.length * 0.9) - 1],
+      maxSeconds: seconds[seconds.length - 1],
+      long: seconds.filter((w) => w > 5).length,
+    };
+  };
+  await page.route("**/machine.v1.CommandService/List", (route) => {
+    const ask = fromBinary(
+      CommandServiceListRequestSchema,
+      route.request().postDataBuffer() ?? new Uint8Array(),
+    );
+    const total = (c: (typeof costs)[number]) => c.runs * c.seconds;
+    const found = ask.id
+      ? costs.filter((c) => c.id === ask.id)
+      : ask.command
+        ? costs.filter(
+            (c) => c.command === ask.command && c.projectId === ask.project,
+          )
+        : ask.byTotal
+          ? [...costs].sort(
+              (a, b) =>
+                total(b) - total(a) || a.command.localeCompare(b.command),
+            )
+          : costs;
+    return route.fulfill({
       status: 200,
       contentType: "application/proto",
       body: Buffer.from(
         toBinary(
           CommandServiceListResponseSchema,
           create(CommandServiceListResponseSchema, {
-            costs: [
-              {
-                ...cost(randomUUID(), "go tool task e2e", "e2e", 3, 600, 0),
-                projectName: "a project at rest",
-              },
-              cost(projectId, "go tool task e2e", "e2e", 2, 840, 30),
-              cost(
-                projectId,
-                "go tool task e2e -- e2e/wish-render.spec.ts",
-                "e2e",
-                6,
-                95,
-                12,
-              ),
-              cost(
-                projectId,
-                "go tool task e2e -- e2e/resources.spec.ts",
-                "e2e",
-                3,
-                40,
-                0,
-              ),
-              cost(projectId, "go tool task lint", "lint", 20, 55, 4),
-              cost(
-                projectId,
-                "go test -tags headless ./internal/machine/",
-                "test",
-                9,
-                12,
-                1,
-              ),
-              cost(projectId, "go test ./internal/store/", "test", 4, 3, 0),
-            ],
+            costs: found,
+            total: found.length,
+            summary: ask.summary
+              ? { gates: [waits("e2e"), waits("test"), waits("lint")] }
+              : undefined,
           }),
         ),
       ),
-    }),
-  );
+    });
+  });
 }
 
 // What each test makes, paused once it ends: the specs after find the place as they left it (e2e/test.ts).
