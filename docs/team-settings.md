@@ -1,45 +1,59 @@
 # Team settings
 
 A team that works on one repository shares a few defaults for its workers: which agent runs them, which model,
-how much one may spend, how their branches are named. The repository carries them in one file, next to the permissions:
-`.agents/settings.txtpb`. Each developer may keep their own next to their Djinn's data, and theirs win.
+how much one may spend, how their branches are named. The repository carries them under `settings:` in its Djinn
+configuration, `.agents/djinn.yaml` (or `djinn.yaml` at its root), beside its gates and its containers' ceilings; the
+permissions stay apart, in `.agents/permissions.txtpb`. Each developer may keep their own next to their Djinn's data,
+and theirs win.
 
 ## The file
 
-A `plan.v1.ProjectSettings` in text protobuf ([`api/plan/v1/plan.proto`](../api/plan/v1/plan.proto)), committed
-with the code:
+The `settings:` section of `djinn.yaml` is a `plan.v1.ProjectSettings`
+([`api/plan/v1/plan.proto`](../api/plan/v1/plan.proto)) in YAML, committed with the code:
 
+```yaml
+# .agents/djinn.yaml: what the repository tells Djinn, read on the reference branch.
+settings:
+  # The team's workers run claude with opus, spend at most 3 dollars each, and work on djinn/<code>-<slug>-<uuid8>.
+  provider: claude
+  model: opus
+  max_budget_usd: 3
+  branch: djinn/{code}-{slug}-{uuid8}
+
+  # Djinn integrates their finished work by itself: npm ci makes a fresh worktree ready, go tool task gen makes gen/**,
+  # the lint runs before each commit and the tests before each push, go tool task install installs the build pushed,
+  # once you say so.
+  generated: [gen/**]
+  generate: go tool task gen
+  setup: npm ci
+  checks:
+    - {name: lint, command: go tool task lint, when: commit}
+    - {name: test, command: go tool task test, when: push}
+  test_one: go tool task test-pkg -- {pkg}
+  install: go tool task install
 ```
-# proto-file: api/plan/v1/plan.proto
-# proto-message: plan.v1.ProjectSettings
 
-# The team's workers run claude with opus, spend at most 3 dollars each, and work on djinn/<code>-<slug>-<uuid8>.
-provider: PROVIDER_CLAUDE
-model: "opus"
-max_budget_usd: 3
-branch: "djinn/{code}-{slug}-{uuid8}"
+The fields are those of the message, by their proto name (`max_budget_usd`) or their JSON name (`maxBudgetUsd`). YAML
+spares the text protobuf's forms: a choice is written by the last words of its name, in any case (`when: commit` for
+`CHECK_WHEN_COMMIT`, `provider: claude`, `install_questions: never`, `push_strategy: azima`), its full name still
+reads; one value stands for a list of one (`generated: gen/**`, `when: push`); a number where a text is expected is that
+text (`model: 4.5`). A field Djinn does not know is ignored, and a warning names it (`settings.future_setting`): the rest
+of the file applies. A value out of its bounds, two checks of one name, or a file that does not parse is refused whole:
+the project's tasks wait until it is fixed. The file holds no secret (see below).
 
-# Djinn integrates their finished work by itself: npm ci makes a fresh worktree ready, go tool task gen makes gen/**,
-# the lint runs before each commit and the tests before each push, go tool task install installs the build pushed,
-# once you say so.
-generated: "gen/**"
-generate: "go tool task gen"
-setup: "npm ci"
-checks { name: "lint" command: "go tool task lint" when: CHECK_WHEN_COMMIT }
-checks { name: "test" command: "go tool task test" when: CHECK_WHEN_PUSH }
-test_one: "go tool task test-pkg -- {pkg}"
-install: "go tool task install"
-```
+Djinn no longer reads `.agents/settings.txtpb`, where these settings lived before (Q55): a project that keeps one gets a
+warning in its notices and one line in Djinn's log, naming it, until its settings move under `settings:` and it is
+deleted. Your own file, in Djinn's data folder, stays in text protobuf (below).
 
 ### Where Djinn reads it
 
-In a Git repository with a remote, Djinn reads the team's `.agents/settings.txtpb`, the project's
+In a Git repository with a remote, Djinn reads the project's `djinn.yaml` (the team's settings), its
 `.agents/permissions.txtpb` and its skills (`.agents/skills`, `.claude/skills`) on the
 [reference branch](#keeping-up-with-main), in its tree at the last fetch (`origin/main`), not in your copy: a branch
 checked out in your folder, or a change you have not pushed, does not change the configuration Djinn runs the project
 with. Djinn extracts those folders once per digest of their trees into its data folder (`cache/config/<digest>`), and
 reads them again only when a fetch moves the reference branch. A message about a file it cannot read names it there
-(`origin/main:.agents/settings.txtpb`); you fix it in your copy, and it counts once pushed and fetched. The commands
+(`origin/main:.agents/djinn.yaml`); you fix it in your copy, and it counts once pushed and fetched. The commands
 (the setup, the checks, the sources) still run in the project's folder or the wish's worktree. A project outside Git,
 without a remote, or whose reference branch is not fetched yet, keeps its folder as the source. Your own file is always
 read in Djinn's data folder.
@@ -176,7 +190,7 @@ settings:
     value: 'lint: go tool task lint (commit); test: go tool task test (push)'
     source: repository
   …
-repository_file: /home/me/src/app/.agents/settings.txtpb
+repository_file: /home/me/src/app/.agents/djinn.yaml
 developer_file: /home/me/.config/djinn/projects/01a1…/settings.txtpb
 ```
 
@@ -199,7 +213,7 @@ on every read: the things to fix first, then the information. Each notice has a 
 
 | Topic | To fix | Information |
 | --- | --- | --- |
-| `settings` | A file Djinn cannot read | A field a newer Djinn knows; `watch_commands` or `serve_commands` in the team's file |
+| `settings` | A file Djinn cannot read (your own file, or the project's `djinn.yaml`) | A field a newer Djinn knows (a warning in `djinn.yaml`); `watch_commands` or `serve_commands` in the team's settings; a stale `.agents/settings.txtpb` Djinn no longer reads (a warning) |
 | `permissions` | `.agents/permissions.txtpb` Djinn cannot read: no worker, watcher nor source starts | A field a newer Djinn knows |
 | `branch` | No reference branch found, or the one `main_branch` names is not in the repository | Your copy has another branch checked out (Djinn reads the configuration on the reference branch all the same, and starts no worker from your copy) |
 | `setup` | The setup's last run failed, with the command it still is | |
@@ -642,10 +656,10 @@ first). Tagging and publishing stay the developer's moves.
 ## Left out, on purpose
 
 Permissions stay in [`.agents/permissions.txtpb`](providers.md#the-agentspermissionstxtpb-format), templates in
-the skills ([wish templates](wish-templates.md)), gates are named where they run (`djinn gate run <name>`). The
+the skills ([wish templates](wish-templates.md)), gates are named where they run (`djinn gate run <name>`) and declared in `djinn.yaml`, beside the settings. The
 lead's agent, CPU limits and the machine's workers stay with each developer's `djinn up`.
 The operating load cursor (minimal, medium, high, max, overclock, auto) is machine-wide and developer-controlled
-(`djinn load get/set/watch`), not a repository setting in `.agents/settings.txtpb`.
+(`djinn load get/set/watch`), not a repository setting in `.agents/djinn.yaml`.
 
 ## Cost estimates and model pricing
 

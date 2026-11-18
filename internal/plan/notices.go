@@ -105,15 +105,19 @@ func firstFix(notices []*planv1.ProjectNotice) string {
 }
 
 // settingsNotices are what Djinn finds in the settings files files: one it cannot read, and what it ignores in
-// those it reads.
+// those it reads. The team's settings are read in the project's djinn.yaml, whose notices say a file Djinn cannot read
+// and a field it does not know (projectConfigNotices); a settings.txtpb left in .agents is a warning.
 func settingsNotices(files []settingsRead) []*planv1.ProjectNotice {
 	var out []*planv1.ProjectNotice
 	for _, f := range files {
 		whose, subject := "your own settings of the project", f.path
 		if f.team {
-			whose, subject = "the team's settings", filepath.ToSlash(SettingsFile)
+			whose, subject = "the team's settings", f.file
 		}
 		if f.err != nil {
+			if f.team {
+				continue // projectConfigNotices says it.
+			}
 			out = append(out, &planv1.ProjectNotice{
 				Kind: toFix, Topic: topicSettings, Subject: subject, Action: fixFile, File: f.path, Detail: f.err.Error(),
 				Text: "Djinn cannot read " + whose + ": the project's tasks do not spawn until the file is fixed.",
@@ -122,10 +126,17 @@ func settingsNotices(files []settingsRead) []*planv1.ProjectNotice {
 		}
 		for _, w := range f.warnings {
 			n := &planv1.ProjectNotice{Kind: information, Topic: topicSettings, Subject: subject, Detail: w.text}
-			if w.ignored {
+			switch {
+			case w.elsewhere:
+				continue
+			case w.stale:
+				n.Kind, n.Subject, n.Action, n.File = warning, filepath.ToSlash(StaleSettingsFile), fixFile, w.file
+				n.Text = "Djinn no longer reads .agents/settings.txtpb: move its settings under settings: in " + f.file +
+					", then delete it."
+			case w.ignored:
 				n.Text, n.Action, n.File = "Djinn ignores a line of "+whose+": a developer allows these commands in "+
 					"their own file.", fixFile, f.path
-			} else {
+			default:
 				n.Text = "Djinn ignores a field of " + whose + " that a newer Djinn knows."
 			}
 			out = append(out, n)
@@ -176,8 +187,8 @@ func projectConfigNotices(config Config) []*planv1.ProjectNotice {
 		}
 		out = append(out, &planv1.ProjectNotice{
 			Kind: toFix, Topic: topicSettings, Subject: read.File, Action: fixFile, File: file, Detail: detail,
-			Text: "Djinn cannot read the project's " + read.File + ": none of it applies, Djinn's defaults hold until " +
-				"the file is fixed.",
+			Text: "Djinn cannot read the project's " + read.File + ": none of it applies, and the project's tasks do " +
+				"not spawn until the file is fixed.",
 		})
 	}
 	for _, u := range read.Unknown {

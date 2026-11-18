@@ -422,9 +422,9 @@ test("a project's configuration says what to fix, its reference branch, each ski
   const error = {
     ...warning,
     kind: s.ProjectNoticeKind.TO_FIX,
-    subject: "settings.txtpb",
+    subject: ".agents/djinn.yaml",
     text: "Djinn cannot read the project's settings.",
-    file: "/tmp/shop/.agents/settings.txtpb",
+    file: "/tmp/shop/.agents/djinn.yaml",
   };
   const box = (notices) => {
     const toFix = notices.filter((n) => n.kind === s.ProjectNoticeKind.TO_FIX);
@@ -488,7 +488,7 @@ test("a project's configuration says what to fix, its reference branch, each ski
   );
 
   const shown = {
-    repositoryFile: "/tmp/djinn/.agents/settings.txtpb",
+    repositoryFile: "/tmp/djinn/.agents/djinn.yaml",
     developerFile: "/home/you/.config/djinn/projects/p1/settings.txtpb",
   };
   const reference = render(
@@ -647,7 +647,7 @@ test("a project's configuration says what to fix, its reference branch, each ski
   assert.doesNotMatch(settings, /lint: go tool task lint/);
   assert.match(
     settings,
-    /<div class="config-setting"><code>provider<\/code><span class="">claude<\/span><span class="config-from" title="\/home\/you\/\.config\/djinn\/projects\/p1\/settings\.txtpb">your file<\/span><\/div><div class="config-setting"><code>merge_main<\/code><span class="">release<\/span><span class="config-from" title="\/tmp\/djinn\/\.agents\/settings\.txtpb">the team(?:'|&#x27;)s file<\/span><\/div><details class="config-more"><summary>2 more at Djinn(?:'|&#x27;)s default<\/summary><div class="config-setting"><code>model<\/code><span class="muted-text">not set<\/span>/,
+    /<div class="config-setting"><code>provider<\/code><span class="">claude<\/span><span class="config-from" title="\/home\/you\/\.config\/djinn\/projects\/p1\/settings\.txtpb">your file<\/span><\/div><div class="config-setting"><code>merge_main<\/code><span class="">release<\/span><span class="config-from" title="\/tmp\/djinn\/\.agents\/djinn\.yaml">the team(?:'|&#x27;)s file<\/span><\/div><details class="config-more"><summary>2 more at Djinn(?:'|&#x27;)s default<\/summary><div class="config-setting"><code>model<\/code><span class="muted-text">not set<\/span>/,
   );
 });
 

@@ -184,8 +184,7 @@ func TestProjectConfigLines(t *testing.T) {
 	}
 	write(next, "djinn.yaml", "containers: {pids: 64}\n")
 	write(old, ".agents/djinn.yaml", "containers: {pids: 64}\n")
-	write(old, ".agents/settings.txtpb", "setup: \"npm ci\"\n")
-	write(next, ".agents/settings.txtpb", "setup: \"npm ci\"\n")
+	write(old, "app/.agents/djinn.yaml", "setup: [\n") // Not a file of this configuration.
 	var texts []string
 	for _, l := range configLines(old, next, func(string) bool { return false }) {
 		texts = append(texts, l.GetText())
@@ -293,8 +292,8 @@ func TestProjectGates(t *testing.T) {
 	c := serve(t, WithHome(home))
 	dir := t.TempDir()
 	writeSettings(t, filepath.Join(dir, ".agents", "djinn.yaml"), "gates:\n  - name: stack\n    alone: [task run-back]\n"+
-		"    beside: [task recette]\n  - name: lint\n    alone: [task lint]\n  - name: db\n    beside: [psql]\n")
-	writeSettings(t, filepath.Join(dir, SettingsFile), "checks { name: \"lint\" command: \"task lint\" when: CHECK_WHEN_COMMIT }\ngates_off: \"db\"\n")
+		"    beside: [task recette]\n  - name: lint\n    alone: [task lint]\n  - name: db\n    beside: [psql]\n"+
+		teamYAML("checks:\n  - {name: lint, command: task lint, when: commit}\ngates_off: db\n"))
 	add, err := c.projects.Add(ctx, connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: dir, Name: "dolmen"}))
 	if err != nil {
 		t.Fatal(err)

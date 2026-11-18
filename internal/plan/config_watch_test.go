@@ -58,9 +58,9 @@ func TestConfigLines(t *testing.T) {
 	template := "    wish:\n      title: Babysit PR {pr}\n      match: 'PR #(?P<pr>\\d+)'\n      watch: sh watch.sh {pr}\n"
 	source := "    source:\n      watch: sh inbox.sh\n"
 	old := configFolder(t, map[string]string{
-		".agents/settings.txtpb": "setup: \"npm ci\"\nmodel: \"a\"\n" +
-			"checks { name: \"lint\" command: \"go tool task lint\" when: CHECK_WHEN_COMMIT }\n" +
-			"checks { name: \"old\" command: \"make old\" when: CHECK_WHEN_PUSH }\n",
+		".agents/djinn.yaml": teamYAML("setup: npm ci\nmodel: a\nchecks:\n" +
+			"  - {name: lint, command: go tool task lint, when: commit}\n" +
+			"  - {name: old, command: make old, when: push}\n"),
 		".agents/permissions.txtpb":          "commands: \"make\"\ncommands: \"go test\"\n",
 		".agents/skills/staging/SKILL.md":    skillMD("Staging.", "", "Do it.\n"),
 		".agents/skills/gone/SKILL.md":       skillMD("Gone.", "", ""),
@@ -71,9 +71,9 @@ func TestConfigLines(t *testing.T) {
 		".claude/skills/claude-one/SKILL.md": skillMD("One.", "", ""),
 	})
 	newer := configFolder(t, map[string]string{
-		".agents/settings.txtpb": "setup: \"npm ci\"\nmodel: \"b\"\n" +
-			"checks { name: \"lint\" command: \"go tool task lint\" when: CHECK_WHEN_COMMIT when: CHECK_WHEN_PUSH }\n" +
-			"checks { name: \"e2e\" command: \"go tool task e2e\" when: CHECK_WHEN_PUSH }\n",
+		".agents/djinn.yaml": teamYAML("setup: npm ci\nmodel: b\nchecks:\n" +
+			"  - {name: lint, command: go tool task lint, when: [commit, push]}\n" +
+			"  - {name: e2e, command: go tool task e2e, when: push}\n"),
 		".agents/permissions.txtpb":          "commands: \"make\"\ncommands: \"curl\"\nedit: true\n",
 		".agents/skills/staging/SKILL.md":    skillMD("Staging.", "", "Do it twice.\n"),
 		".agents/skills/staging/run.sh":      "echo\n",
@@ -110,18 +110,18 @@ func TestConfigLines(t *testing.T) {
 
 	// Files that appear and go.
 	empty := t.TempDir()
-	if got := lineTexts(configLines(empty, old, plugged)); !slices.Contains(got, "The team's settings file appears.") ||
+	if got := lineTexts(configLines(empty, old, plugged)); !slices.Contains(got, "The team's settings appear in .agents/djinn.yaml.") ||
 		!slices.Contains(got, "! Permissions: 2 more commands the workers may run: make, go test.") {
 		t.Errorf("from nothing: %q", got)
 	}
 	if got := lineTexts(configLines(old, empty, plugged)); !slices.Contains(got,
-		"The team's settings file is gone: Djinn's defaults apply, and no check runs.") ||
+		"The team's settings are gone from .agents/djinn.yaml: Djinn's defaults apply, and no check runs.") ||
 		!slices.Contains(got, "The skill inbox is gone: its inbox source, plugged in here, no longer runs.") {
 		t.Errorf("to nothing: %q", got)
 	}
-	broken := configFolder(t, map[string]string{".agents/settings.txtpb": "nope {", ".agents/skills/staging/SKILL.md": "---\nmetadata: [\n---\n"})
+	broken := configFolder(t, map[string]string{".agents/djinn.yaml": teamYAML("nope {"), ".agents/skills/staging/SKILL.md": "---\nmetadata: [\n---\n"})
 	if got := lineTexts(configLines(old, broken, plugged)); !slices.Contains(got,
-		"Djinn can no longer read the team's settings: the project's tasks do not spawn until the file is fixed.") ||
+		"Djinn can no longer read the team's settings: the project's tasks do not spawn until .agents/djinn.yaml is fixed.") ||
 		!slices.Contains(got, "Djinn can no longer read the skill staging: it ignores its wish template, inbox source and babysit.") {
 		t.Errorf("unreadable: %q", got)
 	}
@@ -245,7 +245,7 @@ func (e *watchEnv) writes() int {
 // seen; a new source asks through its own notice.
 func TestLookAtConfig(t *testing.T) {
 	t.Parallel()
-	e := newWatchEnv(t, map[string]string{".agents/settings.txtpb": "setup: \"npm ci\"\n", "README.md": "# App\n"})
+	e := newWatchEnv(t, map[string]string{".agents/djinn.yaml": teamYAML("setup: \"npm ci\"\n"), "README.md": "# App\n"})
 	e.look()
 	shown := e.show()
 	if !slices.Equal(e.fetched, []string{"refs/remotes/origin/main"}) {
@@ -256,7 +256,7 @@ func TestLookAtConfig(t *testing.T) {
 		t.Fatalf("watch after the first look: %v", w)
 	}
 	if len(shown.GetChanges()) != 1 || !shown.GetChanges()[0].GetFirstLook() ||
-		!slices.Equal(lineTexts(shown.GetChanges()[0].GetLines()), []string{"The team's settings file appears.",
+		!slices.Equal(lineTexts(shown.GetChanges()[0].GetLines()), []string{"The team's settings appear in .agents/djinn.yaml.",
 			"The setup is now npm ci."}) {
 		t.Fatalf("first look: %v", shown.GetChanges())
 	}
@@ -392,9 +392,9 @@ func TestLookAtConfigManyCommits(t *testing.T) {
 // and the watch fetches the new branch.
 func TestLookAtConfigBranchChange(t *testing.T) {
 	t.Parallel()
-	e := newWatchEnv(t, map[string]string{".agents/settings.txtpb": "setup: \"npm ci\"\n"})
+	e := newWatchEnv(t, map[string]string{".agents/djinn.yaml": teamYAML("setup: \"npm ci\"\n")})
 	e.look()
-	e.commitOn("refs/remotes/origin/dev", map[string]string{".agents/settings.txtpb": "setup: \"make\"\n"})
+	e.commitOn("refs/remotes/origin/dev", map[string]string{".agents/djinn.yaml": teamYAML("setup: \"make\"\n")})
 	if err := SaveDeveloperMainBranch(e.home, e.project.GetId(), "dev"); err != nil {
 		t.Fatal(err)
 	}

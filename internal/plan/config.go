@@ -28,8 +28,8 @@ import (
 // reference branch's tree.
 var ConfigFolders = []string{".agents", filepath.Join(".claude", "skills"), "djinn.yaml"}
 
-// Config is where Djinn reads a project's configuration on this machine: its .agents/settings.txtpb, its
-// .agents/permissions.txtpb and its skills. In Git, with a remote, Djinn reads them in the reference branch's tree at
+// Config is where Djinn reads a project's configuration on this machine: its djinn.yaml (the team's settings, its
+// gates, its containers), its .agents/permissions.txtpb and its skills. In Git, with a remote, Djinn reads them in the reference branch's tree at
 // the last fetch, extracted into its cache by digest: a branch checked out in the project's folder does not change
 // them. Outside Git, without a remote, or when the reference branch is not fetched, it reads them in the project's
 // folder.
@@ -64,7 +64,7 @@ func (c Config) Shown(path string) string {
 	return path
 }
 
-// Named is path, a file Djinn reads under c.Dir, as a message names it: origin/main:.agents/settings.txtpb when Djinn
+// Named is path, a file Djinn reads under c.Dir, as a message names it: origin/main:.agents/djinn.yaml when Djinn
 // reads the reference branch, the path itself otherwise.
 func (c Config) Named(path string) string {
 	if !c.FromReference() {
@@ -420,8 +420,8 @@ func resolveReference(ctx context.Context, home, folder, devFile string, repo gi
 		if err != nil {
 			return "", "", err
 		}
-		if s, _ := ReadSettings(filepath.Join(dir, SettingsFile)); s.GetMainBranch() != "" {
-			return repo.reference(s.GetMainBranch()), s.GetMainBranch(), nil
+		if read, _ := ReadProjectConfig(dir); read.Settings.GetMainBranch() != "" {
+			return repo.reference(read.Settings.GetMainBranch()), read.Settings.GetMainBranch(), nil
 		}
 	}
 	return ref, "", nil

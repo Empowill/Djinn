@@ -82,7 +82,7 @@ func TestProjectNotices(t *testing.T) {
 		}
 
 		devFile := DeveloperSettingsFile(home, project.GetId())
-		writeSettings(t, filepath.Join(dir, SettingsFile), "model: \"opus\"\nfuture_setting: true\n")
+		writeSettings(t, filepath.Join(dir, ProjectConfigFiles[1]), teamYAML("model: \"opus\"\nfuture_setting: true\n"))
 		writeSettings(t, devFile, "setup: \"npm ci\"\n")
 		writeSettings(t, filepath.Join(dir, PermissionsFile), "edit: true\nfuture_permission: true\n")
 		agentSkill(t, dir, "bad-djinn", "metadata:\n  djinn: [1, 2]\n")
@@ -130,7 +130,7 @@ func TestProjectNotices(t *testing.T) {
 			"TO_FIX SKILL " + holder.GetName() + "/shared UNSUMMON_SKILL | djinn skill unsummon " + holder.GetName() +
 				"/shared --from " + project.GetName(),
 			"TO_FIX SOURCE " + source + " PLUG_SOURCE | djinn inbox plug " + source,
-			"INFORMATION SETTINGS .agents/settings.txtpb UNSPECIFIED",
+			"WARNING SETTINGS .agents/djinn.yaml FIX_FILE",
 			"INFORMATION PERMISSIONS .agents/permissions.txtpb UNSPECIFIED",
 		}
 		if got := noticeLines(res.GetNotices()); !slices.Equal(got, want) {
@@ -151,8 +151,8 @@ func TestProjectNotices(t *testing.T) {
 					!strings.HasPrefix(n.GetDetail(), "SKILL.md: metadata.djinn: ") {
 					t.Errorf("an unreadable skill: file %s, detail %q", n.GetFile(), n.GetDetail())
 				}
-			case ".agents/settings.txtpb":
-				if !strings.Contains(n.GetDetail(), "future_setting") {
+			case ".agents/djinn.yaml":
+				if !strings.Contains(n.GetDetail(), "settings.future_setting") {
 					t.Errorf("an unknown setting: detail %q", n.GetDetail())
 				}
 			}
@@ -266,12 +266,12 @@ func TestProjectNotices(t *testing.T) {
 		}
 
 		// Djinn reads the team's file on the reference branch (W150): it names dev there.
-		writeSettings(t, filepath.Join(dir, SettingsFile), "main_branch: \"dev\"\n")
+		writeSettings(t, filepath.Join(dir, ProjectConfigFiles[1]), teamYAML("main_branch: \"dev\"\n"))
 		commitAs(t, dir, "refs/remotes/origin/main")
 		pusher.err = errors.New("the repository holds no origin/dev: fetch it, or name another branch")
 		n = show()
 		if got := noticeLines(n); !slices.Equal(got, []string{"TO_FIX BRANCH dev NAME_BRANCH"}) ||
-			n[0].GetFile() != filepath.Join(dir, SettingsFile) || !strings.Contains(n[0].GetDetail(), "origin/dev") {
+			n[0].GetFile() != filepath.Join(dir, ProjectConfigFiles[1]) || !strings.Contains(n[0].GetDetail(), "origin/dev") {
 			t.Errorf("dev missing: %v", n)
 		}
 		if reference != nil {
@@ -318,8 +318,8 @@ func TestProjectSetBranch(t *testing.T) {
 		t.Fatal(err)
 	}
 	project := add.Msg.GetProject()
-	team := filepath.Join(dir, SettingsFile)
-	writeSettings(t, team, "main_branch: \"main\"\n")
+	team := filepath.Join(dir, ProjectConfigFiles[1])
+	writeSettings(t, team, teamYAML("main_branch: \"main\"\n"))
 	commitAs(t, dir, "refs/remotes/origin/main") // Djinn reads the team's file on the reference branch (W150).
 
 	listed, err := c.projects.Branches(ctx, connect.NewRequest(&planv1.ProjectServiceBranchesRequest{
@@ -350,7 +350,7 @@ func TestProjectSetBranch(t *testing.T) {
 		res.GetReference().GetSource() != planv1.SettingSource_SETTING_SOURCE_DEVELOPER {
 		t.Errorf("set dev: %v", res)
 	}
-	if b, err := os.ReadFile(team); err != nil || string(b) != "main_branch: \"main\"\n" {
+	if b, err := os.ReadFile(team); err != nil || string(b) != teamYAML("main_branch: \"main\"\n") {
 		t.Errorf("the team's file changed: %q, %v", b, err)
 	}
 	if dev, err := ReadSettings(devFile); err != nil || dev.GetMainBranch() != "dev" {

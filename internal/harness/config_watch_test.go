@@ -22,7 +22,7 @@ func TestWatchConfig(t *testing.T) {
 	if _, err := git(ctx, remote, "init", "--quiet", "--bare"); err != nil {
 		t.Fatal(err)
 	}
-	repo := gitRepoWith(t, map[string]string{".agents/settings.txtpb": "setup: \"npm ci\"\n"})
+	repo := gitRepoWith(t, map[string]string{".agents/djinn.yaml": teamYAML("setup: npm ci\n")})
 	for _, args := range [][]string{
 		{"branch", "-M", "main"}, {"remote", "add", "origin", remote}, {"push", "--quiet", "origin", "main"},
 		{"fetch", "--quiet", "origin"},

@@ -668,7 +668,7 @@ check, a skill's new instructions or a setting changed are applied and only told
 
 ## Team settings and integration
 
-A repository may share defaults for its workers in `.agents/settings.txtpb`: which agent runs them, which model, how
+A repository may share defaults for its workers under `settings:` in `.agents/djinn.yaml`: which agent runs them, which model, how
 much one may spend. Your own file, in Djinn's data folder, wins over the team's; a task's own flags win over both.
 `djinn project show <project>` says where each setting comes from. Details: [team settings](team-settings.md).
 

@@ -93,8 +93,7 @@ type ProjectNoticeTopic int32
 const (
 	// Not set.
 	ProjectNoticeTopic_PROJECT_NOTICE_TOPIC_UNSPECIFIED ProjectNoticeTopic = 0
-	// A settings file: the team's .agents/settings.txtpb, or your own in Djinn's data folder; or the project's
-	// djinn.yaml.
+	// A settings file: your own in Djinn's data folder; or the project's djinn.yaml, which holds the team's settings.
 	ProjectNoticeTopic_PROJECT_NOTICE_TOPIC_SETTINGS ProjectNoticeTopic = 1
 	// The project's .agents/permissions.txtpb.
 	ProjectNoticeTopic_PROJECT_NOTICE_TOPIC_PERMISSIONS ProjectNoticeTopic = 2
@@ -408,7 +407,7 @@ const (
 	SettingSource_SETTING_SOURCE_UNSPECIFIED SettingSource = 0
 	// Djinn's own default: neither file sets it.
 	SettingSource_SETTING_SOURCE_DEFAULT SettingSource = 1
-	// The repository's .agents/settings.txtpb, shared by the team.
+	// The repository's settings, under settings: in its .agents/djinn.yaml, shared by the team.
 	SettingSource_SETTING_SOURCE_REPOSITORY SettingSource = 2
 	// The developer's own file, in Djinn's data folder.
 	SettingSource_SETTING_SOURCE_DEVELOPER SettingSource = 3
@@ -3238,7 +3237,7 @@ type ProjectNotice struct {
 	Kind ProjectNoticeKind `protobuf:"varint,1,opt,name=kind,proto3,enum=plan.v1.ProjectNoticeKind" json:"kind,omitempty"`
 	// The part of the configuration it comes from.
 	Topic ProjectNoticeTopic `protobuf:"varint,2,opt,name=topic,proto3,enum=plan.v1.ProjectNoticeTopic" json:"topic,omitempty"`
-	// What it names there: a file (.agents/settings.txtpb), a skill, a source (<project>/<skill>), a branch
+	// What it names there: a file (.agents/djinn.yaml), a skill, a source (<project>/<skill>), a branch
 	// (origin/main).
 	Subject string `protobuf:"bytes,3,opt,name=subject,proto3" json:"subject,omitempty"`
 	// What it is, and what it changes, in one sentence.
@@ -4141,8 +4140,8 @@ func (x *Summon) GetCreateTime() *timestamppb.Timestamp {
 }
 
 // ProjectSettings are the defaults of a project's workers, the few a team shares. The team writes them in the
-// repository, in .agents/settings.txtpb; a developer may write their own in Djinn's data folder, in
-// projects/<project id>/settings.txtpb. Setting by setting, the developer's win over the repository's, and a task's
+// repository, under settings: in its .agents/djinn.yaml (djinn.v1.ProjectConfig), in YAML; a developer may write their
+// own in Djinn's data folder, in text protobuf, in projects/<project id>/settings.txtpb. Setting by setting, the developer's win over the repository's, and a task's
 // own flags win over both. Djinn reads both files each time a task is spawned; djinn project show says where each
 // setting comes from. A file that cannot be read stops the project's tasks from spawning, with why, until it is
 // fixed; Djinn itself still starts. The files hold no secret: a value or a field name that looks like one is
@@ -13082,7 +13081,7 @@ type ProjectServiceShowResponse struct {
 	Project *Project `protobuf:"bytes,1,opt,name=project,proto3" json:"project,omitempty"`
 	// The settings its workers get, when a task names none, and where each comes from.
 	Settings []*ProjectSetting `protobuf:"bytes,2,rep,name=settings,proto3" json:"settings,omitempty"`
-	// The team's file, in the project's folder; empty for a project without one on this machine.
+	// The team's file, its djinn.yaml in the project's folder; empty for a project without one on this machine.
 	RepositoryFile string `protobuf:"bytes,3,opt,name=repository_file,json=repositoryFile,proto3" json:"repository_file,omitempty"`
 	// Your own file, in Djinn's data folder. It wins over the team's, setting by setting.
 	DeveloperFile string `protobuf:"bytes,4,opt,name=developer_file,json=developerFile,proto3" json:"developer_file,omitempty"`

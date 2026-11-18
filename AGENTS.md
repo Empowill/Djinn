@@ -15,7 +15,7 @@ repeat them.
 ## For agents
 - **Run the tasks, not the tools.** `go tool task test`, `go tool task gen`, `go tool task e2e`,
   `go tool task build`: they set the tags and the order.
-- **Run Djinn's commit checks, then commit your work, before you end.** [`.agents/settings.txtpb`](.agents/settings.txtpb)
+- **Run Djinn's commit checks, then commit your work, before you end.** [`.agents/djinn.yaml`](.agents/djinn.yaml)
   names them: the lint before Djinn merges your work (`djinn gate run lint -- go tool task lint`), the tests before it
   pushes. Commit in the repository's style and leave nothing not committed: Djinn commits nothing for you.
 - **A story that touches the window** (interface under the UI folder, the stream it reads, the server calls it makes)

@@ -19,7 +19,7 @@ func TestProjectSettings(t *testing.T) {
 	t.Run("spawn", func(t *testing.T) {
 		t.Parallel()
 		home, dir := t.TempDir(), t.TempDir()
-		writeFile(t, dir, ".agents/settings.txtpb", "provider: PROVIDER_FAKE\nmodel: \"team-model\"\nmax_budget_usd: 2\n")
+		writeFile(t, dir, ".agents/djinn.yaml", teamYAML("provider: fake\nmodel: team-model\nmax_budget_usd: 2\n"))
 		e := up(t, home)
 		wishID, projectID := e.wish(t, dir)
 		devFile := plan.DeveloperSettingsFile(home, projectID)
@@ -63,7 +63,7 @@ func TestProjectSettings(t *testing.T) {
 		if res.Msg.GetTask().GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING || !strings.Contains(res.Msg.GetTask().GetWaitReason(), devFile) {
 			t.Errorf("a malformed file: %v; want pending task naming %s", res.Msg.GetTask(), devFile)
 		}
-		writeFile(t, dir, ".agents/settings.txtpb", "api_key: \"abc\"\n")
+		writeFile(t, dir, ".agents/djinn.yaml", teamYAML("api_key: abc\n"))
 		res, err = e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{WishId: wishID, Title: "Try secret", Provider: fake}))
 		if err != nil {
 			t.Fatalf("a secret in the repository's file: %v; want pending task", err)
@@ -83,7 +83,7 @@ func TestProjectSettings(t *testing.T) {
 	t.Run("branch_from", func(t *testing.T) {
 		t.Parallel()
 		home, repo := t.TempDir(), gitRepo(t)
-		writeFile(t, repo, ".agents/settings.txtpb", "branch: \"djinn/{code}-{uuid8}\"\n")
+		writeFile(t, repo, ".agents/djinn.yaml", teamYAML("branch: djinn/{code}-{uuid8}\n"))
 		e := up(t, home, WithTick(5*time.Millisecond))
 		wishID, projectID := e.wish(t, repo)
 		check := func(name string, task *planv1.Task, want string) {
@@ -110,10 +110,12 @@ func TestProjectSettings(t *testing.T) {
 	t.Run("push_checks_noted", func(t *testing.T) {
 		t.Parallel()
 		home, dir := t.TempDir(), t.TempDir()
-		writeFile(t, dir, ".agents/settings.txtpb", `provider: PROVIDER_FAKE
-checks { name: "lint" command: "make lint" when: CHECK_WHEN_COMMIT }
-checks { name: "test" command: "make test" when: CHECK_WHEN_PUSH }
-test_one: "make test-pkg {pkg}"
+		writeFile(t, dir, ".agents/djinn.yaml", `settings:
+  provider: fake
+  checks:
+    - {name: lint, command: make lint, when: commit}
+    - {name: test, command: make test, when: push}
+  test_one: make test-pkg {pkg}
 `)
 		e := up(t, home)
 		wishID, _ := e.wish(t, dir)

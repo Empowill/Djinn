@@ -25,6 +25,18 @@ func writeFile(t *testing.T, dir, name, content string) {
 	}
 }
 
+// teamYAML is a djinn.yaml whose settings: section holds lines, the team's settings in YAML, one field a line.
+func teamYAML(lines string) string {
+	var b strings.Builder
+	b.WriteString("settings:\n")
+	for _, l := range strings.SplitAfter(lines, "\n") {
+		if l != "" {
+			b.WriteString("  " + l)
+		}
+	}
+	return b.String()
+}
+
 func TestLoadPermissions(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()

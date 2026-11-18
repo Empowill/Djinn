@@ -27,7 +27,7 @@ func fakeProject(t *testing.T, more string) string {
 	if err := os.MkdirAll(filepath.Join(dir, ".agents"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, plan.SettingsFile), []byte("provider: PROVIDER_FAKE\n"+more), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, plan.ProjectConfigFiles[1]), []byte(teamYAML("provider: PROVIDER_FAKE\n"+more)), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	return dir
@@ -411,7 +411,7 @@ func TestEnlighten(t *testing.T) {
 		if err := os.MkdirAll(filepath.Join(dir, ".agents"), 0o700); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(dir, plan.SettingsFile), []byte("provider: PROVIDER_ANTIGRAVITY\n"), 0o600); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, plan.ProjectConfigFiles[1]), []byte(teamYAML("provider: PROVIDER_ANTIGRAVITY\n")), 0o600); err != nil {
 			t.Fatal(err)
 		}
 		wishID, _ := e.wish(t, dir)
@@ -440,7 +440,7 @@ func TestEnlighten(t *testing.T) {
 		if err := os.MkdirAll(filepath.Join(dirExplicit, ".agents"), 0o700); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(dirExplicit, plan.SettingsFile), []byte("provider: PROVIDER_ANTIGRAVITY\nquestion_provider: PROVIDER_FAKE\n"), 0o600); err != nil {
+		if err := os.WriteFile(filepath.Join(dirExplicit, plan.ProjectConfigFiles[1]), []byte(teamYAML("provider: PROVIDER_ANTIGRAVITY\nquestion_provider: PROVIDER_FAKE\n")), 0o600); err != nil {
 			t.Fatal(err)
 		}
 		wishIDExplicit, _ := e.wish(t, dirExplicit)
@@ -469,7 +469,7 @@ func TestEnlighten(t *testing.T) {
 		if err := os.MkdirAll(filepath.Join(dirStrong, ".agents"), 0o700); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(dirStrong, plan.SettingsFile), []byte("provider: PROVIDER_FAKE\nmodel: \"strong-opus\"\n"), 0o600); err != nil {
+		if err := os.WriteFile(filepath.Join(dirStrong, plan.ProjectConfigFiles[1]), []byte(teamYAML("provider: PROVIDER_FAKE\nmodel: \"strong-opus\"\n")), 0o600); err != nil {
 			t.Fatal(err)
 		}
 		wishIDStrong, _ := e.wish(t, dirStrong)
