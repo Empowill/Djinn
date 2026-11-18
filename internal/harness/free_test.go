@@ -202,9 +202,8 @@ func TestFreeAge(t *testing.T) {
 	}
 }
 
-// TestFreeAgeOneStatus (Q81): only a task done with its work integrated is freed by its age; a task cancelled, done
-// with its work dropped, done with nothing integrated, failed or stopped keeps its folders at 30 days and long after,
-// and each is freed once its azima is validated.
+// TestFreeAgeOneStatus (Q81 A): a task cancelled, done with its work dropped or left unmerged, failed or stopped is not
+// freed by its age: it keeps its folders at 30 days and long after, and each is freed once its azima is validated.
 func TestFreeAgeOneStatus(t *testing.T) {
 	t.Parallel()
 	day := 24 * time.Hour
@@ -216,7 +215,12 @@ func TestFreeAgeOneStatus(t *testing.T) {
 		{"cancelled", planv1.TaskStatus_TASK_STATUS_CANCELLED, nil},
 		{"cancelled integrated", planv1.TaskStatus_TASK_STATUS_CANCELLED, committed},
 		{"done dropped", planv1.TaskStatus_TASK_STATUS_DONE, dropped},
-		{"done not integrated", planv1.TaskStatus_TASK_STATUS_DONE, nil},
+		{"done by hand, nothing integrated", planv1.TaskStatus_TASK_STATUS_DONE, func(task *planv1.Task) {
+			task.Closed = &planv1.Closure{Actor: planv1.Closer_CLOSER_DEVELOPER, CreateTime: task.GetEndTime()}
+		}},
+		{"done with problems", planv1.TaskStatus_TASK_STATUS_DONE, func(task *planv1.Task) {
+			task.Refused = &planv1.TaskRefusals{Count: 1}
+		}},
 		{"done red", planv1.TaskStatus_TASK_STATUS_DONE, func(task *planv1.Task) {
 			task.Integration = &planv1.TaskIntegration{State: planv1.IntegrationState_INTEGRATION_STATE_RED, Branch: "djinn/payroll"}
 		}},
@@ -257,6 +261,58 @@ func TestFreeAgeOneStatus(t *testing.T) {
 				t.Errorf("%s freed = %v, want by its azima, branch deleted", c.name, f)
 			}
 		})
+	}
+}
+
+// TestFreeAgeNothingToMerge (Q84 B): a task done with nothing to merge, its worker ended done with no commit of its own
+// or an investigation whose commits are never merged, is freed at 30 days as one merged: its worktree and scratch go,
+// its branch stays. One cancelled, or done with its work dropped, with no commit either, keeps them (Q81 A).
+func TestFreeAgeNothingToMerge(t *testing.T) {
+	t.Parallel()
+	e := newFreeEnv(t, planv1.WishState_WISH_STATE_ACTIVE)
+	day := 24 * time.Hour
+	noCommit := func(mod func(*planv1.Task)) func(*planv1.Task) {
+		return func(task *planv1.Task) {
+			if _, err := git(t.Context(), task.GetWorktree(), "reset", "--quiet", "--hard", "HEAD~1"); err != nil {
+				t.Fatal(err)
+			}
+			if mod != nil {
+				mod(task)
+			}
+		}
+	}
+	empty := e.task(t, "W1", planv1.TaskStatus_TASK_STATUS_DONE, 31*day, noCommit(nil))
+	young := e.task(t, "W2", planv1.TaskStatus_TASK_STATUS_DONE, 29*day, noCommit(nil))
+	investigation := e.task(t, "W3", planv1.TaskStatus_TASK_STATUS_DONE, 31*day, func(task *planv1.Task) {
+		task.Kind = planv1.TaskKind_TASK_KIND_INVESTIGATION
+	})
+	cancelled := e.task(t, "W4", planv1.TaskStatus_TASK_STATUS_CANCELLED, 31*day, noCommit(nil))
+	drop := e.task(t, "W5", planv1.TaskStatus_TASK_STATUS_DONE, 31*day, noCommit(dropped))
+
+	e.h.freePass(t.Context())
+
+	for _, task := range []*planv1.Task{empty, investigation} {
+		if exists(task.GetWorktree()) || exists(task.GetScratch()) {
+			t.Errorf("%s keeps its folders past 30 days", task.GetCode())
+		}
+		if !e.hasBranch(t, task.GetBranch()) {
+			t.Errorf("%s lost its branch", task.GetCode())
+		}
+		if f := e.get(t, task).GetFreed(); f.GetRule() != planv1.FreeRule_FREE_RULE_AGE || f.GetBranchDeleted() {
+			t.Errorf("%s freed = %v, want by age, branch kept", task.GetCode(), f)
+		}
+		texts := e.statusTexts(t, task)
+		if len(texts) == 0 || !strings.Contains(texts[len(texts)-1], "(it ended 30 days ago, nothing to merge)") {
+			t.Errorf("%s events = %q", task.GetCode(), texts)
+		}
+	}
+	for _, task := range []*planv1.Task{young, cancelled, drop} {
+		if !exists(task.GetWorktree()) || !exists(task.GetScratch()) {
+			t.Errorf("%s lost its folders", task.GetCode())
+		}
+		if got := e.get(t, task); got.GetFreed() != nil {
+			t.Errorf("%s recorded freed: %v", task.GetCode(), got.GetFreed())
+		}
 	}
 }
 

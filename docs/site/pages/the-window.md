@@ -282,9 +282,9 @@ live metrics, as time goes by; **Gates**, what the gates do now and what the com
 - **Disk.** At its top, in grey, when the disk was last measured (a measure holds 5 minutes), and a button to measure
   again now. A bar of the whole disk (Go, Docker, Djinn, other caches, home, system, unmeasured and free space, with
   the 30 GB and 10 GB disk-guard marks), above three tabs: **Djinn and its workers** (worktrees and scratch per
-  project, with what Djinn frees 30 days after their end, the folders of tasks done with their work integrated, and
-  what it frees once their azima is validated or their wish granted, those of the other finished tasks, both summed
-  above the list,
+  project, with what Djinn frees 30 days after their end, the folders of tasks done with their work integrated or
+  nothing to merge, and what it frees once their azima is validated or their wish granted, those of the other finished
+  tasks, both summed above the list,
   Playwright, tilasms, logs, and any isolated Go build caches),
   **Machine** (Go build cache, Go module and download caches, golangci-lint, Docker build cache, images and volumes
   when Docker is present, pnpm, uv, pip, npm, and JetBrains), grouped by risk (**Safe**, **Rebuilds**, **Data loss**)

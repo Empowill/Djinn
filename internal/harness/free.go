@@ -24,8 +24,9 @@ import (
 )
 
 // Djinn frees by itself the worktrees and scratch of finished tasks, by the rules of Q75 (Task.freed):
-//   - a task done 30 days ago whose work is integrated (Q81): its worktree and scratch go, its branch stays; a task
-//     cancelled, done with its work dropped, failed or stopped is not freed by its age, only by its azima or wish;
+//   - a task done 30 days ago whose work is integrated, or that had nothing to merge (Q81, Q84 B): its worktree and
+//     scratch go, its branch stays; a task cancelled, done with its work dropped, failed or stopped is not freed by its
+//     age, only by its azima or wish;
 //   - a task of an azima validated, its request merged (Azima.merged, its pull request merged) or closed as done by the
 //     developer or the lead: at once, its local branch too;
 //   - a task of a wish granted, which validates all its azimas: the same, at once, in cascade.
@@ -291,7 +292,7 @@ func freeOrder(r planv1.FreeRule) int {
 }
 
 // freeRuleOf is the rule of Q75 that frees t now, unspecified for none: its wish granted, an azima it is part of
-// validated, or done 30 days ago with its work integrated (Q81: one status, done and integrated, frees by age). A
+// validated, or done 30 days ago with its work integrated or nothing to merge (Q81, Q84 B: freeIntegrated). A
 // cascade frees only a task finished whose work is not merging.
 func freeRuleOf(t *planv1.Task, granted bool, byID map[string]*planv1.Task, now time.Time) planv1.FreeRule {
 	finished := freeFinished(t)
@@ -309,11 +310,23 @@ func freeRuleOf(t *planv1.Task, granted bool, byID map[string]*planv1.Task, now 
 	return planv1.FreeRule_FREE_RULE_UNSPECIFIED
 }
 
-// freeIntegrated tells a task done whose work is in its integration branch: merged, or committed into it. A task done
-// with its work dropped (done --drop) has no integration left, and one done with nothing to merge none either.
+// freeIntegrated tells a task done whose work is settled: in its integration branch (merged, or committed into it), or
+// with nothing to merge (Q84 B): an investigation, a mockup, or a worker that ended done with no commit of its own.
+// Neither has an integration record; the second one is told apart from a task done with its work dropped (done
+// --drop), which waits for its azima (Q81 A), by its closing: a worker ends done by itself, a drop is closed by hand.
+// A task done by hand with no work to drop is closed the same way, and waits too: nothing tells it from a drop. A task
+// done with problems the lead has not seen is not settled either.
 func freeIntegrated(t *planv1.Task) bool {
-	return t.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE &&
-		t.GetIntegration().GetState() == planv1.IntegrationState_INTEGRATION_STATE_COMMITTED
+	if t.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+		return false
+	}
+	switch t.GetIntegration().GetState() {
+	case planv1.IntegrationState_INTEGRATION_STATE_COMMITTED:
+		return true
+	case planv1.IntegrationState_INTEGRATION_STATE_UNSPECIFIED:
+		return t.GetClosed() == nil && !plan.DoneWithProblems(t)
+	}
+	return false
 }
 
 // freeFinished tells a task no worker runs nor will run without a person, whose work is not merging: finished, or
@@ -586,7 +599,11 @@ func freeWhy(j freeJob) string {
 		}
 		return "its azima was validated"
 	}
-	return fmt.Sprintf("it ended %d days ago, its work integrated", int(freeAfter.Hours()/24))
+	settled := "its work integrated"
+	if j.task.GetIntegration().GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED {
+		settled = "nothing to merge"
+	}
+	return fmt.Sprintf("it ended %d days ago, %s", int(freeAfter.Hours()/24), settled)
 }
 
 // freeText is the event of the task j freed: what went and what stayed, and why.
