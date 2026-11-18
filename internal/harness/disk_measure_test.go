@@ -173,9 +173,10 @@ func TestDiskWalkKeepsWhole(t *testing.T) {
 
 	h := &Harness{}
 	dirs := []diskDir{{path: "/slow", kind: folderLogs}, {path: "/slower", kind: folderTilasms}}
+	// Keyed as measureFolders keys them: filepath.Clean makes /slow \slow on Windows.
 	walks := map[string]walked{
-		"/slow":   {bytes: 10, partial: true},
-		"/slower": {bytes: 30, partial: true},
+		filepath.Clean("/slow"):   {bytes: 10, partial: true},
+		filepath.Clean("/slower"): {bytes: 30, partial: true},
 	}
 	previous := []*machinev1.DiskFolder{{Path: "/slow", SizeBytes: 50}, {Path: "/slower", SizeBytes: 20}}
 	got := h.toDiskFolders(t.Context(), false, dirs, walks, previous, time.Now())
