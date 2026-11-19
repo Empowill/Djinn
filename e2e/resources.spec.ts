@@ -266,7 +266,7 @@ async function routeResources(
       body: Buffer.from(toBinary(MachineServiceSeriesResponseSchema, message)),
     });
   });
-  // The gates now: W1 holds lint, a holder outside any task waits for it.
+  // The gates now: W1 of oil holds lint, a holder outside any project waits for it.
   await page.route("**/machine.v1.GateService/List", (route) =>
     route.fulfill({
       status: 200,
@@ -282,6 +282,8 @@ async function routeResources(
                 holderTaskId: taskId,
                 since: timestampFromMs(start - 60_000),
                 waiting: ["a holder outside any task: go tool task lint"],
+                project: "oil",
+                waitingProjects: [""],
               },
             ],
           }),
@@ -340,6 +342,10 @@ async function routeResources(
       1,
     ),
     cost(projectId, "go test ./internal/store/", "test", 4, 3, 0),
+    // Forty light commands under no gate, at the end of the list: its second page.
+    ...Array.from({ length: 40 }, (_, i) =>
+      cost(projectId, `true ${String(i).padStart(2, "0")}`, "", 1, 1, 0),
+    ),
   ].map((c) => ({ ...c, id: randomUUID() }));
   const waits = (gate: string) => {
     const runs = costs
@@ -348,6 +354,7 @@ async function routeResources(
     const seconds = runs.map((r) => r.waitSeconds).sort((a, b) => a - b);
     return {
       gate,
+      project: "oil",
       holds: runs.length,
       p50Seconds: seconds[Math.ceil(seconds.length / 2) - 1],
       p90Seconds: seconds[Math.ceil(seconds.length * 0.9) - 1],
@@ -380,7 +387,12 @@ async function routeResources(
         toBinary(
           CommandServiceListResponseSchema,
           create(CommandServiceListResponseSchema, {
-            costs: found,
+            costs: ask.pageSize
+              ? found.slice(
+                  Number(ask.pageToken || 0),
+                  Number(ask.pageToken || 0) + ask.pageSize,
+                )
+              : found,
             total: found.length,
             summary: ask.summary
               ? { gates: [waits("e2e"), waits("test"), waits("lint")] }
@@ -544,13 +556,20 @@ test("the resources panel: values on hover and keys, live samples, and a worker'
   await expect(gates.locator("#gate-lint")).toContainText(
     "W1: go tool task lint, for",
   );
-  await expect(gates.locator("#gate-lint")).toContainText(
-    "a holder outside any task",
-  );
-  // The lanes of the last hour: one per named gate, W1's bands on lint in the workers' blue, the mockup's on test.
+  // Now, by project: oil holds lint; the holder outside any project waits for the same lock, held by oil's W1.
+  await expect(gates.locator(".gates-project-head h4")).toHaveText([
+    "oil",
+    "Outside any project",
+  ]);
+  const outside = gates.getByRole("region", { name: "Outside any project" });
+  await expect(outside).toContainText("held by W1: go tool task lint (oil)");
+  await expect(outside).toContainText("a holder outside any task");
+  // The lanes of the last hour: oil's title over one lane per named gate, W1's bands on lint in the workers' blue, the
+  // mockup's on test.
   const flow = gates.locator(".gates-flow");
   await expect(flow.locator(".gates-flow-name")).toHaveText([
     "Running",
+    "oil",
     "e2e",
     "lint",
     "test",
@@ -575,10 +594,10 @@ test("the resources panel: values on hover and keys, live samples, and a worker'
     });
   await page.mouse.move(0, 0);
   await expect(flow.locator(".gates-flow-readout")).toHaveCount(0);
-  // The Sankey: the named gates only.
+  // The Sankey: the project, its named gates only.
   const sankey = gates.locator(".gates-sankey");
   await expect(sankey.locator(".gates-sankey-node text")).toContainText([
-    "Workers 2",
+    "oil 5",
     "lint 2",
   ]);
   await expect(sankey.locator("svg")).not.toContainText("commands");
@@ -596,8 +615,10 @@ test("the resources panel: values on hover and keys, live samples, and a worker'
     ).minutes,
   ).toBe(1440);
   await flow.getByRole("button", { name: "1 h" }).click();
-  // The commands of every project, the most total time first; the top one marked.
-  await expect(gates.locator(".gates-command-name code")).toHaveText([
+  // The commands of every project, the most total time first, 25 at a time; the top one marked.
+  const commands = gates.locator(".gates-command-name code");
+  await expect(commands.nth(24)).toBeAttached();
+  expect((await commands.allTextContents()).slice(0, 8)).toEqual([
     "go tool task e2e",
     "go tool task e2e",
     "go tool task lint",
@@ -605,6 +626,7 @@ test("the resources panel: values on hover and keys, live samples, and a worker'
     "go tool task e2e -- e2e/resources.spec.ts",
     "go test -tags headless ./internal/machine/",
     "go test ./internal/store/",
+    "true 00",
   ]);
   await expect(gates.locator(".gates-command.is-top")).toContainText(
     "a project at rest",
@@ -618,6 +640,13 @@ test("the resources panel: values on hover and keys, live samples, and a worker'
     "test",
     "lint",
   ]);
+  // Scrolled to its end, the list reads the next page (it may have, the end close enough): all 47, the end says so and
+  // asks no more.
+  const end = gates.locator(".gates-list-end");
+  await end.scrollIntoViewIfNeeded();
+  await expect(commands).toHaveCount(47);
+  await expect(end).toHaveText("47 of 47 commands");
+  await gates.locator(".gates-project-head").first().scrollIntoViewIfNeeded();
   if (process.env.RESOURCE_SHOTS)
     for (const width of [1280, 760]) {
       await page.setViewportSize({ width, height: 1400 });

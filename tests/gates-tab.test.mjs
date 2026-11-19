@@ -69,6 +69,8 @@ const live = [
     since: at(t3 - 98n),
     waiting: ["W2 (Test): go tool task lint", "a holder outside any task"],
     waitingTaskIds: ["task-w2"],
+    project: "djinn",
+    waitingProjects: ["djinn", ""],
     takesSlot: false,
     ifrit: false,
   },
@@ -87,6 +89,7 @@ const summary = {
   gates: [
     {
       gate: "lint",
+      project: "djinn",
       holds: 5,
       p50Seconds: 0,
       p90Seconds: 12,
@@ -97,6 +100,7 @@ const summary = {
     },
     {
       gate: "test",
+      project: "djinn",
       holds: 2,
       p50Seconds: 0,
       p90Seconds: 7,
@@ -148,7 +152,17 @@ test("the Gates tab: its figures, the gates now with who holds and who waits, th
     "peak: Highest peak memory 3 GB go tool task lint",
   ]);
 
-  // Now: lint held by W1, a link to its row, two waiting, W2 named; test free, its last hold said.
+  // Now, by project: djinn holds lint and waits for it, the holder outside any task waits for it apart.
+  const heads = [
+    ...html.matchAll(
+      /<header class="gates-project-head">([\s\S]*?)<\/header>/g,
+    ),
+  ].map(([, head]) => text(head));
+  assert.deepEqual(heads, [
+    "djinn 1 held · 1 waiting",
+    "Outside any project 0 held · 1 waiting",
+  ]);
+  // Under djinn: lint held by W1, a link to its row, W2 waiting, named; test free, its last hold said.
   const lint = html.slice(
     html.indexOf('id="gate-lint"'),
     html.indexOf('id="gate-test"'),
@@ -158,16 +172,29 @@ test("the Gates tab: its figures, the gates now with who holds and who waits, th
     lint,
     /<button type="button" class="text-link gates-task-link agent-code" title="Lint">W1<\/button> W1 \(Lint\): go tool task lint, for /,
   );
-  assert.match(
-    text(lint),
-    /2 waiting: W2 W2 \(Test\): go tool task lint a holder outside any task/,
+  assert.match(text(lint), /1 waiting: W2 W2 \(Test\): go tool task lint <li/);
+  const free = html.slice(
+    html.indexOf('id="gate-test"'),
+    html.indexOf('aria-label="Outside any project"'),
   );
-  const free = html.slice(html.indexOf('id="gate-test"'));
   assert.match(free, /<span class="gates-gate-state">free<\/span>/);
   assert.match(
     text(free),
     /last held \d\d\/\d\d [^·]+: go tool task test · W2 · 1 GB/,
   );
+
+  // Outside any project: the same lock, held by djinn's W1, its waiter second in the queue; no second target.
+  const outside = text(
+    html.slice(
+      html.indexOf('aria-label="Outside any project"'),
+      html.indexOf('class="statistics-card gates-card gates-flow"'),
+    ),
+  );
+  assert.match(
+    outside,
+    /lint waited for held by W1 \(Lint\): go tool task lint \(djinn\) 1 waiting: a holder outside any task/,
+  );
+  assert.equal(html.match(/id="gate-lint"/g)?.length, 1);
 
   // The lanes of the last hour: the band of lint, its wait and its hold said, outside a task.
   assert.match(
@@ -190,18 +217,20 @@ test("the Gates tab: its figures, the gates now with who holds and who waits, th
     "c-lint: go tool task lint djinn lint 15 40s 10m 3 GB 2m50s 0s · 12s",
     "c-build: npm run build old-project — 2 30s 1m — — 0s · 0s",
   ]);
-  // The page: 1 to 3 of 60, the next one asked by a button.
-  assert.match(html, /<span class="muted-text">1–3 of 60<\/span>/);
+  // The list's end: 3 of 60, the next page read as it comes into view, or by its button.
   assert.match(
     html,
-    /<button type="button" class="gates-pager-step" aria-label="Previous commands" title="Previous commands" disabled="">/,
+    /<div class="gates-list-end"><span class="muted-text">3 of 60 commands<\/span><button type="button" class="text-link">Show 25 more<\/button><\/div>/,
   );
 
   // The waits by gate.
   const waits = [
     ...html.matchAll(/<tr class="gates-wait-row">([\s\S]*?)<\/tr>/g),
   ].map(([, row]) => text(row));
-  assert.deepEqual(waits, ["lint 5 0s 12s 12s 1", "test 2 0s 7s 7s 1"]);
+  assert.deepEqual(waits, [
+    "lint djinn 5 0s 12s 12s 1",
+    "test djinn 2 0s 7s 7s 1",
+  ]);
 });
 
 test("the Gates tab says when nothing is known yet", () => {
@@ -211,7 +240,7 @@ test("the Gates tab says when nothing is known yet", () => {
   assert.match(html, /No named gate was asked for over this period\./);
   assert.match(html, /No command has run under a gate yet\./);
   assert.match(html, /No run under a gate measured yet\./);
-  assert.doesNotMatch(html, /gates-pager/);
+  assert.doesNotMatch(html, /gates-list-end/);
 });
 
 test("a command opens on its last 20 runs, then all on demand; one opened from the lanes off the page shows above it", () => {
@@ -367,6 +396,8 @@ function heavy() {
     since: ts(end - 60),
     waiting: ["W10: a", "W11: b", "outside"],
     waitingTaskIds: ["task-w2"],
+    project: "djinn",
+    waitingProjects: ["djinn", "dolmen", ""],
     takesSlot: false,
     ifrit: false,
   }));
@@ -400,7 +431,7 @@ test("the Gates tab under a heavy load renders a page of the commands, under 1.5
   }
   const median = times.sort((a, b) => a - b)[1];
   assert.equal(html.match(/<tr id="command-/g)?.length, s.PAGE);
-  assert.match(html, /1–25 of 5400/);
+  assert.match(html, /25 of 5400 commands/);
   assert.ok(html.length < 600_000, `${html.length} characters of markup`);
   assert.ok(median < 1500, `rendered in ${times.map(Math.round)} ms`);
 });
@@ -534,26 +565,31 @@ test("the workers' strip: those running by kind, and the requests waiting a gate
     ["inv", 1],
     ["watch", 1],
   ]);
-  assert.deepEqual(now.holding, [["test", ["W2"]]]);
+  assert.deepEqual(now.holding, [["djinn · test", ["W2"]]]);
   assert.deepEqual(
     now.waiting.map((h) => h.iv.taskCode),
     ["W3"],
   );
 });
 
-test("the Sankey counts the named gates' requests: kind to gate to wait, never the admissions", () => {
+test("the Sankey counts the named gates' requests: project to gate, by kind, to wait, never the admissions", () => {
   const flows = s.sankeyFlows(s.holdsOf(history.intervals, end), start);
   assert.equal(flows.total, 4);
-  assert.deepEqual(flows.groups, [
-    ["work", 1],
-    ["inv", 1],
-    ["mock", 1],
-    ["out", 1],
-  ]);
+  assert.deepEqual(flows.projects, [["djinn", 4]]);
+  assert.deepEqual(flows.kinds, ["work", "inv", "mock", "out"]);
   assert.deepEqual(flows.gates, [
-    ["lint", 2],
-    ["test", 2],
+    ["djinn\tlint", 2],
+    ["djinn\ttest", 2],
   ]);
+  assert.deepEqual(
+    flows.toGate.map((f) => `${f.from}>${f.to}:${f.kind}:${f.count}`).sort(),
+    [
+      "djinn>djinn\tlint:out:1",
+      "djinn>djinn\tlint:work:1",
+      "djinn>djinn\ttest:inv:1",
+      "djinn>djinn\ttest:mock:1",
+    ],
+  );
   assert.deepEqual(flows.outcomes, [
     ["now", 2],
     ["long", 2],
@@ -561,7 +597,12 @@ test("the Sankey counts the named gates' requests: kind to gate to wait, never t
   assert.ok(!flows.toGate.some((f) => f.to === s.ADMISSIONS));
   assert.deepEqual(
     flows.toOutcome.map((f) => `${f.from}>${f.to}:${f.count}`).sort(),
-    ["lint>long:1", "lint>now:1", "test>long:1", "test>now:1"],
+    [
+      "djinn\tlint>long:1",
+      "djinn\tlint>now:1",
+      "djinn\ttest>long:1",
+      "djinn\ttest>now:1",
+    ],
   );
 });
 
@@ -588,13 +629,22 @@ test("the Gates tab draws the lanes coloured by kind, the workers' strip and the
   // The legend: the kinds seen, then hatched, plain and the queue line.
   const legend = [...flow.matchAll(/<li class="gk-(\w+)">/g)].map(([, g]) => g);
   assert.deepEqual(legend, ["work", "inv", "mock", "watch", "out"]);
-  // One row per named gate, its bands in their kind's colour, the task's code in the hold; no lane for the admissions.
+  // The project's title over its lanes; one row per named gate, its bands in their kind's colour, the task's code in
+  // the hold; no lane for the admissions.
+  assert.match(
+    flow,
+    /<div class="gates-flow-label gates-flow-project"[^>]*><span class="gates-flow-name">djinn<\/span><\/div>/,
+  );
+  assert.match(
+    flow,
+    /<div class="gates-row-project"[^>]*><span class="muted-text">4 requests · /,
+  );
   const rows = [
     ...flow.matchAll(
-      /<div class="gates-row" role="list" aria-label="([\w-]+)"/g,
+      /<div class="gates-row" role="list" aria-label="([^"]+)"/g,
     ),
   ].map(([, g]) => g);
-  assert.deepEqual(rows, ["lint", "test"]);
+  assert.deepEqual(rows, ["djinn · lint", "djinn · test"]);
   const bands = [
     ...flow.matchAll(
       /class="gates-band (gk-\w+)"[^>]*>(?:<span class="gates-band-wait"[^>]*><\/span>)?<span class="gates-band-held">([\w ]*)<\/span>/g,
@@ -613,7 +663,8 @@ test("the Gates tab draws the lanes coloured by kind, the workers' strip and the
   // The strip: the stacks by kind and the queue's line.
   assert.match(flow, /<path class="gk-watch" d="M/);
   assert.match(flow, /<path class="gates-strip-queue" d="M0,/);
-  // The Sankey: four requests, its nodes the kinds, the named gates and the waits, the admissions never.
+  // The Sankey: four requests, its nodes the project, its named gates and the waits, the admissions never; the kinds
+  // in its legend.
   assert.match(sankey, /The 4 requests for a named gate/);
   const nodes = [
     ...sankey.matchAll(
@@ -621,10 +672,7 @@ test("the Gates tab draws the lanes coloured by kind, the workers' strip and the
     ),
   ].map(([, n]) => n);
   assert.deepEqual(nodes, [
-    "Workers 1",
-    "Investigations 1",
-    "Mockups 1",
-    "Outside a task 1",
+    "djinn 4",
     "lint 2",
     "test 2",
     "at once (&lt; 1 s) 2",
@@ -632,5 +680,150 @@ test("the Gates tab draws the lanes coloured by kind, the workers' strip and the
   ]);
   const svg = sankey.slice(sankey.indexOf("<svg"), sankey.indexOf("</svg>"));
   assert.doesNotMatch(svg, /commands/);
-  assert.match(svg, /<title>Mockups → test: 1 request \(25%\)<\/title>/);
+  assert.match(
+    svg,
+    /<title>djinn → djinn · test: 1 request \(25%\) · Mockups<\/title>/,
+  );
+  assert.deepEqual(
+    [...sankey.matchAll(/<li class="gk-(\w+)">/g)].map(([, g]) => g),
+    ["work", "inv", "mock", "out"],
+  );
+});
+
+// Two projects share the machine's lint; dolmen declares its own stack (stack@dolmen); a terminal outside any project
+// holds e2e.
+const shared = {
+  startTime: ago(3600),
+  readTime: at(t3),
+  intervals: [
+    held("lint", "W1", K.WORK, 3000, 2900, 2000),
+    held("lint", "W5", K.WORK, 2950, 2000, 1500, { project: "dolmen" }),
+    held("stack@dolmen", "W6", K.WORK, 1000, 1000, 500, { project: "dolmen" }),
+    held("e2e", "", K.UNSPECIFIED, 300, 300, 100, {
+      project: "",
+      outside: true,
+    }),
+  ],
+  runs: [],
+};
+
+test("a gate a project declares is its own; one of the machine counts under the project that asked", () => {
+  assert.deepEqual(s.gateIn("stack@dolmen", "dolmen"), {
+    name: "stack",
+    project: "dolmen",
+    declared: true,
+  });
+  assert.deepEqual(s.gateIn("lint", "djinn"), {
+    name: "lint",
+    project: "djinn",
+    declared: false,
+  });
+  // The lanes: djinn, dolmen, then outside any project last; dolmen's lint apart from djinn's.
+  const rows = s.gateRows(s.holdsOf(shared.intervals, end), start, end);
+  assert.deepEqual(
+    rows.map((r) => `${r.project}/${r.gate}`),
+    ["djinn/lint", "dolmen/lint", "dolmen/stack", "/e2e"],
+  );
+  assert.deepEqual(
+    s.projectSections(rows).map((p) => `${p.project}:${p.requests}`),
+    ["djinn:1", "dolmen:2", ":1"],
+  );
+  // The Sankey: the busiest project first, its gates under it, outside any project last.
+  const flows = s.sankeyFlows(s.holdsOf(shared.intervals, end), start);
+  assert.deepEqual(flows.projects, [
+    ["dolmen", 2],
+    ["djinn", 1],
+    ["", 1],
+  ]);
+  assert.deepEqual(
+    flows.gates.map(([k]) => k),
+    ["dolmen\tlint", "dolmen\tstack", "djinn\tlint", "\te2e"],
+  );
+  const html = s.renderToStaticMarkup(
+    h(s.GatesTab, { initialHistory: shared }),
+  );
+  const names = [
+    ...html.matchAll(/<span class="gates-flow-name">([^<]+)<\/span>/g),
+  ].map(([, n]) => n);
+  assert.deepEqual(names, [
+    "Running",
+    "djinn",
+    "dolmen",
+    "Outside any project",
+  ]);
+});
+
+test("now, by project: a gate of the machine under its holder's project and each project waiting for it", () => {
+  const gate = (name, holder, project, waitingProjects) => ({
+    name,
+    holder,
+    holderTaskId: "",
+    project,
+    waiting: waitingProjects.map((p, i) => `W${i + 10}: ${p}`),
+    waitingTaskIds: [],
+    waitingProjects,
+    takesSlot: false,
+    ifrit: false,
+  });
+  const waits = (gate, project) => ({
+    gate,
+    project,
+    holds: 3,
+    p50Seconds: 0,
+    p90Seconds: 1,
+    maxSeconds: 2,
+    long: 0,
+    lastCommand: "true",
+  });
+  const groups = s.nowGroups(
+    [
+      gate("lint", "W1: lint", "djinn", ["dolmen", "djinn", "dolmen"]),
+      gate("stack@dolmen", "", "", ["dolmen"]),
+    ],
+    [waits("lint", "dolmen"), waits("codegen", "dolmen"), waits("fmt", "zz")],
+  );
+  assert.deepEqual(
+    groups.map((g) => ({
+      project: g.project,
+      live: g.live.map(
+        (e) =>
+          `${e.name}${e.declared ? "*" : ""} ${e.holds ? "holds" : "-"} ${e.waiting}`,
+      ),
+      free: g.free.map((w) => w.gate),
+      held: g.held,
+      waiting: g.waiting,
+    })),
+    [
+      {
+        project: "dolmen",
+        live: ["lint - 0,2", "stack* - 0"],
+        free: ["codegen"],
+        held: 0,
+        waiting: 3,
+      },
+      {
+        project: "djinn",
+        live: ["lint holds 1"],
+        free: [],
+        held: 1,
+        waiting: 1,
+      },
+      { project: "zz", live: [], free: ["fmt"], held: 0, waiting: 0 },
+    ],
+  );
+});
+
+test("the commands read as the list scrolls: a page laid over those read before, each command once", () => {
+  const row = (id) => ({ id, command: id });
+  const ids = (p) => p.costs.map((c) => c.id).join(" ");
+  let page = { costs: [], total: 0 };
+  page = s.mergePage(page, 0, [row("a"), row("b")], 5);
+  page = s.mergePage(page, 2, [row("c"), row("d")], 5);
+  assert.equal(ids(page), "a b c d");
+  // The first page read again: d climbed to the top; it shows once.
+  page = s.mergePage(page, 0, [row("d"), row("a")], 5);
+  assert.equal(ids(page), "d a c");
+  // Fewer commands in all: the list is cut to them.
+  page = s.mergePage(page, 0, [row("d")], 1);
+  assert.equal(ids(page), "d");
 });

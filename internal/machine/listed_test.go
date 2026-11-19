@@ -220,3 +220,24 @@ func BenchmarkCostsList(b *testing.B) {
 		})
 	}
 }
+
+// TestSummary_GatesByProject: a gate counts apart in each project whose commands held it, the most held first.
+func TestSummary_GatesByProject(t *testing.T) {
+	t.Parallel()
+	run := func(wait float64) *machinev1.CommandRun {
+		return &machinev1.CommandRun{Time: timestamppb.Now(), WaitSeconds: wait}
+	}
+	sum := Summary([]*machinev1.CommandCost{
+		{Command: "go tool task lint", ProjectName: "djinn", Gate: "lint", Runs: 2, RecentRuns: []*machinev1.CommandRun{run(0), run(8)}},
+		{Command: "task lint", ProjectName: "dolmen", Gate: "lint", Runs: 1, RecentRuns: []*machinev1.CommandRun{run(3)}},
+		{Command: "task gen", ProjectName: "dolmen", Gate: "codegen", Runs: 1, RecentRuns: []*machinev1.CommandRun{run(1)}},
+	})
+	var got []string
+	for _, g := range sum.GetGates() {
+		got = append(got, fmt.Sprintf("%s@%s %d %g %s", g.GetGate(), g.GetProject(), g.GetHolds(), g.GetMaxSeconds(), g.GetLastCommand()))
+	}
+	want := []string{"lint@djinn 2 8 go tool task lint", "codegen@dolmen 1 1 task gen", "lint@dolmen 1 3 task lint"}
+	if !slices.Equal(got, want) || sum.GetHolds() != 4 {
+		t.Errorf("gates = %v (holds %d), want %v", got, sum.GetHolds(), want)
+	}
+}
