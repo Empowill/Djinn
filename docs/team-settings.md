@@ -164,6 +164,18 @@ never changes after, and stays when `djinn task clean` removes its worktree.
 Your Djinn keeps yours in its data folder: `projects/<project id>/settings.txtpb` (by default under
 `~/.config/djinn`). Same format, never committed. `djinn project show <project>` prints its path.
 
+It sets any setting the team's file does, and wins setting by setting. A project whose reference branch has no
+`djinn.yaml` yet (or only the old `.agents/settings.txtpb`, no longer read) gets Djinn's defaults for everything the
+team's file would have set: no install offered, no check. Setting them in your own file brings them back on this
+machine, whatever that branch holds. For the window to offer installing the builds Djinn pushes:
+
+```
+install: "go tool task install"
+install_questions: INSTALL_QUESTIONS_NEVER
+```
+
+`djinn project show <project>` then lists `install` with `source: developer`.
+
 ## Who wins
 
 Setting by setting, the first that sets it:
