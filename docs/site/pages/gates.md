@@ -45,10 +45,13 @@ A command asks for a gate by its name, and waits until all of these hold:
    - **Five minutes at most.** A command waits for the memory five minutes at most; past them it is admitted all the
      same, and its worker reads why beside its result.
 
-   On a Mac, the free memory is what Activity Monitor leaves out of its Memory Used, and a peak is the most memory
-   the largest process of the command held, the compressed part included, as Activity Monitor's Memory column counts
-   it: resident memory alone missed what macOS compresses. While macOS reports memory pressure, a heavy command also
-   waits, beside a measured holder only and five minutes at most, as for the memory.
+   On a Mac, macOS's memory pressure decides instead of the free memory: macOS compresses, then swaps, rather than
+   refuse, and always shows little free. At normal pressure a command goes, whatever its peak; heavy commands still
+   take turns. At warning, a light command goes, and a heavy one waits, beside a measured holder only and five minutes
+   at most, as for the memory; its wait says the level. At critical, every command waits. A peak there is the most
+   memory the largest process of the command held, the compressed part included, as Activity Monitor's Memory column
+   counts it: it says which commands are heavy, and the free memory Activity Monitor leaves out of its Memory Used
+   stays what the window shows.
 4. **Its turn has come:**
    - first, Djinn's own merges and pushes, in the order they asked: the checks of a task's merge, of a merge of main,
      of a push, and the code generation and setup they need;

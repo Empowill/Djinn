@@ -121,7 +121,7 @@ const (
 
 // MemoryWait is the longest a command waits for the memory its peak needs: past it, it is admitted all the same, and
 // its worker is told why. A peak learned wrong, or a machine that never frees enough, never holds a worker for good
-// (W139).
+// (W139). On macOS, it bounds the wait of a heavy command at warning memory pressure (Policy.Warned) the same way.
 const MemoryWait = 5 * time.Minute
 
 // Commands is the name the admissions of the workers' commands go by (Request.Shared): in Held, Waiting, a task's
@@ -777,15 +777,16 @@ func (g *Gates) Outside() (n, merges int) {
 // for the pressure and the memory only, a light command under a gate's name also for one that holds that name alone
 // and for a merge that waits for it. A heavy command, gate or admission, also waits while another task's heavy command
 // holds its own, and a merge or a push that waits so keeps the turn from the heavy commands of the workers; one under a
-// gate's name does not wait for the light commands that share it. On macOS, a heavy command beside a measured holder
-// also waits while the system reports warning memory pressure (Policy.Warned), as long as for the memory at most.
+// gate's name does not wait for the light commands that share it. On macOS, the memory available holds no command
+// (Policy.Room): the pressure level does. Normal admits; at warning, a heavy command beside a measured holder waits
+// (Policy.Warned), as long as for the memory at most; at critical, every waiter waits (Policy.GatePressure).
 func (g *Gates) pass(ctx context.Context) {
 	var snap machine.Snapshot
 	var policy machine.Policy
 	if g.machine != nil {
 		snap, policy = g.machine.Snapshot(), g.machine.Policy()
 	}
-	pressure := policy.Pressure(snap)
+	pressure := policy.GatePressure(snap)
 	g.mu.Lock()
 	var ids []string
 	for _, w := range g.queue {
