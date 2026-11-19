@@ -131,6 +131,11 @@ Two rules make it predictable:
   never runs Codex with the team's Claude model.
 - **A file that names checks names them all.** Your checks replace the team's list; they are not added to it.
 
+Your own file stands in for a repository whose reference branch has no djinn.yaml yet, or an older one: Djinn reads the
+team's file there alone, never on the branch you checked out or installed from. Any setting written in your file
+applies on this machine, setting by setting, whatever that branch holds: the install command and when to ask to
+install, say, so that the window offers again to install the builds Djinn pushes.
+
 Djinn reads both files each time a task is spawned, from the project's folder as your checkout has it, not from any
 worker's worktree. A task keeps what it got: changing a file changes the tasks to come.
 
