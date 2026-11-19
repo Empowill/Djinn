@@ -67,7 +67,9 @@ macos_readings "before djinn up"
 
 say "djinn up, data folder $home"
 d version
-d up --browser --terminal-dir "$home/shell" >"$work/up.out" 2>"$work/up.err" &
+# The binary itself, not the d function: a function put in the background is a subshell, and its pid is not the
+# djinn's, so stop would leave the djinn running.
+"$djinn_bin" up --browser --terminal-dir "$home/shell" >"$work/up.out" 2>"$work/up.err" &
 up_pid=$!
 stop() {
 	kill -INT "$up_pid" 2>/dev/null || true
