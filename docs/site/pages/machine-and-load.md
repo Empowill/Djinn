@@ -25,11 +25,12 @@ for a core less than 40 % of the last 10 seconds on Minimal, 65 % on Medium, 80 
 Overclock; memory has limits of its own. On a machine of many cores, a test run's bursts reach 30 to 57 % while half
 the machine is idle: from Medium up, they hold no worker.
 
-**On a Mac, macOS's memory pressure decides.** macOS compresses, then swaps, rather than refuse memory, and always
-shows little free: counting workers by the free memory left a 16 GB Mac with one. There, the share of the cores alone
-counts the workers (on Medium, 3 for 10 cores; on Max, 5), and macOS's pressure level holds new ones: from warning on
-Minimal and Medium, from critical on High and up. What already runs goes on. The free memory stays what the window
-shows. Gates follow the same level: see [Gates](#gates).
+**On a Mac, macOS decides, for now.** macOS schedules the cores and compresses, then swaps, rather than refuse memory;
+it always shows little free, and its load stays high on a busy Mac whose memory is mostly free (a load of 32 on 3
+cores, 83 % of the memory free). Djinn leaves it the pressure: there, the share of the cores alone counts the workers
+(on Medium, 3 for 10 cores; on Max, 5), and neither the load nor the free memory holds a new worker or a gate. Only
+macOS's critical memory pressure holds them, at every level. What already runs goes on. The free memory stays what the
+window shows. On a Mac, a heavy command still waits a while for its gate at macOS's warning: see [Gates](#gates).
 
 **The memory brake.** The gates share the machine; what escapes them, a process a command left running, an agent
 without a hook, or the sum of the workers, can still fill its memory. Under 5 % of the memory available, or when every

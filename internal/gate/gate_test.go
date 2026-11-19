@@ -95,6 +95,25 @@ func TestTake(t *testing.T) {
 		await(t, granted, "grant after the pressure")()
 	})
 
+	// On macOS, Djinn leaves the load to the system (Q103 B, W166): W163's runner, a load of 32 on 3 cores, its memory
+	// mostly free and its level normal, grants the gate at once; the same figures on Linux without PSI hold it.
+	t.Run("macOS load delegated", func(t *testing.T) {
+		t.Parallel()
+		mac := loaded{machine.Snapshot{OS: "darwin", Cores: 3, MemoryTotal: 7 * machine.GiB,
+			MemoryAvailable: 7 * machine.GiB * 83 / 100, MemoryLevel: 1, LoadKnown: true, Load1: 32}}
+		granted, _ := take(t, New(mac, nil, nil), "stack", "")
+		await(t, granted, "a gate on a loaded Mac")()
+		linux := mac
+		linux.s.OS, linux.s.MemoryLevel = "linux", 0
+		g := New(linux, nil, nil)
+		g.tick = 10 * time.Millisecond
+		granted, waits := take(t, g, "stack", "")
+		if why := await(t, waits, "reason"); why != "the machine is under pressure: the load is 32.0 on 3 cores (2.0 a core at most)" {
+			t.Errorf("Linux waits because %q", why)
+		}
+		notGranted(t, granted, "a gate on a loaded Linux without PSI")
+	})
+
 	// When a gate frees, the waiter of the first wish of the rank gets it, whoever came first.
 	t.Run("wish rank order", func(t *testing.T) {
 		t.Parallel()

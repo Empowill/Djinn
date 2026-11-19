@@ -46,7 +46,8 @@ A command asks for a gate by its name, and waits until all of these hold:
      same, and its worker reads why beside its result.
 
    On a Mac, macOS's memory pressure decides instead of the free memory: macOS compresses, then swaps, rather than
-   refuse, and always shows little free. At normal pressure a command goes, whatever its peak; heavy commands still
+   refuse, and always shows little free; nor does the load hold a gate there, macOS scheduling the cores itself
+   (for now). At normal pressure a command goes, whatever its peak; heavy commands still
    take turns. At warning, a light command goes, and a heavy one waits, beside a measured holder only and five minutes
    at most, as for the memory; its wait says the level. At critical, every command waits. A peak there is the most
    memory the largest process of the command held, the compressed part included, as Activity Monitor's Memory column

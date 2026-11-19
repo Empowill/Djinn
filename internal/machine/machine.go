@@ -91,9 +91,9 @@ type Policy struct {
 	CPUPressure    float64
 	MemoryPressure float64
 	// Without PSI: when the load average per core reaches LoadPerCore, or the memory available falls below
-	// MemoryFree of the total. On macOS, instead of MemoryFree, the system's own memory pressure level at MemoryLevel
-	// or above: warning (MemoryWarning) at Minimal and Medium, where no worker starts while the kernel compresses;
-	// critical (MemoryCritical, also what 0 means) from High up. The gates wait at critical only (GatePressure).
+	// MemoryFree of the total. On macOS, for now, neither: Djinn delegates to the system, and only its critical memory
+	// pressure level holds a worker or a gate (pressure, Q103 B). MemoryLevel, the level that holds where a system
+	// reports one but delegation does not apply: 0 means critical.
 	LoadPerCore float64
 	MemoryFree  float64
 	MemoryLevel int
@@ -171,8 +171,8 @@ func NotchPolicy(notch djinnv1.LoadNotch) Policy {
 			// cores a go test's bursts of goroutines read 30 to 57 % on a machine half idle (W347), so 40.
 			CPUPressure:    40,
 			MemoryPressure: 5,
-			// Strict load and memory limits without PSI: back off at 1 load per core or <20% free RAM, or at
-			// macOS's warning.
+			// Strict load and memory limits without PSI: back off at 1 load per core or <20% free RAM (never on
+			// macOS, which delegates to the system: pressure).
 			LoadPerCore: 1.0,
 			MemoryFree:  0.20,
 			MemoryLevel: MemoryWarning,
@@ -662,8 +662,17 @@ func (p Policy) GatePressure(s Snapshot) string {
 	return p.pressure(s, MemoryCritical)
 }
 
-// pressure is Pressure, macOS's memory pressure level holding from level up.
+// pressure is Pressure, macOS's memory pressure level holding from level up. On macOS, Djinn leaves the machine's
+// pressure to the system, which schedules and compresses memory itself (Q103 B, W166): only the critical level it
+// reports holds a worker or a gate, whatever the notch; the load average, high on a busy Mac whose memory is mostly
+// free (W163: 12 to 32 on 3 cores), and the memory available hold nothing.
 func (p Policy) pressure(s Snapshot, level int) string {
+	if s.OS == "darwin" {
+		if s.MemoryLevel >= MemoryCritical {
+			return "the system reports critical memory pressure"
+		}
+		return ""
+	}
 	switch {
 	case s.CPU != nil && s.CPU.Some >= p.CPUPressure:
 		return fmt.Sprintf("tasks waited for the CPU %.0f%% of the last 10 s (%.0f%% at most)", s.CPU.Some, p.CPUPressure)

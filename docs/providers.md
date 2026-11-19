@@ -460,7 +460,9 @@ new one at the median of the latest 10 finished workers' value at it. Another wo
 engaged at, plus its forecast, stays within the notch's share of what Djinn could use with no worker running (the
 memory available plus what the workers running hold, less the 2 GiB reserve), and the memory available, less what the
 workers running may still take beyond what they hold, holds its forecast. The pressure check (PSI), the memory free,
-the worker memory guardrail and the gates stay the safety net.
+the worker memory guardrail and the gates stay the safety net. On macOS, for now (Q103 B, W166), Djinn delegates the pressure to the
+system: the load average and the memory free hold no worker and no gate there, only macOS's critical memory pressure
+level does (`Policy.pressure`); Linux keeps PSI, or the load and memory free without it.
 
 ### Operating load runtime adjustments
 
