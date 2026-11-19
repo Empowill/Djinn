@@ -221,7 +221,7 @@ html[data-theme="light"] .gates-tab {
 
 .gates-flow-plot {
   display: grid;
-  grid-template-columns: 8rem minmax(0, 1fr);
+  grid-template-columns: 9.5rem minmax(0, 1fr);
   margin-top: var(--space-2, 0.5rem);
 }
 
@@ -230,10 +230,28 @@ html[data-theme="light"] .gates-tab {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  padding-right: 1.75rem;
+  padding-right: 0.5rem;
   overflow: hidden;
   font-size: 0.75rem;
   line-height: 1rem;
+}
+
+/* Room for the scale of the workers' strip, on the right of its label. */
+.gates-flow-running {
+  padding-right: 1.75rem;
+}
+
+/* A label's lines keep their height: none is squeezed out by the next. */
+.gates-flow-label > * {
+  flex-shrink: 0;
+}
+
+/* A lane's count and time on one line, cut with an ellipsis rather than wrapped past the lane: the label's title says
+   it whole. */
+.gates-flow-sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .gates-flow-label + .gates-flow-label {
@@ -414,7 +432,7 @@ code.gates-flow-name {
 
 .gates-flow-axis {
   display: grid;
-  grid-template-columns: 8rem minmax(0, 1fr);
+  grid-template-columns: 9.5rem minmax(0, 1fr);
   margin-top: 0.25rem;
   color: var(--muted);
   font-family: var(--mono);
