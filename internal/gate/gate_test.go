@@ -674,17 +674,13 @@ func TestSharedFirstOnEqualTimes(t *testing.T) {
 	f := &tasks{rank: map[string]int{"W1": 0, "W2": 0, "W3": 0, "W4": 0}}
 	g := New(box, &measured{costs: map[string]machine.Cost{"go tool task lint": {Peak: 300 << 20}}}, f)
 	g.tick = 10 * time.Millisecond
+	at := time.Now()
+	g.granted = func() time.Time { return at } // Set before any grant: keep reads a holder's grant time bare.
 	var gives []func()
 	for _, id := range []string{"W1", "W2", "W3", "W4"} {
 		c, _ := run(t, g, "lint", id, "go tool task lint")
 		gives = append(gives, await(t, c, id+"'s lint"))
 	}
-	g.mu.Lock()
-	at := time.Now()
-	for w := range g.shared {
-		w.since = at
-	}
-	g.mu.Unlock()
 	for range 50 {
 		if l := g.List(); len(l) != 1 || l[0].HolderTaskID != "W1" || l[0].Shared != 4 {
 			t.Fatalf("list = %+v", l)

@@ -149,6 +149,7 @@ type Gates struct {
 	minLong time.Duration                       // MinLongHold; tests shorten it
 	noLong  time.Duration                       // UnmeasuredLong; tests shorten it
 	memWait time.Duration                       // MemoryWait; tests shorten it
+	granted func() time.Time                    // the time of a grant; nil: now (tests fix it)
 	track   func(pid int, taskID string) func() // told of a worker's command holding a gate (Track); nil: none
 
 	projectResolver func(taskID, dir string) string
@@ -183,7 +184,7 @@ type waiter struct {
 	timed                   bool                              // the holder asked for its timeout (Request.Timeout)
 	seq                     int
 	asked                   time.Time               // when the gate was requested
-	since, until            time.Time               // when it was granted, and when it is taken back at the latest; guarded by Gates.mu
+	since, until            time.Time               // when it was granted, and when it is taken back at the latest; guarded by Gates.mu (since is set once, at the grant, before granted closes: keep and give read it bare)
 	out                     time.Time               // when the ifrit holding it goes out unless the developer comes back; zero: not known
 	granted                 chan struct{}           // closed when the gate is granted
 	changed                 chan struct{}           // the cause to wait changed
@@ -913,6 +914,9 @@ func (g *Gates) pass(ctx context.Context) {
 			}
 			held += w.peak
 			w.since = time.Now()
+			if g.granted != nil {
+				w.since = g.granted()
+			}
 			w.until = w.latest()
 			if w.shared {
 				g.shared[w] = true
