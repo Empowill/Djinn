@@ -317,7 +317,8 @@ func (s *LeadService) Tell(
 		return nil, connect.NewError(connect.CodeUnimplemented, errors.New("this server runs no terminal"))
 	}
 	text := strings.TrimSpace(req.Msg.GetText())
-	if text == "" {
+	files := req.Msg.GetFiles()
+	if text == "" && len(files) == 0 {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("text: nothing to say"))
 	}
 	if id := req.Msg.GetWishId(); id != "" {
@@ -325,11 +326,15 @@ func (s *LeadService) Tell(
 		if err != nil {
 			return nil, Status(err)
 		}
-		text = fmt.Sprintf("About wish %s (%s): %s", wish.GetTitle(), wish.GetId(), text)
+		text = strings.TrimSpace(fmt.Sprintf("About wish %s (%s): %s", wish.GetTitle(), wish.GetId(), text))
 	}
 	if d != nil {
-		// The event names its wish: its text stays the developer's own words.
-		if err := s.Wishes.tellDriven(ctx, req.Msg.GetWishId(), strings.TrimSpace(req.Msg.GetText())); err != nil {
+		// The event names its wish: its text stays the developer's own words, then a line per file.
+		lines, err := s.Wishes.keepFiles(ctx, req.Msg.GetWishId(), files)
+		if err != nil {
+			return nil, err
+		}
+		if err := s.Wishes.tellDriven(ctx, req.Msg.GetWishId(), withFiles(strings.TrimSpace(req.Msg.GetText()), lines)); err != nil {
 			return nil, err
 		}
 		return connect.NewResponse(&planv1.LeadServiceTellResponse{}), nil
@@ -350,11 +355,26 @@ func (s *LeadService) Tell(
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
 			"the lead's terminal runs %s, not the lead: exit it there, then djinn lead resume", strings.Join(command, " ")))
 	}
-	waiting, err := s.Wishes.Leads.SayText(LeadTerminal, text)
+	lines, err := s.Wishes.keepFiles(ctx, req.Msg.GetWishId(), files)
+	if err != nil {
+		return nil, err
+	}
+	waiting, err := s.Wishes.Leads.SayText(LeadTerminal, withFiles(text, lines))
 	if err != nil {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("the lead's terminal: %w", err))
 	}
 	return connect.NewResponse(&planv1.LeadServiceTellResponse{Waiting: waiting}), nil
+}
+
+// withFiles is a message to the lead, text, ended by the lines that name the files handed with it.
+func withFiles(text, lines string) string {
+	if lines == "" {
+		return text
+	}
+	if text == "" {
+		return lines
+	}
+	return text + "\n" + lines
 }
 
 // MaxLeadSayRunes is the longest text LeadService.Say puts in the window's bubble: one sentence on one line, an

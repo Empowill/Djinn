@@ -5,9 +5,19 @@
 // focused. The draft stays with the wish, the flying carpet's with it. When the lead answers or tells a decision it
 // took alone (LeadService.Say: blocks of kind reply or decided), the eye comes to the socket and speaks in a bubble
 // held to the pill (Decision Q78 A, tilasm L13 v6), one sentence that fades 2 minutes after it shows (T70) unless the
-// pointer rests on it.
-import { Check, Clock, MessageSquare, Send, Terminal, X } from "lucide-react";
+// pointer rests on it. A file pasted into the box (Ctrl+V: a screenshot, a log) becomes a chip above the text, sent with
+// it: the server keeps it in the wish and the lead's message names its path (design A of L34).
 import {
+  Check,
+  Clock,
+  FileText,
+  MessageSquare,
+  Send,
+  Terminal,
+  X,
+} from "lucide-react";
+import {
+  type ClipboardEvent,
   type KeyboardEvent,
   useEffect,
   useId,
@@ -35,7 +45,11 @@ import {
 import type { WishDetail } from "./data/store";
 import { EyePerch, useEyeLead, useEyeSpeaking } from "./djinn-eye";
 import { t } from "./i18n";
-import { useInstructionDraft } from "./instruction-draft";
+import {
+  type InstructionDraft,
+  type PastedFile,
+  useInstructionDraft,
+} from "./instruction-draft";
 import { TextField } from "./text-field";
 import { platformShortcut, TooltipButton } from "./tooltip";
 import { WorkspaceAction } from "./workspace-action";
@@ -43,6 +57,142 @@ import "./instruction.css";
 
 const emptyDetails: Record<string, WishDetail> = {};
 const emptyBlocks: readonly Block[] = [];
+
+// The most files one message hands the lead, and the largest, as the server takes them (LeadServiceTellRequest).
+export const maxFiles = 10;
+export const maxFileBytes = 20 * 1024 * 1024;
+
+// pastedFiles are the files a paste carries: its files, else its items of kind file (a screenshot may come as an item
+// only).
+export function pastedFiles(data: DataTransfer | null): File[] {
+  if (!data) return [];
+  const files = Array.from(data.files ?? []);
+  if (files.length > 0) return files;
+  for (const item of Array.from(data.items ?? [])) {
+    if (item.kind !== "file") continue;
+    const file = item.getAsFile();
+    if (file) files.push(file);
+  }
+  return files;
+}
+
+// clipboardFiles reads the files the clipboard holds, other than text: WebKitGTK on GTK 3 gives the paste event of a
+// screenshot no type at all (measured on 2.52, W164), and gives the image to the Clipboard API only. A file is named
+// after its type: image.png.
+export async function clipboardFiles(): Promise<File[]> {
+  const files: File[] = [];
+  try {
+    for (const item of await navigator.clipboard.read()) {
+      const type = item.types.find((t) => !t.startsWith("text/"));
+      if (!type) continue;
+      const blob = await item.getType(type);
+      const [kind, sub = "bin"] = type.split("/");
+      const ext = sub.split(/[+;.-]/)[0] || "bin";
+      files.push(
+        new File([blob], `${kind === "image" ? "image" : "file"}.${ext}`, {
+          type,
+        }),
+      );
+    }
+  } catch {
+    // No access to the clipboard, or nothing in it: the paste brings nothing.
+  }
+  return files;
+}
+
+// addFiles adds the files pasted to those kept, within the limits; refused says what was left out, and why.
+export function addFiles(
+  kept: readonly PastedFile[],
+  added: readonly File[],
+  id: () => string,
+): { files: PastedFile[]; refused: string } {
+  const files = [...kept];
+  const tooBig: string[] = [];
+  const tooMany: string[] = [];
+  for (const file of added) {
+    if (file.size > maxFileBytes) tooBig.push(fileName(file));
+    else if (files.length >= maxFiles) tooMany.push(fileName(file));
+    else files.push({ id: id(), file });
+  }
+  const refused: string[] = [];
+  if (tooBig.length > 0)
+    refused.push(
+      t("lead_message.file_too_big", {
+        max: maxFileBytes / 1024 / 1024,
+        names: tooBig.join(", "),
+      }),
+    );
+  if (tooMany.length > 0)
+    refused.push(
+      t("lead_message.files_too_many", {
+        max: maxFiles,
+        names: tooMany.join(", "),
+      }),
+    );
+  return { files, refused: refused.join(" ") };
+}
+
+// fileName is how a chip names a file; a screenshot may come with none.
+export function fileName(file: File): string {
+  return file.name || "image";
+}
+
+// sizeText is a size in bytes as a person reads it, as the lead's message says it: 512 B, 240 KB, 3.4 MB.
+export function sizeText(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+}
+
+let fileIds = 0;
+const nextFileId = () => `f${++fileIds}`;
+
+// thumbnail draws an image file small, for its chip: a data URL (the page's policy takes no blob: image) and its size
+// in pixels; nothing for a file that is no image the engine reads.
+async function thumbnail(
+  file: File,
+): Promise<{ thumb: string; dims: string } | undefined> {
+  if (!file.type.startsWith("image/")) return;
+  try {
+    const bitmap = await createImageBitmap(file);
+    const side = 64;
+    const scale = Math.min(1, side / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    canvas
+      .getContext("2d")
+      ?.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    const dims = `${bitmap.width}\u00d7${bitmap.height}`;
+    bitmap.close();
+    return { thumb: canvas.toDataURL("image/png"), dims };
+  } catch {
+    return;
+  }
+}
+
+// keepFiles adds the files pasted to the draft, says what it left out, then draws the images' thumbnails.
+function keepFiles(
+  draft: {
+    get: () => InstructionDraft;
+    set: (patch: Partial<InstructionDraft>) => void;
+  },
+  added: readonly File[],
+) {
+  const before = draft.get().files.length;
+  const { files, refused } = addFiles(draft.get().files, added, nextFileId);
+  draft.set({ files, error: refused, notice: "" });
+  for (const pasted of files.slice(before)) {
+    void thumbnail(pasted.file).then((drawn) => {
+      if (!drawn) return;
+      draft.set({
+        files: draft
+          .get()
+          .files.map((f) => (f.id === pasted.id ? { ...f, ...drawn } : f)),
+      });
+    });
+  }
+}
 
 export function LeadMessage({
   wishId = "",
@@ -113,6 +263,7 @@ export function LeadMessage({
   const id = useId();
   const mounted = useRef(true);
   const shortcut = platformShortcut("I");
+  const pasteShortcut = platformShortcut("V");
   const placeholder = wishId
     ? t("lead_message.placeholder")
     : t("plan.write_placeholder");
@@ -215,12 +366,21 @@ export function LeadMessage({
   const send = async () => {
     // Synchronous lock, so Enter followed at once by a click sends the text once.
     const text = draft.begin();
-    if (!text) return;
+    if (text === undefined) return;
+    const pasted = draft.get().files;
     try {
-      const { waiting } = await clients.lead.tell({ text, wishId });
-      writeLastSent(wishId, text);
-      setLastSent(text.replace(/\s+/g, " ").trim());
-      draft.set({ text: "", notice: waiting ? "waiting" : "sent" });
+      const files = await Promise.all(
+        pasted.map(async ({ file }) => ({
+          name: file.name,
+          type: file.type,
+          data: new Uint8Array(await file.arrayBuffer()),
+        })),
+      );
+      const { waiting } = await clients.lead.tell({ text, wishId, files });
+      const said = text || pasted.map((p) => fileName(p.file)).join(", ");
+      writeLastSent(wishId, said);
+      setLastSent(said.replace(/\s+/g, " ").trim());
+      draft.set({ text: "", files: [], notice: waiting ? "waiting" : "sent" });
       setRefused(false);
     } catch (error) {
       // Said in the pill, by the text it concerns: no toast besides.
@@ -248,6 +408,30 @@ export function LeadMessage({
         box.current?.focus();
       }
     }
+  };
+  // A paste that carries files keeps them as chips; a paste of text alone goes in the box as usual.
+  const paste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
+    if (state.busy) return;
+    const files = pastedFiles(event.clipboardData);
+    if (files.length > 0) {
+      event.preventDefault();
+      keepFiles(draft, files);
+      return;
+    }
+    // A paste that carries no type at all is a screenshot in WebKitGTK: read it from the clipboard, while the paste
+    // still allows it.
+    if (
+      (event.clipboardData?.types.length ?? 0) > 0 ||
+      !navigator.clipboard?.read
+    )
+      return;
+    void clipboardFiles().then((read) => {
+      if (read.length > 0 && mounted.current) keepFiles(draft, read);
+    });
+  };
+  const removeFile = (id: string) => {
+    draft.set({ files: draft.get().files.filter((f) => f.id !== id) });
+    box.current?.focus({ preventScroll: true });
   };
   const keys = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Escape") {
@@ -341,7 +525,7 @@ export function LeadMessage({
               }}
             >
               <form
-                className={`workspace-action-editor ${offline ? "" : "is-running"}`}
+                className={`workspace-action-editor ${offline ? "" : "is-running"}${state.files.length > 0 ? " has-files" : ""}`}
                 onSubmit={(event) => {
                   event.preventDefault();
                   void send();
@@ -356,6 +540,50 @@ export function LeadMessage({
                   >
                     <Terminal size={13} aria-hidden="true" />
                   </TooltipButton>
+                )}
+                {state.files.length > 0 && (
+                  <ul
+                    className="lead-files"
+                    aria-label={t("lead_message.files")}
+                  >
+                    {state.files.map((pasted) => (
+                      <li key={pasted.id} className="lead-file">
+                        {pasted.thumb ? (
+                          <img
+                            className="lead-file-thumb"
+                            src={pasted.thumb}
+                            alt=""
+                          />
+                        ) : (
+                          <span className="lead-file-thumb">
+                            <FileText size={14} aria-hidden="true" />
+                          </span>
+                        )}
+                        <span className="lead-file-text">
+                          <span
+                            className="lead-file-name"
+                            title={fileName(pasted.file)}
+                          >
+                            {fileName(pasted.file)}
+                          </span>
+                          <span className="lead-file-size">
+                            {pasted.dims ? `${pasted.dims} \u00b7 ` : ""}
+                            {sizeText(pasted.file.size)}
+                          </span>
+                        </span>
+                        <TooltipButton
+                          className="lead-file-remove"
+                          disabled={state.busy}
+                          onClick={() => removeFile(pasted.id)}
+                          label={t("lead_message.file_remove", {
+                            name: fileName(pasted.file),
+                          })}
+                        >
+                          <X size={12} aria-hidden="true" />
+                        </TooltipButton>
+                      </li>
+                    ))}
+                  </ul>
                 )}
                 <label
                   htmlFor={`${id}-input`}
@@ -373,6 +601,7 @@ export function LeadMessage({
                   fitKey={wishId}
                   fit={open}
                   onKeyDown={keys}
+                  onPaste={paste}
                   placeholder={placeholder}
                   aria-invalid={!!state.error}
                   aria-describedby={
@@ -412,9 +641,12 @@ export function LeadMessage({
                 <TooltipButton
                   type="submit"
                   className="workspace-action-send"
-                  disabled={state.busy || !state.text.trim()}
+                  disabled={
+                    state.busy ||
+                    (!state.text.trim() && state.files.length === 0)
+                  }
                   label={t("lead_message.send")}
-                  tooltip={t("lead_message.hint")}
+                  tooltip={`${t("lead_message.hint")} \u00b7 ${t("lead_message.paste_hint", { paste: pasteShortcut.label })}`}
                 >
                   <Send size={14} aria-hidden="true" />
                 </TooltipButton>

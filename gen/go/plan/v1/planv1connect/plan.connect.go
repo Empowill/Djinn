@@ -2388,7 +2388,8 @@ type LeadServiceClient interface {
 	// queue. The text waits while something is being typed there or a choice is on screen, then goes; texts arrive in
 	// the order written. About a wish, it starts with "About wish <title> (<id>):". The lead must run in its terminal:
 	// djinn lead resume starts it. While Djinn drives the lead, the text is an event of its queue instead, whole: the
-	// next batch's session reads it, and a text written while a batch runs waits for the next one. A worker cannot
+	// next batch's session reads it, and a text written while a batch runs waits for the next one. With --files, each
+	// file is kept in the wish and the text ends with a line "Files: <path> (<type>, <size>)" for it. A worker cannot
 	// call it, and djinn mcp has no tool for it.
 	Tell(context.Context, *connect.Request[v1.LeadServiceTellRequest]) (*connect.Response[v1.LeadServiceTellResponse], error)
 	// Acknowledge the developer in the window, in a bubble held to the Lamp pill that fades 2 minutes after it shows:
@@ -2855,7 +2856,8 @@ type LeadServiceHandler interface {
 	// queue. The text waits while something is being typed there or a choice is on screen, then goes; texts arrive in
 	// the order written. About a wish, it starts with "About wish <title> (<id>):". The lead must run in its terminal:
 	// djinn lead resume starts it. While Djinn drives the lead, the text is an event of its queue instead, whole: the
-	// next batch's session reads it, and a text written while a batch runs waits for the next one. A worker cannot
+	// next batch's session reads it, and a text written while a batch runs waits for the next one. With --files, each
+	// file is kept in the wish and the text ends with a line "Files: <path> (<type>, <size>)" for it. A worker cannot
 	// call it, and djinn mcp has no tool for it.
 	Tell(context.Context, *connect.Request[v1.LeadServiceTellRequest]) (*connect.Response[v1.LeadServiceTellResponse], error)
 	// Acknowledge the developer in the window, in a bubble held to the Lamp pill that fades 2 minutes after it shows:

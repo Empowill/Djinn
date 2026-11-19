@@ -2714,6 +2714,7 @@ html.native-mac .app .page-header {
   .workspace-action-leading,
   .workspace-action-send,
   .workspace-action-close,
+  .lead-file-remove,
   .review .question-row .option-letter,
   .view-tabs > button:not(.active)
 ) {
@@ -2766,7 +2767,8 @@ html.native-mac .app .page-header {
   .operating-load-stop,
   .workspace-action-leading,
   .workspace-action-send,
-  .workspace-action-close
+  .workspace-action-close,
+  .lead-file-remove
 )::after {
   content: "";
   position: absolute;
@@ -2821,6 +2823,7 @@ html.native-mac .app .page-header {
     .workspace-action-leading,
     .workspace-action-send:not(:disabled),
     .workspace-action-close,
+    .lead-file-remove:not(:disabled),
     .view-tabs > button
   ):hover::after,
 :where(.review .question-row .option:hover .option-letter)::after {

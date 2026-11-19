@@ -150,7 +150,11 @@ func leadRules(projects []*planv1.Project, home string, driven bool) string {
 		"acknowledgement, never a discussion (at most 160 characters on one line); what is longer goes in a question " +
 		"or a block. Tell a decision you took alone that the developer would want to know with " +
 		"`djinn lead say <wish> \"<text>\" --decided` instead of a question that asks nothing; never say that a " +
-		"worker or a task started.\n"
+		"worker or a task started.\n" +
+		"- **Open every file a message names.** A message from the window may end with lines \"Files: <path> (<type>, " +
+		"<size>)\": files the developer pasted, kept in the wish's folder (a block of kind file names each). Open each " +
+		"with your own file tool before you act (an image is a screenshot to look at), and name its path in a task's " +
+		"prompt when a worker needs it: the worker gets its folder to read.\n"
 	startRule := "- **Start from the brief.** Djinn computes where the active wishes stand: `djinn brief`. " +
 		"Run it when you start and whenever you lose track, then continue from what it says. `djinn wish brief <wish>` gives one wish's detail. Another agent may " +
 		"have led before you: the plan carries over, its session does not.\n"
@@ -179,7 +183,11 @@ func leadRules(projects []*planv1.Project, home string, driven bool) string {
 			"never a discussion (at most 160 characters on one line); what is longer goes in a question or a block. " +
 			"Tell a decision you took alone that the developer would want to know with " +
 			"`djinn lead say <wish> \"<text>\" --decided` instead of a question that asks nothing, and never say " +
-			"that a worker or a task started. A decision the developer's message states gets a block of kind decision.\n"
+			"that a worker or a task started. A decision the developer's message states gets a block of kind decision.\n" +
+			"- **Open every file a message names.** A message from the window may end with lines \"Files: <path> (<type>, " +
+			"<size>)\": files the developer pasted, kept in the wish's folder (a block of kind file names each). Open each " +
+			"with your own file tool before you act (an image is a screenshot to look at), and name its path in a task's " +
+			"prompt when a worker needs it: the worker gets its folder to read.\n"
 		startRule = ""
 		watchRule = ""
 		toneTail = ""
