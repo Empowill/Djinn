@@ -132,6 +132,7 @@ func (s *service) List(
 		gate := &machinev1.Gate{
 			Name: st.Name, Holder: st.Holder, HolderTaskId: st.HolderTaskID, Waiting: st.Waiting,
 			WaitingTaskIds: st.WaitingTaskIDs, TakesSlot: st.TakesSlot, Resources: st.Use, Ifrit: st.Ifrit,
+			Project: st.Project, WaitingProjects: st.WaitingProjects,
 		}
 		if !st.Since.IsZero() {
 			gate.Since = timestamppb.New(st.Since)

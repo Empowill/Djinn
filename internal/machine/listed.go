@@ -176,8 +176,8 @@ func (c *costs) List(
 }
 
 // Summary is what the recent runs of costs say of the gates: the requests, the waits, the highest peak and the waits
-// for each gate. A run counts under its gate, else its command's; one under none is left out. Its peak is one of costs
-// itself, its runs kept: List sends it brief.
+// for each gate in each project (its command's). A run counts under its gate, else its command's; one under none is
+// left out. Its peak is one of costs itself, its runs kept: List sends it brief.
 func Summary(costs []*machinev1.CommandCost) *machinev1.GatesSummary {
 	out := &machinev1.GatesSummary{}
 	type gateRuns struct {
@@ -185,7 +185,8 @@ func Summary(costs []*machinev1.CommandCost) *machinev1.GatesSummary {
 		last  *machinev1.CommandRun
 		cmd   string
 	}
-	byGate := map[string]*gateRuns{}
+	type key struct{ gate, project string }
+	byGate := map[key]*gateRuns{}
 	var waits []float64
 	for _, cost := range costs {
 		out.Asked += max(cost.GetAsked(), cost.GetRuns())
@@ -198,10 +199,11 @@ func Summary(costs []*machinev1.CommandCost) *machinev1.GatesSummary {
 			if gate == "" {
 				continue
 			}
-			g := byGate[gate]
+			k := key{gate, cost.GetProjectName()}
+			g := byGate[k]
 			if g == nil {
 				g = &gateRuns{}
-				byGate[gate] = g
+				byGate[k] = g
 			}
 			g.waits = append(g.waits, run.GetWaitSeconds())
 			if g.last == nil || run.GetTime().AsTime().After(g.last.GetTime().AsTime()) {
@@ -214,16 +216,17 @@ func Summary(costs []*machinev1.CommandCost) *machinev1.GatesSummary {
 	out.Holds = int32(len(waits))
 	out.P50WaitSeconds, out.P90WaitSeconds = quantile(waits, 0.5), quantile(waits, 0.9)
 	out.MaxWaitSeconds, out.LongWaits = last(waits), longOf(waits)
-	for gate, g := range byGate {
+	for k, g := range byGate {
 		slices.Sort(g.waits)
 		out.Gates = append(out.Gates, &machinev1.GateWaits{
-			Gate: gate, Holds: int32(len(g.waits)),
+			Gate: k.gate, Project: k.project, Holds: int32(len(g.waits)),
 			P50Seconds: quantile(g.waits, 0.5), P90Seconds: quantile(g.waits, 0.9),
 			MaxSeconds: last(g.waits), Long: longOf(g.waits), Last: g.last, LastCommand: g.cmd,
 		})
 	}
 	slices.SortFunc(out.Gates, func(a, b *machinev1.GateWaits) int {
-		return cmp.Or(cmp.Compare(b.GetHolds(), a.GetHolds()), strings.Compare(a.GetGate(), b.GetGate()))
+		return cmp.Or(cmp.Compare(b.GetHolds(), a.GetHolds()), strings.Compare(a.GetGate(), b.GetGate()),
+			strings.Compare(a.GetProject(), b.GetProject()))
 	})
 	return out
 }

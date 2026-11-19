@@ -268,12 +268,20 @@ export {
   HourglassLine,
   HourglassSections,
 } from "@/src/hourglass.tsx";
-export { GatesTab, PAGE, mergeHistory } from "@/src/gates-tab.tsx";
+export {
+  GatesTab,
+  PAGE,
+  mergeHistory,
+  mergePage,
+  nowGroups,
+} from "@/src/gates-tab.tsx";
 export {
   ADMISSIONS,
   GatesFlow,
   GatesSankey,
+  gateIn,
   gateRows,
+  projectSections,
   holdsOf,
   inScope,
   instant,

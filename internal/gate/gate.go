@@ -1051,6 +1051,8 @@ func (g *Gates) IfritWaits() map[string][]string {
 // State is a gate held or waited for.
 type State struct {
 	Name, Holder, HolderTaskID string
+	Project                    string    // the holder's project, by name; "" when none
+	WaitingProjects            []string  // the waiters' projects, by name, in the order of Waiting; "" for one of none
 	Since, Until               time.Time // Until: when it is taken back at the latest; zero when not known
 	Waiting                    []string
 	WaitingTaskIDs             []string          // the tasks of the waiters, in the same order; a waiter outside any task left out
@@ -1072,7 +1074,7 @@ func (g *Gates) List() []State {
 	}
 	for name, h := range g.held {
 		s := get(name)
-		s.Holder, s.HolderTaskID, s.Since, s.Until, s.Use, s.Ifrit = h.who, h.taskID, h.since, h.until, h.use, h.ifrit
+		s.Holder, s.HolderTaskID, s.Project, s.Since, s.Until, s.Use, s.Ifrit = h.who, h.taskID, h.project, h.since, h.until, h.use, h.ifrit
 	}
 	alone := map[string]bool{}
 	for name := range g.held {
@@ -1090,7 +1092,7 @@ func (g *Gates) List() []State {
 	}
 	for name, h := range first {
 		if s := get(name); !alone[name] {
-			s.Holder, s.HolderTaskID, s.Since, s.Until, s.Use = h.who, h.taskID, h.since, h.until, h.use
+			s.Holder, s.HolderTaskID, s.Project, s.Since, s.Until, s.Use = h.who, h.taskID, h.project, h.since, h.until, h.use
 		}
 	}
 	for _, w := range g.queue {
@@ -1099,6 +1101,7 @@ func (g *Gates) List() []State {
 		}
 		s := get(w.name)
 		s.Waiting = append(s.Waiting, w.who)
+		s.WaitingProjects = append(s.WaitingProjects, w.project)
 		if w.taskID != "" {
 			s.WaitingTaskIDs = append(s.WaitingTaskIDs, w.taskID)
 		}

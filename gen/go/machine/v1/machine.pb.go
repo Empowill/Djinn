@@ -2718,8 +2718,14 @@ type Gate struct {
 	// The tasks of those who wait for it, by identifier, the next one first: a waiter outside any task is left out. The
 	// window counts a task's worker that waits for a gate as waiting for a place.
 	WaitingTaskIds []string `protobuf:"bytes,10,rep,name=waiting_task_ids,json=waitingTaskIds,proto3" json:"waiting_task_ids,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// Project of its holder, by name; empty when nobody holds it or its holder is outside any project. A gate a project
+	// declares (stack@dolmen) is that project's; a gate named for the machine (lint, e2e) is one for every project, held
+	// by a worker of one of them.
+	Project string `protobuf:"bytes,11,opt,name=project,proto3" json:"project,omitempty"`
+	// Projects of those who wait for it, by name, in the order of waiting: empty for a waiter outside any project.
+	WaitingProjects []string `protobuf:"bytes,12,rep,name=waiting_projects,json=waitingProjects,proto3" json:"waiting_projects,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *Gate) Reset() {
@@ -2818,6 +2824,20 @@ func (x *Gate) GetIfrit() bool {
 func (x *Gate) GetWaitingTaskIds() []string {
 	if x != nil {
 		return x.WaitingTaskIds
+	}
+	return nil
+}
+
+func (x *Gate) GetProject() string {
+	if x != nil {
+		return x.Project
+	}
+	return ""
+}
+
+func (x *Gate) GetWaitingProjects() []string {
+	if x != nil {
+		return x.WaitingProjects
 	}
 	return nil
 }
@@ -3722,7 +3742,7 @@ type GatesSummary struct {
 	LongWaits int32 `protobuf:"varint,7,opt,name=long_waits,json=longWaits,proto3" json:"long_waits,omitempty"`
 	// The command of the highest peak memory, its recent runs left out; absent when none was measured.
 	Peak *CommandCost `protobuf:"bytes,8,opt,name=peak,proto3" json:"peak,omitempty"`
-	// The waits for each gate, the most held first.
+	// The waits for each gate in each project, the most held first.
 	Gates         []*GateWaits `protobuf:"bytes,9,rep,name=gates,proto3" json:"gates,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -3821,8 +3841,8 @@ func (x *GatesSummary) GetGates() []*GateWaits {
 	return nil
 }
 
-// GateWaits is the waits for a gate over the recent runs held under it: a median and a 90th percentile, never a sum
-// or a mean (the Statistics tab's rule).
+// GateWaits is the waits for a gate in a project over the recent runs held under it: a median and a 90th percentile,
+// never a sum or a mean (the Statistics tab's rule).
 type GateWaits struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Gate name.
@@ -3840,7 +3860,9 @@ type GateWaits struct {
 	// The newest run under the gate: its last hold.
 	Last *CommandRun `protobuf:"bytes,7,opt,name=last,proto3" json:"last,omitempty"`
 	// The command of that run.
-	LastCommand   string `protobuf:"bytes,8,opt,name=last_command,json=lastCommand,proto3" json:"last_command,omitempty"`
+	LastCommand string `protobuf:"bytes,8,opt,name=last_command,json=lastCommand,proto3" json:"last_command,omitempty"`
+	// Project of the commands that held it, by name: a gate is counted apart for each project whose workers held it.
+	Project       string `protobuf:"bytes,9,opt,name=project,proto3" json:"project,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3927,6 +3949,13 @@ func (x *GateWaits) GetLast() *CommandRun {
 func (x *GateWaits) GetLastCommand() string {
 	if x != nil {
 		return x.LastCommand
+	}
+	return ""
+}
+
+func (x *GateWaits) GetProject() string {
+	if x != nil {
+		return x.Project
 	}
 	return ""
 }
@@ -4444,7 +4473,7 @@ const file_machine_v1_machine_proto_rawDesc = "" +
 	"\x05match\x18\x05 \x01(\tB\b\xbaH\x05r\x03\x18\xe0\x03R\x05match\"_\n" +
 	"\x18GateServiceAdmitResponse\x12+\n" +
 	"\x05state\x18\x01 \x01(\x0e2\x15.machine.v1.GateStateR\x05state\x12\x16\n" +
-	"\x06reason\x18\x02 \x01(\tR\x06reason\"\xf2\x02\n" +
+	"\x06reason\x18\x02 \x01(\tR\x06reason\"\xb7\x03\n" +
 	"\x04Gate\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
 	"\x06holder\x18\x02 \x01(\tR\x06holder\x12$\n" +
@@ -4458,7 +4487,9 @@ const file_machine_v1_machine_proto_rawDesc = "" +
 	"expireTime\x12\x14\n" +
 	"\x05ifrit\x18\t \x01(\bR\x05ifrit\x12(\n" +
 	"\x10waiting_task_ids\x18\n" +
-	" \x03(\tR\x0ewaitingTaskIds\"\x90\x02\n" +
+	" \x03(\tR\x0ewaitingTaskIds\x12\x18\n" +
+	"\aproject\x18\v \x01(\tR\aproject\x12)\n" +
+	"\x10waiting_projects\x18\f \x03(\tR\x0fwaitingProjects\"\x90\x02\n" +
 	"\x16GateServiceHoldRequest\x12;\n" +
 	"\x04name\x18\x01 \x01(\tB'\xbaH$\xc8\x01\x01r\x1f2\x1d^[A-Za-z][A-Za-z0-9_-]{0,39}$R\x04name\x12$\n" +
 	"\atask_id\x18\x02 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x06taskId\x12\x1c\n" +
@@ -4548,7 +4579,7 @@ const file_machine_v1_machine_proto_rawDesc = "" +
 	"\n" +
 	"long_waits\x18\a \x01(\x05R\tlongWaits\x12+\n" +
 	"\x04peak\x18\b \x01(\v2\x17.machine.v1.CommandCostR\x04peak\x12+\n" +
-	"\x05gates\x18\t \x03(\v2\x15.machine.v1.GateWaitsR\x05gates\"\xfb\x01\n" +
+	"\x05gates\x18\t \x03(\v2\x15.machine.v1.GateWaitsR\x05gates\"\x95\x02\n" +
 	"\tGateWaits\x12\x12\n" +
 	"\x04gate\x18\x01 \x01(\tR\x04gate\x12\x14\n" +
 	"\x05holds\x18\x02 \x01(\x05R\x05holds\x12\x1f\n" +
@@ -4560,7 +4591,8 @@ const file_machine_v1_machine_proto_rawDesc = "" +
 	"maxSeconds\x12\x12\n" +
 	"\x04long\x18\x06 \x01(\x05R\x04long\x12*\n" +
 	"\x04last\x18\a \x01(\v2\x16.machine.v1.CommandRunR\x04last\x12!\n" +
-	"\flast_command\x18\b \x01(\tR\vlastCommand\"\xad\x03\n" +
+	"\flast_command\x18\b \x01(\tR\vlastCommand\x12\x18\n" +
+	"\aproject\x18\t \x01(\tR\aproject\"\xad\x03\n" +
 	"\x1bCommandServiceRecordRequest\x12$\n" +
 	"\atask_id\x18\x01 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x06taskId\x12&\n" +
 	"\tdirectory\x18\x02 \x01(\tB\b\xbaH\x05r\x03\x18\x80 R\tdirectory\x12%\n" +

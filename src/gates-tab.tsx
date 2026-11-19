@@ -1,16 +1,20 @@
 // The Gates tab of the Hourglass (hourglass.tsx, L05 v3 built on what exists, Q12 B): what the gates do now, read live
-// while the tab shows (GateService.List); the gates over the last hour, 6 hours or day, one lane per gate under the
-// workers that run, then a Sankey of the named gates' requests (gates-flow.tsx, L13 v2 A, Q46 A: GateService.History);
-// what each command admitted under a gate costs, the costliest first, a page at a time (CommandService.List); and the
-// waits for each gate, over the recent runs the store keeps of each command (up to 200). A gate is a named lock: one
-// command holds it at a time, the others wait their turn. What waits for a command's admission mode (I1) is not shown.
+// while the tab shows (GateService.List), by project; the gates over the last hour, 6 hours or day, one lane per gate
+// of each project under the workers that run, then a Sankey of the named gates' requests, project → gate → wait
+// (gates-flow.tsx, L13 v2 A, Q46 A: GateService.History); what each command admitted under a gate costs, the costliest
+// first, read a page at a time as the list scrolls (CommandService.List); and the waits for each gate in each project,
+// over the recent runs the store keeps of each command (up to 200). A gate is a named lock: one command holds it at a
+// time, the others wait their turn. A gate a project declares is its own (stack@dolmen); one named for the machine (lint,
+// e2e) is a single lock for every project, shown under each project whose workers hold it or wait for it (W158). What
+// waits for a command's admission mode (I1) is not shown.
 //
 // Under load the tab stays light (W124): the figures and the waits come summed by the server (GatesSummary), the
-// commands a page of PAGE, without their runs until a row opens; the history is read whole once, then only what
-// changed since its last read (mergeHistory). Long lists show their head and fold the rest.
+// commands a page of PAGE at a time, the next one read when the list's end comes into view, without their runs until a
+// row opens; the history is read whole once, then only what changed since its last read (mergeHistory). Long lists show
+// their head and fold the rest.
 import { timestampFromMs } from "@bufbuild/protobuf/wkt";
-import { memo, useEffect, useMemo, useState } from "react";
-import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 
 import type {
   CommandCost,
@@ -33,6 +37,9 @@ import {
   GatesSankey,
   PERIOD_EVERY,
   type Period,
+  byProject,
+  gateIn,
+  projectName,
 } from "./gates-flow";
 import { t } from "./i18n";
 import { formatValue } from "./resource-chart";
@@ -109,11 +116,29 @@ const EMPTY: GateInterval[] = [];
 // The tasks a gate's holder or a run names: their codes, and the way to them.
 type Tasks = ReadonlyMap<string, Task>;
 
-// A page of the commands: its rows, where it starts, how many there are in all.
-interface Page {
+// The commands read so far: the pages from the first one on, and how many there are in all.
+export interface Page {
   costs: CommandCost[];
-  from: number;
   total: number;
+}
+
+// mergePage lays a page read from row from over the rows read before: the rows before it kept, the page's, then the
+// rows after it kept unless the page has them (a ranking that moved between two reads shows each command once).
+export function mergePage(
+  prev: Page,
+  from: number,
+  costs: readonly CommandCost[],
+  total: number,
+): Page {
+  const fresh = new Set(costs.map((c) => c.id));
+  const before = prev.costs.slice(0, from).filter((c) => !fresh.has(c.id));
+  const after = prev.costs
+    .slice(from + costs.length)
+    .filter((c) => !fresh.has(c.id));
+  return {
+    costs: [...before, ...costs, ...after].slice(0, Math.max(total, 0)),
+    total,
+  };
 }
 
 export function GatesTab({
@@ -148,11 +173,10 @@ export function GatesTab({
   const [gates, setGates] = useState<Gate[]>(initialGates);
   const [page, setPage] = useState<Page>({
     costs: initialCommands,
-    from: 0,
     total: initialTotal ?? initialCommands.length,
   });
-  // The first row of the page asked: the page shown follows once read.
-  const [from, setFrom] = useState(0);
+  // How many rows the list asked so far: a page more each time its end comes into view.
+  const [wanted, setWanted] = useState(PAGE);
   const [summary, setSummary] = useState<GatesSummary | null>(initialSummary);
   const [history, setHistory] = useState<GateServiceHistoryResponse | null>(
     initialHistory,
@@ -206,22 +230,17 @@ export function GatesTab({
     };
   }, [djinn, period]);
 
-  // The page of the commands shown, without their runs, and the summary of them all.
+  // The first page of the commands, without their runs, and the summary of them all: read again while the tab shows;
+  // the pages under it stay as read.
   useEffect(() => {
     if (!djinn) return;
     let active = true;
     const read = async () => {
       const res = await djinn.clients.commands
-        .list({
-          byTotal: true,
-          brief: true,
-          summary: true,
-          pageSize: PAGE,
-          pageToken: from > 0 ? String(from) : "",
-        })
+        .list({ byTotal: true, brief: true, summary: true, pageSize: PAGE })
         .catch(() => null);
       if (!active || !res) return;
-      setPage({ costs: res.costs, from, total: res.total });
+      setPage((prev) => mergePage(prev, 0, res.costs, res.total));
       setSummary(res.summary ?? null);
     };
     void read();
@@ -230,7 +249,29 @@ export function GatesTab({
       active = false;
       stop();
     };
-  }, [djinn, from]);
+  }, [djinn]);
+
+  // The next page, once the list asks past the rows it has: read once, from where they end.
+  const have = page.costs.length;
+  useEffect(() => {
+    if (!djinn || wanted <= have || have >= page.total) return;
+    let active = true;
+    void djinn.clients.commands
+      .list({
+        byTotal: true,
+        brief: true,
+        pageSize: PAGE,
+        pageToken: String(have),
+      })
+      .then((res) => {
+        if (active)
+          setPage((prev) => mergePage(prev, have, res.costs, res.total));
+      })
+      .catch(() => null);
+    return () => {
+      active = false;
+    };
+  }, [djinn, wanted, have, page.total]);
 
   // Opens a command on its runs, read whole; closes it when it is the one open.
   const open = async (cost: { id: string }) => {
@@ -289,7 +330,7 @@ export function GatesTab({
         opened={opened}
         tasks={tasks}
         onOpen={(c) => void open(c)}
-        onPage={setFrom}
+        onMore={() => setWanted(have + PAGE)}
         onTask={onTask}
       />
       <GateWaitsCard waits={summary?.gates ?? []} />
@@ -388,8 +429,83 @@ function TaskCode({
   );
 }
 
-// Now: each gate held or waited for, live, then the gates the recent runs name, free, with their last hold; past
-// FREE_SHOWN, the free gates fold.
+// What a project has of a gate now: its holder when one of its workers holds it, its waiters in their order.
+export interface NowEntry {
+  gate: Gate;
+  // The gate's own name, and whether its project declares it (stack@dolmen).
+  name: string;
+  declared: boolean;
+  // The holder is this project's.
+  holds: boolean;
+  // The places in the gate's queue of this project's waiters.
+  waiting: number[];
+}
+
+// A project in Now: what its workers hold and wait for, then the gates its recent runs name, free.
+export interface NowGroup {
+  project: string;
+  live: NowEntry[];
+  free: GateWaits[];
+  held: number;
+  waiting: number;
+}
+
+// nowGroups lays the gates now out by project. A gate a project declares is that project's; a gate of the machine
+// shows under the project of its holder, and under each project with a worker in its queue, held by another then. The
+// free gates come from the recent runs' waits, under their project, unless held or waited for now. The projects with a
+// gate held or waited for first, the busiest first, then the others by name; none last.
+export function nowGroups(
+  gates: readonly Gate[],
+  waits: readonly GateWaits[],
+): NowGroup[] {
+  const groups = new Map<string, NowGroup>();
+  const group = (project: string) => {
+    let g = groups.get(project);
+    if (!g) {
+      g = { project, live: [], free: [], held: 0, waiting: 0 };
+      groups.set(project, g);
+    }
+    return g;
+  };
+  for (const gate of gates) {
+    const { name, project: own, declared } = gateIn(gate.name, gate.project);
+    const entries = new Map<string, NowEntry>();
+    const entry = (project: string) => {
+      let e = entries.get(project);
+      if (!e) {
+        e = { gate, name, declared, holds: false, waiting: [] };
+        entries.set(project, e);
+      }
+      return e;
+    };
+    if (gate.holder) entry(own).holds = true;
+    gate.waiting.forEach((_, i) => {
+      const project = declared ? own : (gate.waitingProjects[i] ?? "");
+      entry(project).waiting.push(i);
+    });
+    for (const [project, e] of entries) {
+      const g = group(project);
+      g.live.push(e);
+      if (e.holds) g.held++;
+      g.waiting += e.waiting.length;
+    }
+  }
+  const live = new Set(gates.map((g) => g.name));
+  for (const w of waits)
+    if (!live.has(w.gate))
+      group(gateIn(w.gate, w.project).project).free.push(w);
+  const busy = (g: NowGroup) => g.held + g.waiting;
+  return [...groups.values()].sort(
+    (a, b) =>
+      (!a.project ? 1 : 0) - (!b.project ? 1 : 0) ||
+      busy(b) - busy(a) ||
+      byProject(a.project, b.project),
+  );
+}
+
+// Now: by project, each gate its workers hold or wait for, live, then the gates its recent runs name, free, with their
+// last hold; past FREE_SHOWN, a project's free gates fold. A gate's card is the target of its links (gate-<name>):
+// the first of its cards, its holder's when held.
 const GatesNow = memo(function GatesNow({
   gates,
   waits,
@@ -403,112 +519,213 @@ const GatesNow = memo(function GatesNow({
 }) {
   const busy = gates.some((g) => g.holder || g.waiting.length > 0);
   const now = useNow(busy);
-  const [unfolded, setUnfolded] = useState(false);
-  const live = new Set(gates.map((g) => g.name));
-  const free = waits.filter((w) => !live.has(w.gate));
-  const shown = unfolded ? free : free.slice(0, FREE_SHOWN);
+  const [unfolded, setUnfolded] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const groups = useMemo(() => nowGroups(gates, waits), [gates, waits]);
+  // The card a gate's link leads to: its holder's, else its first.
+  const target = new Map<string, NowEntry>();
+  for (const g of groups)
+    for (const e of g.live)
+      if (e.holds || !target.has(e.gate.name)) target.set(e.gate.name, e);
+  const showWorker = onWorker ? (task: Task) => onWorker(task.id) : undefined;
+  // A free gate of the machine may show under several projects: the first card is its links' target.
+  const named = new Set(target.keys());
+  const freeId = (gate: string) => {
+    if (named.has(gate)) return undefined;
+    named.add(gate);
+    return `gate-${gate}`;
+  };
   return (
     <section className="statistics-card gates-card" aria-label={t("gates.now")}>
       <header>
         <h3>{t("gates.now")}</h3>
       </header>
       <p className="statistics-detail muted-text">{t("gates.now_detail")}</p>
-      {gates.length === 0 && free.length === 0 && (
+      {groups.length === 0 && (
         <p className="statistics-empty muted-text">{t("gates.none")}</p>
       )}
-      <ul className="gates-now">
-        {gates.map((g) => (
-          <li
-            key={g.name}
-            id={`gate-${g.name}`}
-            className={`gates-gate ${g.holder ? "is-held" : "is-waited"}`}
+      {groups.map((group) => {
+        const open = unfolded.has(group.project);
+        const shown = open ? group.free : group.free.slice(0, FREE_SHOWN);
+        return (
+          <section
+            key={group.project}
+            className="gates-project"
+            aria-label={projectName(group.project)}
           >
-            <div className="gates-gate-head">
-              <code className="gates-gate-name">{g.name}</code>
-              <span className="gates-gate-state">
-                {g.holder ? t("gates.held") : t("gates.waited")}
+            <header className="gates-project-head">
+              <h4>{projectName(group.project)}</h4>
+              <span className="muted-text">
+                {group.held + group.waiting > 0
+                  ? t("gates.project_now", {
+                      held: group.held,
+                      waiting: group.waiting,
+                    })
+                  : t("gates.project_free", { count: group.free.length })}
               </span>
-              {g.ifrit && (
-                <span className="gates-gate-note">{t("gates.ifrit")}</span>
-              )}
-              {g.takesSlot && (
-                <span className="gates-gate-note">{t("gates.takes_slot")}</span>
-              )}
-            </div>
-            {g.holder && (
-              <p className="gates-gate-holder">
-                <TaskCode
-                  taskId={g.holderTaskId}
+            </header>
+            <ul className="gates-now">
+              {group.live.map((e) => (
+                <LiveGate
+                  key={e.gate.name}
+                  entry={e}
+                  id={
+                    target.get(e.gate.name) === e
+                      ? `gate-${e.gate.name}`
+                      : undefined
+                  }
+                  now={now}
                   tasks={tasks}
-                  onShow={onWorker ? (task) => onWorker(task.id) : undefined}
-                />{" "}
-                {t("gates.held_by", {
-                  holder: g.holder,
-                  time: g.since ? span(now - timeOf(g.since)) : "—",
+                  onWorker={showWorker}
+                />
+              ))}
+              {shown.map((w) => (
+                <FreeGate
+                  key={w.gate}
+                  id={freeId(w.gate)}
+                  waits={w}
+                  tasks={tasks}
+                />
+              ))}
+            </ul>
+            {group.free.length > shown.length && (
+              <More
+                text={t("gates.free_more", {
+                  count: group.free.length - shown.length,
                 })}
-              </p>
+                onClick={() =>
+                  setUnfolded((prev) => new Set(prev).add(group.project))
+                }
+              />
             )}
-            {g.resources && (
-              <p className="gates-gate-line muted-text">
-                {t("gates.uses", {
-                  cpu: formatValue("cpu", g.resources.cpuPercent),
-                  memory: memoryText(g.resources.memoryBytes),
-                })}
-              </p>
-            )}
-            {g.expireTime && (
-              <p className="gates-gate-line muted-text">
-                {t("gates.expires", {
-                  time: secondText(date(g.expireTime) ?? new Date(0)),
-                })}
-              </p>
-            )}
-            {g.waiting.length > 0 && (
-              <div className="gates-gate-queue">
-                <span className="gates-gate-queue-title">
-                  {t("gates.queue", { count: g.waiting.length })}
-                </span>
-                <ol>
-                  {g.waiting.map((who, i) => (
-                    <li key={i}>
-                      <TaskCode
-                        taskId={g.waitingTaskIds[i] ?? ""}
-                        tasks={tasks}
-                        onShow={
-                          onWorker ? (task) => onWorker(task.id) : undefined
-                        }
-                      />{" "}
-                      {who}
-                    </li>
-                  ))}
-                </ol>
-              </div>
-            )}
-          </li>
-        ))}
-        {shown.map((w) => (
-          <FreeGate key={w.gate} waits={w} tasks={tasks} />
-        ))}
-      </ul>
-      {free.length > shown.length && (
-        <More
-          text={t("gates.free_more", { count: free.length - shown.length })}
-          onClick={() => setUnfolded(true)}
-        />
-      )}
+          </section>
+        );
+      })}
     </section>
   );
 });
 
+// A gate a project's workers hold or wait for: its holder when it is the project's, else who holds it and for which
+// project; the project's waiters.
+function LiveGate({
+  entry,
+  id,
+  now,
+  tasks,
+  onWorker,
+}: {
+  entry: NowEntry;
+  id?: string;
+  now: number;
+  tasks?: Tasks;
+  onWorker?: (task: Task) => void;
+}) {
+  const { gate: g, name, declared, holds, waiting } = entry;
+  const held = g.holder && holds;
+  return (
+    <li id={id} className={`gates-gate ${held ? "is-held" : "is-waited"}`}>
+      <div className="gates-gate-head">
+        <code className="gates-gate-name">{name}</code>
+        <span className="gates-gate-state">
+          {held ? t("gates.held") : t("gates.waited")}
+        </span>
+        {declared && (
+          <span className="gates-gate-note">{t("gates.declared")}</span>
+        )}
+        {g.ifrit && <span className="gates-gate-note">{t("gates.ifrit")}</span>}
+        {g.takesSlot && held && (
+          <span className="gates-gate-note">{t("gates.takes_slot")}</span>
+        )}
+      </div>
+      {held && (
+        <p className="gates-gate-holder">
+          <TaskCode taskId={g.holderTaskId} tasks={tasks} onShow={onWorker} />{" "}
+          {t("gates.held_by", {
+            holder: g.holder,
+            time: g.since ? span(now - timeOf(g.since)) : "—",
+          })}
+        </p>
+      )}
+      {g.holder && !holds && (
+        <p className="gates-gate-line muted-text">
+          {t("gates.held_elsewhere", {
+            holder: g.holder,
+            project: projectName(g.project),
+          })}
+        </p>
+      )}
+      {held && g.resources && (
+        <p className="gates-gate-line muted-text">
+          {t("gates.uses", {
+            cpu: formatValue("cpu", g.resources.cpuPercent),
+            memory: memoryText(g.resources.memoryBytes),
+          })}
+        </p>
+      )}
+      {held && g.expireTime && (
+        <p className="gates-gate-line muted-text">
+          {t("gates.expires", {
+            time: secondText(date(g.expireTime) ?? new Date(0)),
+          })}
+        </p>
+      )}
+      {waiting.length > 0 && (
+        <div className="gates-gate-queue">
+          <span className="gates-gate-queue-title">
+            {t("gates.queue", { count: waiting.length })}
+          </span>
+          <ol>
+            {waiting.map((i) => (
+              <li key={i} value={i + 1}>
+                <TaskCode
+                  taskId={waiterTask(g, i)}
+                  tasks={tasks}
+                  onShow={onWorker}
+                />{" "}
+                {g.waiting[i]}
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
+    </li>
+  );
+}
+
+// How a waiter outside any task is named (gate.Take).
+const OUTSIDE = "a holder outside any task";
+
+// waiterTask is the task of the i-th waiter of a gate: waiting_task_ids leaves the waiters outside any task out, so the
+// waiters before i that are outside any task do not count.
+function waiterTask(g: Gate, i: number): string {
+  if (g.waitingTaskIds.length === g.waiting.length) return g.waitingTaskIds[i];
+  if (g.waiting[i].startsWith(OUTSIDE)) return "";
+  const k = g.waiting.slice(0, i).filter((w) => !w.startsWith(OUTSIDE)).length;
+  return g.waitingTaskIds[k] ?? "";
+}
+
 // A gate no one holds or waits for, with its last hold.
-function FreeGate({ waits, tasks }: { waits: GateWaits; tasks?: Tasks }) {
+function FreeGate({
+  id,
+  waits,
+  tasks,
+}: {
+  id?: string;
+  waits: GateWaits;
+  tasks?: Tasks;
+}) {
   const last = waits.last;
   const code = last ? tasks?.get(last.taskId)?.code : undefined;
+  const { name, declared } = gateIn(waits.gate, waits.project);
   return (
-    <li id={`gate-${waits.gate}`} className="gates-gate">
+    <li id={id} className="gates-gate">
       <div className="gates-gate-head">
-        <code className="gates-gate-name">{waits.gate}</code>
+        <code className="gates-gate-name">{name}</code>
         <span className="gates-gate-state">{t("gates.free")}</span>
+        {declared && (
+          <span className="gates-gate-note">{t("gates.declared")}</span>
+        )}
       </div>
       {last && (
         <p className="gates-gate-line muted-text">
@@ -527,34 +744,33 @@ function FreeGate({ waits, tasks }: { waits: GateWaits; tasks?: Tasks }) {
   );
 }
 
-// The commands admitted under a gate, a page of PAGE rows, the most total time first: the one worth making faster on
-// top. A row opens on its recent runs; a command opened from the lanes off the page shows above it.
+// The commands admitted under a gate, the most total time first: the one worth making faster on top. The list grows a
+// page of PAGE rows at a time, as its end comes into view (or its button is pressed). A row opens on its recent runs; a
+// command opened from the lanes, not read yet, shows above the list.
 const CommandTable = memo(function CommandTable({
   page,
   opened,
   tasks,
   onOpen,
-  onPage,
+  onMore,
   onTask,
 }: {
   page: Page;
   opened: CommandCost | null;
   tasks?: Tasks;
   onOpen: (cost: CommandCost) => void;
-  onPage: (from: number) => void;
+  // Asks the next page.
+  onMore: () => void;
   onTask?: (task: Task) => void;
 }) {
-  const { costs, from } = page;
-  // The top of the first page is the costliest of all: its bar is the scale of every page.
-  const [top, setTop] = useState(0);
-  const first = from === 0 && costs.length ? total(costs[0]) : 0;
-  if (first > 0 && first !== top) setTop(first);
-  const scale = top || (costs.length ? total(costs[0]) : 0);
+  const { costs } = page;
+  // The first row is the costliest of all: its bar is the scale of every row.
+  const scale = costs.length ? total(costs[0]) : 0;
   const rows =
     opened && !costs.some((c) => c.id === opened.id)
       ? [opened, ...costs]
       : costs;
-  const to = from + costs.length;
+  const more = page.total > costs.length;
   return (
     <section
       className="statistics-card gates-card"
@@ -604,7 +820,7 @@ const CommandTable = memo(function CommandTable({
                     key={c.id}
                     cost={c}
                     runs={shown ? opened.recentRuns : null}
-                    top={from === 0 && c === costs[0] && total(c) > 0}
+                    top={c === costs[0] && total(c) > 0}
                     picked={c === opened && !costs.includes(c)}
                     share={scale > 0 ? total(c) / scale : 0}
                     tasks={tasks}
@@ -617,40 +833,69 @@ const CommandTable = memo(function CommandTable({
           </table>
         </div>
       )}
-      {page.total > costs.length && (
-        <nav className="gates-pager" aria-label={t("gates.pages")}>
-          <button
-            type="button"
-            className="gates-pager-step"
-            aria-label={t("gates.page_prev")}
-            title={t("gates.page_prev")}
-            disabled={from === 0}
-            onClick={() => onPage(Math.max(0, from - PAGE))}
-          >
-            <ChevronLeft size={12} aria-hidden="true" />
-          </button>
-          <span className="muted-text">
-            {t("gates.page", {
-              from: costs.length ? from + 1 : from,
-              to,
-              total: page.total,
-            })}
-          </span>
-          <button
-            type="button"
-            className="gates-pager-step"
-            aria-label={t("gates.page_next")}
-            title={t("gates.page_next")}
-            disabled={to >= page.total}
-            onClick={() => onPage(from + PAGE)}
-          >
-            <ChevronRight size={12} aria-hidden="true" />
-          </button>
-        </nav>
+      {costs.length > 0 && (
+        <ListEnd
+          shown={costs.length}
+          total={page.total}
+          more={more}
+          onMore={onMore}
+        />
       )}
     </section>
   );
 });
+
+// scroller is the nearest pane above el that scrolls vertically; null for the page itself.
+function scroller(el: HTMLElement): HTMLElement | null {
+  for (let p = el.parentElement; p; p = p.parentElement) {
+    const y = getComputedStyle(p).overflowY;
+    if (y === "auto" || y === "scroll") return p;
+  }
+  return null;
+}
+
+// The end of the commands' list: how many it shows of all, and, while some are left, what reads the next page once it
+// comes into view (an IntersectionObserver over the scrolled page), or when its button is pressed.
+function ListEnd({
+  shown,
+  total: all,
+  more,
+  onMore,
+}: {
+  shown: number;
+  total: number;
+  more: boolean;
+  onMore: () => void;
+}) {
+  const end = useRef<HTMLDivElement>(null);
+  const ask = useRef(onMore);
+  ask.current = onMore;
+  useEffect(() => {
+    const el = end.current;
+    if (!el || !more || typeof IntersectionObserver === "undefined") return;
+    // A margin under the view of the pane that scrolls: the next page is read before the reader reaches the end.
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) ask.current();
+      },
+      { root: scroller(el), rootMargin: "0px 0px 400px 0px" },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [more, shown]);
+  return (
+    <div className="gates-list-end" ref={end}>
+      <span className="muted-text">
+        {t("gates.shown", { shown, total: all })}
+      </span>
+      {more && (
+        <button type="button" className="text-link" onClick={onMore}>
+          {t("gates.show_more", { count: Math.min(PAGE, all - shown) })}
+        </button>
+      )}
+    </div>
+  );
+}
 
 function CommandRows({
   cost,
@@ -807,8 +1052,8 @@ function CommandRunList({
   );
 }
 
-// The waits for each gate: a median and a 90th percentile, never a sum or a mean (Statistics' rule); the most held
-// WAITS_SHOWN first, the rest on demand.
+// The waits for each gate in each project: a median and a 90th percentile, never a sum or a mean (Statistics' rule);
+// the most held WAITS_SHOWN first, the rest on demand.
 function GateWaitsCard({ waits }: { waits: readonly GateWaits[] }) {
   const [all, setAll] = useState(false);
   const shown = all ? waits : waits.slice(0, WAITS_SHOWN);
@@ -829,6 +1074,7 @@ function GateWaitsCard({ waits }: { waits: readonly GateWaits[] }) {
             <thead>
               <tr>
                 <th scope="col">{t("gates.col_gate")}</th>
+                <th scope="col">{t("gates.col_project")}</th>
                 <th scope="col" className="num-col">
                   {t("gates.col_holds")}
                 </th>
@@ -848,10 +1094,11 @@ function GateWaitsCard({ waits }: { waits: readonly GateWaits[] }) {
             </thead>
             <tbody>
               {shown.map((w) => (
-                <tr key={w.gate} className="gates-wait-row">
+                <tr key={`${w.gate}|${w.project}`} className="gates-wait-row">
                   <th scope="row">
-                    <code>{w.gate}</code>
+                    <code>{gateIn(w.gate, w.project).name}</code>
                   </th>
+                  <td>{projectName(gateIn(w.gate, w.project).project)}</td>
                   <td className="num-col">{w.holds}</td>
                   <td className="num-col">{waitText(w.p50Seconds)}</td>
                   <td className="num-col">{waitText(w.p90Seconds)}</td>

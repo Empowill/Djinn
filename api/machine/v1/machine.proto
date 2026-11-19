@@ -592,6 +592,12 @@ message Gate {
   // The tasks of those who wait for it, by identifier, the next one first: a waiter outside any task is left out. The
   // window counts a task's worker that waits for a gate as waiting for a place.
   repeated string waiting_task_ids = 10;
+  // Project of its holder, by name; empty when nobody holds it or its holder is outside any project. A gate a project
+  // declares (stack@dolmen) is that project's; a gate named for the machine (lint, e2e) is one for every project, held
+  // by a worker of one of them.
+  string project = 11;
+  // Projects of those who wait for it, by name, in the order of waiting: empty for a waiter outside any project.
+  repeated string waiting_projects = 12;
 }
 
 message GateServiceHoldRequest {
@@ -815,12 +821,12 @@ message GatesSummary {
   int32 long_waits = 7;
   // The command of the highest peak memory, its recent runs left out; absent when none was measured.
   CommandCost peak = 8;
-  // The waits for each gate, the most held first.
+  // The waits for each gate in each project, the most held first.
   repeated GateWaits gates = 9;
 }
 
-// GateWaits is the waits for a gate over the recent runs held under it: a median and a 90th percentile, never a sum
-// or a mean (the Statistics tab's rule).
+// GateWaits is the waits for a gate in a project over the recent runs held under it: a median and a 90th percentile,
+// never a sum or a mean (the Statistics tab's rule).
 message GateWaits {
   // Gate name.
   string gate = 1;
@@ -838,6 +844,8 @@ message GateWaits {
   CommandRun last = 7;
   // The command of that run.
   string last_command = 8;
+  // Project of the commands that held it, by name: a gate is counted apart for each project whose workers held it.
+  string project = 9;
 }
 
 message CommandServiceRecordRequest {

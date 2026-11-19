@@ -332,10 +332,11 @@
                   that still runs: past three times its usual hold, its lead hears of it. Every other command of a Claude worker that neither reads nor edits is
                   admitted first, measured, and, when heavy, takes its turn. Djinn's own checks to merge a task's work or
                   push a branch go before the workers' requests, and on a machine of more than one slot, one stays free for
-                  them: what ends a task never waits behind workers. The Gates tab of the Hourglass shows who holds each gate now,
-                  who waits, and which command takes the most time, 25 commands to a page under a summary of them all; over the last hour, 6 hours or day, one lane per gate under
+                  them: what ends a task never waits behind workers. The Gates tab of the Hourglass shows, by project, who holds each gate now,
+                  who waits, and which command takes the most time, 25 more commands read each time you scroll to the end of the list, under a summary of them all; over the last hour, 6 hours or day, each project with one lane per gate under
                   the workers that run, each request coloured by its task's kind, hatched while it waits, plain while it holds,
-                  then a Sankey from task kinds to the named gates to their waits. Each hold stays three months in Djinn's database, past a restart:
+                  then a Sankey from the projects to their named gates to their waits. A gate a project declares is its own; one of the
+                  machine, as lint, is one turn for every project and shows under each project that holds it or waits for it. Each hold stays three months in Djinn's database, past a restart:
                   <code>djinn gate history --minutes 360</code> gives the last 6 hours, each hold with its task's kind, beside
                   the workers' runs.
                 </p>

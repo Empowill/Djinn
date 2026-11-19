@@ -32,6 +32,7 @@ func TestTake(t *testing.T) {
 		t.Parallel()
 		f := &tasks{rank: map[string]int{"W1": 0, "W2": 0}}
 		g := New(nil, nil, f)
+		g.ProjectResolver(func(taskID, _ string) string { return map[string]string{"W1": "djinn", "W2": "dolmen"}[taskID] })
 		first := await(t, func() <-chan func() { c, _ := take(t, g, "Codegen", "W1"); return c }(), "first grant")
 		second, waits := take(t, g, "codegen", "W2")
 		if why := times(await(t, waits, "reason")); why != "held by W1, for Ns" {
@@ -43,6 +44,10 @@ func TestTake(t *testing.T) {
 		if l := g.List(); len(l) != 2 || l[0].Name != "codegen" || l[0].HolderTaskID != "W1" || !slices.Equal(l[0].Waiting, []string{"W2"}) ||
 			!slices.Equal(l[0].WaitingTaskIDs, []string{"W2"}) || l[1].WaitingTaskIDs != nil {
 			t.Errorf("list = %+v", l)
+		}
+		// Each says its project: the holder's, and the waiters' in their order; a holder outside any task has none.
+		if l := g.List(); l[0].Project != "djinn" || !slices.Equal(l[0].WaitingProjects, []string{"dolmen"}) || l[1].Project != "" {
+			t.Errorf("projects = %+v", l)
 		}
 		// What a task holds, a worker that waits holding nothing; the holder outside any task is no task's.
 		if !slices.Equal(g.Held("W1"), []string{"codegen"}) || g.Held("W2") != nil || g.Held("") != nil {

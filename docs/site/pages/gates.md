@@ -221,13 +221,17 @@ shared.
 - **The status bar** counts the gates held: **2 gates held**.
 - **A task's card** counts the time its worker spent **waiting gate**.
 - **A task's events** say each gate it asked for, waited for and why, took, and gave back.
-- **The Hourglass**, on its **Gates** tab, shows who holds each gate now and who waits; draws, over the last hour, 6
-  hours or day, one lane per gate under the workers that run, each request in its task's colour, hatched while it waits
-  for its gate; follows the named gates' requests from their task's kind to their gate to their wait; and lists each
-  command admitted under a gate, the most total time first, with what it cost and how long it waited. It stays light
-  under load: its figures and the waits for each gate come summed over every command, the commands come 25 to a page,
-  and a command's recent runs only when you open its line (20, then all on a click). Past six free gates and eight
-  gates' waits, the rest folds behind a link. After its first read, the tab asks the history only for what changed.
+- **The Hourglass**, on its **Gates** tab, shows by project who holds each gate now and who waits; draws, over the
+  last hour, 6 hours or day, under the workers that run, each project with one lane per gate its workers asked for,
+  each request in its task's colour, hatched while it waits for its gate; follows the named gates' requests from their
+  project to its gates to their wait, each flow in its task's colour; and lists each command admitted under a gate, the
+  most total time first, with what it cost and how long it waited. A gate a project declares is that project's alone; a
+  gate of the machine (lint, e2e) is one turn for every project, and shows under each project whose workers hold it or
+  wait for it, held by another project's worker when it is. It stays light under load: its figures and the waits for each
+  gate in each project come summed over every command, the commands 25 at a time, the next 25 read as you scroll to the
+  end of the list, and a command's recent runs only when you open its line (20, then all on a click). Past six free gates
+  of a project and eight gates' waits, the rest folds behind a link. After its first read, the tab asks the history only
+  for what changed.
 - **The project's configuration** lists the checks with how each last ran: on which commit, when, in how long, or why
   it failed.
 
