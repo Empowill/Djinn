@@ -1,0 +1,55 @@
+# The launch test on a Mac, by hand only: a djinn built from the branch given starts on a real Mac, with a data folder
+# of its own, admits a task on the fake provider (no model, no secret), runs one command under a gate in the worker
+# and one outside it. It prints what macOS reports (kern.memorystatus_vm_pressure_level, vm.swapusage,
+# memory_pressure), how many workers Djinn admits and why (djinn machine show), the task's start and end and the
+# gates' admissions, and fails when the work does not start within four minutes (W156, Q95; the rule it proves: W152).
+#
+# It never runs by itself, on a push or a pull request. To run it on a branch, once this file is on the default branch:
+#
+#   gh workflow run mac-launch.yml --ref <branch>
+#   gh run list --workflow mac-launch.yml --limit 1     # its run
+#   gh run watch <run-id>                               # follow it; gh run view <run-id> --log for the lines
+#
+# The same test runs on any machine: go tool task ui, go build -tags headless -o <bin> ./cmd/djinn, then
+# .github/mac-launch-test.sh <bin> <work folder> (off macOS, the macOS readings are skipped).
+name: Launch test (macOS)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mac-launch-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  launch:
+    name: Launch work on macOS (macos-15)
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # The djinn binary embeds the interface: build it first. The headless build needs no window.
+      - run: go tool task ui
+      - run: go build -tags headless -o "$RUNNER_TEMP/djinn" ./cmd/djinn
+      - run: .github/mac-launch-test.sh "$RUNNER_TEMP/djinn" "$RUNNER_TEMP/mac-launch"
+      - name: Keep the djinn's logs
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mac-launch-logs
+          path: |
+            ${{ runner.temp }}/mac-launch/home/logs
+            ${{ runner.temp }}/mac-launch/*.out
+            ${{ runner.temp }}/mac-launch/up.err
+          if-no-files-found: ignore
