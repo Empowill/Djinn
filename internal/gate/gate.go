@@ -776,7 +776,8 @@ func (g *Gates) Outside() (n, merges int) {
 // for the pressure and the memory only, a light command under a gate's name also for one that holds that name alone
 // and for a merge that waits for it. A heavy command, gate or admission, also waits while another task's heavy command
 // holds its own, and a merge or a push that waits so keeps the turn from the heavy commands of the workers; one under a
-// gate's name does not wait for the light commands that share it.
+// gate's name does not wait for the light commands that share it. On macOS, a heavy command beside a measured holder
+// also waits while the system reports warning memory pressure (Policy.Warned), as long as for the memory at most.
 func (g *Gates) pass(ctx context.Context) {
 	var snap machine.Snapshot
 	var policy machine.Policy
@@ -895,7 +896,11 @@ func (g *Gates) pass(ctx context.Context) {
 			why = "a merge or a push goes first: " + mergeWhy[heavyTurn]
 			cause, kind = "merge first: "+mergeCause[heavyTurn], machinev1.GateWaitCause_GATE_WAIT_CAUSE_MERGE_FIRST
 		default:
-			if why = policy.Room(snap, w.what, w.peak, held); why != "" {
+			why = policy.Room(snap, w.what, w.peak, held)
+			if why == "" && w.heavy {
+				why = policy.Warned(snap, w.what, held)
+			}
+			if why != "" {
 				if w.memory.IsZero() {
 					w.memory = time.Now()
 				}

@@ -34,6 +34,12 @@ func darwinAvailable(total uint64, vmStat []byte, read func(name string) (uint32
 // out lacks one of them or its page size.
 func vmStatAvailable(total uint64, out []byte) (uint64, bool) {
 	page, counts := parseVMStat(out)
+	return countsAvailable(total, page, counts)
+}
+
+// countsAvailable gives total less Activity Monitor's Memory Used from counts, page counts under vm_stat's labels,
+// whether vm_stat printed them or host_statistics64 gave them; false when one lacks, or the page size.
+func countsAvailable(total, page uint64, counts map[string]uint64) (uint64, bool) {
 	anonymous, ok1 := counts["Anonymous pages"]
 	purgeable, ok2 := counts["Pages purgeable"]
 	wired, ok3 := counts["Pages wired down"]
@@ -87,4 +93,12 @@ func pagesAvailable(page, total uint64, read func(name string) (uint32, error)) 
 		return total
 	}
 	return available
+}
+
+// pagesCover says whether filed pages of page bytes, every page the kernel files (hostVMCounts), make about total,
+// from half to one and a half: a page size that is not the counts' own (a process translated by Rosetta reads a
+// 4 KiB page of a 16 KiB kernel) falls out, and vm_stat is read instead.
+func pagesCover(total, page, filed uint64) bool {
+	bytes := filed * page
+	return total > 0 && bytes >= total/2 && bytes <= total+total/2
 }
