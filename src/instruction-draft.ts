@@ -9,6 +9,17 @@ export interface InstructionDraft {
   error: string;
   // What became of the last text: gone to the lead, or waiting in its terminal for the developer's own line.
   notice: "" | "sent" | "waiting";
+  // Files pasted into the box (Ctrl+V), sent with the text (LeadService.Tell files), in the order pasted.
+  files: readonly PastedFile[];
+}
+
+// A file pasted into the box: the file, and for an image a small thumbnail (a data URL) and its size in pixels, once
+// drawn.
+export interface PastedFile {
+  id: string;
+  file: File;
+  thumb?: string;
+  dims?: string;
 }
 
 const empty: InstructionDraft = {
@@ -16,6 +27,7 @@ const empty: InstructionDraft = {
   busy: false,
   error: "",
   notice: "",
+  files: [],
 };
 const drafts = new WeakMap<
   Store,
@@ -48,10 +60,11 @@ export function createDraft() {
       if (shown) this.set({ text, error: "", notice: "" });
       else state = { ...state, text };
     },
-    // begin locks the draft and gives the text to send, trimmed; nothing while a send runs or for a blank text.
+    // begin locks the draft and gives the text to send, trimmed; nothing while a send runs, or for a blank text
+    // with no file.
     begin() {
       const text = state.text.trim();
-      if (state.busy || !text) return;
+      if (state.busy || (!text && state.files.length === 0)) return;
       this.set({ busy: true, error: "", notice: "" });
       return text;
     },

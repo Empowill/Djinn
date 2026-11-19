@@ -233,7 +233,9 @@ func Handlers(s *store.Store, opts ...Option) map[string]http.Handler {
 	out[p] = h
 	p, h = planv1connect.NewInboxServiceHandler(&Inbox{Wishes: wishes}, opt)
 	out[p] = h
-	p, h = planv1connect.NewLeadServiceHandler(&LeadService{Wishes: wishes, Usage: o.usage}, opt)
+	// Its request holds the files a message hands the lead (Tell): up to 10 of 20 MB each.
+	p, h = planv1connect.NewLeadServiceHandler(&LeadService{Wishes: wishes, Usage: o.usage}, opt,
+		connect.WithReadMaxBytes(maxTellBytes))
 	out[p] = h
 	tilasms := &Tilasms{Store: s, Home: o.home, Show: o.show, URL: o.url, Marks: marks, Wake: wishes.Queued, Questions: questions,
 		Publisher: o.publisher}

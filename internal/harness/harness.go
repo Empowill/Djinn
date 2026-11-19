@@ -1614,7 +1614,7 @@ func (h *Harness) launch(
 	spec := Spec{
 		TaskID: task.GetId(), Dir: dir, ReadOnly: readOnly, Permissions: perms, Prompt: prompt, Model: model,
 		MaxBudgetUSD: providerBudget(task), Resume: task.GetForkSession(), Fork: task.GetForkSession() != "",
-		Skills: skills, SkillsDir: skillsDir, Restart: task.GetRestart(), ReadDirs: plan.TilasmDirs(h.home, prompt),
+		Skills: skills, SkillsDir: skillsDir, Restart: task.GetRestart(), ReadDirs: plan.ReadDirs(h.home, prompt),
 	}
 	spec.containers = h.containerCaps(project)
 	spec.unadmitted = !h.projectAdmits(project)

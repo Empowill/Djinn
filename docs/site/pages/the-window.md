@@ -393,6 +393,17 @@ task done, an instruction to a running worker. A key you type stays in the field
 and under load. The page changes only when what it shows depends on your text, as the send button that your first
 letter enables. A note keeps up to 8000 characters; its count shows from 6400, and turns warm from 7600.
 
+### Files pasted into Write to the Djinn
+
+Paste a screenshot or a file into **Write to the Djinn** (Ctrl+V, Cmd+V on a Mac): it becomes a chip above your text, a
+thumbnail and the size for an image, the name and size for any other file, and its cross removes it before you send.
+Up to 10 files of 20 MB each go with one message; a larger file, or one past the tenth, is left out and the box says
+so. A file alone is sent too, without a word. Djinn keeps each file in the wish, in the files folder of the wish in its
+data folder (the lead's own files folder for a message about no wish), and puts a block of kind file on the wish that
+names it. The Djinn's message then ends with a line per file, Files: its path, its type and its size; whatever its
+agent, the Djinn opens it with its own file tool, and names the path in a worker's prompt when the worker needs it: the
+worker is given that folder to read. From the command line, djinn lead tell takes the same files, a path each.
+
 ## Keys
 
 | Keys | What they do |

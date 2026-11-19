@@ -4725,7 +4725,8 @@ service LeadService {
   // queue. The text waits while something is being typed there or a choice is on screen, then goes; texts arrive in
   // the order written. About a wish, it starts with "About wish <title> (<id>):". The lead must run in its terminal:
   // djinn lead resume starts it. While Djinn drives the lead, the text is an event of its queue instead, whole: the
-  // next batch's session reads it, and a text written while a batch runs waits for the next one. A worker cannot
+  // next batch's session reads it, and a text written while a batch runs waits for the next one. With --files, each
+  // file is kept in the wish and the text ends with a line "Files: <path> (<type>, <size>)" for it. A worker cannot
   // call it, and djinn mcp has no tool for it.
   rpc Tell(LeadServiceTellRequest) returns (LeadServiceTellResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
@@ -4999,15 +5000,33 @@ message LeadServiceEventResponse {
 }
 
 message LeadServiceTellRequest {
-  // What to say to the lead. Line breaks stay line breaks for an agent that takes a paste.
+  // What to say to the lead. Line breaks stay line breaks for an agent that takes a paste. Empty only with files.
   string text = 1 [
-    (buf.validate.field).required = true,
+    (djinn.v1.positional) = true,
     (buf.validate.field).string.max_len = 20000
   ];
   // The wish the text is about, if any.
   string wish_id = 2 [
     (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
     (buf.validate.field).string.uuid = true
+  ];
+  // Files handed to the lead with the text, a screenshot or a log, up to 10 of 20 MB each: each is kept in the wish's
+  // folder of Djinn's data folder (wishes/<wish>/files, lead/files without a wish), with a block of kind "file" on the
+  // wish, and the text ends with a line "Files: <path> (<type>, <size>)" for each, which the lead opens with its own
+  // file tool. Give a file's path, repeated for more.
+  repeated LeadFile files = 3 [(buf.validate.field).repeated.max_items = 10];
+}
+
+// A file given to the lead with a message (LeadServiceTellRequest.files).
+message LeadFile {
+  // Its name, as pasted: Djinn keeps it, made safe, after the time it came.
+  string name = 1 [(buf.validate.field).string.max_len = 255];
+  // Its media type, image/png for a screenshot; empty: Djinn tells it from the name or the bytes.
+  string type = 2 [(buf.validate.field).string.max_len = 255];
+  // Its bytes, at most 20 MB.
+  bytes data = 3 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).bytes.max_len = 20971520
   ];
 }
 
