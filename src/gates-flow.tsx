@@ -72,6 +72,8 @@ const LANE = 1.125;
 const GAP = 0.625;
 const HEAD = 1.5;
 const STRIP = 4.625;
+// A line of a label, in rem.
+const LINE = 1;
 
 // The kinds of task, as the window colours them: the workers in blue (code, correction, review), the watchers, the
 // investigations, the mockups, the ifrits, what held a gate outside a task (a terminal, the lead, Djinn's merges).
@@ -490,7 +492,9 @@ export const GatesFlow = memo(function GatesFlow({
   const sections = useMemo(() => projectSections(rows), [rows]);
   const tracks = useRef<HTMLDivElement>(null);
   const at = (ms: number) => pct((ms - start) / span);
-  const rowHeight = (r: GateRow) => `${Math.max(r.lanes, 2) * LANE + GAP}rem`;
+  // A lane is as tall as its lanes, and never shorter than its label: the gate's name, its requests, those stacked.
+  const rowHeight = (r: GateRow) =>
+    `${Math.max(Math.max(r.lanes, 2) * LANE + GAP, (r.over > 0 ? 3 : 2) * LINE + 0.25)}rem`;
   return (
     <section
       className="statistics-card gates-card gates-flow"
@@ -559,7 +563,7 @@ export const GatesFlow = memo(function GatesFlow({
       <div className="gates-flow-plot">
         <div className="gates-flow-labels">
           <div
-            className="gates-flow-label"
+            className="gates-flow-label gates-flow-running"
             style={{ height: `${STRIP + GAP}rem` }}
           >
             <span className="gates-flow-name">{t("gates.running")}</span>
@@ -584,26 +588,29 @@ export const GatesFlow = memo(function GatesFlow({
                 {projectName(sec.project)}
               </span>
             </div>,
-            ...sec.rows.map((r) => (
-              <div
-                key={r.key}
-                className="gates-flow-label"
-                style={{ height: rowHeight(r) }}
-              >
-                <code className="gates-flow-name">{r.gate}</code>
-                <span className="muted-text">
-                  {t("gates.row_sub", {
-                    count: r.requests,
-                    held: duration(r.heldMs / 1000),
-                  })}
-                </span>
-                {r.over > 0 && (
-                  <span className="muted-text">
-                    {t("gates.row_over", { count: r.over })}
-                  </span>
-                )}
-              </div>
-            )),
+            ...sec.rows.map((r) => {
+              // Each line holds on one line, cut with an ellipsis if need be: the label says it whole on hover.
+              const sub = t("gates.row_sub", {
+                count: r.requests,
+                held: duration(r.heldMs / 1000),
+              });
+              const over =
+                r.over > 0 ? t("gates.row_over", { count: r.over }) : "";
+              return (
+                <div
+                  key={r.key}
+                  className="gates-flow-label"
+                  style={{ height: rowHeight(r) }}
+                  title={[r.gate, sub, over].filter(Boolean).join("\n")}
+                >
+                  <code className="gates-flow-name">{r.gate}</code>
+                  <span className="gates-flow-sub muted-text">{sub}</span>
+                  {over && (
+                    <span className="gates-flow-sub muted-text">{over}</span>
+                  )}
+                </div>
+              );
+            }),
           ])}
         </div>
         <div className="gates-flow-tracks" ref={tracks}>
@@ -1000,31 +1007,46 @@ export const GatesSankey = memo(function GatesSankey({
 
 function SankeyPlot({ flows, width }: { flows: Flows; width: number }) {
   const N = flows.total;
-  const H = Math.round(Math.max(200, Math.min(420, 60 + N * 0.6)));
   const PAD = 10;
   const NW = 12;
   const TOP = 8;
+  // A node's label is a line of 12 px at its middle: two labels' middles are never closer than SLOT.
+  const SLOT = 18;
   const cols: [string, number][][] = [
     flows.projects,
     flows.gates,
     flows.outcomes,
   ];
   const most = Math.max(...cols.map((c) => c.length));
-  const k = (H - TOP * 2 - PAD * (most - 1)) / N;
+  const base = Math.round(Math.max(200, Math.min(420, 60 + N * 0.6)));
+  const k = (base - TOP * 2 - PAD * (most - 1)) / N;
   const label = Math.min(150, width * 0.22);
   const X = [label, width / 2 - NW / 2, width - Math.min(190, width * 0.26)];
-  const pos = cols.map((c) => {
-    const total = N * k + PAD * (c.length - 1);
-    let y = TOP + (H - TOP * 2 - total) / 2;
+  // A node starts PAD under the one above, and further down if their labels, at their middles, would come closer
+  // than SLOT: the plot grows past its height only for that.
+  const cut = cols.map((c) => {
+    let y = 0;
+    let mid = -Infinity;
     const out = new Map<
       string,
       { y: number; h: number; out: number; in: number }
     >();
     for (const [name, count] of c) {
       const h = Math.max(2, count * k);
+      y = Math.max(y, mid + SLOT - h / 2);
       out.set(name, { y, h, out: 0, in: 0 });
+      mid = y + h / 2;
       y += h + PAD;
     }
+    return { out, total: c.length ? y - PAD : 0 };
+  });
+  const H = Math.ceil(
+    Math.max(base, TOP * 2 + Math.max(...cut.map((c) => c.total))),
+  );
+  // Each column centred in the plot.
+  const pos = cut.map(({ out, total }) => {
+    const top = TOP + (H - TOP * 2 - total) / 2;
+    for (const p of out.values()) p.y += top;
     return out;
   });
   const name = (i: number, n: string) =>

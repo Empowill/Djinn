@@ -658,7 +658,12 @@ test("the Gates tab draws the lanes coloured by kind, the workers' strip and the
   ]);
   assert.match(
     flow,
-    /<code class="gates-flow-name">test<\/code><span class="muted-text">2 requests · 25m<\/span>/,
+    /<code class="gates-flow-name">test<\/code><span class="gates-flow-sub muted-text">2 requests · 25m<\/span>/,
+  );
+  // W160: the label says its lines whole on hover, the count cut with an ellipsis rather than wrapped over the name.
+  assert.match(
+    flow,
+    /<div class="gates-flow-label" style="height:[^"]+" title="test\n2 requests · 25m">/,
   );
   // The strip: the stacks by kind and the queue's line.
   assert.match(flow, /<path class="gk-watch" d="M/);
@@ -826,4 +831,55 @@ test("the commands read as the list scrolls: a page laid over those read before,
   // Fewer commands in all: the list is cut to them.
   page = s.mergePage(page, 0, [row("d")], 1);
   assert.equal(ids(page), "d");
+});
+
+// W160 (Q97): one gate busy, the others asked once or twice: their nodes are thin, but their labels keep a line apart.
+test("the Sankey keeps a line between two nodes' labels, however thin the nodes", () => {
+  const intervals = [];
+  for (let i = 0; i < 60; i++)
+    intervals.push(
+      held(
+        "lint",
+        `W${i}`,
+        K.WORK,
+        3000 - i * 40,
+        3000 - i * 40,
+        2990 - i * 40,
+      ),
+    );
+  for (const [g, n] of [
+    ["e2e", 1],
+    ["fmt", 2],
+    ["paid", 1],
+    ["stack", 1],
+    ["codegen", 1],
+  ])
+    for (let i = 0; i < n; i++)
+      intervals.push(
+        held(g, `W${g}${i}`, K.WORK, 600 - i * 10, 600 - i * 10, 590 - i * 10, {
+          project: "dolmen",
+        }),
+      );
+  const html = s.renderToStaticMarkup(
+    h(s.GatesTab, { initialHistory: { ...shared, intervals } }),
+  );
+  const sankey = html.slice(
+    html.indexOf('class="statistics-card gates-card gates-sankey"'),
+  );
+  const texts = [
+    ...sankey.matchAll(/<text x="([\d.]+)" y="([\d.]+)"[^>]*>([^<]+)<\/text>/g),
+  ].map(([, x, y, text]) => ({ x: Number(x), y: Number(y), text }));
+  assert.equal(texts.length, 2 + 6 + 1);
+  // By column, the labels top to bottom: each a line (18 px) under the one above, and inside the plot.
+  const height = Number(sankey.match(/<svg[^>]* height="(\d+)"/)[1]);
+  const columns = Map.groupBy(texts, (t) => t.x);
+  for (const column of columns.values())
+    for (let i = 0; i < column.length; i++) {
+      assert.ok(column[i].y - 12 >= 0 && column[i].y <= height, column[i].text);
+      if (i > 0)
+        assert.ok(
+          column[i].y - column[i - 1].y >= 18 - 1e-9,
+          `${column[i - 1].text} / ${column[i].text}`,
+        );
+    }
 });
