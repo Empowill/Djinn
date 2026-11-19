@@ -1,7 +1,7 @@
 #!/bin/sh
 # The launch test on a Mac (W156): proves that a djinn built from a branch admits and runs work on a real Mac, where the
 # kernel's memory pressure decides the workers and the gates (W152). Run by hand through
-# .github/workflows/mac-launch.yml; it runs on Linux too, the macOS readings skipped.
+# .github/workflows/ci.yml (job mac-launch); it runs on Linux too, the macOS readings skipped.
 #
 # Usage: mac-launch-test.sh <djinn binary> <work folder>
 #
