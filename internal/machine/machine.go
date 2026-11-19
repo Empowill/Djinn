@@ -49,7 +49,16 @@ type Snapshot struct {
 	WorkersResident uint64
 }
 
-// macOS's memory pressure levels that may hold new workers: warning at the Minimal notch, critical from Medium up.
+// ByPressure says whether the system's own memory pressure level judges the memory instead of the memory available:
+// on macOS, which compresses then swaps rather than refuse, and always shows little free (L30, option 2). The memory
+// available then holds no worker back (Slots, Monitor.Available) and no gate (Room): the level does (Pressure,
+// GatePressure, Warned). The memory available stays what the window shows.
+func (s Snapshot) ByPressure() bool {
+	return s.OS == "darwin" && s.MemoryLevel > 0
+}
+
+// macOS's memory pressure levels that may hold new workers: warning at the Minimal and Medium notches, critical from
+// High up.
 const (
 	MemoryWarning  = 2
 	MemoryCritical = 4
@@ -83,8 +92,8 @@ type Policy struct {
 	MemoryPressure float64
 	// Without PSI: when the load average per core reaches LoadPerCore, or the memory available falls below
 	// MemoryFree of the total. On macOS, instead of MemoryFree, the system's own memory pressure level at MemoryLevel
-	// or above: warning (MemoryWarning) at Minimal only, since warning is frequent and passing on a busy Mac;
-	// critical (MemoryCritical, also what 0 means) from Medium up.
+	// or above: warning (MemoryWarning) at Minimal and Medium, where no worker starts while the kernel compresses;
+	// critical (MemoryCritical, also what 0 means) from High up. The gates wait at critical only (GatePressure).
 	LoadPerCore float64
 	MemoryFree  float64
 	MemoryLevel int
@@ -272,10 +281,10 @@ func NotchPolicy(notch djinnv1.LoadNotch) Policy {
 			// Standard PSI thresholds: 65% CPU wait (above a test run's bursts, W347), 10% memory wait.
 			CPUPressure:    65,
 			MemoryPressure: 10,
-			// Standard non-PSI thresholds: 2.0 load per core or <10% free RAM, or macOS's critical.
+			// Standard non-PSI thresholds: 2.0 load per core or <10% free RAM, or macOS's warning.
 			LoadPerCore: 2.0,
 			MemoryFree:  0.10,
-			MemoryLevel: MemoryCritical,
+			MemoryLevel: MemoryWarning,
 			// 512 MiB gate margin: default gate margin.
 			CommandMargin:  512 << 20,
 			WorkerPeak:     GiB,
@@ -506,14 +515,14 @@ func (p Policy) CPUSlots(s Snapshot) int {
 // MemorySlots returns the worker slots allowed by memory at 100% (usable memory / worker forecast) before notch scaling:
 // usable memory is available plus the running workers' own, minus reserve (UsableMemory); forecast is measured peak
 // per worker or default; at least 1, up to MaxWorkers.
-// A machine whose memory is unknown returns MaxWorkers.
+// A machine whose memory is unknown, or judged by its pressure level (ByPressure), returns MaxWorkers.
 func (p Policy) MemorySlots(s Snapshot, peaks ...uint64) int {
 	avail := p.CommitMemory(s)
 	maxW := p.MaxWorkers
 	if maxW <= 0 {
 		maxW = 16
 	}
-	if avail == 0 {
+	if avail == 0 || s.ByPressure() {
 		return maxW
 	}
 	usable := p.UsableMemory(s)
@@ -556,6 +565,10 @@ func (p Policy) BaseSlots(s Snapshot, peaks ...uint64) (int, string) {
 		maxW = 16
 	}
 
+	if s.ByPressure() {
+		// macOS's pressure level judges the memory (Pressure): the CPU rule alone counts the slots.
+		avail, cpuRule = 0, cpuRule+", the memory judged by macOS's pressure level"
+	}
 	rawMem := maxW
 	if avail > 0 {
 		usable := p.UsableMemory(s)
@@ -586,7 +599,8 @@ func BaseSlots(s Snapshot) int {
 // Workers allowed = the notch's share of min(what the CPU rule allows, what the memory allows),
 // where memory allows (memory Djinn may engage at that notch) / (the measured peak forecast per worker); the memory
 // Djinn may engage counts its running workers' own back in (CommitMemory), so a worker's memory does not take a slot
-// from the others.
+// from the others. On macOS (ByPressure), the memory rule drops: the notch's share of the CPU rule counts the workers,
+// and the pressure level holds new ones (Pressure).
 func (p Policy) Slots(s Snapshot, peaks ...uint64) (int, string) {
 	if p.Workers > 0 {
 		return p.Workers, fmt.Sprintf("%d, set by djinn up --workers", p.Workers)
@@ -595,7 +609,7 @@ func (p Policy) Slots(s Snapshot, peaks ...uint64) (int, string) {
 	share := p.share()
 	workers := p.BarSlots(s)
 	avail := p.CommitMemory(s)
-	if avail > 0 {
+	if avail > 0 && !s.ByPressure() {
 		memEngaged := p.CommittableLimit(avail)
 		forecast := p.WorkerForecast(peaks...)
 		memAllowed := max(1, int(memEngaged/forecast))
@@ -638,12 +652,24 @@ type NotchSlots struct {
 // Pressure says why the machine is under pressure, or "" when it is not. Under pressure, no worker starts and no
 // gate is granted; what runs goes on.
 func (p Policy) Pressure(s Snapshot) string {
+	return p.pressure(s, cmp.Or(p.MemoryLevel, MemoryCritical))
+}
+
+// GatePressure says why the machine is under pressure for the gates, or "" when it is not: Pressure, but macOS's level
+// holds a gate at critical only, whatever the notch. At warning, only a heavy command waits, and for MemoryWait at
+// most (Warned): warning is frequent and passing on a busy Mac, and a gate waiting on it without end held the work.
+func (p Policy) GatePressure(s Snapshot) string {
+	return p.pressure(s, MemoryCritical)
+}
+
+// pressure is Pressure, macOS's memory pressure level holding from level up.
+func (p Policy) pressure(s Snapshot, level int) string {
 	switch {
 	case s.CPU != nil && s.CPU.Some >= p.CPUPressure:
 		return fmt.Sprintf("tasks waited for the CPU %.0f%% of the last 10 s (%.0f%% at most)", s.CPU.Some, p.CPUPressure)
 	case s.Memory != nil && s.Memory.Some >= p.MemoryPressure:
 		return fmt.Sprintf("tasks waited for memory %.0f%% of the last 10 s (%.0f%% at most)", s.Memory.Some, p.MemoryPressure)
-	case s.MemoryLevel >= cmp.Or(p.MemoryLevel, MemoryCritical):
+	case s.MemoryLevel >= level:
 		if s.MemoryLevel >= MemoryCritical {
 			return "the system reports critical memory pressure"
 		}
@@ -666,9 +692,10 @@ const CommandPeakShare = 0.5
 // memory available, less held (the peaks of the commands holding a gate, which may not have reached them yet), holds
 // the peak plus CommandMargin, the peak counted at CommandPeakShare of the memory at most. A command never measured
 // (peak 0), a machine whose memory is unknown, or a command that nothing measured holds a gate beside (held 0) has
-// room: alone, waiting frees nothing for it (W139).
+// room: alone, waiting frees nothing for it (W139). On macOS (ByPressure), the memory available never holds a command:
+// the pressure level does (GatePressure, Warned).
 func (p Policy) Room(s Snapshot, command string, peak, held uint64) string {
-	if peak == 0 || s.MemoryTotal == 0 || held == 0 {
+	if peak == 0 || s.MemoryTotal == 0 || held == 0 || s.ByPressure() {
 		return ""
 	}
 	capped := ""
@@ -692,7 +719,18 @@ func (p Policy) Warned(s Snapshot, command string, held uint64) string {
 	if held == 0 || s.MemoryLevel < MemoryWarning {
 		return ""
 	}
-	return fmt.Sprintf("the system reports memory pressure, and %s is heavy", command)
+	return fmt.Sprintf("the system reports %s memory pressure, and %s is heavy", levelName(s.MemoryLevel), command)
+}
+
+// levelName names macOS's memory pressure level.
+func levelName(level int) string {
+	switch {
+	case level >= MemoryCritical:
+		return "critical"
+	case level >= MemoryWarning:
+		return "warning"
+	}
+	return "normal"
 }
 
 // Typical is the typical peak memory of a worker, and how many measured peaks gave it: the median of the first
@@ -935,7 +973,7 @@ func (m *Monitor) machine() (Snapshot, func() uint64) {
 	if m.read == nil || err != nil {
 		s = Snapshot{Cores: runtime.NumCPU()}
 	}
-	s.OS, s.Arch = runtime.GOOS, runtime.GOARCH
+	s.OS, s.Arch = cmp.Or(s.OS, runtime.GOOS), cmp.Or(s.Arch, runtime.GOARCH)
 	if s.Cores == 0 {
 		s.Cores = runtime.NumCPU()
 	}
@@ -982,9 +1020,14 @@ func notchSlots(current Policy, s Snapshot, peaks ...uint64) []NotchSlots {
 	return out
 }
 
-// Available is the memory available to new programs now, in bytes; 0 when unknown.
+// Available is the memory available to new programs now that holds a worker back (Policy.WorkerRoom), in bytes; 0
+// when unknown, and on macOS (Snapshot.ByPressure), where the pressure level holds the workers instead.
 func (m *Monitor) Available() uint64 {
-	return m.Snapshot().available()
+	s := m.Snapshot()
+	if s.ByPressure() {
+		return 0
+	}
+	return s.available()
 }
 
 // available is the memory available to new programs on the machine s, in bytes; 0 when unknown.

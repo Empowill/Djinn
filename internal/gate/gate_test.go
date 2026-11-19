@@ -383,7 +383,7 @@ func TestTake(t *testing.T) {
 		await(t, light, "the light command's grant under warning")()
 
 		heavy, waits := run(t, g, "e2e", "W2", "go tool task e2e")
-		const short = "the system reports memory pressure, and go tool task e2e is heavy"
+		const short = "the system reports warning memory pressure, and go tool task e2e is heavy"
 		if why := await(t, waits, "reason"); why != short {
 			t.Errorf("waits because %q", why)
 		}
@@ -407,6 +407,37 @@ func TestTake(t *testing.T) {
 		notGranted(t, heavy, "a heavy command under warning")
 		m.setLevel(1)
 		await(t, heavy, "the heavy command's grant once the pressure is normal")()
+	})
+
+	// On macOS the pressure level judges the memory, not the GB free (L30): at normal pressure a command peaking past
+	// the memory available goes beside a measured holder; at warning, a light one goes too; at critical, all wait.
+	t.Run("macOS: the level decides, not the memory free", func(t *testing.T) {
+		t.Parallel()
+		m := calm()
+		m.setLevel(1)
+		m.setFree(18 * machine.GiB / 10)
+		g := New(m, peaks{"go tool task e2e": 7 * machine.GiB, "go vet ./...": 100 << 20, "go tool task lint": 200 << 20}, nil)
+		g.tick = 10 * time.Millisecond
+		g.memWait = time.Hour
+		vet, _ := run(t, g, "vet", "", "go vet ./...")
+		giveVet := await(t, vet, "the vet's grant")
+		defer giveVet()
+		heavy, _ := run(t, g, "e2e", "", "go tool task e2e")
+		await(t, heavy, "the grant of a 7 GB command beside a holder, 1.8 GB free, at normal pressure")()
+
+		m.setLevel(machine.MemoryWarning)
+		light, _ := run(t, g, "lint", "", "go tool task lint")
+		await(t, light, "the light command's grant at warning")()
+
+		m.setLevel(machine.MemoryCritical)
+		lint, waits := run(t, g, "lint", "", "go tool task lint")
+		const critical = "the machine is under pressure: the system reports critical memory pressure"
+		if why := await(t, waits, "reason"); why != critical {
+			t.Errorf("waits because %q", why)
+		}
+		notGranted(t, lint, "a light command at critical")
+		m.setLevel(1)
+		await(t, lint, "the grant once the pressure is normal")()
 	})
 
 	// A waiter that leaves is forgotten; the gate goes to the next one.

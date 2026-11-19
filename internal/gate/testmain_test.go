@@ -193,8 +193,16 @@ func (b *box) Snapshot() machine.Snapshot {
 	defer b.mu.Unlock()
 	return machine.Snapshot{
 		Cores: 8, MemoryTotal: 16 * machine.GiB, MemoryAvailable: b.free,
-		CPU: &machine.Pressure{Some: b.cpu}, Memory: &machine.Pressure{}, MemoryLevel: b.level,
+		CPU: &machine.Pressure{Some: b.cpu}, Memory: &machine.Pressure{}, MemoryLevel: b.level, OS: b.os(),
 	}
+}
+
+// os is the box's system: macOS once it reports a memory pressure level, Linux before.
+func (b *box) os() string {
+	if b.level > 0 {
+		return "darwin"
+	}
+	return "linux"
 }
 
 func (b *box) Policy() machine.Policy { return machine.DefaultPolicy() }

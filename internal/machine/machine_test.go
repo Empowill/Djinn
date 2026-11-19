@@ -304,6 +304,22 @@ func TestPolicy_Slots(t *testing.T) {
 		// workers and 2 merges waiting, no process.
 		{name: "developer's machine at high", notch: djinnv1.LoadNotch_LOAD_NOTCH_HIGH, s: slotMachines[3], want: 6,
 			rule: "6: 80% of 8"},
+
+		// A 16 GB Mac, 4 GB available as macOS counts it (L30): its pressure level judges the memory, not the GB
+		// free, so the notch's share of the CPU rule counts the workers, whatever the level (Pressure holds new ones).
+		// The same machine read as Linux gets 1.
+		{name: "16 GB Mac medium, 10 cores", notch: djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM, s: mac16(10, 1), want: 3,
+			rule: "3: 50% of 5 (5: one per 2 cores of 10, the memory judged by macOS's pressure level)"},
+		{name: "16 GB Mac medium, 8 cores", notch: djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM, s: mac16(8, 1), want: 2},
+		{name: "16 GB Mac max, 10 cores", notch: djinnv1.LoadNotch_LOAD_NOTCH_MAX, s: mac16(10, 1), want: 5},
+		{name: "16 GB Mac max, 8 cores", notch: djinnv1.LoadNotch_LOAD_NOTCH_MAX, s: mac16(8, 1), want: 4},
+		{name: "16 GB Mac medium at warning", notch: djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM, s: mac16(10, MemoryWarning), want: 3},
+		{name: "16 GB Mac max at critical", notch: djinnv1.LoadNotch_LOAD_NOTCH_MAX, s: mac16(10, MemoryCritical), want: 5},
+		{name: "16 GB Mac, its workers measured", notch: djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM, s: mac16(10, 1),
+			peaks: []uint64{3 * GiB}, want: 3},
+		{name: "16 GB Mac, level unknown", notch: djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM, s: mac16(10, 0), want: 1},
+		{name: "same machine on Linux", notch: djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM,
+			s: Snapshot{Cores: 10, MemoryTotal: 16 * GiB, MemoryAvailable: 4 * GiB}, want: 1},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -315,6 +331,11 @@ func TestPolicy_Slots(t *testing.T) {
 			}
 		})
 	}
+}
+
+// mac16 is a 16 GB Mac of cores, 4 GB available as macOS counts it, at memory pressure level.
+func mac16(cores, level int) Snapshot {
+	return Snapshot{OS: "darwin", Cores: cores, MemoryTotal: 16 * GiB, MemoryAvailable: 4 * GiB, MemoryLevel: level}
 }
 
 // TestBaseSlots: what the CPU rule and the memory allow at Medium, before a notch's share.
@@ -474,12 +495,12 @@ func TestPolicy_Pressure(t *testing.T) {
 		{"memory", def, Snapshot{Cores: 8, CPU: &Pressure{}, Memory: &Pressure{Some: 12}},
 			"tasks waited for memory 12% of the last 10 s (10% at most)"},
 		{"macOS critical", def, Snapshot{Cores: 8, MemoryLevel: 4, MemoryTotal: 16 * GiB}, "the system reports critical memory pressure"},
-		{"macOS warning", def, Snapshot{Cores: 8, MemoryLevel: 2, MemoryTotal: 16 * GiB}, ""},
-		// A Mac at warning, little memory free as macOS counts it, a load of 1.9 a core: below Medium's 2.
-		{"macOS busy", def, Snapshot{Cores: 10, MemoryLevel: 2, MemoryTotal: 16 * GiB, MemoryAvailable: GiB / 4, LoadKnown: true,
+		{"macOS warning", def, Snapshot{Cores: 8, MemoryLevel: 2, MemoryTotal: 16 * GiB}, "the system reports memory pressure"},
+		// A Mac at normal pressure, little memory free as macOS counts it, a load of 1.9 a core: below Medium's 2.
+		{"macOS busy", def, Snapshot{Cores: 10, MemoryLevel: 1, MemoryTotal: 16 * GiB, MemoryAvailable: GiB / 4, LoadKnown: true,
 			Load1: 19}, ""},
 		// The load rule holds on macOS too (LoadPerCore per notch): a test run at 3.4 a core holds at Medium.
-		{"macOS loaded", def, Snapshot{Cores: 10, MemoryLevel: 2, MemoryTotal: 16 * GiB, LoadKnown: true, Load1: 34},
+		{"macOS loaded", def, Snapshot{Cores: 10, MemoryLevel: 1, MemoryTotal: 16 * GiB, LoadKnown: true, Load1: 34},
 			"the load is 34.0 on 10 cores (2.0 a core at most)"},
 		{"macOS calm", def, Snapshot{Cores: 8, MemoryLevel: 1, MemoryTotal: 16 * GiB, MemoryAvailable: GiB / 2}, ""},
 		{"load without PSI", def, Snapshot{Cores: 4, LoadKnown: true, Load1: 9}, "the load is 9.0 on 4 cores (2.0 a core at most)"},
@@ -492,7 +513,8 @@ func TestPolicy_Pressure(t *testing.T) {
 	for _, notch := range append(ManualNotches, djinnv1.LoadNotch_LOAD_NOTCH_AUTO) {
 		p := NotchPolicy(notch)
 		warning := ""
-		if notch == djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL || notch == djinnv1.LoadNotch_LOAD_NOTCH_AUTO {
+		if notch == djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL || notch == djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM ||
+			notch == djinnv1.LoadNotch_LOAD_NOTCH_AUTO {
 			warning = "the system reports memory pressure"
 		}
 		cases = append(cases,
@@ -510,6 +532,30 @@ func TestPolicy_Pressure(t *testing.T) {
 				t.Errorf("Pressure = %q, want %q", got, c.want)
 			}
 		})
+	}
+}
+
+// TestPolicy_GatePressure: the gates wait for macOS's critical level only, whatever the notch: at warning, a heavy
+// command waits a bounded time (Warned), a light one goes. The other rules are Pressure's.
+func TestPolicy_GatePressure(t *testing.T) {
+	t.Parallel()
+	for _, notch := range append(ManualNotches, djinnv1.LoadNotch_LOAD_NOTCH_AUTO) {
+		p := NotchPolicy(notch)
+		for _, c := range []struct {
+			level int
+			want  string
+		}{{0, ""}, {1, ""}, {MemoryWarning, ""}, {MemoryCritical, "the system reports critical memory pressure"}} {
+			t.Run(fmt.Sprintf("%s at level %d", NotchName(notch), c.level), func(t *testing.T) {
+				t.Parallel()
+				if got := p.GatePressure(mac16(10, c.level)); got != c.want {
+					t.Errorf("GatePressure = %q, want %q", got, c.want)
+				}
+			})
+		}
+	}
+	cpu := Snapshot{Cores: 8, CPU: &Pressure{Some: 70}, Memory: &Pressure{}}
+	if got, want := DefaultPolicy().GatePressure(cpu), DefaultPolicy().Pressure(cpu); got != want || got == "" {
+		t.Errorf("GatePressure = %q, want Pressure's %q", got, want)
 	}
 }
 
@@ -533,6 +579,12 @@ func TestPolicy_Room(t *testing.T) {
 		{"held beyond the free", s, 300 << 20, 6 * GiB, "e2e peaks at 300 MiB, 4.0 GiB free, 4.0 GiB of it for the commands holding a gate"},
 		{"never measured", s, 0, 6 * GiB, ""},
 		{"memory unknown", Snapshot{}, 3 * GiB, GiB, ""},
+		// On macOS, the pressure level judges the memory (GatePressure, Warned): the GB free hold no command (L30).
+		{"16 GB Mac, normal", mac16(10, 1), 7 * GiB, GiB, ""},
+		{"16 GB Mac, warning", mac16(10, MemoryWarning), 7 * GiB, GiB, ""},
+		{"16 GB Mac, critical", mac16(10, MemoryCritical), 7 * GiB, GiB, ""},
+		{"16 GB Mac, level unknown", mac16(10, 0), 36 * GiB / 10, 100 << 20,
+			"e2e peaks at 3.6 GiB, 4.0 GiB free, 100 MiB of it for the commands holding a gate"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -548,15 +600,14 @@ func TestPolicy_Room(t *testing.T) {
 // alone, on Linux (no level) or at normal pressure, it does not.
 func TestPolicy_Warned(t *testing.T) {
 	t.Parallel()
-	const why = "the system reports memory pressure, and e2e is heavy"
 	cases := []struct {
 		name  string
 		level int
 		held  uint64
 		want  string
 	}{
-		{"warning", MemoryWarning, GiB, why},
-		{"critical", MemoryCritical, GiB, why},
+		{"warning", MemoryWarning, GiB, "the system reports warning memory pressure, and e2e is heavy"},
+		{"critical", MemoryCritical, GiB, "the system reports critical memory pressure, and e2e is heavy"},
 		{"normal", 1, GiB, ""},
 		{"linux", 0, GiB, ""},
 		{"alone", MemoryWarning, 0, ""},
@@ -930,6 +981,30 @@ func TestMonitor_Capacity(t *testing.T) {
 	mac.SetWorkerPeak(func() uint64 { return 0 })
 	if slots, rule, _ := mac.Capacity(); slots != 1 {
 		t.Errorf("none measured yet: %d slots, want 1 (%s)", slots, rule)
+	}
+}
+
+// TestMonitor_Available: the memory available holds the workers back (WorkerRoom) on Linux; on a Mac whose pressure
+// level is read, none: the level holds them (Pressure), the window still shows the memory available (L30).
+func TestMonitor_Available(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		name string
+		s    Snapshot
+		want uint64
+	}{
+		{"linux", Snapshot{OS: "linux", Cores: 10, MemoryTotal: 16 * GiB, MemoryAvailable: 4 * GiB}, 4 * GiB},
+		{"16 GB Mac", mac16(10, 1), 0},
+		{"16 GB Mac at warning", mac16(10, MemoryWarning), 0},
+		{"16 GB Mac, level unknown", mac16(10, 0), 4 * GiB},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			m := NewMonitor(DefaultPolicy(), func() (Snapshot, error) { return c.s, nil })
+			if got := m.Available(); got != c.want {
+				t.Errorf("Available = %d, want %d", got, c.want)
+			}
+		})
 	}
 }
 
