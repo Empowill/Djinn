@@ -19,7 +19,7 @@ and it ends when you say it is granted.
 | Merged work | Each task's work once merged, to review. | The Review tab |
 | Tilasms | The material that explains the wish: pages, diagrams, demonstrations. | The Tilasms tab |
 | Blocks | What the Djinn and the workers write down for one another. | The For agents tab |
-| History | The commands run for the wish, and the batches of the driven Djinn that touched it. | The History tab |
+| History | The commands run for the wish, and the batches of the driven Djinn that touched it. It follows the wish as it changes, every five seconds at most. | The History tab |
 
 Djinn keeps all of it, and the Djinn reads where the wish stands each time it turns to it: a wish is its own memory,
 and what was decided a week ago is still there, with why.

@@ -2,6 +2,7 @@ package plan
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -280,9 +281,14 @@ func TestExportImport(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := snap.Msg.GetExport()
-	if len(got.GetQuestions()) != 2 || len(got.GetBlocks()) != 2 || len(got.GetTasks()) != 1 || len(got.GetEvents()) != 3 {
-		t.Fatalf("snapshot after import = %d questions, %d blocks, %d tasks, %d events",
-			len(got.GetQuestions()), len(got.GetBlocks()), len(got.GetTasks()), len(got.GetEvents()))
+	if len(got.GetQuestions()) != 2 || len(got.GetBlocks()) != 2 || len(got.GetTasks()) != 1 {
+		t.Fatalf("snapshot after import = %d questions, %d blocks, %d tasks",
+			len(got.GetQuestions()), len(got.GetBlocks()), len(got.GetTasks()))
+	}
+	// The snapshot carries no event (W149): the store holds the three imported.
+	events, err := store.List[*planv1.TaskEvent](ctx, dst.store, store.Where{"task_id": got.GetTasks()[0].GetId()})
+	if err != nil || len(events) != 3 || len(got.GetEvents()) != 0 {
+		t.Fatalf("events after import = %d stored (%v), %d in the snapshot; want 3, 0", len(events), err, len(got.GetEvents()))
 	}
 	q := got.GetQuestions()[0]
 	if q.GetCode() != "Q01" || q.GetAnswer().GetChoice() != planv1.Choice_CHOICE_A || q.GetRecommendation() == "" || len(q.GetOptions()) != 2 {
@@ -529,5 +535,60 @@ func TestExportKeepsClosure(t *testing.T) {
 	if tasks := snap.Msg.GetExport().GetTasks(); len(tasks) != 1 || !proto.Equal(tasks[0].GetClosed(), closed) ||
 		tasks[0].GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
 		t.Errorf("tasks after import = %v, want W1 done with %v", tasks, closed)
+	}
+}
+
+// TestSnapshotLeavesEventsOut: the window's History tab reads a wish's snapshot each time the wish changes; a wish of
+// many tasks gave 91 MB, 89 of them its tasks' events, which the window decoded again at each change until it died
+// (W149). The snapshot carries the wish's commands and none of the events: they stay in the store, the export carries
+// them.
+func TestSnapshotLeavesEventsOut(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	c := serve(t)
+	wishID := c.wish(t)
+	big := strings.Repeat("a tool result as long as a file read whole ", 1000) // 43 KB.
+	err := c.store.Tx(ctx, func(tx *store.Tx) error {
+		if err := tx.Journal("test", "put", &planv1.Task{}); err != nil {
+			return err
+		}
+		for i := range 20 {
+			task := &planv1.Task{
+				Id: store.NewID(), WishId: wishID, Code: fmt.Sprintf("W%d", i+1), Title: "Work",
+				Status: planv1.TaskStatus_TASK_STATUS_DONE, CreateTime: timestamppb.Now(),
+			}
+			if err := tx.Put(task); err != nil {
+				return err
+			}
+			for seq := range 20 {
+				if err := tx.Put(&planv1.TaskEvent{
+					Id: store.NewID(), TaskId: task.GetId(), Seq: int64(seq + 1), CreateTime: timestamppb.Now(),
+					Kind: planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_RESULT, Text: big,
+				}); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	snap, err := c.wishes.Snapshot(ctx, connect.NewRequest(&planv1.WishServiceSnapshotRequest{WishId: wishID}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := snap.Msg.GetExport()
+	// 400 events of 43 KB: 17 MB with them, a few KB without.
+	if n, size := len(got.GetEvents()), proto.Size(snap.Msg); n != 0 || size > 1<<20 {
+		t.Errorf("snapshot = %d events, %d bytes; want none, under 1 MB", n, size)
+	}
+	if len(got.GetTasks()) != 20 || len(got.GetCommands()) == 0 {
+		t.Errorf("snapshot = %d tasks, %d commands; want 20 and the wish's making", len(got.GetTasks()), len(got.GetCommands()))
+	}
+	// The export still carries them all.
+	exp, err := decode(export(t, c, wishID, filepath.Join(t.TempDir(), "wish.djinn")))
+	if err != nil || len(exp.GetEvents()) != 400 {
+		t.Errorf("export = %d events (%v), want 400", len(exp.GetEvents()), err)
 	}
 }

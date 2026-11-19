@@ -9572,7 +9572,7 @@ export const WishServiceSnapshotRequestSchema: GenMessage<WishServiceSnapshotReq
  */
 export type WishServiceSnapshotResponse = Message<"plan.v1.WishServiceSnapshotResponse"> & {
   /**
-   * Everything the wish holds. Its project references carry the identifiers of this machine.
+   * What the wish holds, its tasks' events left out. Its project references carry the identifiers of this machine.
    *
    * @generated from field: plan.v1.WishExport export = 1;
    */
@@ -17760,7 +17760,8 @@ export const WishService: GenService<{
     output: typeof WishServiceBriefResponseSchema;
   },
   /**
-   * Everything a wish holds, as an export carries it, and its projects on this machine, for the window.
+   * What a wish holds, as an export carries it but without its tasks' events (most of a wish, read by task), and its
+   * projects on this machine, for the window.
    *
    * @generated from rpc plan.v1.WishService.Snapshot
    */

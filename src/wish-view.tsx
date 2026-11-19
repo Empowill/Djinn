@@ -105,6 +105,7 @@ import {
 } from "./data/format";
 import { ifritOut, litIfrits } from "./data/ifrit";
 import { type Entry, journal } from "./data/journal";
+import { type Spaced, spaced } from "./data/spaced";
 import { t } from "./i18n";
 import { useShownTheme } from "./theme";
 import { EmptyState } from "./empty-art";
@@ -2187,8 +2188,9 @@ export function WaitingTasks({
 
 // Journal is the History tab of the wish: the lead journal for that wish (past lead batches that touched it) and the
 // commands that changed it. The latest command entries show, the older ones fold behind a line (older.tsx).
-// WishService.Snapshot reads the whole wish, events and lead batches included: it is read when the tab opens, then
-// again as the wish changes.
+// WishService.Snapshot reads the wish, its commands and lead batches included, its tasks' events left out: it is read
+// when the tab opens, then again as the wish changes, one read at a time and HISTORY_SPACING_MS apart at least
+// (spaced.ts).
 function Journal({
   wish,
   onCount,
@@ -2201,28 +2203,43 @@ function Journal({
   const [error, setError] = useState("");
   // What the store read of the wish: a new one means the wish changed.
   const detail = useData((s) => s.details[wish.id]);
+  // reader reads the wish again as it changes (spaced.ts).
+  const reader = useRef<Spaced>(undefined);
   useEffect(() => {
-    let current = true;
     const ctrl = new AbortController();
-    clients.wishes
-      .snapshot({ wishId: wish.id }, { signal: ctrl.signal })
-      .then((res) => {
-        if (!current) return;
-        setExp(res.export);
-        setError("");
-        const cmds = journal(res.export).length;
-        const batches = res.export?.leadBatches?.length ?? 0;
-        onCount?.(cmds + batches);
-      })
-      .catch((err) => {
-        if (current && !ctrl.signal.aborted) setError(message(err));
-      });
+    reader.current = spaced(
+      () =>
+        clients.wishes
+          .snapshot({ wishId: wish.id }, { signal: ctrl.signal })
+          .then((res) => {
+            if (ctrl.signal.aborted) return;
+            setExp(res.export);
+            setError("");
+            const cmds = journal(res.export).length;
+            const batches = res.export?.leadBatches?.length ?? 0;
+            onCount?.(cmds + batches);
+          })
+          .catch((err) => {
+            if (!ctrl.signal.aborted) setError(message(err));
+          }),
+      HISTORY_SPACING_MS,
+    );
     return () => {
-      current = false;
+      reader.current?.stop();
+      reader.current = undefined;
       ctrl.abort();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps, @eslint-react/exhaustive-deps -- onCount is a stable callback from WishView
-  }, [clients, wish, detail]);
+  }, [clients, wish.id]);
+  // The first run follows the read the tab opens with.
+  const opened = useRef(true);
+  useEffect(() => {
+    if (opened.current) {
+      opened.current = false;
+      return;
+    }
+    reader.current?.changed();
+  }, [wish, detail]);
   const entries = useMemo(() => journal(exp), [exp]);
   const batches = useMemo(() => exp?.leadBatches ?? [], [exp]);
   const totalCount = entries.length + batches.length;
@@ -2263,6 +2280,9 @@ function Journal({
     </section>
   );
 }
+
+// The least time between two reads of the History tab.
+const HISTORY_SPACING_MS = 5000;
 
 export const JournalEntry = memo(function JournalEntry({
   entry,

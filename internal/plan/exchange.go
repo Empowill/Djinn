@@ -122,11 +122,13 @@ func (w *Wishes) ImportData(
 	return connect.NewResponse(res), nil
 }
 
-// Snapshot returns everything the wish holds, with the identifiers and folders of this machine.
+// Snapshot returns what the wish holds but its tasks' events, with the identifiers and folders of this machine. The
+// events are most of a wish (89 of the 91 MB of a wish of 170 tasks), and the window reads none of them from here: a
+// task's page follows its own (W149).
 func (w *Wishes) Snapshot(
 	ctx context.Context, req *connect.Request[planv1.WishServiceSnapshotRequest],
 ) (*connect.Response[planv1.WishServiceSnapshotResponse], error) {
-	exp, projects, err := collect(ctx, w.Store, req.Msg.GetWishId(), allEvents)
+	exp, projects, err := collect(ctx, w.Store, req.Msg.GetWishId(), noEvents)
 	if err != nil {
 		return nil, Status(err)
 	}
@@ -153,7 +155,7 @@ func allEvents(ctx context.Context, r store.Reader, tasks []*planv1.Task) ([]*pl
 	return out, nil
 }
 
-// noEvents is none: the brief shows none, and a wish's events are most of the store.
+// noEvents is none: the brief and the window's snapshot show none, and a wish's events are most of the store.
 func noEvents(context.Context, store.Reader, []*planv1.Task) ([]*planv1.TaskEvent, error) {
 	return nil, nil
 }
