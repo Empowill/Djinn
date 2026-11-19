@@ -3964,7 +3964,8 @@ service WishService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option idempotency_level = NO_SIDE_EFFECTS;
   }
-  // Everything a wish holds, as an export carries it, and its projects on this machine, for the window.
+  // What a wish holds, as an export carries it but without its tasks' events (most of a wish, read by task), and its
+  // projects on this machine, for the window.
   rpc Snapshot(WishServiceSnapshotRequest) returns (WishServiceSnapshotResponse) {
     option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
   }
@@ -4573,7 +4574,7 @@ message WishServiceSnapshotRequest {
 }
 
 message WishServiceSnapshotResponse {
-  // Everything the wish holds. Its project references carry the identifiers of this machine.
+  // What the wish holds, its tasks' events left out. Its project references carry the identifiers of this machine.
   WishExport export = 1;
   // The wish's projects on this machine, with their folders.
   repeated Project projects = 2;

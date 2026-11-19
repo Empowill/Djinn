@@ -1553,7 +1553,8 @@ type WishServiceClient interface {
 	// running and waiting, its open questions, its latest decisions and blocks, the last lead and when it last
 	// acted), then how to lead it (Djinn's rules, the rules of its projects). No local path, no secret.
 	Brief(context.Context, *connect.Request[v1.WishServiceBriefRequest]) (*connect.Response[v1.WishServiceBriefResponse], error)
-	// Everything a wish holds, as an export carries it, and its projects on this machine, for the window.
+	// What a wish holds, as an export carries it but without its tasks' events (most of a wish, read by task), and its
+	// projects on this machine, for the window.
 	Snapshot(context.Context, *connect.Request[v1.WishServiceSnapshotRequest]) (*connect.Response[v1.WishServiceSnapshotResponse], error)
 	// Allow the wish's workers a right in one of its projects, for every task to come: edit, or auto (edit in their
 	// agent's auto mode); none takes it back. It weighs over the project's configuration, for this wish only.
@@ -1965,7 +1966,8 @@ type WishServiceHandler interface {
 	// running and waiting, its open questions, its latest decisions and blocks, the last lead and when it last
 	// acted), then how to lead it (Djinn's rules, the rules of its projects). No local path, no secret.
 	Brief(context.Context, *connect.Request[v1.WishServiceBriefRequest]) (*connect.Response[v1.WishServiceBriefResponse], error)
-	// Everything a wish holds, as an export carries it, and its projects on this machine, for the window.
+	// What a wish holds, as an export carries it but without its tasks' events (most of a wish, read by task), and its
+	// projects on this machine, for the window.
 	Snapshot(context.Context, *connect.Request[v1.WishServiceSnapshotRequest]) (*connect.Response[v1.WishServiceSnapshotResponse], error)
 	// Allow the wish's workers a right in one of its projects, for every task to come: edit, or auto (edit in their
 	// agent's auto mode); none takes it back. It weighs over the project's configuration, for this wish only.

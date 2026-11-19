@@ -19428,7 +19428,7 @@ func (x *WishServiceSnapshotRequest) GetWishId() string {
 
 type WishServiceSnapshotResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Everything the wish holds. Its project references carry the identifiers of this machine.
+	// What the wish holds, its tasks' events left out. Its project references carry the identifiers of this machine.
 	Export *WishExport `protobuf:"bytes,1,opt,name=export,proto3" json:"export,omitempty"`
 	// The wish's projects on this machine, with their folders.
 	Projects      []*Project `protobuf:"bytes,2,rep,name=projects,proto3" json:"projects,omitempty"`
