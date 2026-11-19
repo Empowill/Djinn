@@ -962,11 +962,12 @@ func TestMonitor_Snapshot(t *testing.T) {
 	}
 }
 
-// TestMonitor_Capacity: the slots the scheduler lets run and why the machine is under pressure.
+// TestMonitor_Capacity: the slots the scheduler lets run and why the machine is under pressure. The PSI machine names
+// its OS: left empty it takes the runner's, and on macOS PSI holds nothing (Q103 B, W168).
 func TestMonitor_Capacity(t *testing.T) {
 	t.Parallel()
 	m := NewMonitor(DefaultPolicy(), func() (Snapshot, error) {
-		return Snapshot{Cores: 4, MemoryTotal: 64 * GiB, CPU: &Pressure{Some: 90}}, nil
+		return Snapshot{OS: "linux", Cores: 4, MemoryTotal: 64 * GiB, CPU: &Pressure{Some: 90}}, nil
 	})
 	if slots, _, pressure := m.Capacity(); slots != 1 || pressure == "" || pressure != m.Pressure() {
 		t.Errorf("slots %d, pressure %q (%q now)", slots, pressure, m.Pressure())
