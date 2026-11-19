@@ -362,6 +362,53 @@ func TestTake(t *testing.T) {
 		}
 	})
 
+	// Under macOS's warning pressure, a heavy command beside a measured holder waits, as long as for the memory at
+	// most, then is admitted, told why; a light one goes (Q86 A, W141). Back to normal, the heavy one goes at once.
+	t.Run("warning pressure: heavy waits, bounded", func(t *testing.T) {
+		t.Parallel()
+		f := &tasks{rank: map[string]int{"W1": 0, "W2": 0}}
+		m := calm()
+		m.setLevel(machine.MemoryWarning)
+		g := New(m, peaks{"go tool task e2e": 3 * machine.GiB, "go vet ./...": 100 << 20, "go tool task lint": 200 << 20}, f)
+		g.tick = 10 * time.Millisecond
+		g.memWait = 300 * time.Millisecond
+
+		alone, _ := run(t, g, "e2e", "W1", "go tool task e2e")
+		await(t, alone, "the grant of a heavy command alone")()
+
+		vet, _ := run(t, g, "vet", "", "go vet ./...")
+		giveVet := await(t, vet, "the vet's grant under warning")
+		defer giveVet()
+		light, _ := run(t, g, "lint", "", "go tool task lint")
+		await(t, light, "the light command's grant under warning")()
+
+		heavy, waits := run(t, g, "e2e", "W2", "go tool task e2e")
+		const short = "the system reports memory pressure, and go tool task e2e is heavy"
+		if why := await(t, waits, "reason"); why != short {
+			t.Errorf("waits because %q", why)
+		}
+		await(t, heavy, "the grant past the memory wait")()
+		const forced = "admitted after 300ms waiting for memory, the most a command waits for it: " + short
+		if why := await(t, waits, "the reason it was admitted"); why != forced {
+			t.Errorf("admitted because %q", why)
+		}
+	})
+	t.Run("warning pressure ends: heavy goes", func(t *testing.T) {
+		t.Parallel()
+		m := calm()
+		m.setLevel(machine.MemoryWarning)
+		g := New(m, peaks{"go tool task e2e": 3 * machine.GiB, "go vet ./...": 100 << 20}, nil)
+		g.tick = 10 * time.Millisecond
+		vet, _ := run(t, g, "vet", "", "go vet ./...")
+		giveVet := await(t, vet, "the vet's grant under warning")
+		defer giveVet()
+		heavy, waits := run(t, g, "e2e", "", "go tool task e2e")
+		await(t, waits, "reason")
+		notGranted(t, heavy, "a heavy command under warning")
+		m.setLevel(1)
+		await(t, heavy, "the heavy command's grant once the pressure is normal")()
+	})
+
 	// A waiter that leaves is forgotten; the gate goes to the next one.
 	t.Run("waiter gives up on cancel", func(t *testing.T) {
 		t.Parallel()

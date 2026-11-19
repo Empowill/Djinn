@@ -544,6 +544,34 @@ func TestPolicy_Room(t *testing.T) {
 	}
 }
 
+// TestPolicy_Warned: under macOS's warning pressure or worse, a heavy command beside a measured holder waits (Q86 A);
+// alone, on Linux (no level) or at normal pressure, it does not.
+func TestPolicy_Warned(t *testing.T) {
+	t.Parallel()
+	const why = "the system reports memory pressure, and e2e is heavy"
+	cases := []struct {
+		name  string
+		level int
+		held  uint64
+		want  string
+	}{
+		{"warning", MemoryWarning, GiB, why},
+		{"critical", MemoryCritical, GiB, why},
+		{"normal", 1, GiB, ""},
+		{"linux", 0, GiB, ""},
+		{"alone", MemoryWarning, 0, ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			s := Snapshot{MemoryTotal: 16 * GiB, MemoryAvailable: 8 * GiB, MemoryLevel: c.level}
+			if got := DefaultPolicy().Warned(s, "e2e", c.held); got != c.want {
+				t.Errorf("Warned = %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
 // TestPolicy_Typical: the typical peak of a worker is the median of the latest measured, WorkerPeak while none is.
 func TestPolicy_Typical(t *testing.T) {
 	t.Parallel()

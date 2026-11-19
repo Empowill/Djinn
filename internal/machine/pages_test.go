@@ -141,3 +141,32 @@ func TestPagesAvailable(t *testing.T) {
 		})
 	}
 }
+
+// TestPagesCover: host_statistics64's counts are taken only when their pages, at the page size read, make about the
+// memory: a 4 KiB page read for 16 KiB kernel pages (Rosetta) falls back to vm_stat.
+func TestPagesCover(t *testing.T) {
+	t.Parallel()
+	const total = 16 << 30
+	cases := []struct {
+		name        string
+		page, filed uint64
+		want        bool
+	}{
+		{"arm64", 16384, total / 16384 * 95 / 100, true},
+		{"intel", 4096, total / 4096 * 98 / 100, true},
+		{"4 KiB read of 16 KiB pages", 4096, total / 16384, false},
+		{"16 KiB read of 4 KiB pages", 16384, total / 4096, false},
+		{"nothing", 16384, 0, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			if got := pagesCover(total, c.page, c.filed); got != c.want {
+				t.Errorf("pagesCover = %v, want %v", got, c.want)
+			}
+		})
+	}
+	if pagesCover(0, 16384, 1000) {
+		t.Error("pagesCover with the memory unknown")
+	}
+}

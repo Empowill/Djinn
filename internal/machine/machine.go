@@ -683,6 +683,18 @@ func (p Policy) Room(s Snapshot, command string, peak, held uint64) string {
 	return why + fmt.Sprintf(", %s of it for the commands holding a gate", size(min(held, s.MemoryAvailable)))
 }
 
+// Warned says why a heavy command waits for its gate while macOS reports memory pressure, warning or worse
+// (MemoryLevel), or "" when it need not: what Room reads, Activity Monitor's Memory Used left out, does not see the
+// compressor fill, and warning is the kernel's word that it does (Q86 A). Like Room, a command no measured command
+// holds a gate beside (held 0) goes: waiting frees nothing of Djinn's for it. The gates bound this wait as Room's.
+// Linux has no level (0): never.
+func (p Policy) Warned(s Snapshot, command string, held uint64) string {
+	if held == 0 || s.MemoryLevel < MemoryWarning {
+		return ""
+	}
+	return fmt.Sprintf("the system reports memory pressure, and %s is heavy", command)
+}
+
 // Typical is the typical peak memory of a worker, and how many measured peaks gave it: the median of the first
 // WorkerPeaks of peaks, the latest first; WorkerPeak and 0 when none is measured. With an even count, the mean of the
 // two in the middle.
