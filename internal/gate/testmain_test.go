@@ -228,6 +228,12 @@ func (b *box) setFree(free uint64) {
 	b.mu.Unlock()
 }
 
+// loaded is a machine whose reading never changes.
+type loaded struct{ s machine.Snapshot }
+
+func (l loaded) Snapshot() machine.Snapshot { return l.s }
+func (l loaded) Policy() machine.Policy     { return machine.DefaultPolicy() }
+
 // peaks is fake costs: the highest peak memory of each command measured, wherever it runs.
 type peaks map[string]uint64
 

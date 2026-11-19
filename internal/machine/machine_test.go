@@ -477,6 +477,12 @@ func TestPolicy_BarSlots(t *testing.T) {
 // TestPolicy_Pressure: why the machine holds new workers, from the kernel's pressure, the load, the memory free or
 // macOS's level: its warning holds workers at Minimal only, its critical level at every notch; a policy that names no
 // level holds at critical.
+// w163 is W163's macOS runner (run 44446078705): a load of 32 on 3 cores, 83 % of 7 GiB free, the level normal.
+func w163() Snapshot {
+	return Snapshot{OS: "darwin", Cores: 3, MemoryTotal: 7 * GiB, MemoryAvailable: 7 * GiB * 83 / 100, MemoryLevel: 1,
+		LoadKnown: true, Load1: 32}
+}
+
 func TestPolicy_Pressure(t *testing.T) {
 	t.Parallel()
 	type pressureCase struct {
@@ -494,15 +500,21 @@ func TestPolicy_Pressure(t *testing.T) {
 			"tasks waited for the CPU 70% of the last 10 s (65% at most)"},
 		{"memory", def, Snapshot{Cores: 8, CPU: &Pressure{}, Memory: &Pressure{Some: 12}},
 			"tasks waited for memory 12% of the last 10 s (10% at most)"},
-		{"macOS critical", def, Snapshot{Cores: 8, MemoryLevel: 4, MemoryTotal: 16 * GiB}, "the system reports critical memory pressure"},
-		{"macOS warning", def, Snapshot{Cores: 8, MemoryLevel: 2, MemoryTotal: 16 * GiB}, "the system reports memory pressure"},
-		// A Mac at normal pressure, little memory free as macOS counts it, a load of 1.9 a core: below Medium's 2.
-		{"macOS busy", def, Snapshot{Cores: 10, MemoryLevel: 1, MemoryTotal: 16 * GiB, MemoryAvailable: GiB / 4, LoadKnown: true,
-			Load1: 19}, ""},
-		// The load rule holds on macOS too (LoadPerCore per notch): a test run at 3.4 a core holds at Medium.
-		{"macOS loaded", def, Snapshot{Cores: 10, MemoryLevel: 1, MemoryTotal: 16 * GiB, LoadKnown: true, Load1: 34},
-			"the load is 34.0 on 10 cores (2.0 a core at most)"},
-		{"macOS calm", def, Snapshot{Cores: 8, MemoryLevel: 1, MemoryTotal: 16 * GiB, MemoryAvailable: GiB / 2}, ""},
+		// On macOS, Djinn delegates to the system (Q103 B): its critical level alone holds.
+		{"macOS critical", def, Snapshot{OS: "darwin", Cores: 8, MemoryLevel: 4, MemoryTotal: 16 * GiB},
+			"the system reports critical memory pressure"},
+		{"macOS warning", def, Snapshot{OS: "darwin", Cores: 8, MemoryLevel: 2, MemoryTotal: 16 * GiB}, ""},
+		{"macOS busy", def, Snapshot{OS: "darwin", Cores: 10, MemoryLevel: 1, MemoryTotal: 16 * GiB, MemoryAvailable: GiB / 4,
+			LoadKnown: true, Load1: 19}, ""},
+		// W163's runner: a load of 32 on 3 cores, 83 % of the memory free, the level normal: nothing holds.
+		{"macOS W163", def, w163(), ""},
+		{"macOS calm", def, Snapshot{OS: "darwin", Cores: 8, MemoryLevel: 1, MemoryTotal: 16 * GiB, MemoryAvailable: GiB / 2}, ""},
+		// A Mac whose level is unknown: nothing holds either, the memory available included.
+		{"macOS no level", def, Snapshot{OS: "darwin", Cores: 4, MemoryTotal: 16 * GiB, MemoryAvailable: GiB, LoadKnown: true,
+			Load1: 40}, ""},
+		// Elsewhere, a level reported holds from the policy's MemoryLevel up, and the load holds without PSI.
+		{"level reported, at warning", def, Snapshot{Cores: 8, MemoryLevel: 2, MemoryTotal: 16 * GiB},
+			"the system reports memory pressure"},
 		{"load without PSI", def, Snapshot{Cores: 4, LoadKnown: true, Load1: 9}, "the load is 9.0 on 4 cores (2.0 a core at most)"},
 		{"memory without PSI", def, Snapshot{Cores: 4, MemoryTotal: 16 * GiB, MemoryAvailable: GiB},
 			"1.0 GiB of memory available of 16.0 GiB (10% at least)"},
@@ -512,17 +524,12 @@ func TestPolicy_Pressure(t *testing.T) {
 	}
 	for _, notch := range append(ManualNotches, djinnv1.LoadNotch_LOAD_NOTCH_AUTO) {
 		p := NotchPolicy(notch)
-		warning := ""
-		if notch == djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL || notch == djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM ||
-			notch == djinnv1.LoadNotch_LOAD_NOTCH_AUTO {
-			warning = "the system reports memory pressure"
-		}
 		cases = append(cases,
-			pressureCase{NotchName(notch) + " at macOS warning", p,
-				Snapshot{Cores: 8, MemoryLevel: MemoryWarning, MemoryTotal: 16 * GiB}, warning},
-			pressureCase{NotchName(notch) + " at macOS critical", p,
-				Snapshot{Cores: 8, MemoryLevel: MemoryCritical, MemoryTotal: 16 * GiB}, "the system reports critical memory pressure"},
-			pressureCase{NotchName(notch) + " at macOS normal", p, Snapshot{Cores: 8, MemoryLevel: 1, MemoryTotal: 16 * GiB}, ""},
+			pressureCase{NotchName(notch) + " at macOS warning", p, mac16(8, MemoryWarning), ""},
+			pressureCase{NotchName(notch) + " at macOS critical", p, mac16(8, MemoryCritical),
+				"the system reports critical memory pressure"},
+			pressureCase{NotchName(notch) + " at macOS normal", p, mac16(8, 1), ""},
+			pressureCase{NotchName(notch) + " at W163", p, w163(), ""},
 		)
 	}
 	for _, c := range cases {
@@ -981,6 +988,35 @@ func TestMonitor_Capacity(t *testing.T) {
 	mac.SetWorkerPeak(func() uint64 { return 0 })
 	if slots, rule, _ := mac.Capacity(); slots != 1 {
 		t.Errorf("none measured yet: %d slots, want 1 (%s)", slots, rule)
+	}
+}
+
+// TestMonitor_MacDelegates: on macOS, Djinn leaves the load to the system (Q103 B, W166): W163's runner, a load of 32
+// on 3 cores and its memory mostly free, starts a worker at every notch and grants a gate; the same figures on Linux
+// without PSI hold both. Only macOS's critical level holds on a Mac.
+func TestMonitor_MacDelegates(t *testing.T) {
+	t.Parallel()
+	for _, notch := range append(ManualNotches, djinnv1.LoadNotch_LOAD_NOTCH_AUTO) {
+		mac := NewMonitor(NotchPolicy(notch), func() (Snapshot, error) { return w163(), nil })
+		if slots, rule, pressure := mac.Capacity(); slots < 1 || pressure != "" {
+			t.Errorf("%s: %d slots (%s), pressure %q, want a worker started", NotchName(notch), slots, rule, pressure)
+		}
+		if why := mac.Policy().GatePressure(mac.Snapshot()); why != "" {
+			t.Errorf("%s: gate held: %q", NotchName(notch), why)
+		}
+	}
+	linux := w163()
+	linux.OS, linux.MemoryLevel = "linux", 0
+	if why := DefaultPolicy().Pressure(linux); why != "the load is 32.0 on 3 cores (2.0 a core at most)" {
+		t.Errorf("Linux without PSI: %q, want the load to hold", why)
+	}
+	if why := DefaultPolicy().GatePressure(linux); why == "" {
+		t.Error("Linux without PSI: the gate is granted under load")
+	}
+	critical := w163()
+	critical.MemoryLevel = MemoryCritical
+	if why := DefaultPolicy().Pressure(critical); why != "the system reports critical memory pressure" {
+		t.Errorf("macOS critical: %q", why)
 	}
 }
 
