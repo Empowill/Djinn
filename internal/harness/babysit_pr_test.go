@@ -327,6 +327,63 @@ func TestWatch_BabysitPR(t *testing.T) {
 		}
 	})
 
+	// PR #43, 20/11/2026: W199 answered nyhu's thread on api/djinn/v1/project_config.proto:56 under the same login,
+	// nyhu; the watcher said that answer as a new comment by nyhu, and W200 ran for nothing. A comment whose body holds
+	// the mark <!-- djinn:reply --> is Djinn's own answer and is never said, in a thread, in the conversation or as a
+	// review's body; the same author's comment without the mark still is.
+	t.Run("never says Djinn's own answer", func(t *testing.T) {
+		t.Parallel()
+		dir, bin, data, home := t.TempDir(), t.TempDir(), t.TempDir(), t.TempDir()
+		if err := os.WriteFile(filepath.Join(bin, "gh"), []byte(fakeGh), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		const pull = "https://github.com/o/r/pull/43#"
+		// The mark, at the end of the body as JSON writes it.
+		const mark = `\n\n<!-- djinn:reply -->`
+		const view = `{"state":"OPEN","mergeable":"MERGEABLE","reviewDecision":"","headRefOid":"68f9513c"}`
+		const path = "api/djinn/v1/project_config.proto"
+		// A reply in a thread comes as GitHub gives it: a review without a body that carries the one comment.
+		thread := func(review, at, comment, body string) string {
+			return fmt.Sprintf(`{"url":"%spullrequestreview-%s","author":{"login":"nyhu"},"state":"COMMENTED","submittedAt":%q,"body":"",`+
+				`"comments":{"nodes":[{"url":"%sdiscussion_r%s","author":{"login":"nyhu"},"path":%q,"line":56,"originalLine":56,"body":"%s"}]}}`,
+				pull, review, at, pull, comment, path, body)
+		}
+		asked := thread("1", "2026-11-20T09:00:00Z", "4643538479", "Move admit under gates_options.")
+		answered := thread("2", "2026-11-20T10:00:00Z", "4643684871", "Done in 68f9513c: admit now sits under gates_options."+mark)
+		ours := `{"url":"` + pull + `issuecomment-3","author":{"login":"nyhu"},"createdAt":"2026-11-20T10:01:00Z","body":"Pushed 68f9513c.` + mark + `"}`
+		review := `{"url":"` + pull + `pullrequestreview-4","author":{"login":"nyhu"},"state":"COMMENTED","submittedAt":"2026-11-20T10:02:00Z",` +
+			`"body":"Answered every thread.` + mark + `","comments":{"nodes":[]}}`
+		again := thread("5", "2026-11-20T11:00:00Z", "4643700001", "Not quite: the user guide still says admit at the top.")
+		notes := func(comments []string, reviews ...string) string {
+			return fmt.Sprintf(`{"data":{"repository":{"pullRequest":{"comments":{"nodes":[%s]},"reviews":{"nodes":[%s]}}}}}`,
+				strings.Join(comments, ","), strings.Join(reviews, ","))
+		}
+		for name, body := range map[string]string{
+			"view-1.json":   view,
+			"checks-1.json": `[]`,
+			"notes-1.json":  notes(nil, asked),
+			"notes-2.json":  notes([]string{ours}, asked, answered, review),
+			"notes-3.json":  notes([]string{ours}, asked, answered, review, again),
+		} {
+			if err := os.WriteFile(filepath.Join(data, name), []byte(body), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		cmd := exec.CommandContext(t.Context(), "sh", script, "43", "0", "3")
+		cmd.Dir = dir
+		cmd.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "GH_DATA="+data,
+			"DJINN_HOME="+home, "DJINN_TASK_ID=w148")
+		out, err := cmd.Output()
+		if err != nil {
+			t.Fatalf("watch.sh: %v", err)
+		}
+		want := "PR #43 · new comment by nyhu on " + path + ":56: " + pull + "discussion_r4643538479\n> Move admit under gates_options.\n\n" +
+			"PR #43 · new comment by nyhu on " + path + ":56: " + pull + "discussion_r4643700001\n> Not quite: the user guide still says admit at the top.\n\n"
+		if string(out) != want {
+			t.Errorf("watch.sh said:\n%s\nwant:\n%s", out, want)
+		}
+	})
+
 	// The watcher speaks of the pull requests it is given, a comma-separated list, and exits once all are merged; never
 	// of another open one, though its branch is an azima's (djinn/...): that one has its own watcher (W8: watch.sh 6
 	// spoke of PR #7).
