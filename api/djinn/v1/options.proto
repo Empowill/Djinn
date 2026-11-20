@@ -110,4 +110,7 @@ extend google.protobuf.FieldOptions {
   // The value the command line and djinn mcp give the field when the caller leaves it empty, where a request that
   // leaves it empty means another for the window: djinn query asks a text table, where the window reads Arrow.
   string client_default = 51016;
+  // A response field the command line prints first, before the fields numbered below it: the line that says what
+  // the answer is, added to the message after the others (djinn project gates' read, W192).
+  bool headline = 51018;
 }

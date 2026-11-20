@@ -14420,7 +14420,7 @@ type ProjectServiceGatesResponse struct {
 	OffGates []*v1.ProjectGate `protobuf:"bytes,6,rep,name=off_gates,json=offGates,proto3" json:"off_gates,omitempty"`
 	// Where Djinn read the file and what it found there, in one line, never empty: "Read .agents/djinn.yaml on
 	// origin/main (4b9212581d).", "No djinn.yaml nor .agents/djinn.yaml on origin/main (4b9212581d): the project
-	// declares no gate.", followed by what your config_branch changes, set or gone.
+	// declares no gate.", followed by what your config_branch changes, set or gone. The command line prints it first.
 	Read string `protobuf:"bytes,7,opt,name=read,proto3" json:"read,omitempty"`
 	// The ref Djinn read the file on, short: origin/main, or origin/<config_branch> while your config_branch is on the
 	// remote; empty when it reads the project's folder (outside Git, without a remote, or its branch not fetched).
@@ -30110,15 +30110,15 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x03off\x18\x02 \x01(\tB\x1d\xbaH\x1ar\x182\x16^[a-z][a-z0-9-]{0,39}$H\x00R\x03off\x88\x01\x01\x122\n" +
 	"\x02on\x18\x03 \x01(\tB\x1d\xbaH\x1ar\x182\x16^[a-z][a-z0-9-]{0,39}$H\x01R\x02on\x88\x01\x01B\x06\n" +
 	"\x04_offB\x05\n" +
-	"\x03_on\"\x89\x03\n" +
+	"\x03_on\"\x8f\x03\n" +
 	"\x1bProjectServiceGatesResponse\x12+\n" +
 	"\x05gates\x18\x01 \x03(\v2\x15.djinn.v1.ProjectGateR\x05gates\x12\x12\n" +
 	"\x04file\x18\x02 \x01(\tR\x04file\x12\x1b\n" +
 	"\tgates_off\x18\x03 \x03(\tR\bgatesOff\x12%\n" +
 	"\x0edeveloper_file\x18\x04 \x01(\tR\rdeveloperFile\x12\x1a\n" +
 	"\bwarnings\x18\x05 \x03(\tR\bwarnings\x122\n" +
-	"\toff_gates\x18\x06 \x03(\v2\x15.djinn.v1.ProjectGateR\boffGates\x12\x12\n" +
-	"\x04read\x18\a \x01(\tR\x04read\x12\x10\n" +
+	"\toff_gates\x18\x06 \x03(\v2\x15.djinn.v1.ProjectGateR\boffGates\x12\x18\n" +
+	"\x04read\x18\a \x01(\tB\x04\xd0\xf4\x18\x01R\x04read\x12\x10\n" +
 	"\x03ref\x18\b \x01(\tR\x03ref\x12\x16\n" +
 	"\x06commit\x18\t \x01(\tR\x06commit\x12#\n" +
 	"\rconfig_branch\x18\n" +

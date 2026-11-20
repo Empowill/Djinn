@@ -159,7 +159,8 @@ The help is the proto comments: the service comment for `djinn question`, the me
 
 The output is text by default: one `name: value` line per field set, nested messages indented, lists as
 `- ` items, and the single field of a response shown directly. A field marked `(djinn.v1.json_only)` prints with
-`--json` only; a string or bytes field marked `(djinn.v1.raw)` prints as it is, without its name, so that a table or a
+`--json` only; a field marked `(djinn.v1.headline)` prints first, before the fields numbered below it (the read line
+of `djinn project gates`); a string or bytes field marked `(djinn.v1.raw)` prints as it is, without its name, so that a table or a
 CSV pipes (`djinn query query tasks --format csv`), and `djinn mcp` returns it as the tool's text when it is UTF-8. `--json` prints the response as protobuf JSON with the proto field
 names.
 

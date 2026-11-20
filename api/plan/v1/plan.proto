@@ -3458,8 +3458,8 @@ message ProjectServiceGatesResponse {
   repeated djinn.v1.ProjectGate off_gates = 6;
   // Where Djinn read the file and what it found there, in one line, never empty: "Read .agents/djinn.yaml on
   // origin/main (4b9212581d).", "No djinn.yaml nor .agents/djinn.yaml on origin/main (4b9212581d): the project
-  // declares no gate.", followed by what your config_branch changes, set or gone.
-  string read = 7;
+  // declares no gate.", followed by what your config_branch changes, set or gone. The command line prints it first.
+  string read = 7 [(djinn.v1.headline) = true];
   // The ref Djinn read the file on, short: origin/main, or origin/<config_branch> while your config_branch is on the
   // remote; empty when it reads the project's folder (outside Git, without a remote, or its branch not fetched).
   string ref = 8;

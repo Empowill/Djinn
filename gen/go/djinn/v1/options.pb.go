@@ -425,6 +425,14 @@ var file_djinn_v1_options_proto_extTypes = []protoimpl.ExtensionInfo{
 		Tag:           "bytes,51016,opt,name=client_default",
 		Filename:      "djinn/v1/options.proto",
 	},
+	{
+		ExtendedType:  (*descriptorpb.FieldOptions)(nil),
+		ExtensionType: (*bool)(nil),
+		Field:         51018,
+		Name:          "djinn.v1.headline",
+		Tag:           "varint,51018,opt,name=headline",
+		Filename:      "djinn/v1/options.proto",
+	},
 }
 
 // Extension fields to descriptorpb.MethodOptions.
@@ -514,6 +522,11 @@ var (
 	//
 	// optional string client_default = 51016;
 	E_ClientDefault = &file_djinn_v1_options_proto_extTypes[14]
+	// A response field the command line prints first, before the fields numbered below it: the line that says what
+	// the answer is, added to the message after the others (djinn project gates' read, W192).
+	//
+	// optional bool headline = 51018;
+	E_Headline = &file_djinn_v1_options_proto_extTypes[15]
 )
 
 var File_djinn_v1_options_proto protoreflect.FileDescriptor
@@ -558,7 +571,8 @@ const file_djinn_v1_options_proto_rawDesc = "" +
 	"\x03ref\x12\x1d.google.protobuf.FieldOptions\x18Ď\x03 \x01(\tR\x03ref:F\n" +
 	"\x05query\x12\x1d.google.protobuf.FieldOptions\x18Ŏ\x03 \x01(\x0e2\x0f.djinn.v1.QueryR\x05query:1\n" +
 	"\x03raw\x12\x1d.google.protobuf.FieldOptions\x18Ǝ\x03 \x01(\bR\x03raw:F\n" +
-	"\x0eclient_default\x12\x1d.google.protobuf.FieldOptions\x18Ȏ\x03 \x01(\tR\rclientDefaultB\x90\x01\n" +
+	"\x0eclient_default\x12\x1d.google.protobuf.FieldOptions\x18Ȏ\x03 \x01(\tR\rclientDefault:;\n" +
+	"\bheadline\x12\x1d.google.protobuf.FieldOptions\x18ʎ\x03 \x01(\bR\bheadlineB\x90\x01\n" +
 	"\fcom.djinn.v1B\fOptionsProtoP\x01Z1github.com/empowill/djinn/gen/go/djinn/v1;djinnv1\xa2\x02\x03DXX\xaa\x02\bDjinn.V1\xca\x02\bDjinn\\V1\xe2\x02\x14Djinn\\V1\\GPBMetadata\xea\x02\tDjinn::V1b\x06proto3"
 
 var (
@@ -602,15 +616,16 @@ var file_djinn_v1_options_proto_depIdxs = []int32{
 	8,  // 12: djinn.v1.query:extendee -> google.protobuf.FieldOptions
 	8,  // 13: djinn.v1.raw:extendee -> google.protobuf.FieldOptions
 	8,  // 14: djinn.v1.client_default:extendee -> google.protobuf.FieldOptions
-	0,  // 15: djinn.v1.visibility:type_name -> djinn.v1.Visibility
-	1,  // 16: djinn.v1.writes:type_name -> djinn.v1.Writes
-	3,  // 17: djinn.v1.unique:type_name -> djinn.v1.Unique
-	4,  // 18: djinn.v1.subset:type_name -> djinn.v1.Subset
-	2,  // 19: djinn.v1.query:type_name -> djinn.v1.Query
-	20, // [20:20] is the sub-list for method output_type
-	20, // [20:20] is the sub-list for method input_type
-	15, // [15:20] is the sub-list for extension type_name
-	0,  // [0:15] is the sub-list for extension extendee
+	8,  // 15: djinn.v1.headline:extendee -> google.protobuf.FieldOptions
+	0,  // 16: djinn.v1.visibility:type_name -> djinn.v1.Visibility
+	1,  // 17: djinn.v1.writes:type_name -> djinn.v1.Writes
+	3,  // 18: djinn.v1.unique:type_name -> djinn.v1.Unique
+	4,  // 19: djinn.v1.subset:type_name -> djinn.v1.Subset
+	2,  // 20: djinn.v1.query:type_name -> djinn.v1.Query
+	21, // [21:21] is the sub-list for method output_type
+	21, // [21:21] is the sub-list for method input_type
+	16, // [16:21] is the sub-list for extension type_name
+	0,  // [0:16] is the sub-list for extension extendee
 	0,  // [0:0] is the sub-list for field type_name
 }
 
@@ -626,7 +641,7 @@ func file_djinn_v1_options_proto_init() {
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_djinn_v1_options_proto_rawDesc), len(file_djinn_v1_options_proto_rawDesc)),
 			NumEnums:      3,
 			NumMessages:   2,
-			NumExtensions: 15,
+			NumExtensions: 16,
 			NumServices:   0,
 		},
 		GoTypes:           file_djinn_v1_options_proto_goTypes,
