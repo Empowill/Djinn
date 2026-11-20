@@ -17257,9 +17257,10 @@ type WishServiceSetIntegrationRequest struct {
 	PushMode PushMode `protobuf:"varint,6,opt,name=push_mode,json=pushMode,proto3,enum=plan.v1.PushMode" json:"push_mode,omitempty"`
 	// Push strategy for the wish: wish or azima. Unset: unchanged.
 	PushStrategy *PushStrategy `protobuf:"varint,7,opt,name=push_strategy,json=pushStrategy,proto3,enum=plan.v1.PushStrategy,oneof" json:"push_strategy,omitempty"`
-	// Make the branch when the project's repository has none of that name: a new branch at the tip of the wish's
-	// current integration branch there. Without it, a branch the repository lacks is recorded, and the work waits for
-	// it.
+	// Make the branch when the project's repository has none of that name, the one the wish records already included:
+	// from the remote's branch of that name, else at the tip of the wish's current integration branch there, else from
+	// the reference branch. Without it, a branch the repository lacks is recorded, and the integration makes it the same
+	// way before it merges work into it.
 	CreateBranch  bool `protobuf:"varint,8,opt,name=create_branch,json=createBranch,proto3" json:"create_branch,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"connectrpc.com/connect"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -490,6 +491,9 @@ func (h *Harness) integrateBatch(ctx context.Context, wish *planv1.Wish, project
 		if !ok {
 			return false, nil
 		}
+	}
+	if why == "" {
+		why = h.makeAbsentBranch(ctx, wish, project, branch, batch)
 	}
 	if why == "" {
 		// Merged into a branch whose remote holds commits it lacks, the work could not be pushed: the branch is brought
@@ -1078,6 +1082,41 @@ func (h *Harness) closeMove(ctx context.Context, q *planv1.Question, choice plan
 	}
 	h.notify()
 	return nil
+}
+
+// makeAbsentBranch makes branch, the integration branch wish records in project, when the project's repository lacks
+// it: named by djinn wish set-integration without --create-branch, or deleted since. W109 waited two days on one, said
+// only on its task, already ended (W184). It is made as --create-branch makes it (plan.MakeIntegrationBranch: the
+// remote's branch of that name, else the reference branch), out of any transaction; logged, and said on the tasks of
+// batch. It returns why the work waits, "" once the branch is there. An azima's branch is not one: azimaBranchFor
+// makes it.
+func (h *Harness) makeAbsentBranch(ctx context.Context, wish *planv1.Wish, project *planv1.Project, branch string, batch []*planv1.Task) string {
+	if branch == "" || !strings.EqualFold(branch, plan.IntegrationBranchOf(wish, project.GetId())) {
+		return ""
+	}
+	if _, err := git(ctx, project.GetDirectory(), "rev-parse", "--verify", "--quiet", "refs/heads/"+branch); err == nil {
+		return ""
+	}
+	making, cancel := context.WithTimeout(ctx, catchUpFetchTimeout) // Under integrateMu: the remote may not answer.
+	from, err := plan.MakeIntegrationBranch(making, h.home, wish, project, branch)
+	cancel()
+	if err != nil {
+		msg := err.Error()
+		if ce := (*connect.Error)(nil); errors.As(err, &ce) {
+			msg = ce.Message()
+		}
+		logx.L().Warn("make the integration branch", "wish", wish.GetId(), "project", project.GetName(), "branch", branch, "err", msg)
+		return "the branch " + branch + " is not in the project's repository, and Djinn cannot make it: " + msg
+	}
+	if from == "" {
+		return "" // Made meanwhile.
+	}
+	logx.L().Info("integration branch made", "wish", wish.GetId(), "project", project.GetName(), "branch", branch, "from", from)
+	text := "integration: " + branch + " was not in the project's repository: Djinn made it from " + from
+	for _, t := range batch {
+		h.Note(t.GetId(), Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text})
+	}
+	return ""
 }
 
 // integrationBranch is the branch wish integrates its work into in project, and why there is none. A wish that records
