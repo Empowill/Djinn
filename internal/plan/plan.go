@@ -649,11 +649,53 @@ func (p *Projects) Gates(
 			return nil, Status(err)
 		}
 	}
-	gates := LoadProjectGates(p.Home, project)
+	config := ProjectConfig(p.Home, project)
+	gates := projectGatesIn(p.Home, project, config.Dir)
 	return connect.NewResponse(&planv1.ProjectServiceGatesResponse{
 		Gates: gates.Gates, File: gates.File, GatesOff: gates.Off, Warnings: gates.Warnings, OffGates: gates.OffGates,
 		DeveloperFile: DeveloperSettingsFile(p.Home, project.GetId()),
+		Read:          gatesReadLine(config, gates.File), Ref: config.Ref, Commit: config.Commit,
+		ConfigBranch: config.ConfigBranch, ConfigBranchMissing: config.ConfigBranchMissing(),
 	}), nil
+}
+
+// gatesReadLine is the line djinn project gates gives first (W191): where Djinn read the project's gates, config, and the
+// file it found there, file, or that it found none; then what the developer's config_branch changes. An empty answer
+// could not tell no config_branch from no file from a branch gone (W189).
+func gatesReadLine(config Config, file string) string {
+	if config.Dir == "" {
+		return "The project has no folder on this machine: Djinn reads no gate."
+	}
+	where := "in the project's folder " + config.Folder
+	if config.FromReference() {
+		where = "on " + config.Ref + " (" + abbrev(config.Commit) + ")"
+	}
+	var b strings.Builder
+	if file == "" {
+		fmt.Fprintf(&b, "No %s nor %s %s: the project declares no gate.", ProjectConfigFiles[0],
+			filepath.ToSlash(ProjectConfigFiles[1]), where)
+	} else {
+		fmt.Fprintf(&b, "Read %s %s.", file, where)
+	}
+	switch {
+	case config.ConfigBranchMissing():
+		fmt.Fprintf(&b, " Your config_branch %s is not on the remote (merged and deleted, or not fetched yet): Djinn "+
+			"reads the reference branch instead.", config.ConfigBranch)
+	case config.ConfigBranch != "":
+		fmt.Fprintf(&b, " It is your config_branch %s, to try it before it merges; the reference branch is %s.",
+			config.ConfigBranch, cmp.Or(config.ReferenceRef, "the project's folder"))
+	default:
+		b.WriteString(" You name no config_branch.")
+	}
+	return b.String()
+}
+
+// abbrev is commit cut to 10 characters, as a line names it.
+func abbrev(commit string) string {
+	if len(commit) > 10 {
+		return commit[:10]
+	}
+	return commit
 }
 
 // declaredGates are the valid gates project declares, those turned off among them.

@@ -3456,6 +3456,21 @@ message ProjectServiceGatesResponse {
   repeated string warnings = 5;
   // The gates you turn off that the project declares, as it declares them, in the file's order.
   repeated djinn.v1.ProjectGate off_gates = 6;
+  // Where Djinn read the file and what it found there, in one line, never empty: "Read .agents/djinn.yaml on
+  // origin/main (4b9212581d).", "No djinn.yaml nor .agents/djinn.yaml on origin/main (4b9212581d): the project
+  // declares no gate.", followed by what your config_branch changes, set or gone.
+  string read = 7;
+  // The ref Djinn read the file on, short: origin/main, or origin/<config_branch> while your config_branch is on the
+  // remote; empty when it reads the project's folder (outside Git, without a remote, or its branch not fetched).
+  string ref = 8;
+  // The commit ref pointed at, in full; empty without ref.
+  string commit = 9;
+  // Your config_branch, from your own settings file: the branch Djinn reads the project's configuration on, to try it
+  // before it merges; empty when you name none.
+  string config_branch = 10;
+  // Whether your config_branch is not on the remote (merged and deleted, or not fetched yet): Djinn reads the reference
+  // branch instead, ref.
+  bool config_branch_missing = 11;
 }
 
 message ProjectServiceForgetSyncRequest {

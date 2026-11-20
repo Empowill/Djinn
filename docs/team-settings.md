@@ -309,6 +309,7 @@ holds it, on this machine only:
 ```
 djinn project set-branch dolmen djinn/T17-dolmen-gate-stack --config
 djinn project show dolmen        # reference.config_ref: origin/djinn/T17-dolmen-gate-stack
+djinn project gates dolmen       # read: Read .agents/djinn.yaml on origin/djinn/T17-dolmen-gate-stack (…)
 djinn project set-branch dolmen --config --unset
 ```
 
