@@ -98,7 +98,8 @@ in shop, in your own settings, never in the repository: djinn project allow shop
 `watch.sh` needs `gh`, logged in. Every minute it reads the checks (`gh pr checks`), the mergeable state, the review
 decision and the comments (`gh pr view --json`), and prints a paragraph only for what needs the lead, once each: a
 check that newly fails (again after a new push), all checks passing after a push or a failure, a new comment or
-review, a review decision that turns to `CHANGES_REQUESTED`, the pull request no longer mergeable. Pending checks and
+review (but Djinn's own answers, which end with the mark `<!-- djinn:reply -->`: they share the developer's login,
+and would wake the lead for nothing), a review decision that turns to `CHANGES_REQUESTED`, the pull request no longer mergeable. Pending checks and
 partial passes say nothing:
 
 ```
