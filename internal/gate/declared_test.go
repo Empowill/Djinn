@@ -255,3 +255,45 @@ func TestDeclaredDolmenImage(t *testing.T) {
 	recette()
 	await(t, rebuild, "the rebuild once the recette ends")()
 }
+
+// TestDeclaredDjinn reads Djinn's own .agents/djinn.yaml as Djinn reads it (PR #43 review: Djinn uses its gates daily):
+// every field known, every gate kept, and each command, as the hook gives it (machine.Key), under the gate it means.
+func TestDeclaredDjinn(t *testing.T) {
+	t.Parallel()
+	read, err := plan.ReadProjectConfig(filepath.Join("..", ".."))
+	if err != nil || read.File != ".agents/djinn.yaml" || len(read.Unknown)+len(read.Dropped)+len(read.Broad) > 0 {
+		t.Fatalf("Djinn's file: %+v, %v", read, err)
+	}
+	d := Declared{Project: "djinn", File: read.File, Gates: read.Config.GetGates()}
+	worktree := "/home/dev/.config/djinn/projects/p/worktrees/w1"
+	for _, c := range []struct {
+		command, gate string
+		alone         bool
+	}{
+		{"go tool task e2e -- --grep @budget", "e2e", true},
+		{"go tool task e2e -- e2e/grimoire.spec.ts --grep @budget", "e2e", true},
+		{"go tool task e2e -- e2e/wish-render.spec.ts", "e2e", false},
+		{"go tool task e2e", "e2e", false},
+		{"cd " + worktree + " && go tool task test 2>&1 | tail -30", "e2e", false},
+		{"go tool task screenshots", "e2e", false},
+		{"npx playwright test --config e2e/playwright.config.ts", "e2e", false},
+		{"go tool task e2e-native -- -v", "window", true},
+		{"go tool task check-window -- -path wails", "window", true},
+		{"go test -count=1 ./e2e/native", "window", true},
+		{"go tool task lint", "", false},
+		{"go tool task test-go", "", false},
+		{"go test ./internal/gate", "", false},
+	} {
+		what := machine.Key(c.command, worktree)
+		gt, alone, ok := d.Match(what)
+		if c.gate == "" {
+			if ok {
+				t.Errorf("%q (key %q) is under %s", c.command, what, gt.GetName())
+			}
+			continue
+		}
+		if !ok || gt.GetName() != c.gate || alone != c.alone {
+			t.Errorf("%q (key %q): gate %q alone %v, want %q alone %v", c.command, what, gt.GetName(), alone, c.gate, c.alone)
+		}
+	}
+}

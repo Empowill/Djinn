@@ -25,3 +25,23 @@ settings:
   # By default Djinn merges main into each wish's branch once main holds a release the branch lacks, fetched at most
   # hourly (merge_main, merge_main_minutes), and a Djinn built from a checkout on main installs a newer release by
   # itself (install_releases): docs/team-settings.md#keeping-up-with-main.
+
+# The gates of this repository (djinn.v1.ProjectGate), between its workers' own commands; the machine's bounds hold for
+# every command besides. djinn project gates --off turns one off on your machine.
+gates:
+  # A time budget measures the machine as much as Djinn: an e2e run of the @budget cases holds the gate alone, the other
+  # end-to-end and test runs share it, so that none of them runs while those cases measure (docs/pitfalls.md).
+  - name: e2e
+    alone:
+      - go tool task e2e * @budget
+    beside:
+      - go tool task e2e
+      - go tool task test
+      - go tool task screenshots
+      - npx playwright test
+  # The real native window, on the developer's screen: one at a time.
+  - name: window
+    alone:
+      - go tool task e2e-native
+      - go tool task check-window
+      - go test * ./e2e/native

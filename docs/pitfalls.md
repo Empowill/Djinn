@@ -228,7 +228,8 @@ the code does not say by itself; remove one when a change makes it false.
 - **A time budget measures the machine as much as Djinn.** The cases tagged `@budget` (the Grimoire's scroll, a
   terminal key, a typed note, a diff's chunks) fail when other workers load the machine, whatever the change (W177,
   W181): the push check leaves them out. *Do:* run them on a quiet machine, `go tool task e2e -- --grep @budget`, or
-  with their spec named; a red one that passes alone on a quiet machine was the load.
+  with their spec named; a red one that passes alone on a quiet machine was the load. Such a run holds the gate e2e
+  of `.agents/djinn.yaml` alone: the workers' other end-to-end and test runs wait for it, and it waits for them.
 - **A djinn under pressure starts no worker.** Over the notch's CPU or memory pressure, a djinn holds every new worker
   and gate ("the machine is under pressure" in the task's wait reason): the fake tasks of a spec stayed pending past
   its wait while other workers loaded the machine (W181). The e2e's djinns and `djinn up` in the Go tests read the
