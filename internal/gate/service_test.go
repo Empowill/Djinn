@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -224,7 +225,8 @@ func TestService_Hold(t *testing.T) {
 
 // TestService_AdmitWaited (W174, the trial of W173): a command waits behind an alone one that waits for the gate shared
 // by a first; once admitted, the stream names each holder it waited for in turn, each with the time it waited for it,
-// not the last reason as it was told when it began ("held by W2 …, for 0s").
+// not the last reason as it was told when it began ("held by W2 …, for 0s"). The Hourglass reads the same in the
+// intervals of the gates (W175): the seed's, held, and the build's, given back, each with its own time, never "for 0s".
 func TestService_AdmitWaited(t *testing.T) {
 	t.Parallel()
 	const seed = "01a1f836-f2e1-7dce-962a-fd5c3b45059e" // W3, by its id: the request names it so
@@ -273,5 +275,21 @@ func TestService_AdmitWaited(t *testing.T) {
 		if n, _ := strconv.Atoi(m[1]); time.Duration(n)*time.Second < pause.Round(time.Second) {
 			t.Errorf("a stint of %ss in %q; each lasted %s", m[1], held, pause)
 		}
+	}
+
+	// The Hourglass: the intervals GateService.History gives, the seed's still held, the build's given back.
+	reasons := map[string]string{}
+	for _, iv := range g.Intervals(time.Time{}, true) {
+		reasons[iv.GetTaskId()] = iv.GetWaitReason()
+		if strings.Contains(iv.GetWaitReason(), ", for ") {
+			t.Errorf("the Hourglass reads %q for %s: a holder's time frozen when the cause changed", iv.GetWaitReason(), iv.GetTaskId())
+		}
+	}
+	if reasons[seed] != held {
+		t.Errorf("the Hourglass reads %q for the seed, its worker %q", reasons[seed], held)
+	}
+	const builds = "stack (dolmen, .agents/djinn.yaml): shared by W1: task recette (Ns)"
+	if times(reasons["W2"]) != builds || reasons["W1"] != "" {
+		t.Errorf("the Hourglass reads %q for the build, %q for the recette; want %q, \"\"", reasons["W2"], reasons["W1"], builds)
 	}
 }

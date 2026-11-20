@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -881,7 +882,7 @@ func TestIntervals(t *testing.T) {
 			t.Errorf("%s: the first, with no wait: %v", when, iv)
 		}
 		if iv := byCommand["go vet ./..."]; iv.GetWaitCause() != machinev1.GateWaitCause_GATE_WAIT_CAUSE_HELD ||
-			!strings.HasPrefix(iv.GetWaitReason(), "held by W1: go test ./..., for ") || !iv.GetUnmeasured() {
+			!regexp.MustCompile(`^held by W1: go test \./\.\.\. \([0-9]+s\)$`).MatchString(iv.GetWaitReason()) || !iv.GetUnmeasured() {
 			t.Errorf("%s: the second, waiting for the first: %v", when, iv)
 		}
 		if iv := byCommand["npm ci"]; iv.GetMode() != machinev1.GateMode_GATE_MODE_SHARED || iv.GetGate() != Commands ||

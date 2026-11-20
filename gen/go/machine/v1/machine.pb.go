@@ -2271,7 +2271,8 @@ type GateInterval struct {
 	Heavy bool `protobuf:"varint,9,opt,name=heavy,proto3" json:"heavy,omitempty"`
 	// What it waited for last before it was granted; GATE_WAIT_CAUSE_NONE when it did not wait.
 	WaitCause GateWaitCause `protobuf:"varint,10,opt,name=wait_cause,json=waitCause,proto3,enum=machine.v1.GateWaitCause" json:"wait_cause,omitempty"`
-	// Why it waited last, as the holder was told.
+	// What it waited for, each reason in turn with how long it waited for it, its gate's label first (as djinn gate hook
+	// reads it once admitted); empty when it did not wait.
 	WaitReason string `protobuf:"bytes,11,opt,name=wait_reason,json=waitReason,proto3" json:"wait_reason,omitempty"`
 	// The highest memory its holder's processes used while it held the gate, in bytes; 0 when not measured.
 	PeakMemoryBytes uint64 `protobuf:"varint,12,opt,name=peak_memory_bytes,json=peakMemoryBytes,proto3" json:"peak_memory_bytes,omitempty"`

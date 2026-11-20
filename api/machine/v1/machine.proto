@@ -429,7 +429,8 @@ message GateInterval {
   bool heavy = 9;
   // What it waited for last before it was granted; GATE_WAIT_CAUSE_NONE when it did not wait.
   GateWaitCause wait_cause = 10;
-  // Why it waited last, as the holder was told.
+  // What it waited for, each reason in turn with how long it waited for it, its gate's label first (as djinn gate hook
+  // reads it once admitted); empty when it did not wait.
   string wait_reason = 11;
   // The highest memory its holder's processes used while it held the gate, in bytes; 0 when not measured.
   uint64 peak_memory_bytes = 12;

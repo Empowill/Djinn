@@ -566,14 +566,12 @@ func (g *Gates) interval(w *waiter, outside bool) *machinev1.GateInterval {
 	if w.shared {
 		mode = machinev1.GateMode_GATE_MODE_SHARED
 	}
-	reason := ""
-	if w.waitCause != machinev1.GateWaitCause_GATE_WAIT_CAUSE_NONE {
-		reason = w.why
-	}
 	return &machinev1.GateInterval{
 		Gate: w.name, Command: w.what, Project: project, TaskId: w.taskID,
 		AskedTime: timestamppb.New(w.asked), GrantTime: timestamppb.New(w.since),
-		Mode: mode, Heavy: w.heavy, WaitCause: w.waitCause, WaitReason: reason,
+		// What it waited for, each holder in turn with its own time, as djinn gate hook reads it: not the last reason as
+		// the waiter was told it, its holder's time frozen when the cause changed ("held by W2 …, for 0s", W175).
+		Mode: mode, Heavy: w.heavy, WaitCause: w.waitCause, WaitReason: w.waited(),
 		PeakMemoryBytes: w.use.GetPeakMemoryBytes(), Unmeasured: w.unmeasured, Outside: outside && (!w.shared || w.heavy),
 	}
 }
