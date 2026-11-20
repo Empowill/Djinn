@@ -762,8 +762,10 @@ most; and a command waits for the memory 5 minutes at most, then is admitted all
 the machine holds, and waits only for one that holds the name alone. A lit ifrit holds its gates alone whatever its
 server costs. The status bar shows how many gates are held. `djinn
 command list` shows what each command cost (CPU time, peak memory, duration). The peak the gates hold a command to is the
-95th percentile of its last 20 measured runs (`machine.Peak`), not the most it ever used: a run measured wrong fades
-after a few others. `djinn command forget <project> --command <key>`, `--head <words>` (every key that starts with
+95th percentile of its last 20 measured runs (`machine.Peak`), not the most it ever used, and a lone peak above four
+times the median of the others is left out once three runs were measured (W197): a run measured wrong stops counting as
+soon as two others ran. A command never measured borrows the median of its head's commands, each read by the median of
+its own runs, so that an old key whose runs hold a peak measured wrong lends no more than its usual run. `djinn command forget <project> --command <key>`, `--head <words>` (every key that starts with
 them: `--head cat`) or `--all` forgets costs learned wrong, journaled; the next run is measured anew.
 
 Who gets a gate first: Djinn's own requests to merge a task's work into its branch (its wish's or its azima's), to

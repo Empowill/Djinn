@@ -34,8 +34,9 @@ A command asks for a gate by its name, and waits until all of these hold:
    A command never measured counts as light. A lit ifrit holds its gates alone whatever its server costs.
 2. **The machine is not under pressure.** See [Machine and load](#machine-and-load).
 3. **The memory is there.** A command Djinn has measured before waits until the free memory covers its peak, with a
-   margin: its usual peak, the 95th percentile of its last 20 runs, so that a run measured wrong fades after a few
-   others; the memory the commands already holding gates may still take is counted as used. A command never measured
+   margin: its usual peak, the 95th percentile of its last 20 runs, a lone peak more than four times the others' median
+   left out once three runs were measured, so that a run measured wrong stops counting as soon as two others ran; the
+   memory the commands already holding gates may still take is counted as used. A command never measured
    waits for what the commands of the same kind cost (see below); with none measured, it goes at once. Three bounds
    keep a peak learned wrong from holding a worker:
    - **Alone, it goes.** When no measured command holds a gate or an admission, a command goes whatever its peak:
@@ -100,10 +101,13 @@ Arguments stay: the tests of a whole module and the tests of one package are two
 
 **A cost learned wrong can be forgotten.** Djinn's command line forgets, in a project, the cost of one command, of the
 commands that start with some words (every command starting with cat, say), or of all its commands; each forgetting is
-kept in Djinn's journal, with who asked it. The next run of each command is measured anew. A wrong cost also fades by
-itself: the gates hold a command to its usual peak over its last 20 runs, never to the most it ever used.
+kept in Djinn's journal, with who asked it. The next run of each command is measured anew. A wrong cost also heals by
+itself: the gates hold a command to its usual peak over its last 20 runs, a lone peak far above the others left out,
+never to the most it ever used.
 
-A command never measured is given what the others of the same head cost in its project, their median: the head is the
+A command never measured is given what the others of the same head cost in its project, the median of their usual
+runs (each one's median, so that a command no one runs any more, a peak measured wrong among its runs, lends no more
+than what it usually took): the head is the
 program and its subcommand, such as go test, npm run build or npx playwright test. A command of several commands, a
 format then a build joined by a semicolon, or one whose program only reads or edits, such as moving or editing a file in
 place, has no head: it neither lends its cost to another nor borrows one. With no such command measured, it has no cost
