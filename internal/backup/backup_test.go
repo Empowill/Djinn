@@ -65,7 +65,7 @@ func TestCreate(t *testing.T) {
 			}
 			for _, name := range names {
 				if strings.Contains(name, "worktrees") || strings.Contains(name, "env") || strings.HasSuffix(name, ".log") ||
-					name == server.AddrFile || strings.HasPrefix(name, store.File+"-") {
+					name == server.AddrFile || name == server.LockFile || strings.HasPrefix(name, store.File+"-") {
 					t.Errorf("the archive holds %s", name)
 				}
 			}

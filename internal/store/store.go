@@ -38,12 +38,17 @@ var (
 	ErrNotFound = errors.New("not found")
 	// ErrDuplicate is returned by Put when another entity has the same values in a unique group of fields.
 	ErrDuplicate = errors.New("duplicate")
+	// ErrUnmigrated is wrapped by the error of each use of an entity, the journal, the samples or the gate intervals
+	// whose migration failed at Open: Djinn started without it, with a warning, never a stop (Q42).
+	ErrUnmigrated = errors.New("not migrated at start")
 )
 
 // Store is the database. It is safe for concurrent use: transactions run one at a time.
 type Store struct {
 	db     *sql.DB
 	tables map[protoreflect.FullName]*table
+	// failed holds why the migration of a part failed at Open, by its name (part): written by migrate only.
+	failed map[string]error
 
 	hooksMu sync.RWMutex
 	hooks   []func([]proto.Message)
@@ -62,7 +67,8 @@ func (s *Store) OnCommit(f func([]proto.Message)) {
 
 // Open opens the database file at path, creating it and its directory if needed, in WAL mode. An empty path
 // opens a database in memory, for tests. The tables of entities are created, and the columns they lack added;
-// nothing is ever dropped.
+// nothing is ever dropped. A database of a newer Schema opens too, with a warning (schema.go). A step of the migration
+// that fails is a warning too: the store opens without that part, whose every use returns ErrUnmigrated (Q42).
 //
 // Each entity is a message with a string id field. Its singular string fields named *_id are indexed, and each
 // (djinn.v1.unique) option becomes a unique index, ignoring case on text.
@@ -84,7 +90,7 @@ func Open(ctx context.Context, path string, entities ...proto.Message) (*Store, 
 	// One connection: an in-memory database lives in it, and writes are serialized without SQLITE_BUSY.
 	db.SetMaxOpenConns(1)
 	s := &Store{db: db, tables: map[protoreflect.FullName]*table{}}
-	if err := s.migrate(ctx, entities); err != nil {
+	if err := s.migrate(ctx, path, entities); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -105,51 +111,112 @@ func durability() string {
 // Close closes the database.
 func (s *Store) Close() error { return s.db.Close() }
 
-func (s *Store) migrate(ctx context.Context, entities []proto.Message) error {
+// The parts of the store that migrate apart from the entities, as their errors name them.
+const (
+	partJournal   = "the journal"
+	partSamples   = "the samples"
+	partIntervals = "the gate intervals"
+)
+
+// part names an entity as a part of the store.
+func part(name protoreflect.FullName) string { return "entity " + string(name) }
+
+// migrate makes each part of the store in a step of its own: the journal, the samples, the gate intervals, then each
+// entity, its table, columns and indexes. A step that fails is undone alone, and is a warning: Djinn goes on, and
+// only that part's uses fail, with ErrUnmigrated (usable). The next start tries it again. migrate returns an error only
+// for an entity this Djinn defines wrong, which its tests catch, or a database that takes no transaction at all.
+func (s *Store) migrate(ctx context.Context, path string, entities []proto.Message) error {
+	names := map[string]bool{"command": true, "sample": true, "gate_interval": true, schemaTable: true}
+	tables := make([]*table, len(entities))
+	for i, e := range entities {
+		t, err := newTable(e.ProtoReflect().Descriptor())
+		if err != nil {
+			return err
+		}
+		if names[t.name] {
+			return fmt.Errorf("entity %s: table %s is taken", t.md.FullName(), t.name)
+		}
+		names[t.name] = true
+		tables[i] = t
+	}
+	s.failed = map[string]error{}
 	return s.tx(ctx, func(tx *sql.Tx) error {
-		if _, err := tx.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS command (
-			seq INTEGER PRIMARY KEY AUTOINCREMENT,
-			id TEXT NOT NULL UNIQUE,
-			actor TEXT NOT NULL,
-			at TEXT NOT NULL,
-			method TEXT NOT NULL,
-			request BLOB NOT NULL
-		)`); err != nil {
-			return fmt.Errorf("create the journal: %w", err)
-		}
-		// The pages and exports read the commands of the API only, a few among the workers' events (CommandsOf).
-		if _, err := tx.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS command_method ON command (method)`); err != nil {
-			return fmt.Errorf("index the journal: %w", err)
-		}
-		if err := s.migrateSamples(ctx, tx); err != nil {
-			return err
-		}
-		if err := s.migrateIntervals(ctx, tx); err != nil {
-			return err
-		}
-		names := map[string]bool{"command": true, "sample": true, "gate_interval": true}
-		for _, e := range entities {
-			t, err := newTable(e.ProtoReflect().Descriptor())
-			if err != nil {
-				return err
+		have := s.schema(ctx, tx, path)
+		step := func(name string, fn func() error) {
+			if err := savepoint(ctx, tx, fn); err != nil {
+				s.failed[name] = err
+				logx.L().Warn("database migration step failed: Djinn goes on without it, whose uses fail",
+					"path", path, "part", name, "err", err)
 			}
-			if names[t.name] {
-				return fmt.Errorf("entity %s: table %s is taken", t.md.FullName(), t.name)
-			}
-			names[t.name] = true
-			if err := t.create(ctx, tx, e.ProtoReflect().Type()); err != nil {
-				return fmt.Errorf("entity %s: %w", t.md.FullName(), err)
-			}
-			s.tables[t.md.FullName()] = t
 		}
+		step(partJournal, func() error {
+			if _, err := tx.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS command (
+				seq INTEGER PRIMARY KEY AUTOINCREMENT,
+				id TEXT NOT NULL UNIQUE,
+				actor TEXT NOT NULL,
+				at TEXT NOT NULL,
+				method TEXT NOT NULL,
+				request BLOB NOT NULL
+			)`); err != nil {
+				return fmt.Errorf("create the journal: %w", err)
+			}
+			// The pages and exports read the commands of the API only, a few among the workers' events (CommandsOf).
+			if _, err := tx.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS command_method ON command (method)`); err != nil {
+				return fmt.Errorf("index the journal: %w", err)
+			}
+			return nil
+		})
+		step(partSamples, func() error { return s.migrateSamples(ctx, tx) })
+		step(partIntervals, func() error { return s.migrateIntervals(ctx, tx) })
+		for i, t := range tables {
+			delete(s.tables, t.md.FullName())
+			step(part(t.md.FullName()), func() error {
+				if err := t.create(ctx, tx, entities[i].ProtoReflect().Type()); err != nil {
+					return err
+				}
+				s.tables[t.md.FullName()] = t
+				return nil
+			})
+		}
+		raise(ctx, tx, path, have)
 		return nil
 	})
+}
+
+// savepoint runs fn in a savepoint of tx: when fn fails, what it did is undone, and the transaction goes on.
+func savepoint(ctx context.Context, tx *sql.Tx, fn func() error) error {
+	if _, err := tx.ExecContext(ctx, `SAVEPOINT migrate_step`); err != nil {
+		return err
+	}
+	err := fn()
+	if err == nil {
+		if _, err = tx.ExecContext(ctx, `RELEASE migrate_step`); err == nil {
+			return nil
+		}
+	}
+	// ROLLBACK TO undoes the step and keeps the savepoint open: RELEASE ends it.
+	if _, rerr := tx.ExecContext(ctx, `ROLLBACK TO migrate_step`); rerr != nil {
+		return errors.Join(err, fmt.Errorf("undo the step: %w", rerr))
+	}
+	if _, rerr := tx.ExecContext(ctx, `RELEASE migrate_step`); rerr != nil {
+		return errors.Join(err, fmt.Errorf("end the step: %w", rerr))
+	}
+	return err
+}
+
+// usable returns nil when the part migrated at Open, and an error wrapping ErrUnmigrated, with why, when it failed.
+func (s *Store) usable(name string) error {
+	if err := s.failed[name]; err != nil {
+		return fmt.Errorf("%s unavailable: %w: %w", name, ErrUnmigrated, err)
+	}
+	return nil
 }
 
 // Reader is the store or a transaction: what Get and List read from.
 type Reader interface {
 	query(ctx context.Context, query string, args ...any) (*sql.Rows, error)
 	table(md protoreflect.MessageDescriptor) (*table, error)
+	usable(name string) error
 }
 
 // Counted is r counting in n the statements read through it: a test pins how many reads a path takes.
@@ -167,6 +234,8 @@ func (c *counted) query(ctx context.Context, query string, args ...any) (*sql.Ro
 
 func (c *counted) table(md protoreflect.MessageDescriptor) (*table, error) { return c.r.table(md) }
 
+func (c *counted) usable(name string) error { return c.r.usable(name) }
+
 func (s *Store) query(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
 	start := time.Now()
 	rows, err := s.db.QueryContext(ctx, query, args...)
@@ -178,6 +247,9 @@ func (s *Store) query(ctx context.Context, query string, args ...any) (*sql.Rows
 }
 
 func (s *Store) table(md protoreflect.MessageDescriptor) (*table, error) {
+	if err := s.usable(part(md.FullName())); err != nil {
+		return nil, err
+	}
 	t, ok := s.tables[md.FullName()]
 	if !ok {
 		return nil, fmt.Errorf("%s is not an entity of the store", md.FullName())
@@ -295,6 +367,53 @@ func ListAfter[T proto.Message](ctx context.Context, r Reader, where Where, afte
 	return out, err
 }
 
+// InSubset returns the entities of type T in its subset name (djinn.v1.subset) whose first field of the subset's order
+// is among values, read through the subset's index: a statement per 500 values, which reads the subset's rows only,
+// where a List with Where reads every row of each value. The entities of one value come in the subset's order.
+func InSubset[T proto.Message](ctx context.Context, r Reader, name string, values []string) ([]T, error) {
+	var zero T
+	mt := zero.ProtoReflect().Type()
+	t, err := r.table(mt.Descriptor())
+	if err != nil {
+		return nil, err
+	}
+	i := slices.IndexFunc(t.subsets, func(s *subset) bool { return s.name == name })
+	if i < 0 {
+		return nil, fmt.Errorf("%s has no subset %q", mt.Descriptor().Name(), name)
+	}
+	sub := t.subsets[i]
+	order := make([]string, len(sub.by))
+	for i, f := range sub.by {
+		order[i] = quote(f)
+	}
+	var out []T
+	for chunk := range slices.Chunk(values, getManyChunk) {
+		args := make([]any, len(chunk))
+		for i, v := range chunk {
+			args[i] = v
+		}
+		marks := strings.Repeat("?,", len(chunk))
+		// INDEXED BY: without the statistics of ANALYZE, SQLite may prefer the index of the first field, which reads
+		// every row of each value; this one holds the subset's rows only.
+		q := `SELECT payload FROM ` + quote(t.name) + ` INDEXED BY ` + quote(sub.index(t)) + ` WHERE ` + order[0] +
+			` IN (` + marks[:len(marks)-1] + `) AND ` + sub.where() + ` ORDER BY ` + strings.Join(order, ", ")
+		rows, err := r.query(ctx, q, args...)
+		if err != nil {
+			return nil, err
+		}
+		err = decode(rows, mt, func(m proto.Message) bool {
+			if sub.holds(m.ProtoReflect()) {
+				out = append(out, m.(T))
+			}
+			return true
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
 // Oldest calls f on the entities of type T that match where, the first written first, until f returns false: an
 // entity put again keeps its place. Through the index on where's field, it reads no further than f asks.
 func Oldest[T proto.Message](ctx context.Context, r Reader, where Where, f func(T) bool) error {
@@ -396,6 +515,11 @@ func query(
 	if err != nil {
 		return err
 	}
+	return decode(rows, mt, add)
+}
+
+// decode decodes the payloads of rows, a payload a row, and closes them, until add returns false.
+func decode(rows *sql.Rows, mt protoreflect.MessageType, add func(proto.Message) bool) error {
 	defer rows.Close()
 	for rows.Next() {
 		var payload []byte
@@ -478,8 +602,13 @@ func (tx *Tx) query(ctx context.Context, query string, args ...any) (*sql.Rows, 
 
 func (tx *Tx) table(md protoreflect.MessageDescriptor) (*table, error) { return tx.s.table(md) }
 
+func (tx *Tx) usable(name string) error { return tx.s.usable(name) }
+
 // Journal writes the command received: who sent it, the full name of its method, and the request as is.
 func (tx *Tx) Journal(actor, method string, req proto.Message) error {
+	if err := tx.s.usable(partJournal); err != nil {
+		return err
+	}
 	b, err := proto.MarshalOptions{Deterministic: true}.Marshal(req)
 	if err != nil {
 		return err
@@ -577,6 +706,9 @@ func CommandsOf(ctx context.Context, r Reader, prefix string, keep func(Command)
 }
 
 func commands(ctx context.Context, r Reader, q string, keep func(Command) bool, args ...any) ([]Command, error) {
+	if err := r.usable(partJournal); err != nil {
+		return nil, err
+	}
 	rows, err := r.query(ctx, q, args...)
 	if err != nil {
 		return nil, err

@@ -69,6 +69,9 @@ func (s *Store) AddSamples(ctx context.Context, samples []Sample) error {
 	if len(samples) == 0 {
 		return nil
 	}
+	if err := s.usable(partSamples); err != nil {
+		return err
+	}
 	return s.tx(ctx, func(tx *sql.Tx) error {
 		stmt, err := tx.PrepareContext(ctx,
 			`INSERT INTO sample (series, at, seconds, cpu, memory, djinn_cpu, djinn_memory, self_cpu, self_memory)
@@ -89,6 +92,9 @@ func (s *Store) AddSamples(ctx context.Context, samples []Sample) error {
 
 // Samples reads the samples of series measured after from, the oldest first.
 func (s *Store) Samples(ctx context.Context, series string, from time.Time) ([]Sample, error) {
+	if err := s.usable(partSamples); err != nil {
+		return nil, err
+	}
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT at, seconds, cpu, memory, djinn_cpu, djinn_memory, self_cpu, self_memory FROM sample
 		WHERE series = ? AND at > ? ORDER BY at`,
@@ -112,6 +118,9 @@ func (s *Store) Samples(ctx context.Context, series string, from time.Time) ([]S
 
 // LastSample is the latest sample of series, and false when it has none.
 func (s *Store) LastSample(ctx context.Context, series string) (Sample, bool, error) {
+	if err := s.usable(partSamples); err != nil {
+		return Sample{}, false, err
+	}
 	var at, memory, djinnMemory, selfMemory int64
 	x := Sample{Series: series}
 	err := s.db.QueryRowContext(ctx,
@@ -141,6 +150,9 @@ type Retention struct {
 
 // PruneSamples rolls up and removes samples as r says, now being the time of the last reading.
 func (s *Store) PruneSamples(ctx context.Context, now time.Time, r Retention) error {
+	if err := s.usable(partSamples); err != nil {
+		return err
+	}
 	// A whole minute: a minute is never split between a reading kept and its roll-up.
 	fine := now.Add(-r.Fine).Truncate(time.Minute).UnixMilli()
 	return s.tx(ctx, func(tx *sql.Tx) error {

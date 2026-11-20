@@ -469,7 +469,7 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 		dir = filepath.Join(t.GetWorktree(), filepath.FromSlash(prefix))
 		if _, err := os.Stat(dir); err != nil {
 			if by == byEnvReplay {
-				sha, _, err := h.startPoint(h.ctx, project, h.taskStartBranch(h.ctx, project, t))
+				sha, _, err := h.workerBase(h.ctx, project, h.taskStartBranch(h.ctx, project, t))
 				if err != nil {
 					return fmt.Errorf("create the worktree: %w", err)
 				}
@@ -483,7 +483,7 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 	case project.GetGit() && !r.light: // A question worker reads in the project's folder.
 		if by == byEnvReplay {
 			t.Worktree = worktreeDir(h.home, project.GetId(), t.GetId())
-			sha, _, err := h.startPoint(h.ctx, project, h.taskStartBranch(h.ctx, project, t))
+			sha, _, err := h.workerBase(h.ctx, project, h.taskStartBranch(h.ctx, project, t))
 			if err != nil {
 				return fmt.Errorf("create the worktree: %w", err)
 			}
@@ -515,6 +515,11 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 			return fmt.Errorf("project %s: %w", project.GetName(), err)
 		}
 		r.setChecks(settings)
+	} else if !r.watcher {
+		// Outside Git, its kind's instructions all the same (W114): a file that does not read gives none.
+		if s, err := plan.LoadSettings(h.home, project); err == nil {
+			r.instructions = s.InstructionsFor(workerKindOf(nil, t))
+		}
 	}
 	readOnly, perms := taskPermissions(t, prep.declared)
 	line := restartedLine
@@ -547,7 +552,7 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 	}
 	spec := Spec{
 		TaskID: t.GetId(), Dir: dir, ReadOnly: readOnly, Permissions: perms, Model: model, MaxBudgetUSD: budget,
-		Resume: t.GetSessionId(), Prompt: line, ReadDirs: plan.TilasmDirs(h.home, prompt),
+		Resume: t.GetSessionId(), Prompt: line, ReadDirs: plan.ReadDirs(h.home, prompt),
 	}
 	var err error
 	if spec.WriteDirs, err = h.questionWriteDirs(t); err != nil {

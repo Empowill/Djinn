@@ -51,6 +51,7 @@ func (p *Projects) projectNoticesWith(
 	if project.GetDirectory() != "" {
 		out = append(out, permissionNotices(config)...)
 		out = append(out, projectConfigNotices(config)...)
+		out = append(out, configBranchNotices(project, config)...)
 		if project.GetGit() && p.Pusher != nil {
 			var branch []*planv1.ProjectNotice
 			branch, ref = p.branchNoticesAndRef(
@@ -105,15 +106,19 @@ func firstFix(notices []*planv1.ProjectNotice) string {
 }
 
 // settingsNotices are what Djinn finds in the settings files files: one it cannot read, and what it ignores in
-// those it reads.
+// those it reads. The team's settings are read in the project's djinn.yaml, whose notices say a file Djinn cannot read
+// and a field it does not know (projectConfigNotices); a settings.txtpb left in .agents is a warning.
 func settingsNotices(files []settingsRead) []*planv1.ProjectNotice {
 	var out []*planv1.ProjectNotice
 	for _, f := range files {
 		whose, subject := "your own settings of the project", f.path
 		if f.team {
-			whose, subject = "the team's settings", filepath.ToSlash(SettingsFile)
+			whose, subject = "the team's settings", f.file
 		}
 		if f.err != nil {
+			if f.team {
+				continue // projectConfigNotices says it.
+			}
 			out = append(out, &planv1.ProjectNotice{
 				Kind: toFix, Topic: topicSettings, Subject: subject, Action: fixFile, File: f.path, Detail: f.err.Error(),
 				Text: "Djinn cannot read " + whose + ": the project's tasks do not spawn until the file is fixed.",
@@ -122,10 +127,17 @@ func settingsNotices(files []settingsRead) []*planv1.ProjectNotice {
 		}
 		for _, w := range f.warnings {
 			n := &planv1.ProjectNotice{Kind: information, Topic: topicSettings, Subject: subject, Detail: w.text}
-			if w.ignored {
+			switch {
+			case w.elsewhere:
+				continue
+			case w.stale:
+				n.Kind, n.Subject, n.Action, n.File = warning, filepath.ToSlash(StaleSettingsFile), fixFile, w.file
+				n.Text = "Djinn no longer reads .agents/settings.txtpb: move its settings under settings: in " + f.file +
+					", then delete it."
+			case w.ignored:
 				n.Text, n.Action, n.File = "Djinn ignores a line of "+whose+": a developer allows these commands in "+
 					"their own file.", fixFile, f.path
-			} else {
+			default:
 				n.Text = "Djinn ignores a field of " + whose + " that a newer Djinn knows."
 			}
 			out = append(out, n)
@@ -137,11 +149,12 @@ func settingsNotices(files []settingsRead) []*planv1.ProjectNotice {
 // permissionNotices are what Djinn finds in the permissions of a project, where it reads its configuration (config).
 func permissionNotices(config Config) []*planv1.ProjectNotice {
 	subject, file := filepath.ToSlash(PermissionsFile), filepath.Join(config.Folder, PermissionsFile)
-	_, unknowns, err := ReadPermissions(config.Dir)
+	dir, ref := config.PermissionsDir()
+	_, unknowns, err := ReadPermissions(dir)
 	if err != nil {
 		detail := err.Error()
-		if config.FromReference() {
-			detail = config.Ref + ":" + detail // the error names the file: origin/main:.agents/permissions.txtpb
+		if ref != "" {
+			detail = ref + ":" + detail // the error names the file: origin/main:.agents/permissions.txtpb
 		}
 		return []*planv1.ProjectNotice{{
 			Kind: toFix, Topic: topicPermissions, Subject: subject, Action: fixFile, File: file, Detail: detail,
@@ -160,8 +173,8 @@ func permissionNotices(config Config) []*planv1.ProjectNotice {
 }
 
 // projectConfigNotices are what Djinn finds in the project's djinn.yaml, where it reads its configuration (config): a
-// file it cannot read is to fix, its configuration not applied; a field it does not know, and a second file it does not
-// read, are warnings, the rest of the file applied (Q21).
+// file it cannot read is to fix, its configuration not applied; a field it does not know, a second file it does not
+// read, and a gate left out are warnings, the rest of the file applied (Q21, L17).
 func projectConfigNotices(config Config) []*planv1.ProjectNotice {
 	read, err := ReadProjectConfig(config.Dir)
 	if read.File == "" {
@@ -176,8 +189,8 @@ func projectConfigNotices(config Config) []*planv1.ProjectNotice {
 		}
 		out = append(out, &planv1.ProjectNotice{
 			Kind: toFix, Topic: topicSettings, Subject: read.File, Action: fixFile, File: file, Detail: detail,
-			Text: "Djinn cannot read the project's " + read.File + ": none of it applies, Djinn's defaults hold until " +
-				"the file is fixed.",
+			Text: "Djinn cannot read the project's " + read.File + ": none of it applies, and the project's tasks do " +
+				"not spawn until the file is fixed.",
 		})
 	}
 	for _, u := range read.Unknown {
@@ -186,6 +199,13 @@ func projectConfigNotices(config Config) []*planv1.ProjectNotice {
 			Text: "Djinn ignores a field of the project's " + read.File + " it does not know: the rest of the file " +
 				"applies.",
 			Detail: "unknown field " + u,
+		})
+	}
+	for _, d := range read.Dropped {
+		out = append(out, &planv1.ProjectNotice{
+			Kind: warning, Topic: topicSettings, Subject: read.File, Action: fixFile, File: file,
+			Text:   "Djinn leaves out a gate of the project's " + read.File + ": the other gates and the rest of the file apply.",
+			Detail: d,
 		})
 	}
 	if read.Ignored != "" {
@@ -214,7 +234,11 @@ func (p *Projects) branchNoticesAndRef(
 	}
 	var projRef *planv1.ProjectReference
 	if wantRef && branch != "" {
-		projRef = &planv1.ProjectReference{Branch: branch, Ref: shortRef(ref), Source: from, CheckedOut: head}
+		projRef = &planv1.ProjectReference{Branch: branch, Ref: shortRef(ref), Source: from, CheckedOut: head,
+			ConfigBranch: config.ConfigBranch}
+		if config.ReferenceDir != "" {
+			projRef.ConfigRef = config.Ref
+		}
 		if err == nil {
 			if config.FromReference() && shortRef(ref) == config.Ref && config.Commit != "" {
 				projRef.Commit = config.Commit
@@ -247,6 +271,33 @@ func (p *Projects) branchNoticesAndRef(
 			"project's configuration on %s, and no worker starts from your copy.", head, shortRef(ref), config.Ref)
 	}
 	return []*planv1.ProjectNotice{{Kind: information, Topic: topicBranch, Subject: head, Text: text}}, projRef
+}
+
+// configBranchNotices say where Djinn reads project's configuration while the developer's own file names a
+// configuration branch (config_branch, config): on that branch, the permissions staying on the reference branch; or,
+// the branch gone or not fetched, on the reference branch (Q110). Nothing when they name none.
+func configBranchNotices(project *planv1.Project, config Config) []*planv1.ProjectNotice {
+	if config.ConfigBranch == "" {
+		return nil
+	}
+	reference := cmp.Or(config.ReferenceRef, "the project's folder")
+	if config.ConfigBranchMissing() {
+		reference = cmp.Or(config.Ref, "the project's folder")
+	}
+	unset := "djinn project set-branch " + project.GetName() + " --config --unset"
+	if config.ConfigBranchMissing() {
+		return []*planv1.ProjectNotice{{
+			Kind: warning, Topic: topicBranch, Subject: config.ConfigBranch, Command: unset,
+			Text: fmt.Sprintf("config_branch %s is not on the remote (merged and deleted, or not fetched yet): Djinn "+
+				"reads the configuration on %s. Take it back once it merged.", config.ConfigBranch, reference),
+		}}
+	}
+	return []*planv1.ProjectNotice{{
+		Kind: information, Topic: topicBranch, Subject: config.ConfigBranch, Command: unset,
+		Text: fmt.Sprintf("Configuration read from %s, not %s: your config_branch, to try its djinn.yaml and skills "+
+			"before it merges. The permissions, pull requests and merges stay on %s. Take it back once it merged.",
+			config.Ref, reference, reference),
+	}}
 }
 
 // projectReference is project's reference branch, from name, its main_branch setting that from sets: the branch,

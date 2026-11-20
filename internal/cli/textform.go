@@ -3,12 +3,15 @@ package cli
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/reflect/protoregistry"
 	"google.golang.org/protobuf/types/dynamicpb"
 
+	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	queryv1 "github.com/empowill/djinn/gen/go/query/v1"
 	"github.com/empowill/djinn/internal/querytext"
 )
@@ -45,6 +48,11 @@ var textForms = map[protoreflect.FullName]textForm{
 			return querytext.Group(ctx, s, collectionOf(req), schemaTypes(l))
 		},
 		write: func(m proto.Message) string { return querytext.GroupText(m.(*queryv1.GroupBy)) }},
+	"plan.v1.LeadFile": {help: "a file's path, read on this machine: djinn lead tell hands it to the lead",
+		read: func(_ context.Context, s string, _ protoreflect.Message, _ lookup) (proto.Message, error) {
+			return readLeadFile(s)
+		},
+		write: func(m proto.Message) string { return m.(*planv1.LeadFile).GetName() }},
 	"query.v1.Measure": {help: querytext.MeasureHelp,
 		read: func(_ context.Context, s string, _ protoreflect.Message, _ lookup) (proto.Message, error) {
 			return querytext.Measure(s)
@@ -180,4 +188,20 @@ func formText(fd protoreflect.FieldDescriptor, form textForm, v protoreflect.Val
 		return ""
 	}
 	return form.write(typed)
+}
+
+// readLeadFile reads the file at path into a file handed to the lead, named after it; the server tells its type.
+func readLeadFile(path string) (*planv1.LeadFile, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	if info.Size() > 20<<20 {
+		return nil, fmt.Errorf("%s is larger than 20 MB", path)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	return &planv1.LeadFile{Name: filepath.Base(path), Data: data}, nil
 }

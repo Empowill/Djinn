@@ -47,31 +47,6 @@ func Hook(in io.Reader, out io.Writer, admit func(what, dir, match string) (stri
 	})
 }
 
-// readHeads are the commands that read or edit and run nothing else: they pass with no admission. Anything else, a
-// build, a test, a package manager, a script, an interpreter, a loop, is admitted.
-var readHeads = map[string]bool{
-	// Reading files and folders.
-	"ls": true, "cat": true, "head": true, "tail": true, "wc": true, "grep": true, "egrep": true, "fgrep": true,
-	"rg": true, "fd": true, "tree": true, "stat": true, "file": true, "du": true, "df": true, "less": true,
-	"more": true, "diff": true, "cmp": true, "comm": true, "od": true, "xxd": true, "hexdump": true, "strings": true,
-	"sha256sum": true, "sha1sum": true, "md5sum": true, "cksum": true, "realpath": true, "readlink": true,
-	"basename": true, "dirname": true, "find": true,
-	// Text in a pipe.
-	"echo": true, "printf": true, "sort": true, "uniq": true, "cut": true, "tr": true, "awk": true, "sed": true,
-	"jq": true, "column": true, "nl": true, "tee": true, "base64": true, "fold": true, "rev": true, "paste": true,
-	"join": true, "expand": true, "fmt": true,
-	// Editing files and folders.
-	"mkdir": true, "rmdir": true, "touch": true, "cp": true, "mv": true, "rm": true, "ln": true, "chmod": true,
-	"patch": true,
-	// The shell itself, and what tells about the machine.
-	"cd": true, "pwd": true, "true": true, "false": true, "test": true, "[": true, "export": true, "unset": true,
-	"which": true, "type": true, "date": true, "printenv": true, "id": true, "whoami": true,
-	"hostname": true, "uname": true, "ps": true, "pgrep": true, "free": true, "uptime": true, "nproc": true,
-	"exit": true,
-	// Djinn's own commands talk to Djinn; djinn gate run takes its gate.
-	"djinn": true,
-}
-
 // gitReads are git's commands that read or edit the worktree, and run no hook.
 var gitReads = map[string]bool{
 	"status": true, "log": true, "diff": true, "show": true, "branch": true, "rev-parse": true, "rev-list": true,
@@ -86,15 +61,24 @@ var gitReads = map[string]bool{
 // and env, whose assignments are stripped after it.
 var stripped = map[string]bool{"time": true, "nohup": true, "command": true, "builtin": true, "noglob": true, "env": true}
 
-// Plain says whether command only reads or edits, its every part being a command of readHeads or a reading git: it
-// passes with no admission. One it cannot read through, a substitution, a subshell, a find that runs or deletes, is
-// not plain.
+// Plain says whether command only reads or edits, its every part being a light command (machine.Light) or a reading git: it
+// passes with no admission. A here-document is data its command reads, cat <<'EOF' > notes.md writes a file (W82);
+// a substitution in its body runs, unless its delimiter is quoted. One it cannot read through, a substitution, a
+// subshell, a find that runs or deletes, is not plain.
 func Plain(command string) bool {
-	if strings.Contains(command, "$(") || strings.Contains(command, "`") || strings.Contains(command, "<(") ||
-		strings.Contains(command, ">(") {
+	code, docs := machine.HereDocs(command)
+	texts := []string{code}
+	for _, d := range docs {
+		if !d.Quoted {
+			texts = append(texts, d.Body)
+		}
+	}
+	if slices.ContainsFunc(texts, func(s string) bool {
+		return strings.Contains(s, "$(") || strings.Contains(s, "`") || strings.Contains(s, "<(") || strings.Contains(s, ">(")
+	}) {
 		return false
 	}
-	parts, ok := split(command)
+	parts, ok := split(code)
 	if !ok {
 		return false
 	}
@@ -107,7 +91,7 @@ func Plain(command string) bool {
 		}
 		head := path.Base(words[0])
 		switch {
-		case !readHeads[head] && head != "git":
+		case !machine.Light(head) && head != "git":
 			return false
 		case head == "git" && !gitRead(words[1:]):
 			return false
@@ -152,8 +136,9 @@ func assignment(word string) bool {
 var errUnread = errors.New("unread")
 
 // split cuts command into its simple commands, each into its words, quotes removed: at ;, &, |, &&, || and new lines.
-// A redirection is left out with its target. ok is false for what it cannot read: an open quote, a group or a
-// subshell, a here-document.
+// A redirection is left out with its target, a here-document's operator with its delimiter: command comes without
+// their bodies (machine.HereDocs). ok is false for what it cannot read: an open quote, a group or a subshell, a
+// here-string.
 func split(command string) (parts [][]string, ok bool) {
 	var words []string
 	var word strings.Builder
@@ -207,15 +192,19 @@ func split(command string) (parts [][]string, ok bool) {
 				cut()
 			case c == '(' || c == ')' || c == '{' && !inWord || c == '}' && !inWord:
 				return errUnread
-			case c == '<' && strings.HasPrefix(command[i:], "<<"):
+			case c == '<' && strings.HasPrefix(command[i:], "<<<"):
 				return errUnread
 			case c == '>' || c == '<':
-				// A redirection: its target is no word of the command. 2>&1 and >&2 name no file.
+				// A redirection: its target is no word of the command. 2>&1 and >&2 name no file. A here-document's
+				// target is its delimiter.
 				if inWord && strings.Trim(word.String(), "0123456789") == "" {
 					word.Reset()
 					inWord = false
 				}
 				end()
+				if strings.HasPrefix(command[i:], "<<") {
+					i++
+				}
 				for i+1 < len(command) && (command[i+1] == '>' || command[i+1] == '&' || command[i+1] == '|') {
 					i++
 				}

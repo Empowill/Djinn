@@ -3,6 +3,7 @@ package plan
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -15,11 +16,13 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/gitx"
 	"github.com/empowill/djinn/internal/store"
 )
 
-// The watch of the configuration on the reference branch: every ConfigLookEvery, and after each push of Djinn, the
-// harness fetches each project's reference branch alone, then LookAtConfig compares the digest of the .agents and
+// The watch of the configuration on the reference branch: every ConfigLookEvery (slower while the developer is away),
+// and after each push of Djinn at the project pushed, the harness fetches each project's reference branch, with its
+// tags, unless another loop fetched it lately; then LookAtConfig compares the digest of the .agents and
 // .claude/skills trees and of the root's djinn.yaml (ConfigFolders; the name of their folder in the cache) with the one
 // of its last look, kept in a ConfigWatch.
 // No git runs to read anything when it has not moved. When it has, each commit of the branch that changed those trees
@@ -28,8 +31,9 @@ import (
 // branch; one that gives the workers more, or changes what a skill makes or runs for Djinn, asks for your look: the
 // project's gear lights until you mark it seen.
 
-// ConfigLookEvery is how often Djinn looks at the reference branch of each project.
-const ConfigLookEvery = 5 * time.Minute
+// ConfigLookEvery is how often Djinn looks at the reference branch of each project while the developer is there; the
+// harness looks less often while they are away (W65).
+const ConfigLookEvery = 15 * time.Minute
 
 // Journal entries of the watch.
 const (
@@ -60,10 +64,23 @@ func LookAtConfig(ctx context.Context, st *store.Store, home string, project *pl
 		}
 	}
 	config := ProjectConfig(home, project)
-	if config.FromReference() && "refs/remotes/"+config.Ref != ref && fetch != nil {
-		// The team's file, on the default branch just fetched, names another branch.
-		if err := fetch(ctx, folder, "refs/remotes/"+config.Ref); err != nil {
+	if _, reference := config.PermissionsDir(); reference != "" && "refs/remotes/"+reference != ref && fetch != nil {
+		// The team's file, on the default branch just fetched, names another branch. The reference branch, where the
+		// permissions stay read: not the developer's configuration branch.
+		if err := fetch(ctx, folder, "refs/remotes/"+reference); err != nil {
 			fetchError = err.Error()
+		}
+		config = ProjectConfig(home, project)
+	}
+	if config.ConfigBranchRef != "" && config.ConfigBranchRef != ref && fetch != nil {
+		// The developer's configuration branch, at each look: read once pushed, followed, and dropped once the remote
+		// deleted it (merged), as git fetch --prune would. Not there, the reference branch holds (Q110), and its notice
+		// says so, not the watch.
+		err := fetch(ctx, folder, config.ConfigBranchRef)
+		if errors.Is(err, gitx.ErrRemoteBranchGone) && !config.ConfigBranchMissing() {
+			if _, err := gitRawOut(ctx, folder, "update-ref", "-d", config.ConfigBranchRef); err != nil {
+				warnOnce(folder, "drop "+shortRef(config.ConfigBranchRef)+", gone from the remote", err)
+			}
 		}
 		config = ProjectConfig(home, project)
 	}
@@ -93,6 +110,9 @@ func LookAtConfig(ctx context.Context, st *store.Store, home string, project *pl
 			changes = firstChanges(ctx, home, project, config, now)
 		case last.GetDigest() != digest:
 			changes = changesSince(ctx, st, home, project, last, config, now)
+		}
+		if config.ReferenceDir != "" {
+			changes = withoutPermissions(changes)
 		}
 	}
 	if last != nil && proto.Equal(last, next) {
@@ -248,6 +268,22 @@ func linesOrFiles(before, after string, plugged func(string) bool) []*planv1.Con
 		strings.Join(files, ", ") + "."}}
 }
 
+// withoutPermissions are changes without their lines on the permissions, those that tell nothing else left out: on the
+// developer's configuration branch, the permissions Djinn applies stay those of the reference branch.
+func withoutPermissions(changes []*planv1.ConfigChange) []*planv1.ConfigChange {
+	out := changes[:0]
+	for _, c := range changes {
+		had := len(c.GetLines())
+		c.Lines = slices.DeleteFunc(c.GetLines(), func(l *planv1.ConfigChangeLine) bool {
+			return l.GetTopic() == topicPermissions
+		})
+		if had == 0 || len(c.GetLines()) > 0 {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
 // firstChanges are the entries of the first look at project's reference branch: its last commits that changed the
 // configuration, told as history.
 func firstChanges(ctx context.Context, home string, project *planv1.Project, config Config, now time.Time) []*planv1.ConfigChange {
@@ -374,7 +410,7 @@ func wholeChange(ctx context.Context, home string, project *planv1.Project, last
 	}
 	if last.GetRef() != config.Ref {
 		change.Lines = append(change.Lines, line(topicBranch, config.Ref, false,
-			"The reference branch is now %s, not %s: Djinn reads the configuration there.", config.Ref, last.GetRef()))
+			"Djinn now reads the configuration on %s, not %s.", config.Ref, last.GetRef()))
 	}
 	change.Lines = append(change.Lines, linesOrFiles(before, config.Dir, plugged)...)
 	return change, nil

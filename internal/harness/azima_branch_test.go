@@ -507,7 +507,9 @@ func TestCutAzimaBranch(t *testing.T) {
 		_, err = in.tasks.Spawn(ctx, connect.NewRequest(&planv1.TaskServiceSpawnRequest{
 			WishId: in.wishID, Title: "Builds on W1", Prompt: "build", PartOf: t2.GetCode(), DependsOn: []string{w1.GetCode()}, Later: true,
 		}))
-		refused("spawn work of T2 after W1", err, "(T2 after T1)")
+		// W117: the lead's spawn of 18/11/2026 (--part-of T92 --after W875, a part of T85) learns what to change.
+		refused("spawn work of T2 after W1", err, "(T2 after T1); a task waits only for tasks of its own azima: "+
+			"drop from --after what is part of another, or spawn the task part of that one")
 
 		w2 := work("W2", t2.GetId())
 		_, err = in.tasks.Depend(ctx, connect.NewRequest(&planv1.TaskServiceDependRequest{TaskId: w2.GetId(), After: []string{"W1"}}))
@@ -1586,6 +1588,7 @@ func TestAzimaPRPass(t *testing.T) {
 		// Now MR !201 is MERGED, and MR !202 for T2 is OPEN, targeting main.
 		forge.mu.Lock()
 		forge.views[b1] = `{"iid":201,"state":"merged","target_branch":"main","detailed_merge_status":"not_applicable"}`
+		forge.views["201"] = forge.views[b1] // recorded open, it is read by its number (W81)
 		forge.views[b2] = `{"iid":202,"state":"opened","target_branch":"main","detailed_merge_status":"mergeable","head_pipeline":{"id":100,"status":"running"}}`
 		forge.mu.Unlock()
 		in.git(t, in.repo, "merge", "--quiet", "--no-ff", b1, "-m", "Merge "+b1+" into main")

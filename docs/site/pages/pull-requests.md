@@ -102,7 +102,10 @@ The request is yours from the draft on:
 - **Merge it** when it is approved and green. Per azima, Djinn tells you when the request can be merged and its checks
   are green, *Pull request #12 for T07 is ready to merge?*, and only notes your answer: the merge is still yours.
 
-Once merged, an azima's card shows **PR merged**, and the azima is done; once the watcher said it is merged, or main
+Once merged, an azima's card shows **PR merged**, and the azima is done, as soon as no part of it runs any more (a
+watcher that runs for good keeps it open); closed without being merged, it shows **PR closed**, the Djinn hears it, and
+Djinn closes nothing. Djinn reads an open request on the forge again at each pass, by its number, even once its branch
+is gone; for an azima already closed, the card follows it, and the Djinn hears nothing of it. Once the watcher said it is merged, or main
 holds every commit of its work, a small mark shows beside its code: **Merged into main**. A task added to the azima
 afterwards clears it until that work is in main too (see Azima). Per wish, a question still proposing the
 request closes by itself once main holds the branch.

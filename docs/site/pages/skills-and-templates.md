@@ -20,8 +20,8 @@ the same thing. Its extra lines for Djinn need no code: a few lines declare the 
 A project's skills are the folders of its agents' skills directory, or of Claude's: when the same name is in both,
 the agents' one wins. Each skill has a name and a one-line description.
 
-To see them, click a project under **Projects** in the side panel: its panel lists its **Skills**, each with its
-description, or why it cannot be found. **No skill in this project.** when it has none.
+To see them, click a project under **Projects** in the side panel: its settings page lists them on its **Skills**
+tab, each with its description, or why it cannot be found. **No skill in this project.** when it has none.
 
 The workers find the project's own skills in their worktree, as their agent does in any repository.
 
@@ -31,8 +31,9 @@ A project can **summon** a skill of another project: its workers then use it as 
 start, without a copy. Djinn gives them the skill where it lies; nothing is written in either project. The skill keeps
 following its source: a fix there reaches every project that summons it.
 
-A summoned skill shows in the project's panel with **from** and its source. Whether a project summons a skill is kept
-in Djinn's data on this machine, not in the repository. A project cannot summon a skill whose name it already has.
+A summoned skill shows on the project's **Skills** tab with **from** and its source. Whether a project summons a skill
+is kept in Djinn's data on this machine, not in the repository. A project cannot summon a skill whose name it already
+has.
 
 If the source is gone, the worker starts without it, and its task says so.
 
@@ -72,9 +73,8 @@ Only a project's own skills babysit, never a summoned one, and a project's setti
 
 A skill may declare a source: a command that prints what comes from outside, the merge requests assigned to you, a
 mention in a thread. Each item becomes a card in the [inbox](#inbox), with the route Djinn proposes. A source runs only
-once you plug it in, on this machine, from its project's panel: declaring one in a repository runs nothing on a
-teammate's Djinn. Djinn only
-reads a source; it never answers, comments or reacts.
+once you plug it in, on this machine, from its project's **Skills** tab: declaring one in a repository runs nothing
+on a teammate's Djinn. Djinn only reads a source; it never answers, comments or reacts.
 
 ## What to expect
 
@@ -83,7 +83,7 @@ reads a source; it never answers, comments or reacts.
 - **The whole team gets them.** Skills live in the repository: every Djinn on every machine reads the same ones.
 - **A watcher's command must be allowed.** A watcher has no reviewer. Its command runs when the project lists it among
   the commands its workers may run, when a skill of the project itself declares it, or when you allow it for yourself
-  in the project's panel, **Watcher commands you allow**. See [Watcher](#watcher).
+  on the project's **Permissions** tab, **Watcher commands you allow**. See [Watcher](#watcher).
 
 ## Common mistakes
 
@@ -94,7 +94,8 @@ reads a source; it never answers, comments or reacts.
 - **Expecting a summoned skill to babysit.** Babysitting reads the project's own skills only.
 - **A refused watcher.** A watcher whose command no rule allows fails at its start, and its error says what would let
   it run. A command you typed by hand is not "declared" even if it starts the same way.
-- **Declaring a source and waiting for items.** It runs once plugged in, from its project's panel, on your machine.
+- **Declaring a source and waiting for items.** It runs once plugged in, from its project's **Skills** tab, on your
+  machine.
 
 ## Read next
 

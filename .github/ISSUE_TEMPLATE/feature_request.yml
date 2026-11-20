@@ -1,0 +1,26 @@
+name: Ask a question or suggest an improvement
+description: A question on Djinn, or something it could do, or do better. Never a security flaw here (see SECURITY.md).
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        A question goes here too: write it under The need and leave What you suggest empty. A flaw that an attacker
+        could use goes privately, to dev@empowill.com, never in a public issue.
+  - type: textarea
+    id: need
+    attributes:
+      label: The need
+      description: Your question, or what you were trying to do and what got in the way.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What you suggest
+      description: How Djinn could answer it, if you have an idea. Another tool that does it well helps.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: What `djinn version` prints.

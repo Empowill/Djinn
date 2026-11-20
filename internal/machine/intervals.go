@@ -12,8 +12,10 @@ import (
 	"github.com/empowill/djinn/internal/store"
 )
 
-// IntervalRetention is how long the gate intervals are kept: a week, the longest range of the series.
-const IntervalRetention = 7 * 24 * time.Hour
+// IntervalRetention is how long the gate intervals are kept: three months (decision Q49), well past the week the
+// series and the history of the gates read at most. Some 160,000 rows: a read of a window goes by the index on the
+// release time (TestIntervalsReadByIndex).
+const IntervalRetention = 90 * 24 * time.Hour
 
 // Intervals keeps the gate intervals in the store, where they outlive a restart (G10 of L04), for IntervalRetention.
 type Intervals struct {

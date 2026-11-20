@@ -576,8 +576,15 @@ type Settings struct {
 	// available (LoadService.SetBrake, the Summoning Circle). Unset: 5. 0: no brake. djinn up --brake-memory, or
 	// DJINN_BRAKE_MEMORY, comes first.
 	BrakeMemoryPercent *uint32 `protobuf:"varint,17,opt,name=brake_memory_percent,json=brakeMemoryPercent,proto3,oneof" json:"brake_memory_percent,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	// The names of the migrations of the local settings djinn up has applied, in the order it applied them
+	// (plan.Migrate, docs/migrations.md). A name stays here once applied; a migration that could not apply is not here,
+	// and the next start tries it again.
+	Migrations []string `protobuf:"bytes,18,rep,name=migrations,proto3" json:"migrations,omitempty"`
+	// The workers' instructions on this machine, by kind of task (LeadService.Instructions, the Summoning Circle): the
+	// default of every project, which a project's repository, then the developer's own file of it, win over.
+	Instructions  *v11.WorkerInstructions `protobuf:"bytes,19,opt,name=instructions,proto3" json:"instructions,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Settings) Reset() {
@@ -727,6 +734,20 @@ func (x *Settings) GetBrakeMemoryPercent() uint32 {
 		return *x.BrakeMemoryPercent
 	}
 	return 0
+}
+
+func (x *Settings) GetMigrations() []string {
+	if x != nil {
+		return x.Migrations
+	}
+	return nil
+}
+
+func (x *Settings) GetInstructions() *v11.WorkerInstructions {
+	if x != nil {
+		return x.Instructions
+	}
+	return nil
 }
 
 // SignInRef names a sign-in of an agent: its own (no account) or one of its accounts.
@@ -2759,7 +2780,7 @@ const file_ui_v1_ui_proto_rawDesc = "" +
 	"\x05chord\x18\x01 \x01(\tR\x05chord\x12#\n" +
 	"\rdefault_chord\x18\x02 \x01(\tR\fdefaultChord\x12\x1c\n" +
 	"\tavailable\x18\x03 \x01(\bR\tavailable\x12\x18\n" +
-	"\aproblem\x18\x04 \x01(\tR\aproblem\"\xa2\b\n" +
+	"\aproblem\x18\x04 \x01(\tR\aproblem\"\x83\t\n" +
 	"\bSettings\x12\x1f\n" +
 	"\bshortcut\x18\x01 \x01(\tH\x00R\bshortcut\x88\x01\x01\x12,\n" +
 	"\x04load\x18\x02 \x01(\x0e2\x13.djinn.v1.LoadNotchH\x01R\x04load\x88\x01\x01\x12=\n" +
@@ -2782,7 +2803,11 @@ const file_ui_v1_ui_proto_rawDesc = "" +
 	"\x12unlimited_unforced\x18\x0e \x03(\v2\x10.ui.v1.SignInRefR\x11unlimitedUnforced\x12<\n" +
 	"\x18heavy_command_memory_mib\x18\x0f \x01(\rH\x05R\x15heavyCommandMemoryMib\x88\x01\x01\x12>\n" +
 	"\x19heavy_command_cpu_seconds\x18\x10 \x01(\rH\x06R\x16heavyCommandCpuSeconds\x88\x01\x01\x12>\n" +
-	"\x14brake_memory_percent\x18\x11 \x01(\rB\a\xbaH\x04*\x02\x18_H\aR\x12brakeMemoryPercent\x88\x01\x01B\v\n" +
+	"\x14brake_memory_percent\x18\x11 \x01(\rB\a\xbaH\x04*\x02\x18_H\aR\x12brakeMemoryPercent\x88\x01\x01\x12\x1e\n" +
+	"\n" +
+	"migrations\x18\x12 \x03(\tR\n" +
+	"migrations\x12?\n" +
+	"\finstructions\x18\x13 \x01(\v2\x1b.plan.v1.WorkerInstructionsR\finstructionsB\v\n" +
 	"\t_shortcutB\a\n" +
 	"\x05_loadB\x15\n" +
 	"\x13_ifrit_idle_minutesB\x0e\n" +
@@ -3033,7 +3058,8 @@ var file_ui_v1_ui_proto_goTypes = []any{
 	(*v11.WorkerSeat)(nil),                            // 46: plan.v1.WorkerSeat
 	(v11.Provider)(0),                                 // 47: plan.v1.Provider
 	(v11.AccountMode)(0),                              // 48: plan.v1.AccountMode
-	(*v1.LoadServiceWatchResponse)(nil),               // 49: djinn.v1.LoadServiceWatchResponse
+	(*v11.WorkerInstructions)(nil),                    // 49: plan.v1.WorkerInstructions
+	(*v1.LoadServiceWatchResponse)(nil),               // 50: djinn.v1.LoadServiceWatchResponse
 }
 var file_ui_v1_ui_proto_depIdxs = []int32{
 	10, // 0: ui.v1.UiServiceGetEnvironmentResponse.providers:type_name -> ui.v1.Provider
@@ -3048,59 +3074,60 @@ var file_ui_v1_ui_proto_depIdxs = []int32{
 	48, // 9: ui.v1.Settings.account_mode:type_name -> plan.v1.AccountMode
 	9,  // 10: ui.v1.Settings.unlimited_forced:type_name -> ui.v1.SignInRef
 	9,  // 11: ui.v1.Settings.unlimited_unforced:type_name -> ui.v1.SignInRef
-	47, // 12: ui.v1.SignInRef.provider:type_name -> plan.v1.Provider
-	1,  // 13: ui.v1.Provider.state:type_name -> ui.v1.ProviderState
-	11, // 14: ui.v1.Provider.accounts:type_name -> ui.v1.AccountSetup
-	44, // 15: ui.v1.AccountSetup.account:type_name -> plan.v1.Account
-	1,  // 16: ui.v1.AccountSetup.state:type_name -> ui.v1.ProviderState
-	7,  // 17: ui.v1.UiServiceSetShortcutResponse.shortcut:type_name -> ui.v1.Shortcut
-	30, // 18: ui.v1.UiServiceWatchUpdateResponse.builds:type_name -> ui.v1.Build
-	28, // 19: ui.v1.UiServiceWatchUpdateResponse.installing:type_name -> ui.v1.Installing
-	30, // 20: ui.v1.UiServiceWatchUpdateResponse.ready_build:type_name -> ui.v1.Build
-	2,  // 21: ui.v1.UiServiceWatchUpdateResponse.held_start:type_name -> ui.v1.HeldStart
-	23, // 22: ui.v1.UiServiceWatchResponse.show:type_name -> ui.v1.UiServiceWatchShowResponse
-	25, // 23: ui.v1.UiServiceWatchResponse.update:type_name -> ui.v1.UiServiceWatchUpdateResponse
-	49, // 24: ui.v1.UiServiceWatchResponse.load:type_name -> djinn.v1.LoadServiceWatchResponse
-	3,  // 25: ui.v1.Installing.step:type_name -> ui.v1.InstallStep
-	29, // 26: ui.v1.Build.summaries:type_name -> ui.v1.TaskSummary
-	4,  // 27: ui.v1.UiServiceGetNotificationsResponse.access:type_name -> ui.v1.NotificationAccess
-	4,  // 28: ui.v1.UiServiceRequestNotificationsResponse.access:type_name -> ui.v1.NotificationAccess
-	0,  // 29: ui.v1.UiServiceViewRequest.theme:type_name -> ui.v1.ShownTheme
-	5,  // 30: ui.v1.UiService.GetEnvironment:input_type -> ui.v1.UiServiceGetEnvironmentRequest
-	12, // 31: ui.v1.UiService.ChooseDirectory:input_type -> ui.v1.UiServiceChooseDirectoryRequest
-	14, // 32: ui.v1.UiService.OpenExternal:input_type -> ui.v1.UiServiceOpenExternalRequest
-	16, // 33: ui.v1.UiService.SetShortcut:input_type -> ui.v1.UiServiceSetShortcutRequest
-	18, // 34: ui.v1.UiService.Show:input_type -> ui.v1.UiServiceShowRequest
-	20, // 35: ui.v1.UiService.OpenLink:input_type -> ui.v1.UiServiceOpenLinkRequest
-	22, // 36: ui.v1.UiService.WatchShow:input_type -> ui.v1.UiServiceWatchShowRequest
-	24, // 37: ui.v1.UiService.WatchUpdate:input_type -> ui.v1.UiServiceWatchUpdateRequest
-	26, // 38: ui.v1.UiService.Watch:input_type -> ui.v1.UiServiceWatchRequest
-	31, // 39: ui.v1.UiService.Update:input_type -> ui.v1.UiServiceUpdateRequest
-	33, // 40: ui.v1.UiService.GetNotifications:input_type -> ui.v1.UiServiceGetNotificationsRequest
-	35, // 41: ui.v1.UiService.RequestNotifications:input_type -> ui.v1.UiServiceRequestNotificationsRequest
-	37, // 42: ui.v1.UiService.OpenNotificationSettings:input_type -> ui.v1.UiServiceOpenNotificationSettingsRequest
-	39, // 43: ui.v1.UiService.View:input_type -> ui.v1.UiServiceViewRequest
-	41, // 44: ui.v1.UiService.Touch:input_type -> ui.v1.UiServiceTouchRequest
-	6,  // 45: ui.v1.UiService.GetEnvironment:output_type -> ui.v1.UiServiceGetEnvironmentResponse
-	13, // 46: ui.v1.UiService.ChooseDirectory:output_type -> ui.v1.UiServiceChooseDirectoryResponse
-	15, // 47: ui.v1.UiService.OpenExternal:output_type -> ui.v1.UiServiceOpenExternalResponse
-	17, // 48: ui.v1.UiService.SetShortcut:output_type -> ui.v1.UiServiceSetShortcutResponse
-	19, // 49: ui.v1.UiService.Show:output_type -> ui.v1.UiServiceShowResponse
-	21, // 50: ui.v1.UiService.OpenLink:output_type -> ui.v1.UiServiceOpenLinkResponse
-	23, // 51: ui.v1.UiService.WatchShow:output_type -> ui.v1.UiServiceWatchShowResponse
-	25, // 52: ui.v1.UiService.WatchUpdate:output_type -> ui.v1.UiServiceWatchUpdateResponse
-	27, // 53: ui.v1.UiService.Watch:output_type -> ui.v1.UiServiceWatchResponse
-	32, // 54: ui.v1.UiService.Update:output_type -> ui.v1.UiServiceUpdateResponse
-	34, // 55: ui.v1.UiService.GetNotifications:output_type -> ui.v1.UiServiceGetNotificationsResponse
-	36, // 56: ui.v1.UiService.RequestNotifications:output_type -> ui.v1.UiServiceRequestNotificationsResponse
-	38, // 57: ui.v1.UiService.OpenNotificationSettings:output_type -> ui.v1.UiServiceOpenNotificationSettingsResponse
-	40, // 58: ui.v1.UiService.View:output_type -> ui.v1.UiServiceViewResponse
-	42, // 59: ui.v1.UiService.Touch:output_type -> ui.v1.UiServiceTouchResponse
-	45, // [45:60] is the sub-list for method output_type
-	30, // [30:45] is the sub-list for method input_type
-	30, // [30:30] is the sub-list for extension type_name
-	30, // [30:30] is the sub-list for extension extendee
-	0,  // [0:30] is the sub-list for field type_name
+	49, // 12: ui.v1.Settings.instructions:type_name -> plan.v1.WorkerInstructions
+	47, // 13: ui.v1.SignInRef.provider:type_name -> plan.v1.Provider
+	1,  // 14: ui.v1.Provider.state:type_name -> ui.v1.ProviderState
+	11, // 15: ui.v1.Provider.accounts:type_name -> ui.v1.AccountSetup
+	44, // 16: ui.v1.AccountSetup.account:type_name -> plan.v1.Account
+	1,  // 17: ui.v1.AccountSetup.state:type_name -> ui.v1.ProviderState
+	7,  // 18: ui.v1.UiServiceSetShortcutResponse.shortcut:type_name -> ui.v1.Shortcut
+	30, // 19: ui.v1.UiServiceWatchUpdateResponse.builds:type_name -> ui.v1.Build
+	28, // 20: ui.v1.UiServiceWatchUpdateResponse.installing:type_name -> ui.v1.Installing
+	30, // 21: ui.v1.UiServiceWatchUpdateResponse.ready_build:type_name -> ui.v1.Build
+	2,  // 22: ui.v1.UiServiceWatchUpdateResponse.held_start:type_name -> ui.v1.HeldStart
+	23, // 23: ui.v1.UiServiceWatchResponse.show:type_name -> ui.v1.UiServiceWatchShowResponse
+	25, // 24: ui.v1.UiServiceWatchResponse.update:type_name -> ui.v1.UiServiceWatchUpdateResponse
+	50, // 25: ui.v1.UiServiceWatchResponse.load:type_name -> djinn.v1.LoadServiceWatchResponse
+	3,  // 26: ui.v1.Installing.step:type_name -> ui.v1.InstallStep
+	29, // 27: ui.v1.Build.summaries:type_name -> ui.v1.TaskSummary
+	4,  // 28: ui.v1.UiServiceGetNotificationsResponse.access:type_name -> ui.v1.NotificationAccess
+	4,  // 29: ui.v1.UiServiceRequestNotificationsResponse.access:type_name -> ui.v1.NotificationAccess
+	0,  // 30: ui.v1.UiServiceViewRequest.theme:type_name -> ui.v1.ShownTheme
+	5,  // 31: ui.v1.UiService.GetEnvironment:input_type -> ui.v1.UiServiceGetEnvironmentRequest
+	12, // 32: ui.v1.UiService.ChooseDirectory:input_type -> ui.v1.UiServiceChooseDirectoryRequest
+	14, // 33: ui.v1.UiService.OpenExternal:input_type -> ui.v1.UiServiceOpenExternalRequest
+	16, // 34: ui.v1.UiService.SetShortcut:input_type -> ui.v1.UiServiceSetShortcutRequest
+	18, // 35: ui.v1.UiService.Show:input_type -> ui.v1.UiServiceShowRequest
+	20, // 36: ui.v1.UiService.OpenLink:input_type -> ui.v1.UiServiceOpenLinkRequest
+	22, // 37: ui.v1.UiService.WatchShow:input_type -> ui.v1.UiServiceWatchShowRequest
+	24, // 38: ui.v1.UiService.WatchUpdate:input_type -> ui.v1.UiServiceWatchUpdateRequest
+	26, // 39: ui.v1.UiService.Watch:input_type -> ui.v1.UiServiceWatchRequest
+	31, // 40: ui.v1.UiService.Update:input_type -> ui.v1.UiServiceUpdateRequest
+	33, // 41: ui.v1.UiService.GetNotifications:input_type -> ui.v1.UiServiceGetNotificationsRequest
+	35, // 42: ui.v1.UiService.RequestNotifications:input_type -> ui.v1.UiServiceRequestNotificationsRequest
+	37, // 43: ui.v1.UiService.OpenNotificationSettings:input_type -> ui.v1.UiServiceOpenNotificationSettingsRequest
+	39, // 44: ui.v1.UiService.View:input_type -> ui.v1.UiServiceViewRequest
+	41, // 45: ui.v1.UiService.Touch:input_type -> ui.v1.UiServiceTouchRequest
+	6,  // 46: ui.v1.UiService.GetEnvironment:output_type -> ui.v1.UiServiceGetEnvironmentResponse
+	13, // 47: ui.v1.UiService.ChooseDirectory:output_type -> ui.v1.UiServiceChooseDirectoryResponse
+	15, // 48: ui.v1.UiService.OpenExternal:output_type -> ui.v1.UiServiceOpenExternalResponse
+	17, // 49: ui.v1.UiService.SetShortcut:output_type -> ui.v1.UiServiceSetShortcutResponse
+	19, // 50: ui.v1.UiService.Show:output_type -> ui.v1.UiServiceShowResponse
+	21, // 51: ui.v1.UiService.OpenLink:output_type -> ui.v1.UiServiceOpenLinkResponse
+	23, // 52: ui.v1.UiService.WatchShow:output_type -> ui.v1.UiServiceWatchShowResponse
+	25, // 53: ui.v1.UiService.WatchUpdate:output_type -> ui.v1.UiServiceWatchUpdateResponse
+	27, // 54: ui.v1.UiService.Watch:output_type -> ui.v1.UiServiceWatchResponse
+	32, // 55: ui.v1.UiService.Update:output_type -> ui.v1.UiServiceUpdateResponse
+	34, // 56: ui.v1.UiService.GetNotifications:output_type -> ui.v1.UiServiceGetNotificationsResponse
+	36, // 57: ui.v1.UiService.RequestNotifications:output_type -> ui.v1.UiServiceRequestNotificationsResponse
+	38, // 58: ui.v1.UiService.OpenNotificationSettings:output_type -> ui.v1.UiServiceOpenNotificationSettingsResponse
+	40, // 59: ui.v1.UiService.View:output_type -> ui.v1.UiServiceViewResponse
+	42, // 60: ui.v1.UiService.Touch:output_type -> ui.v1.UiServiceTouchResponse
+	46, // [46:61] is the sub-list for method output_type
+	31, // [31:46] is the sub-list for method input_type
+	31, // [31:31] is the sub-list for extension type_name
+	31, // [31:31] is the sub-list for extension extendee
+	0,  // [0:31] is the sub-list for field type_name
 }
 
 func init() { file_ui_v1_ui_proto_init() }

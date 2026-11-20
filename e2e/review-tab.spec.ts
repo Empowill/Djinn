@@ -65,8 +65,8 @@ test("the Review tab lists a merged task, opens its diff with its comment, and k
   // A check names the project's work as integrated by Djinn: one that always passes.
   fs.mkdirSync(path.join(folder, ".agents"));
   fs.writeFileSync(
-    path.join(folder, ".agents", "settings.txtpb"),
-    'checks { name: "lint" command: "git --version" when: CHECK_WHEN_COMMIT }\n',
+    path.join(folder, ".agents", "djinn.yaml"),
+    "settings:\n  checks:\n    - {name: lint, command: git --version, when: commit}\n",
   );
   git(folder, "add", ".");
   git(folder, "commit", "--quiet", "-m", "A lamp");

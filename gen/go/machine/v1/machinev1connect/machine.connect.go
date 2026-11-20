@@ -43,16 +43,23 @@ const (
 	MachineServiceShowProcedure = "/machine.v1.MachineService/Show"
 	// MachineServiceSeriesProcedure is the fully-qualified name of the MachineService's Series RPC.
 	MachineServiceSeriesProcedure = "/machine.v1.MachineService/Series"
+	// MachineServiceMeasureDiskProcedure is the fully-qualified name of the MachineService's
+	// MeasureDisk RPC.
+	MachineServiceMeasureDiskProcedure = "/machine.v1.MachineService/MeasureDisk"
 	// GateServiceHoldProcedure is the fully-qualified name of the GateService's Hold RPC.
 	GateServiceHoldProcedure = "/machine.v1.GateService/Hold"
 	// GateServiceListProcedure is the fully-qualified name of the GateService's List RPC.
 	GateServiceListProcedure = "/machine.v1.GateService/List"
+	// GateServiceHistoryProcedure is the fully-qualified name of the GateService's History RPC.
+	GateServiceHistoryProcedure = "/machine.v1.GateService/History"
 	// GateServiceAdmitProcedure is the fully-qualified name of the GateService's Admit RPC.
 	GateServiceAdmitProcedure = "/machine.v1.GateService/Admit"
 	// CommandServiceListProcedure is the fully-qualified name of the CommandService's List RPC.
 	CommandServiceListProcedure = "/machine.v1.CommandService/List"
 	// CommandServiceRecordProcedure is the fully-qualified name of the CommandService's Record RPC.
 	CommandServiceRecordProcedure = "/machine.v1.CommandService/Record"
+	// CommandServiceForgetProcedure is the fully-qualified name of the CommandService's Forget RPC.
+	CommandServiceForgetProcedure = "/machine.v1.CommandService/Forget"
 )
 
 // MachineServiceClient is a client for the machine.v1.MachineService service.
@@ -62,6 +69,9 @@ type MachineServiceClient interface {
 	Show(context.Context, *connect.Request[v1.MachineServiceShowRequest]) (*connect.Response[v1.MachineServiceShowResponse], error)
 	// Series returns the CPU and memory measurement series of running workers, the machine total and djinn itself over the last N minutes.
 	Series(context.Context, *connect.Request[v1.MachineServiceSeriesRequest]) (*connect.Response[v1.MachineServiceSeriesResponse], error)
+	// MeasureDisk measures the disk's folders and caches again now, without waiting for the last measure to age: the
+	// next Series shows the walk going, then its sizes. Nothing is deleted; a measure already going goes on.
+	MeasureDisk(context.Context, *connect.Request[v1.MachineServiceMeasureDiskRequest]) (*connect.Response[v1.MachineServiceMeasureDiskResponse], error)
 }
 
 // NewMachineServiceClient constructs a client for the machine.v1.MachineService service. By
@@ -89,13 +99,20 @@ func NewMachineServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
+		measureDisk: connect.NewClient[v1.MachineServiceMeasureDiskRequest, v1.MachineServiceMeasureDiskResponse](
+			httpClient,
+			baseURL+MachineServiceMeasureDiskProcedure,
+			connect.WithSchema(machineServiceMethods.ByName("MeasureDisk")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // machineServiceClient implements MachineServiceClient.
 type machineServiceClient struct {
-	show   *connect.Client[v1.MachineServiceShowRequest, v1.MachineServiceShowResponse]
-	series *connect.Client[v1.MachineServiceSeriesRequest, v1.MachineServiceSeriesResponse]
+	show        *connect.Client[v1.MachineServiceShowRequest, v1.MachineServiceShowResponse]
+	series      *connect.Client[v1.MachineServiceSeriesRequest, v1.MachineServiceSeriesResponse]
+	measureDisk *connect.Client[v1.MachineServiceMeasureDiskRequest, v1.MachineServiceMeasureDiskResponse]
 }
 
 // Show calls machine.v1.MachineService.Show.
@@ -108,6 +125,11 @@ func (c *machineServiceClient) Series(ctx context.Context, req *connect.Request[
 	return c.series.CallUnary(ctx, req)
 }
 
+// MeasureDisk calls machine.v1.MachineService.MeasureDisk.
+func (c *machineServiceClient) MeasureDisk(ctx context.Context, req *connect.Request[v1.MachineServiceMeasureDiskRequest]) (*connect.Response[v1.MachineServiceMeasureDiskResponse], error) {
+	return c.measureDisk.CallUnary(ctx, req)
+}
+
 // MachineServiceHandler is an implementation of the machine.v1.MachineService service.
 type MachineServiceHandler interface {
 	// Show the machine: its cores, memory, disk and GPUs, the live load and pressure, the most workers Djinn runs at
@@ -115,6 +137,9 @@ type MachineServiceHandler interface {
 	Show(context.Context, *connect.Request[v1.MachineServiceShowRequest]) (*connect.Response[v1.MachineServiceShowResponse], error)
 	// Series returns the CPU and memory measurement series of running workers, the machine total and djinn itself over the last N minutes.
 	Series(context.Context, *connect.Request[v1.MachineServiceSeriesRequest]) (*connect.Response[v1.MachineServiceSeriesResponse], error)
+	// MeasureDisk measures the disk's folders and caches again now, without waiting for the last measure to age: the
+	// next Series shows the walk going, then its sizes. Nothing is deleted; a measure already going goes on.
+	MeasureDisk(context.Context, *connect.Request[v1.MachineServiceMeasureDiskRequest]) (*connect.Response[v1.MachineServiceMeasureDiskResponse], error)
 }
 
 // NewMachineServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -138,12 +163,20 @@ func NewMachineServiceHandler(svc MachineServiceHandler, opts ...connect.Handler
 		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
+	machineServiceMeasureDiskHandler := connect.NewUnaryHandler(
+		MachineServiceMeasureDiskProcedure,
+		svc.MeasureDisk,
+		connect.WithSchema(machineServiceMethods.ByName("MeasureDisk")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/machine.v1.MachineService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case MachineServiceShowProcedure:
 			machineServiceShowHandler.ServeHTTP(w, r)
 		case MachineServiceSeriesProcedure:
 			machineServiceSeriesHandler.ServeHTTP(w, r)
+		case MachineServiceMeasureDiskProcedure:
+			machineServiceMeasureDiskHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -161,6 +194,10 @@ func (UnimplementedMachineServiceHandler) Series(context.Context, *connect.Reque
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("machine.v1.MachineService.Series is not implemented"))
 }
 
+func (UnimplementedMachineServiceHandler) MeasureDisk(context.Context, *connect.Request[v1.MachineServiceMeasureDiskRequest]) (*connect.Response[v1.MachineServiceMeasureDiskResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("machine.v1.MachineService.MeasureDisk is not implemented"))
+}
+
 // GateServiceClient is a client for the machine.v1.GateService service.
 type GateServiceClient interface {
 	// Take a gate, waiting as long as needed, and hold it until the call ends: the stream says why it waits, then
@@ -169,6 +206,11 @@ type GateServiceClient interface {
 	Hold(context.Context, *connect.Request[v1.GateServiceHoldRequest]) (*connect.ServerStreamForClient[v1.GateServiceHoldResponse], error)
 	// List the gates held or waited for.
 	List(context.Context, *connect.Request[v1.GateServiceListRequest]) (*connect.Response[v1.GateServiceListResponse], error)
+	// The history of the gates over the last minutes, kept in the store for three months, a restart of Djinn included:
+	// every interval released in the window, then those held now, each with its task's kind and code; and the runs of
+	// the workers over the window, an open run only while its task runs. The Hourglass's Gates tab draws it over an
+	// hour, 6 hours or a day.
+	History(context.Context, *connect.Request[v1.GateServiceHistoryRequest]) (*connect.Response[v1.GateServiceHistoryResponse], error)
 	// Admit a command of a worker's Bash or Monitor before it runs (djinn gate hook, Claude's PreToolUse hook): the
 	// stream says why it waits, then that it is admitted, and ends; the command then runs as the worker wrote it. Djinn
 	// finds the shell that runs it among the agent's processes, and holds the admission, reading what it uses, until it
@@ -200,6 +242,13 @@ func NewGateServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
+		history: connect.NewClient[v1.GateServiceHistoryRequest, v1.GateServiceHistoryResponse](
+			httpClient,
+			baseURL+GateServiceHistoryProcedure,
+			connect.WithSchema(gateServiceMethods.ByName("History")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+			connect.WithClientOptions(opts...),
+		),
 		admit: connect.NewClient[v1.GateServiceAdmitRequest, v1.GateServiceAdmitResponse](
 			httpClient,
 			baseURL+GateServiceAdmitProcedure,
@@ -211,9 +260,10 @@ func NewGateServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 
 // gateServiceClient implements GateServiceClient.
 type gateServiceClient struct {
-	hold  *connect.Client[v1.GateServiceHoldRequest, v1.GateServiceHoldResponse]
-	list  *connect.Client[v1.GateServiceListRequest, v1.GateServiceListResponse]
-	admit *connect.Client[v1.GateServiceAdmitRequest, v1.GateServiceAdmitResponse]
+	hold    *connect.Client[v1.GateServiceHoldRequest, v1.GateServiceHoldResponse]
+	list    *connect.Client[v1.GateServiceListRequest, v1.GateServiceListResponse]
+	history *connect.Client[v1.GateServiceHistoryRequest, v1.GateServiceHistoryResponse]
+	admit   *connect.Client[v1.GateServiceAdmitRequest, v1.GateServiceAdmitResponse]
 }
 
 // Hold calls machine.v1.GateService.Hold.
@@ -224,6 +274,11 @@ func (c *gateServiceClient) Hold(ctx context.Context, req *connect.Request[v1.Ga
 // List calls machine.v1.GateService.List.
 func (c *gateServiceClient) List(ctx context.Context, req *connect.Request[v1.GateServiceListRequest]) (*connect.Response[v1.GateServiceListResponse], error) {
 	return c.list.CallUnary(ctx, req)
+}
+
+// History calls machine.v1.GateService.History.
+func (c *gateServiceClient) History(ctx context.Context, req *connect.Request[v1.GateServiceHistoryRequest]) (*connect.Response[v1.GateServiceHistoryResponse], error) {
+	return c.history.CallUnary(ctx, req)
 }
 
 // Admit calls machine.v1.GateService.Admit.
@@ -239,6 +294,11 @@ type GateServiceHandler interface {
 	Hold(context.Context, *connect.Request[v1.GateServiceHoldRequest], *connect.ServerStream[v1.GateServiceHoldResponse]) error
 	// List the gates held or waited for.
 	List(context.Context, *connect.Request[v1.GateServiceListRequest]) (*connect.Response[v1.GateServiceListResponse], error)
+	// The history of the gates over the last minutes, kept in the store for three months, a restart of Djinn included:
+	// every interval released in the window, then those held now, each with its task's kind and code; and the runs of
+	// the workers over the window, an open run only while its task runs. The Hourglass's Gates tab draws it over an
+	// hour, 6 hours or a day.
+	History(context.Context, *connect.Request[v1.GateServiceHistoryRequest]) (*connect.Response[v1.GateServiceHistoryResponse], error)
 	// Admit a command of a worker's Bash or Monitor before it runs (djinn gate hook, Claude's PreToolUse hook): the
 	// stream says why it waits, then that it is admitted, and ends; the command then runs as the worker wrote it. Djinn
 	// finds the shell that runs it among the agent's processes, and holds the admission, reading what it uses, until it
@@ -266,6 +326,13 @@ func NewGateServiceHandler(svc GateServiceHandler, opts ...connect.HandlerOption
 		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
+	gateServiceHistoryHandler := connect.NewUnaryHandler(
+		GateServiceHistoryProcedure,
+		svc.History,
+		connect.WithSchema(gateServiceMethods.ByName("History")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+		connect.WithHandlerOptions(opts...),
+	)
 	gateServiceAdmitHandler := connect.NewServerStreamHandler(
 		GateServiceAdmitProcedure,
 		svc.Admit,
@@ -278,6 +345,8 @@ func NewGateServiceHandler(svc GateServiceHandler, opts ...connect.HandlerOption
 			gateServiceHoldHandler.ServeHTTP(w, r)
 		case GateServiceListProcedure:
 			gateServiceListHandler.ServeHTTP(w, r)
+		case GateServiceHistoryProcedure:
+			gateServiceHistoryHandler.ServeHTTP(w, r)
 		case GateServiceAdmitProcedure:
 			gateServiceAdmitHandler.ServeHTTP(w, r)
 		default:
@@ -297,6 +366,10 @@ func (UnimplementedGateServiceHandler) List(context.Context, *connect.Request[v1
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("machine.v1.GateService.List is not implemented"))
 }
 
+func (UnimplementedGateServiceHandler) History(context.Context, *connect.Request[v1.GateServiceHistoryRequest]) (*connect.Response[v1.GateServiceHistoryResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("machine.v1.GateService.History is not implemented"))
+}
+
 func (UnimplementedGateServiceHandler) Admit(context.Context, *connect.Request[v1.GateServiceAdmitRequest], *connect.ServerStream[v1.GateServiceAdmitResponse]) error {
 	return connect.NewError(connect.CodeUnimplemented, errors.New("machine.v1.GateService.Admit is not implemented"))
 }
@@ -308,6 +381,10 @@ type CommandServiceClient interface {
 	// Record a run of a command: djinn gate run sends it once the command has ended by itself. The project is the
 	// task's, or the one whose folder holds the directory; a command outside any project is not recorded.
 	Record(context.Context, *connect.Request[v1.CommandServiceRecordRequest]) (*connect.Response[v1.CommandServiceRecordResponse], error)
+	// Forget what commands of a project were measured to cost: one command by its key (--command), the commands whose
+	// key starts with some words (--head), or all of the project's (--all); one of the three, no more. A cost learned
+	// wrong then stops holding the gates: the next run of each command is measured anew. Journaled; it cannot be undone.
+	Forget(context.Context, *connect.Request[v1.CommandServiceForgetRequest]) (*connect.Response[v1.CommandServiceForgetResponse], error)
 }
 
 // NewCommandServiceClient constructs a client for the machine.v1.CommandService service. By
@@ -334,6 +411,12 @@ func NewCommandServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(commandServiceMethods.ByName("Record")),
 			connect.WithClientOptions(opts...),
 		),
+		forget: connect.NewClient[v1.CommandServiceForgetRequest, v1.CommandServiceForgetResponse](
+			httpClient,
+			baseURL+CommandServiceForgetProcedure,
+			connect.WithSchema(commandServiceMethods.ByName("Forget")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -341,6 +424,7 @@ func NewCommandServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 type commandServiceClient struct {
 	list   *connect.Client[v1.CommandServiceListRequest, v1.CommandServiceListResponse]
 	record *connect.Client[v1.CommandServiceRecordRequest, v1.CommandServiceRecordResponse]
+	forget *connect.Client[v1.CommandServiceForgetRequest, v1.CommandServiceForgetResponse]
 }
 
 // List calls machine.v1.CommandService.List.
@@ -353,6 +437,11 @@ func (c *commandServiceClient) Record(ctx context.Context, req *connect.Request[
 	return c.record.CallUnary(ctx, req)
 }
 
+// Forget calls machine.v1.CommandService.Forget.
+func (c *commandServiceClient) Forget(ctx context.Context, req *connect.Request[v1.CommandServiceForgetRequest]) (*connect.Response[v1.CommandServiceForgetResponse], error) {
+	return c.forget.CallUnary(ctx, req)
+}
+
 // CommandServiceHandler is an implementation of the machine.v1.CommandService service.
 type CommandServiceHandler interface {
 	// List what the commands of the projects cost, the most run first.
@@ -360,6 +449,10 @@ type CommandServiceHandler interface {
 	// Record a run of a command: djinn gate run sends it once the command has ended by itself. The project is the
 	// task's, or the one whose folder holds the directory; a command outside any project is not recorded.
 	Record(context.Context, *connect.Request[v1.CommandServiceRecordRequest]) (*connect.Response[v1.CommandServiceRecordResponse], error)
+	// Forget what commands of a project were measured to cost: one command by its key (--command), the commands whose
+	// key starts with some words (--head), or all of the project's (--all); one of the three, no more. A cost learned
+	// wrong then stops holding the gates: the next run of each command is measured anew. Journaled; it cannot be undone.
+	Forget(context.Context, *connect.Request[v1.CommandServiceForgetRequest]) (*connect.Response[v1.CommandServiceForgetResponse], error)
 }
 
 // NewCommandServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -382,12 +475,20 @@ func NewCommandServiceHandler(svc CommandServiceHandler, opts ...connect.Handler
 		connect.WithSchema(commandServiceMethods.ByName("Record")),
 		connect.WithHandlerOptions(opts...),
 	)
+	commandServiceForgetHandler := connect.NewUnaryHandler(
+		CommandServiceForgetProcedure,
+		svc.Forget,
+		connect.WithSchema(commandServiceMethods.ByName("Forget")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/machine.v1.CommandService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case CommandServiceListProcedure:
 			commandServiceListHandler.ServeHTTP(w, r)
 		case CommandServiceRecordProcedure:
 			commandServiceRecordHandler.ServeHTTP(w, r)
+		case CommandServiceForgetProcedure:
+			commandServiceForgetHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -403,4 +504,8 @@ func (UnimplementedCommandServiceHandler) List(context.Context, *connect.Request
 
 func (UnimplementedCommandServiceHandler) Record(context.Context, *connect.Request[v1.CommandServiceRecordRequest]) (*connect.Response[v1.CommandServiceRecordResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("machine.v1.CommandService.Record is not implemented"))
+}
+
+func (UnimplementedCommandServiceHandler) Forget(context.Context, *connect.Request[v1.CommandServiceForgetRequest]) (*connect.Response[v1.CommandServiceForgetResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("machine.v1.CommandService.Forget is not implemented"))
 }

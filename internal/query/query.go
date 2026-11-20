@@ -2,6 +2,7 @@ package query
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -23,11 +24,12 @@ type Source interface {
 }
 
 // FromStore is the source of the entities of m's type in the store: where narrows by their text columns, the *_id
-// fields and the unique ones, in SQL.
+// fields and the unique ones, in SQL. Entities not migrated at start (store.ErrUnmigrated) make a source each load of
+// which fails with that error, as each use of them does: the other collections read, and djinn up starts (Q42).
 func FromStore(r store.Reader, m proto.Message) (Source, error) {
 	mt := m.ProtoReflect().Type()
 	columns, err := store.Indexed(r, mt.Descriptor())
-	if err != nil {
+	if err != nil && !errors.Is(err, store.ErrUnmigrated) {
 		return nil, err
 	}
 	var text []string

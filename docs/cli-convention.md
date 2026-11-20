@@ -96,6 +96,10 @@ of such a command; its request has no wish), else in every wish. A wish's flag a
 where the request names it `wish`, `--wish` where it names it `wish_id`, when that field is the wish the request acts
 in (a UUID), never a destination such as `djinn task move --wish`.
 
+A question's plan names its project the same way (W117): `project-id: dolmen` in a `--plan` or a `--plan-file` is
+resolved by the server, by name (case ignored) or identifier, and kept as the identifier. A project Djinn has but the
+wish has not is refused with the command that adds it, `djinn wish add-project <wish> --project-id <name>`.
+
 A field `wish`, `wish_id` or `wish_ids` that wants a UUID, positional or a flag, and the command line's own `--wish-id`,
 take a wish's title too (W481): its exact title, case and outer spaces ignored, else the start of only one title; among
 several, the only one not granted. The command line lists the wishes and sends the identifier. A start that several
@@ -155,7 +159,8 @@ The help is the proto comments: the service comment for `djinn question`, the me
 
 The output is text by default: one `name: value` line per field set, nested messages indented, lists as
 `- ` items, and the single field of a response shown directly. A field marked `(djinn.v1.json_only)` prints with
-`--json` only; a string or bytes field marked `(djinn.v1.raw)` prints as it is, without its name, so that a table or a
+`--json` only; a field marked `(djinn.v1.headline)` prints first, before the fields numbered below it (the read line
+of `djinn project gates`); a string or bytes field marked `(djinn.v1.raw)` prints as it is, without its name, so that a table or a
 CSV pipes (`djinn query query tasks --format csv`), and `djinn mcp` returns it as the tool's text when it is UTF-8. `--json` prints the response as protobuf JSON with the proto field
 names.
 

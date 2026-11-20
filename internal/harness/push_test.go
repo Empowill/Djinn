@@ -21,15 +21,46 @@ import (
 	"github.com/empowill/djinn/internal/testx"
 )
 
-// remote gives the repository a remote, origin, a bare repository in a temporary folder that holds the integration
-// branch as it is now, and returns its folder.
+// remote gives the repository a remote, origin, a bare repository in a temporary folder that holds the reference
+// branch and the integration branch as they are now, and returns its folder. A wish under the wish strategy that
+// integrates into the reference branch is given a branch of its own first, feat/wish, made from it and checked out:
+// Djinn never pushes the reference branch (refuseProtected). Per azima, the wish's branch stays the reference branch:
+// Djinn pushes only its azimas' branches.
 func (in *integration) remote(t *testing.T) string {
 	t.Helper()
 	bare := filepath.Join(t.TempDir(), "origin.git")
 	in.git(t, in.repo, "init", "--quiet", "--bare", bare)
 	in.git(t, in.repo, "remote", "add", "origin", bare)
-	in.git(t, in.repo, "push", "--quiet", "origin", in.branch)
+	main, _, err := plan.DefaultReference(t.Context(), in.repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wish, err := store.Get[*planv1.Wish](t.Context(), in.db, in.wishID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	project, err := store.Get[*planv1.Project](t.Context(), in.db, in.projectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings, _ := plan.LoadSettings(in.home, project)
+	if strategy, _ := plan.ResolveWishPushStrategy(wish, settings); in.branch == main && strategy == planv1.PushStrategy_PUSH_STRATEGY_WISH {
+		in.git(t, in.repo, "switch", "--quiet", "-c", "feat/wish")
+		in.branch = "feat/wish"
+		if _, err := in.wishes.SetIntegration(t.Context(), connect.NewRequest(&planv1.WishServiceSetIntegrationRequest{
+			WishId: in.wishID, ProjectId: in.projectID, Branch: in.branch,
+		})); err != nil {
+			t.Fatal(err)
+		}
+	}
+	in.git(t, in.repo, append([]string{"push", "--quiet", "origin"}, slices.Compact([]string{main, in.branch})...)...)
 	return bare
+}
+
+// pullRequestQuestion tells whether q proposes to open a pull request: Djinn asks it once a wish's own branch, or an
+// azima's, is pushed, beside any push question.
+func pullRequestQuestion(q *planv1.Question) bool {
+	return q.GetDjinnMove().GetKind() == planv1.MoveKind_MOVE_KIND_PULL_REQUEST
 }
 
 // remoteTip is where the remote's integration branch is.
@@ -404,7 +435,9 @@ func TestPushIfDue(t *testing.T) {
 		// Another merge while it is open asks nothing more.
 		in.finished(t, "W2", map[string]string{"app/src/b.txt": "b\n"})
 		in.pass(t, 2*time.Hour)
-		if questions, err := store.List[*planv1.Question](t.Context(), in.db, store.Where{"wish_id": in.wishID}); err != nil || len(questions) != 1 {
+		// The pull request Djinn proposes for the wish's own branch is no push question.
+		if questions, err := store.List[*planv1.Question](t.Context(), in.db, store.Where{"wish_id": in.wishID}); err != nil ||
+			len(slices.DeleteFunc(questions, pullRequestQuestion)) != 1 {
 			t.Fatalf("%d questions, %v", len(questions), err)
 		}
 
@@ -800,6 +833,7 @@ func TestSyncs(t *testing.T) {
 	t.Run("active and paused wishes", func(t *testing.T) {
 		t.Parallel()
 		in := integrating(t)
+		main := in.branch
 		bare := in.remote(t)
 		ctx := t.Context()
 
@@ -872,9 +906,9 @@ func TestSyncs(t *testing.T) {
 		if _, err := in.h.Push(ctx, in.wishID, in.projectID, "djinn/T1-stays-fast"); err != nil {
 			t.Fatalf("Push of the azima's branch: %v", err)
 		}
-		if got := in.git(t, bare, "for-each-ref", "--format=%(refname:short)", "refs/heads"); got != in.branch+"\ndjinn/T1-stays-fast" &&
-			got != "djinn/T1-stays-fast\n"+in.branch {
-			t.Errorf("origin holds %q, want the integration branch and the azima's only", got)
+		held := strings.Join(slices.Compact(slices.Sorted(slices.Values([]string{main, in.branch, "djinn/T1-stays-fast"}))), "\n")
+		if got := in.git(t, bare, "for-each-ref", "--format=%(refname:short)", "refs/heads"); got != held {
+			t.Errorf("origin holds %q, want the reference branch, the integration branch and the azima's only: %q", got, held)
 		}
 		if s := in.syncOf(t, project, "djinn/T1-stays-fast"); s.GetAhead() != 0 {
 			t.Errorf("the azima's branch pushed: ahead %d, want 0", s.GetAhead())

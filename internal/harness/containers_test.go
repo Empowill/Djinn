@@ -169,3 +169,37 @@ func TestWrapperEnv(t *testing.T) {
 		t.Errorf("no djinn path: %q", got)
 	}
 }
+
+// TestProjectAdmits (W139): a project's workers' commands wait for their admission unless its djinn.yaml says
+// admit: false under gates_options; a file that does not read admits them.
+func TestProjectAdmits(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		name, file string
+		want       bool
+	}{
+		{"no file", "", true},
+		{"not said", "version: 1\n", true},
+		{"empty options", "gates_options: {}\n", true},
+		{"true", "gates_options:\n  admit: true\n", true},
+		{"false", "gates_options:\n  admit: false\n", false},
+		{"unreadable", "gates_options:\n  admit: [\n", true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			if c.file != "" {
+				if err := os.WriteFile(filepath.Join(dir, "djinn.yaml"), []byte(c.file), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			h := &Harness{home: t.TempDir()}
+			if got := h.projectAdmits(&planv1.Project{Id: "p-" + c.name, Directory: dir}); got != c.want {
+				t.Errorf("admits = %v, want %v", got, c.want)
+			}
+		})
+	}
+	if !(&Harness{}).projectAdmits(nil) {
+		t.Error("no project: not admitted")
+	}
+}

@@ -23,6 +23,12 @@ service MachineService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option idempotency_level = NO_SIDE_EFFECTS;
   }
+  // MeasureDisk measures the disk's folders and caches again now, without waiting for the last measure to age: the
+  // next Series shows the walk going, then its sizes. Nothing is deleted; a measure already going goes on.
+  rpc MeasureDisk(MachineServiceMeasureDiskRequest) returns (MachineServiceMeasureDiskResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
 }
 
 // Pressure is how much of the time tasks of the machine waited for a resource: the pressure stall information of
@@ -120,14 +126,125 @@ message Disk {
   // Known caches and stores on the machine, biggest first, with the command that cleans each, what it frees and its
   // risk. Djinn never runs a cleanup command: it only displays it.
   repeated DiskItem items = 5;
+  // When Djinn's folders and the caches were last measured whole: the older of the two measures; unset before the
+  // first one ends.
+  google.protobuf.Timestamp measure_time = 6;
+  // Whether a measure of the folders or the caches is going now.
+  bool measuring = 7;
+  // The last pass that freed the worktrees and scratch of finished tasks (Q75), while it goes and once it ended; unset
+  // before the first pass that found something to free.
+  DiskFreeing freeing = 8;
 }
 
-// DiskFolder is a folder measured on disk, with its size in bytes.
+// DiskFreeing is how far a pass that frees the worktrees, scratch and local branches of finished tasks is (Q75): a
+// task done 30 days ago with its work integrated (Q81), one of an azima validated, one of a wish granted. A window bar follows it.
+message DiskFreeing {
+  // The tasks the pass frees, and how many of them it has looked at, freed or kept.
+  int32 total = 1;
+  int32 done = 2;
+  // What the folders it removed took on disk, in bytes: a floor when a walk ran out of time.
+  uint64 freed_bytes = 3;
+  // How many tasks it kept something of, for they hold work: changes not committed, or commits found neither in the
+  // integration branch nor on the remote. Djinn's log says why each.
+  int32 kept = 4;
+  // When it started, and when it ended; end_time unset while it goes.
+  google.protobuf.Timestamp start_time = 5;
+  google.protobuf.Timestamp end_time = 6;
+  // The granted wishes whose tasks it frees, by identifier: the cascade a grant starts at once.
+  repeated string wish_ids = 7;
+  // The same, per azima validated or of a wish granted, in the order the pass frees them; each azima's events say what
+  // was freed of each task, or kept and why.
+  repeated DiskFreeingAzima azimas = 8;
+}
+
+// DiskFreeingAzima is how far a freeing pass is in the tasks of one azima (DiskFreeing).
+message DiskFreeingAzima {
+  // The azima, by identifier, and its wish. The tasks of a wish granted that are part of no azima come as one more
+  // entry, its azima_id empty.
+  string azima_id = 1;
+  string wish_id = 2;
+  int32 total = 3;
+  int32 done = 4;
+  uint64 freed_bytes = 5;
+  int32 kept = 6;
+  // What the pass kept of its tasks, and why, in the order it looked at them: the window's cascade band says it.
+  repeated DiskFreeingKept kept_items = 7;
+}
+
+// DiskFreeingKept is a part of a task the freeing pass kept, and why: it never loses work.
+message DiskFreeingKept {
+  // The task, by identifier.
+  string task_id = 1;
+  // What stayed: its worktree (and with it its scratch and branch), its scratch, its local branch, or the whole task.
+  DiskFreeingPart part = 2;
+  // Why it stayed.
+  DiskFreeingReason reason = 3;
+  // For an unpushed reason, how many commits are found neither in the integration branch nor on the remote.
+  int32 commits = 4;
+  // The reason as Djinn's log says it, in English: the error, or the path holding the changes.
+  string detail = 5;
+}
+
+// DiskFreeingPart is what of a task the freeing pass kept (DiskFreeingKept).
+enum DiskFreeingPart {
+  // Not set.
+  DISK_FREEING_PART_UNSPECIFIED = 0;
+  // Its worktree, and with it its scratch and its local branch.
+  DISK_FREEING_PART_WORKTREE = 1;
+  // Its scratch folder.
+  DISK_FREEING_PART_SCRATCH = 2;
+  // Its local branch.
+  DISK_FREEING_PART_BRANCH = 3;
+  // The whole task: it runs again, or could not be read.
+  DISK_FREEING_PART_TASK = 4;
+}
+
+// DiskFreeingReason is why the freeing pass kept a part of a task (DiskFreeingKept).
+enum DiskFreeingReason {
+  // Not set.
+  DISK_FREEING_REASON_UNSPECIFIED = 0;
+  // The worktree holds changes not committed.
+  DISK_FREEING_REASON_UNCOMMITTED = 1;
+  // Commits found neither in the integration branch nor on the remote: the only copy of them.
+  DISK_FREEING_REASON_UNPUSHED = 2;
+  // The task runs again.
+  DISK_FREEING_REASON_RUNNING = 3;
+  // The project's folder is not on this machine.
+  DISK_FREEING_REASON_NO_PROJECT = 4;
+  // An error: detail says which.
+  DISK_FREEING_REASON_ERROR = 5;
+}
+
+// DiskFolder is a folder measured on disk, with what its files take on it: the blocks they hold, which counts what the
+// file system adds to each file (eCryptfs: a header, the rounding up to a block), not their length.
 message DiskFolder {
-  // Path of the folder.
+  // Path of the folder; "~" for the sum of the home's small entries (kind home, count of them).
   string path = 1;
-  // Size of its files on disk, in bytes.
+  // What its files take on disk, in bytes. Of kind home or system: without what another row counts inside it.
   uint64 size_bytes = 2;
+  // Whether its walk ran out of time: the size is at least this, or the last whole measure when it was bigger.
+  bool partial = 3;
+  // What the folder is: worktrees, scratch (each a project's), data (Djinn's data folder), logs, tilasms, node_modules,
+  // go-build, npm, playwright, tmp; home (an entry of the home folder) or system (/var, /usr, /opt), which the slow
+  // pass measures every few hours, apart from Djinn's.
+  string kind = 4;
+  // Name of the project whose worktrees or scratch these are.
+  string project = 5;
+  // Of the worktrees or scratch, the folders of tasks done with their work integrated, in bytes: what the freeing pass
+  // frees by itself 30 days after their end (Q81), by the same predicate.
+  uint64 integrated_bytes = 6;
+  // How many task folders the worktrees or scratch hold; how many entries the "~" row of kind home sums.
+  int32 count = 7;
+  // How many of them are such tasks'.
+  int32 integrated_count = 8;
+  // When the folder was last walked.
+  google.protobuf.Timestamp measure_time = 9;
+  // Of the worktrees or scratch, the folders of the other tasks finished (cancelled, failed, stopped, done with their
+  // work dropped or not integrated), in bytes: what the freeing pass frees on top once their azima is validated or
+  // their wish granted. A task Djinn no longer knows counts in neither: Djinn never frees its folder.
+  uint64 cascade_bytes = 10;
+  // How many of them are those tasks'.
+  int32 cascade_count = 11;
 }
 
 // DiskRisk is what happens when a DiskItem's cleanup command runs.
@@ -146,8 +263,8 @@ enum DiskRisk {
 
 // DiskItem is a known cache or store on the machine, with the command to copy to clean it, what it frees and its risk.
 message DiskItem {
-  // Identifier of the item (go-build, go-isolated, go-mod, docker-builder, docker-images, docker-volumes,
-  // docker-dangling, jetbrains, pnpm, pip, uv, npm).
+  // Identifier of the item (go-build, go-isolated, go-mod, golangci-lint, docker-builder, docker-images,
+  // docker-volumes, docker-dangling, jetbrains, pnpm, pip, uv, npm).
   string kind = 1;
   // Path or source read on the machine (e.g. ~/.cache/go-build, docker builder).
   string path = 2;
@@ -166,6 +283,8 @@ message DiskItem {
   // True when created by Djinn or its workers (e.g. isolated *-go-build caches), so the window shows it on the Djinn
   // side rather than under Machine.
   bool djinn = 9;
+  // Whether its walk ran out of time: the size is at least this, or the last whole measure when it was bigger.
+  bool partial = 10;
 }
 
 // Gpu is a graphics processor of the machine.
@@ -192,7 +311,7 @@ message MachineServiceShowResponse {
 }
 
 message MachineServiceSeriesRequest {
-  // Number of minutes of history to return (10, 30, 120, 1440, 10080; defaults to 30).
+  // Number of minutes of history to return (10, 30, 60, 120, 360, 1440, 10080; defaults to 30).
   int32 minutes = 1;
   // When set, only the points measured after it: the window reads the whole series once, then what came since, as
   // the samples arrive. The workers running and the gate intervals come whole each time.
@@ -213,6 +332,13 @@ message MachineServiceSeriesResponse {
   string worker_measure = 4;
   // Disk space and the main folders that use it, biggest first.
   Disk disk = 5;
+}
+
+message MachineServiceMeasureDiskRequest {}
+
+message MachineServiceMeasureDiskResponse {
+  // Whether a measure was already going: it goes on, and no other starts.
+  bool already = 1;
 }
 
 message MachineSeries {
@@ -303,7 +429,8 @@ message GateInterval {
   bool heavy = 9;
   // What it waited for last before it was granted; GATE_WAIT_CAUSE_NONE when it did not wait.
   GateWaitCause wait_cause = 10;
-  // Why it waited last, as the holder was told.
+  // What it waited for, each reason in turn with how long it waited for it, its gate's label first (as djinn gate hook
+  // reads it once admitted); empty when it did not wait.
   string wait_reason = 11;
   // The highest memory its holder's processes used while it held the gate, in bytes; 0 when not measured.
   uint64 peak_memory_bytes = 12;
@@ -311,6 +438,11 @@ message GateInterval {
   bool unmeasured = 13;
   // Held outside a running worker (a terminal, a lead, a script, Djinn's merges): it took a worker's slot.
   bool outside = 14;
+  // Kind of the task that held it (task_id), as GateService.History joins it; unset elsewhere, or when the task is
+  // gone.
+  plan.v1.TaskKind task_kind = 15;
+  // Short code of that task (e.g. W12), as GateService.History joins it; empty elsewhere, or when the task is gone.
+  string task_code = 16;
 }
 
 // How a gate is held.
@@ -380,6 +512,14 @@ service GateService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option idempotency_level = NO_SIDE_EFFECTS;
   }
+  // The history of the gates over the last minutes, kept in the store for three months, a restart of Djinn included:
+  // every interval released in the window, then those held now, each with its task's kind and code; and the runs of
+  // the workers over the window, an open run only while its task runs. The Hourglass's Gates tab draws it over an
+  // hour, 6 hours or a day.
+  rpc History(GateServiceHistoryRequest) returns (GateServiceHistoryResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
   // Admit a command of a worker's Bash or Monitor before it runs (djinn gate hook, Claude's PreToolUse hook): the
   // stream says why it waits, then that it is admitted, and ends; the command then runs as the worker wrote it. Djinn
   // finds the shell that runs it among the agent's processes, and holds the admission, reading what it uses, until it
@@ -424,7 +564,8 @@ message GateServiceAdmitRequest {
 message GateServiceAdmitResponse {
   // Where the command stands: waiting, or held once admitted.
   GateState state = 1;
-  // Why it waits.
+  // Why it waits; once held, what it waited for, each reason in turn with how long it waited for it, or "admitted"
+  // when it did not wait.
   string reason = 2;
 }
 
@@ -453,6 +594,12 @@ message Gate {
   // The tasks of those who wait for it, by identifier, the next one first: a waiter outside any task is left out. The
   // window counts a task's worker that waits for a gate as waiting for a place.
   repeated string waiting_task_ids = 10;
+  // Project of its holder, by name; empty when nobody holds it or its holder is outside any project. A gate a project
+  // declares (stack@dolmen) is that project's; a gate named for the machine (lint, e2e) is one for every project, held
+  // by a worker of one of them.
+  string project = 11;
+  // Projects of those who wait for it, by name, in the order of waiting: empty for a waiter outside any project.
+  repeated string waiting_projects = 12;
 }
 
 message GateServiceHoldRequest {
@@ -495,6 +642,47 @@ message GateServiceListResponse {
   repeated Gate gates = 1;
 }
 
+message GateServiceHistoryRequest {
+  // Minutes of history, up to a week (10080): the Gates tab asks 60, 360 or 1440. Not set: 60.
+  int32 minutes = 1 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 10080
+  }];
+  // When set, the intervals hold every admission of a worker's command; otherwise only those that waited a second or
+  // more or ran a heavy command, the many that pass at once left out.
+  bool all_admissions = 2;
+  // Only what changed since this time, the read_time of a previous read: the intervals released after it, those
+  // held now, and the runs that overlap from it to now. The Gates tab keeps the rest of the window it read, and asks
+  // a little before its last read_time, so that an interval kept late is not missed.
+  google.protobuf.Timestamp after_time = 3;
+}
+
+message GateServiceHistoryResponse {
+  // Where the window starts: minutes before read_time.
+  google.protobuf.Timestamp start_time = 1;
+  // When Djinn read the history: where the window ends.
+  google.protobuf.Timestamp read_time = 2;
+  // The gate intervals released after start_time, the first released first, then those held now (no release_time).
+  repeated GateInterval intervals = 3;
+  // The runs of the workers that overlap the window, the first started first. A run with no end counts only while its
+  // task runs: an ended task's run left open is left out.
+  repeated WorkerRun runs = 4;
+}
+
+// WorkerRun is a run of a task's worker, from its start to its end.
+message WorkerRun {
+  // The task the worker runs.
+  string task_id = 1;
+  // Short code of the task (e.g. W12).
+  string code = 2;
+  // Kind of the task: work, investigation, mockup, ifrit, correction, review, watcher.
+  plan.v1.TaskKind kind = 3;
+  // When the run started.
+  google.protobuf.Timestamp start_time = 4;
+  // When the run ended; unset while it runs.
+  google.protobuf.Timestamp end_time = 5;
+}
+
 // CommandService keeps what the commands of each project cost. Djinn measures each command a worker runs through
 // djinn gate run: its CPU time, its peak memory and its duration, so that it learns what a project's usual commands
 // cost.
@@ -508,6 +696,13 @@ service CommandService {
   // task's, or the one whose folder holds the directory; a command outside any project is not recorded.
   rpc Record(CommandServiceRecordRequest) returns (CommandServiceRecordResponse) {
     option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+  }
+  // Forget what commands of a project were measured to cost: one command by its key (--command), the commands whose
+  // key starts with some words (--head), or all of the project's (--all); one of the three, no more. A cost learned
+  // wrong then stops holding the gates: the next run of each command is measured anew. Journaled; it cannot be undone.
+  rpc Forget(CommandServiceForgetRequest) returns (CommandServiceForgetResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_DELETE;
   }
 }
 
@@ -574,11 +769,85 @@ message CommandCost {
 message CommandServiceListRequest {
   // Only the commands of this project, by name or identifier.
   string project = 1 [(buf.validate.field).string.max_len = 100];
+  // The most total time first (runs times their mean duration), as the Gates tab ranks them: the one worth making
+  // faster on top. Not set: the longest held first.
+  bool by_total = 2;
+  // The most commands to return, from page_token on. Not set: all of them.
+  int32 page_size = 3 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 1000
+  }];
+  // The next_page_token of a previous list, to fetch the page after it.
+  string page_token = 4 [(buf.validate.field).string.max_len = 20];
+  // Leave each command's recent runs out (recent_runs, recent_held_seconds): a table of the commands needs their
+  // figures alone, and the runs weigh most of the list.
+  bool brief = 5;
+  // Only the command of this identifier, its recent runs included: the row the Gates tab opens.
+  string id = 6 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+  // Add the summary of the gates over every command listed, whatever the page (summary).
+  bool summary = 7;
+  // Only the commands of this text, case ignored: with project, the band of a gate the Gates tab opens.
+  string command = 8 [(buf.validate.field).string.max_len = 200];
 }
 
 message CommandServiceListResponse {
   // The commands, by project, the most run first.
   repeated CommandCost costs = 1;
+  // Token to fetch the next page; empty on the last.
+  string next_page_token = 2;
+  // How many commands the request matches, every page together.
+  int32 total = 3;
+  // The gates over the commands' recent runs, when asked: what the Gates tab shows before any list.
+  GatesSummary summary = 4;
+}
+
+// GatesSummary is what the commands' recent runs (up to 200 a command) say of the gates, whole: the figures of the
+// Gates tab and the waits for each gate, so that the tab reads a page of the commands and not all of them.
+message GatesSummary {
+  // How many runs were asked of a gate: djinn gate run asked it, whether the command then ran to its end or not.
+  int32 asked = 1;
+  // How many ran to their end.
+  int32 ran = 2;
+  // The recent runs under a gate, measured.
+  int32 holds = 3;
+  // 50th percentile of their wait before the grant, in seconds, nearest rank.
+  double p50_wait_seconds = 4;
+  // 90th percentile of their wait before the grant, in seconds, nearest rank.
+  double p90_wait_seconds = 5;
+  // The longest wait, in seconds.
+  double max_wait_seconds = 6;
+  // How many waited over 5 seconds: the waits a worker notices.
+  int32 long_waits = 7;
+  // The command of the highest peak memory, its recent runs left out; absent when none was measured.
+  CommandCost peak = 8;
+  // The waits for each gate in each project, the most held first.
+  repeated GateWaits gates = 9;
+}
+
+// GateWaits is the waits for a gate in a project over the recent runs held under it: a median and a 90th percentile,
+// never a sum or a mean (the Statistics tab's rule).
+message GateWaits {
+  // Gate name.
+  string gate = 1;
+  // How many recent runs held it.
+  int32 holds = 2;
+  // 50th percentile of the wait, in seconds, nearest rank.
+  double p50_seconds = 3;
+  // 90th percentile of the wait, in seconds, nearest rank.
+  double p90_seconds = 4;
+  // The longest wait, in seconds.
+  double max_seconds = 5;
+  // How many waited over 5 seconds.
+  int32 long = 6;
+  // The newest run under the gate: its last hold.
+  CommandRun last = 7;
+  // The command of that run.
+  string last_command = 8;
+  // Project of the commands that held it, by name: a gate is counted apart for each project whose workers held it.
+  string project = 9;
 }
 
 message CommandServiceRecordRequest {
@@ -617,4 +886,30 @@ message CommandServiceRecordRequest {
 message CommandServiceRecordResponse {
   // What the command costs now; absent when it ran outside any project.
   CommandCost cost = 1;
+}
+
+message CommandServiceForgetRequest {
+  option (buf.validate.message).cel = {
+    id: "command_service_forget.one"
+    message: "say what to forget: one of command, head or all"
+    expression: "(this.command != '' ? 1 : 0) + (this.head != '' ? 1 : 0) + (this.all ? 1 : 0) == 1"
+  };
+
+  // The project, by name or identifier.
+  string project = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.max_len = 100
+  ];
+  // The command of this key, case ignored, as djinn command list shows it.
+  string command = 2 [(buf.validate.field).string.max_len = 200];
+  // The commands whose key starts with these words, whole, case ignored: cat forgets cat and cat notes.md, not
+  // catalog.
+  string head = 3 [(buf.validate.field).string.max_len = 200];
+  // All the commands of the project.
+  bool all = 4;
+}
+
+message CommandServiceForgetResponse {
+  // The keys of the commands forgotten; none when nothing matched.
+  repeated string commands = 1;
 }

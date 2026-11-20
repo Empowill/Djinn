@@ -177,6 +177,13 @@ has set for those who work on it are in [`docs/pitfalls.md`](docs/pitfalls.md). 
     them, and `go tool task e2e-native -- -run TestNativeSmokeGeometry` on the native window.
 - `go tool task lint`: every check (protos, Go, types, formatting), as CI runs it, with the Go and interface checks
   running side by side. `go tool task format` fixes what can be.
+  - Protos: `buf lint` (the STANDARD rules, [`buf.yaml`](buf.yaml)), then `buf breaking` against where your branch
+    left the reference branch (`git merge-base` with `origin/HEAD`, else `origin/main`, else `main`;
+    `BREAKING_AGAINST=<ref>` names another, CI the commit before). A djinn of another version reads the same messages,
+    the store keeps them as binary payloads and the settings as text, so a field or an enum value keeps its number,
+    type, name and JSON name, and one you delete leaves both reserved (`reserved 4; reserved "old_name";`). Djinn
+    checks it before it merges a task, CI on every pull request. A break you mean, rare, names its rule and file under
+    `breaking.ignore_only` in `buf.yaml`, and the change that reaches main takes it out.
   - Go: [golangci-lint](.golangci.yml), pinned in its own module (`tools/golangci/go.mod`): nothing to install. It
     formats (gofmt) and runs vet with the linters, on the headless build and on cmd/djinn with the `mcp` tag.
   - Interface: [ESLint](eslint.config.mjs) (typescript-eslint, @eslint-react, the rules of hooks); `tsc` checks the
@@ -242,7 +249,7 @@ has set for those who work on it are in [`docs/pitfalls.md`](docs/pitfalls.md). 
   removes the task's worktree when clean ([T07](plan/8e8d3d76-orchestrator.md)). It pushes the branch, never forcing,
   at an azima's end or once three tasks are committed and an hour has passed since the last push, once the `push`
   checks pass (red, the push is held, a correction worker started, and asked about if they stay red); `--push-mode ask` asks first.
-  Djinn's own checks are in [`.agents/settings.txtpb`](.agents/settings.txtpb): the lint at commit, the tests at push.
+  Djinn's own checks are in [`.agents/djinn.yaml`](.agents/djinn.yaml), under `settings:`: the lint at commit, the tests at push.
   `djinn project show <project>` and the window's project view list them with their last runs.
   `djinn wish set-integration <wish-id> --branch feat/x` names the branch. A conflict in code, or a red check, start a
   correction worker on the failed merge, part of the same azima; past `correction_attempts` (2), Djinn asks you. A task
@@ -388,7 +395,17 @@ has set for those who work on it are in [`docs/pitfalls.md`](docs/pitfalls.md). 
 
 - **Tasks live in [`plan/`](plan/README.md)**, one file each. The README checklist is the only
   tracker.
-- **Every change is reviewed** by a maintainer.
+- **Everyone follows the [code of conduct](CODE_OF_CONDUCT.md)**, in issues, pull requests and reviews.
+- **Every change is reviewed** by a maintainer: [nyhu](https://github.com/nyhu) today.
+- **Commits on `main` are signed.** The branch's protection requires signed commits: sign yours with an SSH or GPG
+  key your GitHub account knows (`git config commit.gpgsign true`, and `gpg.format ssh` with `user.signingkey` for an
+  SSH key; GitHub's "Signing commits" page has the steps). A pull request with unsigned commits can still be merged
+  by squash, which GitHub signs.
+- **Questions and bugs go in [GitHub issues](https://github.com/Empowill/Djinn/issues)**, the project's contact. A
+  bug goes through the bug form (Report a bug, at the top of the Grimoire, opens it): the version, the system, the
+  logs. A question or an idea goes through the suggestion form (Ask a question or suggest an improvement): there is no
+  blank issue. A security flaw never goes in an issue: write to [dev@empowill.com](mailto:dev@empowill.com) (see
+  [`SECURITY.md`](SECURITY.md)).
 - **Every change carries its documentation.** A change to what Djinn does (a feature, a concept, a screen, a command,
   a behaviour) updates the documentation site in the same change: its chapter or card in the Concepts tab of
   [`docs/site/index.html`](docs/site/index.html), a new card for a new concept. The Command line tab follows the
@@ -404,6 +421,9 @@ has set for those who work on it are in [`docs/pitfalls.md`](docs/pitfalls.md). 
   the macOS bundle and Launch Services, archive integrity, checksums (`SHA256SUMS`), and tests `install.sh` against
   the built release folder, keeping all assets as the run's artifacts (`gh run download`) without creating a tag,
   a release nor publishing assets.
+  A release that changes the store (a table, an indexed field) adds a database it wrote to
+  [`internal/plan/testdata/release`](internal/plan/testdata/release/README.md), which `TestEntities` opens with the
+  next code.
 - **Updating the model price table**: Model prices are maintained in `internal/usage/prices.yaml`, embedded into the binary. When a model's price changes or a new model is introduced:
   1. Edit `internal/usage/prices.yaml` and update the table `date` (`YYYY-MM-DD`).
   2. Each entry must specify `name` (as reported by provider streams, e.g. `claude-sonnet-5-5`, `gemini-3.8-flash-high`, `gpt-5.1-codex`), prices per million tokens (`input_cost_per_million`, `output_cost_per_million`, and where applicable `cache_read_cost_per_million`, `cache_write_cost_per_million`, `thinking_cost_per_million`), `source` (public URL), and `source_date` (`YYYY-MM-DD`).

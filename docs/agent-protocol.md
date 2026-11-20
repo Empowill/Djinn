@@ -327,7 +327,7 @@ The Djinn is the agent the developer talks to. It changes the plan with `djinn`,
   files that work touches (`djinn task overlaps <wish>`: a running, waiting or done-not-merged task's diff against its
   merge-base with the branch it merges into, untracked files included; a planned task's write scopes, or "paths
   unknown"; the pairs of tasks that touch the same files, generated files aside). `djinn wish brief` carries the same
-  overlaps in a short Overlaps section. At `djinn task spawn`, `djinn question launch` and `djinn plan launch`, Djinn
+  overlaps in a short Overlaps section. At `djinn task spawn` and `djinn question launch`, Djinn
   also checks the wish's open tasks not already ordered with the new task in the DAG (from their branch diffs,
   `--write-scopes`, and the repository paths, packages and specs named in both prompts): when any may collide, the
   answer names them with the reason (`diff: …`, `write-scopes: …`, `prompt: …`) and suggests

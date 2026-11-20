@@ -191,3 +191,156 @@ test("the lead's bubble fades 2 minutes after it shows and does not come back", 
       if (handle?.constructor?.name === "MessagePort") handle.unref();
   }
 });
+
+// L34 design A: a paste that carries files keeps each as a chip above the text, removable, within 10 files of 20 MB;
+// they go with the text, or alone.
+test("files pasted into the box become chips and go with the message", async () => {
+  const container = setupMockDom();
+  const below = (el, out = []) => {
+    for (const child of el.childNodes) {
+      out.push(child);
+      below(child, out);
+    }
+    return out;
+  };
+  const props = (el) =>
+    el[Object.keys(el).find((k) => k.startsWith("__reactProps$"))];
+  const byLabel = (label) =>
+    below(container).find((el) => el.attributes?.["aria-label"] === label);
+  const byClass = (name) =>
+    below(container).filter((el) =>
+      (el.attributes?.class ?? "").split(" ").includes(name),
+    );
+  const settle = async () => {
+    for (let i = 0; i < 4; i++)
+      await s.act(() => new Promise((r) => setTimeout(r, 0)));
+  };
+  const told = [];
+  const transport = s.createRouterTransport(({ service }) => {
+    service(s.LeadService, {
+      tell: (req) => {
+        told.push({
+          text: req.text,
+          files: req.files.map((f) => [
+            f.name,
+            f.type,
+            new TextDecoder().decode(f.data),
+          ]),
+        });
+        return { waiting: false };
+      },
+    });
+  });
+  const djinn = s.createDjinn(transport, 10);
+  const root = s.createRoot(container);
+  try {
+    await s.act(async () =>
+      root.render(
+        h(
+          s.DjinnProvider,
+          { djinn },
+          h(s.LeadMessage, {
+            wishId: "w2",
+            stopped: false,
+            onResume: async () => {},
+          }),
+        ),
+      ),
+    );
+    await s.act(async () => props(byLabel("Write to the Djinn")).onClick());
+    const box = below(container).find((el) => el.nodeName === "TEXTAREA");
+    const big = { name: "big.bin", size: 21 * 1024 * 1024, type: "" };
+    let prevented = 0;
+    await s.act(async () =>
+      props(box).onPaste({
+        clipboardData: {
+          files: [
+            new File(["a log"], "notes.txt", { type: "text/plain" }),
+            new File(["second"], "other.txt", { type: "text/plain" }),
+            big,
+          ],
+        },
+        preventDefault: () => prevented++,
+      }),
+    );
+    await settle();
+    assert.equal(prevented, 1, "a paste of files puts no text in the box");
+    assert.equal(byClass("lead-file").length, 2, "a chip per file kept");
+    assert.ok(
+      below(container).some(
+        (el) =>
+          el.attributes?.role === "alert" &&
+          [el, ...below(el)].some(
+            (c) =>
+              c.nodeValue?.includes("big.bin") ||
+              c.textContent?.includes?.("big.bin"),
+          ),
+      ),
+      "the file over 20 MB is left out, and said",
+    );
+    // A paste of text alone goes in the box as usual.
+    await s.act(async () =>
+      props(box).onPaste({
+        clipboardData: { files: [], items: [], types: ["text/plain"] },
+        preventDefault: () => prevented++,
+      }),
+    );
+    assert.equal(prevented, 1);
+    // WebKitGTK gives a screenshot's paste no type at all: the image is read from the clipboard.
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        read: async () => [
+          {
+            types: ["text/html", "image/png"],
+            getType: async (type) => new Blob(["png"], { type }),
+          },
+        ],
+      },
+    });
+    try {
+      await s.act(async () =>
+        props(box).onPaste({
+          clipboardData: { files: [], items: [], types: [] },
+          preventDefault: () => prevented++,
+        }),
+      );
+      await settle();
+    } finally {
+      delete navigator.clipboard;
+    }
+    assert.equal(byClass("lead-file").length, 3, "the screenshot read");
+    await s.act(async () =>
+      props(byLabel("Remove other.txt")).onClick({ preventDefault() {} }),
+    );
+    assert.equal(byClass("lead-file").length, 2, "the chip removed is gone");
+    assert.ok(
+      !("disabled" in byLabel("Send to the Djinn").attributes),
+      "a file alone can be sent",
+    );
+    await s.act(async () =>
+      props(box).onKeyDown({
+        key: "Enter",
+        shiftKey: false,
+        nativeEvent: { isComposing: false },
+        preventDefault() {},
+      }),
+    );
+    await settle();
+    assert.deepEqual(told, [
+      {
+        text: "",
+        files: [
+          ["notes.txt", "text/plain", "a log"],
+          ["image.png", "image/png", "png"],
+        ],
+      },
+    ]);
+    assert.equal(byClass("lead-file").length, 0, "sent, the chips go");
+  } finally {
+    s.act(() => root.unmount());
+    await new Promise((r) => setTimeout(r, 30));
+    for (const handle of process._getActiveHandles())
+      if (handle?.constructor?.name === "MessagePort") handle.unref();
+  }
+});

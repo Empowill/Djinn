@@ -36,7 +36,7 @@ A refused permission is not an error in itself: Claude and Codex tell the agent,
 ## A task's seal
 
 A task's seal is the set of constraints Djinn gives the worker of a task: what it may spend, what it may touch, how
-it shares the machine. Each part comes from a default of Djinn, the project's settings (`.agents/settings.txtpb`,
+it shares the machine. Each part comes from a default of Djinn, the project's settings (`settings:` in `.agents/djinn.yaml`,
 the developer's file over the repository's), the wish (its allowance), the task's spawn request, or Djinn's own
 flags; none of it is the worker's to change.
 
@@ -190,7 +190,7 @@ own environment, which never holds the guard. What the guard does not stop: a co
 first, or a remote given an explicit `pushurl` (which `pushInsteadOf` leaves alone).
 `TestGitGuardKeepsWorkersFromPushing` (`internal/harness/guard_test.go`) proves each case.
 
-Next to it, `.agents/settings.txtpb` gives the project's workers their default agent, model, budget and branch
+Next to it, `settings:` in `.agents/djinn.yaml` gives the project's workers their default agent, model, budget and branch
 name, shared by the team, your own file winning: [team settings](team-settings.md).
 
 ### How each agent receives it
@@ -351,9 +351,10 @@ minutes; no `go`, no cache step, nothing said):
   a missing file. Never `go clean -cache`, never `/tmp/go-build*`. `djinn.log` says what it freed (`go build cache
   trimmed`, its entries and bytes).
 - Under `--disk-full-gb` free where the data folder or the cache is (10 by default, `$DJINN_DISK_FULL_GB`), the lead
-  hears one `disk` event, "disk almost full", with the free space; its detail names the biggest folders Djinn knows
-  (the Go build cache, each project's worktrees, Djinn's logs and tilasms, the npm and Playwright caches, the
-  temporary folder). The push checks wait instead of failing, and so do push checks that ran out of space ("no space
+  hears one `disk` event, "disk almost full", with the free space; its detail names the five biggest sources Djinn
+  knows on the disk, from the Hourglass's last measures (W122): each project's worktrees and scratch with what ended
+  tasks' take of them, the caches (Go, golangci-lint, Docker, npm…), Djinn's logs and tilasms, the entries of the home
+  and the system folders the slow pass measured. It waits up to two minutes on a first measure. The push checks wait instead of failing, and so do push checks that ran out of space ("no space
   left on device") as the disk filled up: nothing held, no correction. Djinn reads the free space every 30 seconds;
   once it is back over the threshold, the lead hears it and the push checks run.
 
@@ -459,7 +460,9 @@ new one at the median of the latest 10 finished workers' value at it. Another wo
 engaged at, plus its forecast, stays within the notch's share of what Djinn could use with no worker running (the
 memory available plus what the workers running hold, less the 2 GiB reserve), and the memory available, less what the
 workers running may still take beyond what they hold, holds its forecast. The pressure check (PSI), the memory free,
-the worker memory guardrail and the gates stay the safety net.
+the worker memory guardrail and the gates stay the safety net. On macOS, for now (Q103 B, W166), Djinn delegates the pressure to the
+system: the load average and the memory free hold no worker and no gate there, only macOS's critical memory pressure
+level does (`Policy.pressure`); Linux keeps PSI, or the load and memory free without it.
 
 ### Operating load runtime adjustments
 
@@ -797,7 +800,7 @@ the lead's program ended, with its output, until Lead starts it again (`TestRunU
 accept-edits` and `--project <Djinn's agy project>` (run without `--sandbox`: developer choice Decision Q66, as agy's sandbox
 blocks UNIX domain sockets needed for `djinn gate run lint`, which triggers an `unsandboxed` request that headless mode denies);
 `--conversation <id>` to resume, `--model` (the Summoning Circle stores the canonical identifier `"gemini-4-argon-high"`,
-and `"Gemini 4 Argon (High)"`, `"gemini-4-argon-high"`, `"gemini-4-argon"` or `"argon"` are accepted in `settings.txtpb`
+and `"Gemini 4 Argon (High)"`, `"gemini-4-argon-high"`, `"gemini-4-argon"` or `"argon"` are accepted in the settings files
 and `djinn task spawn`, all mapped to `"Gemini 4 Argon (High)"` for `agy --model`, the name `agy` expects; W383, W400, Q101, Q102); outside a project, refused until a real capture proves a read-only mode. No `-p`: it takes the prompt as its value, and stream-json
 input replaces it. Each message on the input is `{"event":"user","message":{"content":"…"}}` and runs one turn;
 the input is closed once every message has its result. agy cannot fork a conversation, and has no spending cap.

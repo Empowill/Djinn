@@ -1,6 +1,8 @@
 package machine
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"path"
 	"regexp"
 	"slices"
@@ -21,6 +23,8 @@ const KeyLength = 200
 //   - what only sets up the shell (cd, export, set, echo…), the wrappers that change nothing it costs (time, nohup,
 //     env, timeout 600, taskset -c 0-15…), the redirections and the filters a pipe ends with (| tail -50, | grep FAIL)
 //     are left out;
+//   - a here-document is a word of its command, << and a digest of its body (HereDocs), the folders named alike: the
+//     script python3 - <<'EOF' runs is its program, two scripts are two keys (W82); the commands after its body stay;
 //   - its words are one space apart, quoted where a shell would need it, up to KeyLength characters.
 //
 // Arguments stay: go test ./... and go test ./internal/gate are two keys, the whole module and one package (W10).
@@ -39,25 +43,60 @@ func KeyArgs(args []string, dirs ...string) string {
 }
 
 // Head is what a key starts with, the program and its subcommand: go test, go tool task lint, npm run build, npx
-// playwright test. A command never measured is given the cost of the others of its head in its project (Peaks.Cost).
-// "" when the key has no word.
+// playwright test; python3 for an inline script (python3 - <<…). A command never measured is given the cost of the
+// others of its head in its project (Peaks.Cost). "" when the key has no word, holds more than one command (gofmt -l .
+// ; go build: its peak is the heavier one's, which no other command of its first word has), or starts with a light
+// program (Light: sed -i, mv, cat): such a key neither lends its cost nor borrows one (W139).
 func Head(key string) string {
 	parts := keyParts(key, nil, 0)
-	if len(parts) == 0 {
+	if len(parts) != 1 {
 		return ""
 	}
 	words := parts[0].words
 	for len(words) > 0 && assignment(words[0]) {
 		words = words[1:]
 	}
+	if len(words) == 0 || Light(path.Base(words[0])) {
+		return ""
+	}
 	var head []string
 	for i, w := range words {
-		if i > 0 && (len(head) == 4 || strings.HasPrefix(w, "-") || strings.ContainsAny(w, "/.=$*:@")) {
+		if i > 0 && (len(head) == 4 || strings.HasPrefix(w, "-") || strings.ContainsAny(w, "/.=$*:@<")) {
 			break
 		}
 		head = append(head, w)
 	}
 	return strings.Join(head, " ")
+}
+
+// Light says whether program, a command's first word past its folder, only reads or edits and runs nothing else: ls,
+// cat, sed, mv, djinn… A command made of light ones only passes the gates with no admission (gate.Plain), and a
+// command whose head is light lends its cost to none (Head). Anything else, a build, a test, a package manager, a
+// script, an interpreter, a loop, is admitted.
+func Light(program string) bool { return lightPrograms[program] }
+
+// lightPrograms are the commands that read or edit and run nothing else (Light).
+var lightPrograms = map[string]bool{
+	// Reading files and folders.
+	"ls": true, "cat": true, "head": true, "tail": true, "wc": true, "grep": true, "egrep": true, "fgrep": true,
+	"rg": true, "fd": true, "tree": true, "stat": true, "file": true, "du": true, "df": true, "less": true,
+	"more": true, "diff": true, "cmp": true, "comm": true, "od": true, "xxd": true, "hexdump": true, "strings": true,
+	"sha256sum": true, "sha1sum": true, "md5sum": true, "cksum": true, "realpath": true, "readlink": true,
+	"basename": true, "dirname": true, "find": true,
+	// Text in a pipe.
+	"echo": true, "printf": true, "sort": true, "uniq": true, "cut": true, "tr": true, "awk": true, "sed": true,
+	"jq": true, "column": true, "nl": true, "tee": true, "base64": true, "fold": true, "rev": true, "paste": true,
+	"join": true, "expand": true, "fmt": true,
+	// Editing files and folders.
+	"mkdir": true, "rmdir": true, "touch": true, "cp": true, "mv": true, "rm": true, "ln": true, "chmod": true,
+	"patch": true,
+	// The shell itself, and what tells about the machine.
+	"cd": true, "pwd": true, "true": true, "false": true, "test": true, "[": true, "export": true, "unset": true,
+	"which": true, "type": true, "date": true, "printenv": true, "id": true, "whoami": true,
+	"hostname": true, "uname": true, "ps": true, "pgrep": true, "free": true, "uptime": true, "nproc": true,
+	"exit": true,
+	// Djinn's own commands talk to Djinn; djinn gate run takes its gate.
+	"djinn": true,
 }
 
 // cut keeps the first KeyLength characters of key, whole words when it can, whole runes always.
@@ -98,7 +137,7 @@ func keyWords(command string, dirs []string, depth int) []string {
 // keyParts is the simple commands of command that tell what it costs, normalized as Key says.
 func keyParts(command string, dirs []string, depth int) []part {
 	var all []part
-	for _, p := range tokens(command) {
+	for _, p := range tokens(command, dirs) {
 		words := setUp(p.words)
 		if len(words) == 0 {
 			continue
@@ -116,12 +155,16 @@ func keyParts(command string, dirs []string, depth int) []part {
 		}
 		all = append(all, part{op: p.op, words: words})
 	}
-	// What only sets the shell up, or tells, goes; a filter at the end of a pipe too. All of it when nothing else is
+	// What only sets the shell up, or tells, goes; a filter at the end of a pipe too, and a here-document written out
+	// by cat or tee, a script before the command that runs it, unless a pipe hands it on. All of it when nothing else is
 	// left: the command is then its own key.
 	var kept []part
-	for _, p := range all {
+	for i, p := range all {
 		head := path.Base(p.words[0])
-		if p.op == "|" && filters[head] || !assignment(p.words[0]) && setUps[head] || onlyAssignments(p.words) {
+		piped := i+1 < len(all) && all[i+1].op == "|"
+		written := (head == "cat" || head == "tee") && !piped &&
+			slices.ContainsFunc(p.words, func(w string) bool { return strings.HasPrefix(w, "<<") })
+		if p.op == "|" && filters[head] || !assignment(p.words[0]) && setUps[head] || onlyAssignments(p.words) || written {
 			continue
 		}
 		if len(kept) == 0 {
@@ -276,22 +319,27 @@ func quote(w string) string {
 
 // tokens cuts command into its simple commands, each into its words, quotes removed: at ;, &, |, &&, || and new
 // lines, the operator kept with the command after it. A redirection is left out with its target, a comment and a
-// here-document's body too. An open quote runs to the end.
-func tokens(command string) []part {
+// here-string too; a here-document is the word << and the digest of its body (HereDocs), and the commands after its body follow. An open
+// quote runs to the end.
+func tokens(command string, dirs []string) []part {
+	command, docs := HereDocs(command)
 	var parts []part
 	var words []string
 	var word strings.Builder
-	inWord := false
+	inWord, hereString := false, false
 	op := ""
 	end := func() {
 		if inWord {
-			words = append(words, word.String())
+			if !hereString {
+				words = append(words, word.String())
+			}
 			word.Reset()
-			inWord = false
+			inWord, hereString = false, false
 		}
 	}
 	cutAt := func(next string) {
 		end()
+		hereString = false
 		if len(words) > 0 {
 			parts = append(parts, part{op: op, words: words})
 			op = next
@@ -344,10 +392,21 @@ func tokens(command string) []part {
 				c = ';'
 			}
 			cutAt(string(c))
+		case c == '<' && strings.HasPrefix(command[i:], "<<<"):
+			// A here-string: its word, quoted or not, is no word of the command.
+			end()
+			for i += 2; i+1 < len(command) && (command[i+1] == ' ' || command[i+1] == '\t'); i++ {
+			}
+			hereString = true
 		case c == '<' && strings.HasPrefix(command[i:], "<<"):
-			// A here-document: its body, to the end, is no part of the command.
-			cutAt("")
-			return parts
+			// A here-document: its delimiter goes, its body is a word of the command.
+			end()
+			i = skipTarget(command, i+1)
+			body := ""
+			if len(docs) > 0 {
+				body, docs = docs[0].Body, docs[1:]
+			}
+			words = append(words, "<<"+digest(body, dirs))
 		case c == '>' || c == '<':
 			// A redirection: its target is no word of the command. 2>&1 and >&2 name no file.
 			if inWord && strings.Trim(word.String(), "0123456789") == "" {
@@ -383,4 +442,126 @@ func skipTarget(command string, i int) int {
 		i++
 	}
 	return i
+}
+
+// HereDoc is a here-document's body, as its command reads it, and whether its delimiter was quoted: the shell then
+// expands nothing in it, no variable, no substitution.
+type HereDoc struct {
+	Body   string
+	Quoted bool
+}
+
+// HereDocs is command without the bodies of its here-documents (<<EOF, <<-'EOF'), and the bodies, in the order of
+// their operators. The operators and their delimiters stay in code; each body, from the line after its operator's to
+// its delimiter's line, goes with that line. A body with no delimiter runs to the end.
+func HereDocs(command string) (code string, docs []HereDoc) {
+	type pending struct {
+		delim  string
+		dash   bool
+		quoted bool
+	}
+	var out strings.Builder
+	var waiting []pending
+	single, double := false, false
+	for i := 0; i < len(command); i++ {
+		c := command[i]
+		switch {
+		case c == '\\' && !single && i+1 < len(command):
+			out.WriteString(command[i : i+2])
+			i++
+		case c == '\'' && !double:
+			single = !single
+			out.WriteByte(c)
+		case c == '"' && !single:
+			double = !double
+			out.WriteByte(c)
+		case single || double:
+			out.WriteByte(c)
+		case c == '#' && (i == 0 || strings.IndexByte(" \t\n;&|", command[i-1]) >= 0):
+			// A comment, to the end of its line.
+			j := strings.IndexByte(command[i:], '\n')
+			if j < 0 {
+				j = len(command) - i
+			}
+			out.WriteString(command[i : i+j])
+			i += j - 1
+		case c == '<' && strings.HasPrefix(command[i:], "<<<"):
+			out.WriteString("<<<")
+			i += 2
+		case c == '<' && strings.HasPrefix(command[i:], "<<"):
+			j := i + 2
+			p := pending{}
+			if j < len(command) && command[j] == '-' {
+				p.dash = true
+				j++
+			}
+			for j < len(command) && (command[j] == ' ' || command[j] == '\t') {
+				j++
+			}
+			var delim strings.Builder
+			for ; j < len(command) && !strings.ContainsRune(" \t\n;&|<>()", rune(command[j])); j++ {
+				switch command[j] {
+				case '\'', '"':
+					p.quoted = true
+					if k := strings.IndexByte(command[j+1:], command[j]); k >= 0 {
+						delim.WriteString(command[j+1 : j+1+k])
+						j += k + 1
+					}
+				case '\\':
+					p.quoted = true
+					if j+1 < len(command) {
+						j++
+						delim.WriteByte(command[j])
+					}
+				default:
+					delim.WriteByte(command[j])
+				}
+			}
+			p.delim = delim.String()
+			out.WriteString(command[i:j])
+			i = j - 1
+			waiting = append(waiting, p)
+		case c == '\n' && len(waiting) > 0:
+			out.WriteByte(c)
+			// The bodies, one after the other, from the next line.
+			for _, p := range waiting {
+				var body []string
+				for i+1 < len(command) {
+					line, _, _ := strings.Cut(command[i+1:], "\n")
+					i += len(line) + 1
+					if p.dash {
+						line = strings.TrimLeft(line, "\t")
+					}
+					if line == p.delim {
+						break
+					}
+					body = append(body, line)
+				}
+				docs = append(docs, HereDoc{Body: strings.Join(body, "\n"), Quoted: p.quoted})
+			}
+			waiting = nil
+		default:
+			out.WriteByte(c)
+		}
+	}
+	for _, p := range waiting {
+		docs = append(docs, HereDoc{Quoted: p.quoted}) // Its body never came.
+	}
+	return out.String(), docs
+}
+
+// digest names a here-document's body in a key: 8 hexadecimal digits of its hash, with the folders that change with
+// each task named alike first (normalWord).
+func digest(body string, dirs []string) string {
+	for _, d := range dirs {
+		if d = strings.TrimRight(d, "/"); d != "" && strings.HasPrefix(d, "/") {
+			body = strings.ReplaceAll(body, d, ".")
+		}
+	}
+	body = worktreeRe.ReplaceAllLiteralString(body, "$WORKTREE")
+	body = scratchRe.ReplaceAllLiteralString(body, "$DJINN_SCRATCH")
+	body = tmpRe.ReplaceAllString(body, "${1}/tmp/*")
+	body = uuidRe.ReplaceAllLiteralString(body, "$ID")
+	sum := sha256.Sum256([]byte(body))
+	return hex.EncodeToString(sum[:4])
 }

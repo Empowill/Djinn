@@ -2,6 +2,9 @@ package plan
 
 import (
 	"context"
+	"database/sql"
+	"errors"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -344,5 +347,44 @@ func TestEnlightenOutlivesItsCall(t *testing.T) {
 	}
 	if len(events) != 1 || events[0].GetKind() != planv1.LeadEventKind_LEAD_EVENT_KIND_ENLIGHTEN {
 		t.Fatalf("lead events: %v, want one to investigate", events)
+	}
+}
+
+// TestCleanVersionsUnmigrated (Q42): questions whose table could not be made at start leave djinn up going on; the
+// other entities read and write.
+func TestCleanVersionsUnmigrated(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	path := filepath.Join(t.TempDir(), store.File)
+	db, err := sql.Open("sqlite", "file:"+filepath.ToSlash(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// An index takes the name of the questions' table.
+	for _, q := range []string{`CREATE TABLE other (a TEXT)`, `CREATE INDEX question ON other (a)`} {
+		if _, err := db.ExecContext(ctx, q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	db.Close()
+	s, err := store.Open(ctx, path, Entities()...)
+	if err != nil {
+		t.Fatalf("Open = %v, want the database opened", err)
+	}
+	defer s.Close()
+	if err := CleanVersions(ctx, s); err != nil {
+		t.Errorf("CleanVersions = %v, want nil", err)
+	}
+	wish := &planv1.Wish{Id: store.NewID(), Title: "Lamp"}
+	if err := s.Tx(ctx, func(tx *store.Tx) error {
+		if err := tx.Journal("test", "put", wish); err != nil {
+			return err
+		}
+		return tx.Put(wish)
+	}); err != nil {
+		t.Fatalf("put a wish = %v", err)
+	}
+	if _, err := store.Get[*planv1.Question](ctx, s, "q1"); !errors.Is(err, store.ErrUnmigrated) {
+		t.Errorf("get a question = %v, want ErrUnmigrated", err)
 	}
 }

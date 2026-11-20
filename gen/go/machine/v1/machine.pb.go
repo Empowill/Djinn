@@ -28,6 +28,132 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// DiskFreeingPart is what of a task the freeing pass kept (DiskFreeingKept).
+type DiskFreeingPart int32
+
+const (
+	// Not set.
+	DiskFreeingPart_DISK_FREEING_PART_UNSPECIFIED DiskFreeingPart = 0
+	// Its worktree, and with it its scratch and its local branch.
+	DiskFreeingPart_DISK_FREEING_PART_WORKTREE DiskFreeingPart = 1
+	// Its scratch folder.
+	DiskFreeingPart_DISK_FREEING_PART_SCRATCH DiskFreeingPart = 2
+	// Its local branch.
+	DiskFreeingPart_DISK_FREEING_PART_BRANCH DiskFreeingPart = 3
+	// The whole task: it runs again, or could not be read.
+	DiskFreeingPart_DISK_FREEING_PART_TASK DiskFreeingPart = 4
+)
+
+// Enum value maps for DiskFreeingPart.
+var (
+	DiskFreeingPart_name = map[int32]string{
+		0: "DISK_FREEING_PART_UNSPECIFIED",
+		1: "DISK_FREEING_PART_WORKTREE",
+		2: "DISK_FREEING_PART_SCRATCH",
+		3: "DISK_FREEING_PART_BRANCH",
+		4: "DISK_FREEING_PART_TASK",
+	}
+	DiskFreeingPart_value = map[string]int32{
+		"DISK_FREEING_PART_UNSPECIFIED": 0,
+		"DISK_FREEING_PART_WORKTREE":    1,
+		"DISK_FREEING_PART_SCRATCH":     2,
+		"DISK_FREEING_PART_BRANCH":      3,
+		"DISK_FREEING_PART_TASK":        4,
+	}
+)
+
+func (x DiskFreeingPart) Enum() *DiskFreeingPart {
+	p := new(DiskFreeingPart)
+	*p = x
+	return p
+}
+
+func (x DiskFreeingPart) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (DiskFreeingPart) Descriptor() protoreflect.EnumDescriptor {
+	return file_machine_v1_machine_proto_enumTypes[0].Descriptor()
+}
+
+func (DiskFreeingPart) Type() protoreflect.EnumType {
+	return &file_machine_v1_machine_proto_enumTypes[0]
+}
+
+func (x DiskFreeingPart) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use DiskFreeingPart.Descriptor instead.
+func (DiskFreeingPart) EnumDescriptor() ([]byte, []int) {
+	return file_machine_v1_machine_proto_rawDescGZIP(), []int{0}
+}
+
+// DiskFreeingReason is why the freeing pass kept a part of a task (DiskFreeingKept).
+type DiskFreeingReason int32
+
+const (
+	// Not set.
+	DiskFreeingReason_DISK_FREEING_REASON_UNSPECIFIED DiskFreeingReason = 0
+	// The worktree holds changes not committed.
+	DiskFreeingReason_DISK_FREEING_REASON_UNCOMMITTED DiskFreeingReason = 1
+	// Commits found neither in the integration branch nor on the remote: the only copy of them.
+	DiskFreeingReason_DISK_FREEING_REASON_UNPUSHED DiskFreeingReason = 2
+	// The task runs again.
+	DiskFreeingReason_DISK_FREEING_REASON_RUNNING DiskFreeingReason = 3
+	// The project's folder is not on this machine.
+	DiskFreeingReason_DISK_FREEING_REASON_NO_PROJECT DiskFreeingReason = 4
+	// An error: detail says which.
+	DiskFreeingReason_DISK_FREEING_REASON_ERROR DiskFreeingReason = 5
+)
+
+// Enum value maps for DiskFreeingReason.
+var (
+	DiskFreeingReason_name = map[int32]string{
+		0: "DISK_FREEING_REASON_UNSPECIFIED",
+		1: "DISK_FREEING_REASON_UNCOMMITTED",
+		2: "DISK_FREEING_REASON_UNPUSHED",
+		3: "DISK_FREEING_REASON_RUNNING",
+		4: "DISK_FREEING_REASON_NO_PROJECT",
+		5: "DISK_FREEING_REASON_ERROR",
+	}
+	DiskFreeingReason_value = map[string]int32{
+		"DISK_FREEING_REASON_UNSPECIFIED": 0,
+		"DISK_FREEING_REASON_UNCOMMITTED": 1,
+		"DISK_FREEING_REASON_UNPUSHED":    2,
+		"DISK_FREEING_REASON_RUNNING":     3,
+		"DISK_FREEING_REASON_NO_PROJECT":  4,
+		"DISK_FREEING_REASON_ERROR":       5,
+	}
+)
+
+func (x DiskFreeingReason) Enum() *DiskFreeingReason {
+	p := new(DiskFreeingReason)
+	*p = x
+	return p
+}
+
+func (x DiskFreeingReason) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (DiskFreeingReason) Descriptor() protoreflect.EnumDescriptor {
+	return file_machine_v1_machine_proto_enumTypes[1].Descriptor()
+}
+
+func (DiskFreeingReason) Type() protoreflect.EnumType {
+	return &file_machine_v1_machine_proto_enumTypes[1]
+}
+
+func (x DiskFreeingReason) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use DiskFreeingReason.Descriptor instead.
+func (DiskFreeingReason) EnumDescriptor() ([]byte, []int) {
+	return file_machine_v1_machine_proto_rawDescGZIP(), []int{1}
+}
+
 // DiskRisk is what happens when a DiskItem's cleanup command runs.
 type DiskRisk int32
 
@@ -71,11 +197,11 @@ func (x DiskRisk) String() string {
 }
 
 func (DiskRisk) Descriptor() protoreflect.EnumDescriptor {
-	return file_machine_v1_machine_proto_enumTypes[0].Descriptor()
+	return file_machine_v1_machine_proto_enumTypes[2].Descriptor()
 }
 
 func (DiskRisk) Type() protoreflect.EnumType {
-	return &file_machine_v1_machine_proto_enumTypes[0]
+	return &file_machine_v1_machine_proto_enumTypes[2]
 }
 
 func (x DiskRisk) Number() protoreflect.EnumNumber {
@@ -84,7 +210,7 @@ func (x DiskRisk) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use DiskRisk.Descriptor instead.
 func (DiskRisk) EnumDescriptor() ([]byte, []int) {
-	return file_machine_v1_machine_proto_rawDescGZIP(), []int{0}
+	return file_machine_v1_machine_proto_rawDescGZIP(), []int{2}
 }
 
 // How a gate is held.
@@ -124,11 +250,11 @@ func (x GateMode) String() string {
 }
 
 func (GateMode) Descriptor() protoreflect.EnumDescriptor {
-	return file_machine_v1_machine_proto_enumTypes[1].Descriptor()
+	return file_machine_v1_machine_proto_enumTypes[3].Descriptor()
 }
 
 func (GateMode) Type() protoreflect.EnumType {
-	return &file_machine_v1_machine_proto_enumTypes[1]
+	return &file_machine_v1_machine_proto_enumTypes[3]
 }
 
 func (x GateMode) Number() protoreflect.EnumNumber {
@@ -137,7 +263,7 @@ func (x GateMode) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use GateMode.Descriptor instead.
 func (GateMode) EnumDescriptor() ([]byte, []int) {
-	return file_machine_v1_machine_proto_rawDescGZIP(), []int{1}
+	return file_machine_v1_machine_proto_rawDescGZIP(), []int{3}
 }
 
 // What a gate's holder waited for before it was granted.
@@ -193,11 +319,11 @@ func (x GateWaitCause) String() string {
 }
 
 func (GateWaitCause) Descriptor() protoreflect.EnumDescriptor {
-	return file_machine_v1_machine_proto_enumTypes[2].Descriptor()
+	return file_machine_v1_machine_proto_enumTypes[4].Descriptor()
 }
 
 func (GateWaitCause) Type() protoreflect.EnumType {
-	return &file_machine_v1_machine_proto_enumTypes[2]
+	return &file_machine_v1_machine_proto_enumTypes[4]
 }
 
 func (x GateWaitCause) Number() protoreflect.EnumNumber {
@@ -206,7 +332,7 @@ func (x GateWaitCause) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use GateWaitCause.Descriptor instead.
 func (GateWaitCause) EnumDescriptor() ([]byte, []int) {
-	return file_machine_v1_machine_proto_rawDescGZIP(), []int{2}
+	return file_machine_v1_machine_proto_rawDescGZIP(), []int{4}
 }
 
 // GateState is where a holder stands with its gate.
@@ -251,11 +377,11 @@ func (x GateState) String() string {
 }
 
 func (GateState) Descriptor() protoreflect.EnumDescriptor {
-	return file_machine_v1_machine_proto_enumTypes[3].Descriptor()
+	return file_machine_v1_machine_proto_enumTypes[5].Descriptor()
 }
 
 func (GateState) Type() protoreflect.EnumType {
-	return &file_machine_v1_machine_proto_enumTypes[3]
+	return &file_machine_v1_machine_proto_enumTypes[5]
 }
 
 func (x GateState) Number() protoreflect.EnumNumber {
@@ -264,7 +390,7 @@ func (x GateState) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use GateState.Descriptor instead.
 func (GateState) EnumDescriptor() ([]byte, []int) {
-	return file_machine_v1_machine_proto_rawDescGZIP(), []int{3}
+	return file_machine_v1_machine_proto_rawDescGZIP(), []int{5}
 }
 
 // Pressure is how much of the time tasks of the machine waited for a resource: the pressure stall information of
@@ -678,7 +804,15 @@ type Disk struct {
 	Folders []*DiskFolder `protobuf:"bytes,4,rep,name=folders,proto3" json:"folders,omitempty"`
 	// Known caches and stores on the machine, biggest first, with the command that cleans each, what it frees and its
 	// risk. Djinn never runs a cleanup command: it only displays it.
-	Items         []*DiskItem `protobuf:"bytes,5,rep,name=items,proto3" json:"items,omitempty"`
+	Items []*DiskItem `protobuf:"bytes,5,rep,name=items,proto3" json:"items,omitempty"`
+	// When Djinn's folders and the caches were last measured whole: the older of the two measures; unset before the
+	// first one ends.
+	MeasureTime *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=measure_time,json=measureTime,proto3" json:"measure_time,omitempty"`
+	// Whether a measure of the folders or the caches is going now.
+	Measuring bool `protobuf:"varint,7,opt,name=measuring,proto3" json:"measuring,omitempty"`
+	// The last pass that freed the worktrees and scratch of finished tasks (Q75), while it goes and once it ended; unset
+	// before the first pass that found something to free.
+	Freeing       *DiskFreeing `protobuf:"bytes,8,opt,name=freeing,proto3" json:"freeing,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -748,20 +882,353 @@ func (x *Disk) GetItems() []*DiskItem {
 	return nil
 }
 
-// DiskFolder is a folder measured on disk, with its size in bytes.
+func (x *Disk) GetMeasureTime() *timestamppb.Timestamp {
+	if x != nil {
+		return x.MeasureTime
+	}
+	return nil
+}
+
+func (x *Disk) GetMeasuring() bool {
+	if x != nil {
+		return x.Measuring
+	}
+	return false
+}
+
+func (x *Disk) GetFreeing() *DiskFreeing {
+	if x != nil {
+		return x.Freeing
+	}
+	return nil
+}
+
+// DiskFreeing is how far a pass that frees the worktrees, scratch and local branches of finished tasks is (Q75): a
+// task done 30 days ago with its work integrated (Q81), one of an azima validated, one of a wish granted. A window bar follows it.
+type DiskFreeing struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The tasks the pass frees, and how many of them it has looked at, freed or kept.
+	Total int32 `protobuf:"varint,1,opt,name=total,proto3" json:"total,omitempty"`
+	Done  int32 `protobuf:"varint,2,opt,name=done,proto3" json:"done,omitempty"`
+	// What the folders it removed took on disk, in bytes: a floor when a walk ran out of time.
+	FreedBytes uint64 `protobuf:"varint,3,opt,name=freed_bytes,json=freedBytes,proto3" json:"freed_bytes,omitempty"`
+	// How many tasks it kept something of, for they hold work: changes not committed, or commits found neither in the
+	// integration branch nor on the remote. Djinn's log says why each.
+	Kept int32 `protobuf:"varint,4,opt,name=kept,proto3" json:"kept,omitempty"`
+	// When it started, and when it ended; end_time unset while it goes.
+	StartTime *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=start_time,json=startTime,proto3" json:"start_time,omitempty"`
+	EndTime   *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=end_time,json=endTime,proto3" json:"end_time,omitempty"`
+	// The granted wishes whose tasks it frees, by identifier: the cascade a grant starts at once.
+	WishIds []string `protobuf:"bytes,7,rep,name=wish_ids,json=wishIds,proto3" json:"wish_ids,omitempty"`
+	// The same, per azima validated or of a wish granted, in the order the pass frees them; each azima's events say what
+	// was freed of each task, or kept and why.
+	Azimas        []*DiskFreeingAzima `protobuf:"bytes,8,rep,name=azimas,proto3" json:"azimas,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DiskFreeing) Reset() {
+	*x = DiskFreeing{}
+	mi := &file_machine_v1_machine_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DiskFreeing) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DiskFreeing) ProtoMessage() {}
+
+func (x *DiskFreeing) ProtoReflect() protoreflect.Message {
+	mi := &file_machine_v1_machine_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DiskFreeing.ProtoReflect.Descriptor instead.
+func (*DiskFreeing) Descriptor() ([]byte, []int) {
+	return file_machine_v1_machine_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *DiskFreeing) GetTotal() int32 {
+	if x != nil {
+		return x.Total
+	}
+	return 0
+}
+
+func (x *DiskFreeing) GetDone() int32 {
+	if x != nil {
+		return x.Done
+	}
+	return 0
+}
+
+func (x *DiskFreeing) GetFreedBytes() uint64 {
+	if x != nil {
+		return x.FreedBytes
+	}
+	return 0
+}
+
+func (x *DiskFreeing) GetKept() int32 {
+	if x != nil {
+		return x.Kept
+	}
+	return 0
+}
+
+func (x *DiskFreeing) GetStartTime() *timestamppb.Timestamp {
+	if x != nil {
+		return x.StartTime
+	}
+	return nil
+}
+
+func (x *DiskFreeing) GetEndTime() *timestamppb.Timestamp {
+	if x != nil {
+		return x.EndTime
+	}
+	return nil
+}
+
+func (x *DiskFreeing) GetWishIds() []string {
+	if x != nil {
+		return x.WishIds
+	}
+	return nil
+}
+
+func (x *DiskFreeing) GetAzimas() []*DiskFreeingAzima {
+	if x != nil {
+		return x.Azimas
+	}
+	return nil
+}
+
+// DiskFreeingAzima is how far a freeing pass is in the tasks of one azima (DiskFreeing).
+type DiskFreeingAzima struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The azima, by identifier, and its wish. The tasks of a wish granted that are part of no azima come as one more
+	// entry, its azima_id empty.
+	AzimaId    string `protobuf:"bytes,1,opt,name=azima_id,json=azimaId,proto3" json:"azima_id,omitempty"`
+	WishId     string `protobuf:"bytes,2,opt,name=wish_id,json=wishId,proto3" json:"wish_id,omitempty"`
+	Total      int32  `protobuf:"varint,3,opt,name=total,proto3" json:"total,omitempty"`
+	Done       int32  `protobuf:"varint,4,opt,name=done,proto3" json:"done,omitempty"`
+	FreedBytes uint64 `protobuf:"varint,5,opt,name=freed_bytes,json=freedBytes,proto3" json:"freed_bytes,omitempty"`
+	Kept       int32  `protobuf:"varint,6,opt,name=kept,proto3" json:"kept,omitempty"`
+	// What the pass kept of its tasks, and why, in the order it looked at them: the window's cascade band says it.
+	KeptItems     []*DiskFreeingKept `protobuf:"bytes,7,rep,name=kept_items,json=keptItems,proto3" json:"kept_items,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DiskFreeingAzima) Reset() {
+	*x = DiskFreeingAzima{}
+	mi := &file_machine_v1_machine_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DiskFreeingAzima) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DiskFreeingAzima) ProtoMessage() {}
+
+func (x *DiskFreeingAzima) ProtoReflect() protoreflect.Message {
+	mi := &file_machine_v1_machine_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DiskFreeingAzima.ProtoReflect.Descriptor instead.
+func (*DiskFreeingAzima) Descriptor() ([]byte, []int) {
+	return file_machine_v1_machine_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *DiskFreeingAzima) GetAzimaId() string {
+	if x != nil {
+		return x.AzimaId
+	}
+	return ""
+}
+
+func (x *DiskFreeingAzima) GetWishId() string {
+	if x != nil {
+		return x.WishId
+	}
+	return ""
+}
+
+func (x *DiskFreeingAzima) GetTotal() int32 {
+	if x != nil {
+		return x.Total
+	}
+	return 0
+}
+
+func (x *DiskFreeingAzima) GetDone() int32 {
+	if x != nil {
+		return x.Done
+	}
+	return 0
+}
+
+func (x *DiskFreeingAzima) GetFreedBytes() uint64 {
+	if x != nil {
+		return x.FreedBytes
+	}
+	return 0
+}
+
+func (x *DiskFreeingAzima) GetKept() int32 {
+	if x != nil {
+		return x.Kept
+	}
+	return 0
+}
+
+func (x *DiskFreeingAzima) GetKeptItems() []*DiskFreeingKept {
+	if x != nil {
+		return x.KeptItems
+	}
+	return nil
+}
+
+// DiskFreeingKept is a part of a task the freeing pass kept, and why: it never loses work.
+type DiskFreeingKept struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The task, by identifier.
+	TaskId string `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	// What stayed: its worktree (and with it its scratch and branch), its scratch, its local branch, or the whole task.
+	Part DiskFreeingPart `protobuf:"varint,2,opt,name=part,proto3,enum=machine.v1.DiskFreeingPart" json:"part,omitempty"`
+	// Why it stayed.
+	Reason DiskFreeingReason `protobuf:"varint,3,opt,name=reason,proto3,enum=machine.v1.DiskFreeingReason" json:"reason,omitempty"`
+	// For an unpushed reason, how many commits are found neither in the integration branch nor on the remote.
+	Commits int32 `protobuf:"varint,4,opt,name=commits,proto3" json:"commits,omitempty"`
+	// The reason as Djinn's log says it, in English: the error, or the path holding the changes.
+	Detail        string `protobuf:"bytes,5,opt,name=detail,proto3" json:"detail,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DiskFreeingKept) Reset() {
+	*x = DiskFreeingKept{}
+	mi := &file_machine_v1_machine_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DiskFreeingKept) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DiskFreeingKept) ProtoMessage() {}
+
+func (x *DiskFreeingKept) ProtoReflect() protoreflect.Message {
+	mi := &file_machine_v1_machine_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DiskFreeingKept.ProtoReflect.Descriptor instead.
+func (*DiskFreeingKept) Descriptor() ([]byte, []int) {
+	return file_machine_v1_machine_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *DiskFreeingKept) GetTaskId() string {
+	if x != nil {
+		return x.TaskId
+	}
+	return ""
+}
+
+func (x *DiskFreeingKept) GetPart() DiskFreeingPart {
+	if x != nil {
+		return x.Part
+	}
+	return DiskFreeingPart_DISK_FREEING_PART_UNSPECIFIED
+}
+
+func (x *DiskFreeingKept) GetReason() DiskFreeingReason {
+	if x != nil {
+		return x.Reason
+	}
+	return DiskFreeingReason_DISK_FREEING_REASON_UNSPECIFIED
+}
+
+func (x *DiskFreeingKept) GetCommits() int32 {
+	if x != nil {
+		return x.Commits
+	}
+	return 0
+}
+
+func (x *DiskFreeingKept) GetDetail() string {
+	if x != nil {
+		return x.Detail
+	}
+	return ""
+}
+
+// DiskFolder is a folder measured on disk, with what its files take on it: the blocks they hold, which counts what the
+// file system adds to each file (eCryptfs: a header, the rounding up to a block), not their length.
 type DiskFolder struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Path of the folder.
+	// Path of the folder; "~" for the sum of the home's small entries (kind home, count of them).
 	Path string `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
-	// Size of its files on disk, in bytes.
-	SizeBytes     uint64 `protobuf:"varint,2,opt,name=size_bytes,json=sizeBytes,proto3" json:"size_bytes,omitempty"`
+	// What its files take on disk, in bytes. Of kind home or system: without what another row counts inside it.
+	SizeBytes uint64 `protobuf:"varint,2,opt,name=size_bytes,json=sizeBytes,proto3" json:"size_bytes,omitempty"`
+	// Whether its walk ran out of time: the size is at least this, or the last whole measure when it was bigger.
+	Partial bool `protobuf:"varint,3,opt,name=partial,proto3" json:"partial,omitempty"`
+	// What the folder is: worktrees, scratch (each a project's), data (Djinn's data folder), logs, tilasms, node_modules,
+	// go-build, npm, playwright, tmp; home (an entry of the home folder) or system (/var, /usr, /opt), which the slow
+	// pass measures every few hours, apart from Djinn's.
+	Kind string `protobuf:"bytes,4,opt,name=kind,proto3" json:"kind,omitempty"`
+	// Name of the project whose worktrees or scratch these are.
+	Project string `protobuf:"bytes,5,opt,name=project,proto3" json:"project,omitempty"`
+	// Of the worktrees or scratch, the folders of tasks done with their work integrated, in bytes: what the freeing pass
+	// frees by itself 30 days after their end (Q81), by the same predicate.
+	IntegratedBytes uint64 `protobuf:"varint,6,opt,name=integrated_bytes,json=integratedBytes,proto3" json:"integrated_bytes,omitempty"`
+	// How many task folders the worktrees or scratch hold; how many entries the "~" row of kind home sums.
+	Count int32 `protobuf:"varint,7,opt,name=count,proto3" json:"count,omitempty"`
+	// How many of them are such tasks'.
+	IntegratedCount int32 `protobuf:"varint,8,opt,name=integrated_count,json=integratedCount,proto3" json:"integrated_count,omitempty"`
+	// When the folder was last walked.
+	MeasureTime *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=measure_time,json=measureTime,proto3" json:"measure_time,omitempty"`
+	// Of the worktrees or scratch, the folders of the other tasks finished (cancelled, failed, stopped, done with their
+	// work dropped or not integrated), in bytes: what the freeing pass frees on top once their azima is validated or
+	// their wish granted. A task Djinn no longer knows counts in neither: Djinn never frees its folder.
+	CascadeBytes uint64 `protobuf:"varint,10,opt,name=cascade_bytes,json=cascadeBytes,proto3" json:"cascade_bytes,omitempty"`
+	// How many of them are those tasks'.
+	CascadeCount  int32 `protobuf:"varint,11,opt,name=cascade_count,json=cascadeCount,proto3" json:"cascade_count,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *DiskFolder) Reset() {
 	*x = DiskFolder{}
-	mi := &file_machine_v1_machine_proto_msgTypes[4]
+	mi := &file_machine_v1_machine_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -773,7 +1240,7 @@ func (x *DiskFolder) String() string {
 func (*DiskFolder) ProtoMessage() {}
 
 func (x *DiskFolder) ProtoReflect() protoreflect.Message {
-	mi := &file_machine_v1_machine_proto_msgTypes[4]
+	mi := &file_machine_v1_machine_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -786,7 +1253,7 @@ func (x *DiskFolder) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DiskFolder.ProtoReflect.Descriptor instead.
 func (*DiskFolder) Descriptor() ([]byte, []int) {
-	return file_machine_v1_machine_proto_rawDescGZIP(), []int{4}
+	return file_machine_v1_machine_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *DiskFolder) GetPath() string {
@@ -803,11 +1270,74 @@ func (x *DiskFolder) GetSizeBytes() uint64 {
 	return 0
 }
 
+func (x *DiskFolder) GetPartial() bool {
+	if x != nil {
+		return x.Partial
+	}
+	return false
+}
+
+func (x *DiskFolder) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *DiskFolder) GetProject() string {
+	if x != nil {
+		return x.Project
+	}
+	return ""
+}
+
+func (x *DiskFolder) GetIntegratedBytes() uint64 {
+	if x != nil {
+		return x.IntegratedBytes
+	}
+	return 0
+}
+
+func (x *DiskFolder) GetCount() int32 {
+	if x != nil {
+		return x.Count
+	}
+	return 0
+}
+
+func (x *DiskFolder) GetIntegratedCount() int32 {
+	if x != nil {
+		return x.IntegratedCount
+	}
+	return 0
+}
+
+func (x *DiskFolder) GetMeasureTime() *timestamppb.Timestamp {
+	if x != nil {
+		return x.MeasureTime
+	}
+	return nil
+}
+
+func (x *DiskFolder) GetCascadeBytes() uint64 {
+	if x != nil {
+		return x.CascadeBytes
+	}
+	return 0
+}
+
+func (x *DiskFolder) GetCascadeCount() int32 {
+	if x != nil {
+		return x.CascadeCount
+	}
+	return 0
+}
+
 // DiskItem is a known cache or store on the machine, with the command to copy to clean it, what it frees and its risk.
 type DiskItem struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Identifier of the item (go-build, go-isolated, go-mod, docker-builder, docker-images, docker-volumes,
-	// docker-dangling, jetbrains, pnpm, pip, uv, npm).
+	// Identifier of the item (go-build, go-isolated, go-mod, golangci-lint, docker-builder, docker-images,
+	// docker-volumes, docker-dangling, jetbrains, pnpm, pip, uv, npm).
 	Kind string `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
 	// Path or source read on the machine (e.g. ~/.cache/go-build, docker builder).
 	Path string `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
@@ -825,14 +1355,16 @@ type DiskItem struct {
 	Count int32 `protobuf:"varint,8,opt,name=count,proto3" json:"count,omitempty"`
 	// True when created by Djinn or its workers (e.g. isolated *-go-build caches), so the window shows it on the Djinn
 	// side rather than under Machine.
-	Djinn         bool `protobuf:"varint,9,opt,name=djinn,proto3" json:"djinn,omitempty"`
+	Djinn bool `protobuf:"varint,9,opt,name=djinn,proto3" json:"djinn,omitempty"`
+	// Whether its walk ran out of time: the size is at least this, or the last whole measure when it was bigger.
+	Partial       bool `protobuf:"varint,10,opt,name=partial,proto3" json:"partial,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *DiskItem) Reset() {
 	*x = DiskItem{}
-	mi := &file_machine_v1_machine_proto_msgTypes[5]
+	mi := &file_machine_v1_machine_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -844,7 +1376,7 @@ func (x *DiskItem) String() string {
 func (*DiskItem) ProtoMessage() {}
 
 func (x *DiskItem) ProtoReflect() protoreflect.Message {
-	mi := &file_machine_v1_machine_proto_msgTypes[5]
+	mi := &file_machine_v1_machine_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -857,7 +1389,7 @@ func (x *DiskItem) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DiskItem.ProtoReflect.Descriptor instead.
 func (*DiskItem) Descriptor() ([]byte, []int) {
-	return file_machine_v1_machine_proto_rawDescGZIP(), []int{5}
+	return file_machine_v1_machine_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *DiskItem) GetKind() string {
@@ -923,6 +1455,13 @@ func (x *DiskItem) GetDjinn() bool {
 	return false
 }
 
+func (x *DiskItem) GetPartial() bool {
+	if x != nil {
+		return x.Partial
+	}
+	return false
+}
+
 // Gpu is a graphics processor of the machine.
 type Gpu struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -944,7 +1483,7 @@ type Gpu struct {
 
 func (x *Gpu) Reset() {
 	*x = Gpu{}
-	mi := &file_machine_v1_machine_proto_msgTypes[6]
+	mi := &file_machine_v1_machine_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -956,7 +1495,7 @@ func (x *Gpu) String() string {
 func (*Gpu) ProtoMessage() {}
 
 func (x *Gpu) ProtoReflect() protoreflect.Message {
-	mi := &file_machine_v1_machine_proto_msgTypes[6]
+	mi := &file_machine_v1_machine_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -969,7 +1508,7 @@ func (x *Gpu) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Gpu.ProtoReflect.Descriptor instead.
 func (*Gpu) Descriptor() ([]byte, []int) {
-	return file_machine_v1_machine_proto_rawDescGZIP(), []int{6}
+	return file_machine_v1_machine_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *Gpu) GetVendor() string {
@@ -1022,7 +1561,7 @@ type MachineServiceShowRequest struct {
 
 func (x *MachineServiceShowRequest) Reset() {
 	*x = MachineServiceShowRequest{}
-	mi := &file_machine_v1_machine_proto_msgTypes[7]
+	mi := &file_machine_v1_machine_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1034,7 +1573,7 @@ func (x *MachineServiceShowRequest) String() string {
 func (*MachineServiceShowRequest) ProtoMessage() {}
 
 func (x *MachineServiceShowRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_machine_v1_machine_proto_msgTypes[7]
+	mi := &file_machine_v1_machine_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1047,7 +1586,7 @@ func (x *MachineServiceShowRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MachineServiceShowRequest.ProtoReflect.Descriptor instead.
 func (*MachineServiceShowRequest) Descriptor() ([]byte, []int) {
-	return file_machine_v1_machine_proto_rawDescGZIP(), []int{7}
+	return file_machine_v1_machine_proto_rawDescGZIP(), []int{10}
 }
 
 type MachineServiceShowResponse struct {
@@ -1060,7 +1599,7 @@ type MachineServiceShowResponse struct {
 
 func (x *MachineServiceShowResponse) Reset() {
 	*x = MachineServiceShowResponse{}
-	mi := &file_machine_v1_machine_proto_msgTypes[8]
+	mi := &file_machine_v1_machine_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1072,7 +1611,7 @@ func (x *MachineServiceShowResponse) String() string {
 func (*MachineServiceShowResponse) ProtoMessage() {}
 
 func (x *MachineServiceShowResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_machine_v1_machine_proto_msgTypes[8]
+	mi := &file_machine_v1_machine_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1085,7 +1624,7 @@ func (x *MachineServiceShowResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MachineServiceShowResponse.ProtoReflect.Descriptor instead.
 func (*MachineServiceShowResponse) Descriptor() ([]byte, []int) {
-	return file_machine_v1_machine_proto_rawDescGZIP(), []int{8}
+	return file_machine_v1_machine_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *MachineServiceShowResponse) GetMachine() *Machine {
@@ -1097,7 +1636,7 @@ func (x *MachineServiceShowResponse) GetMachine() *Machine {
 
 type MachineServiceSeriesRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Number of minutes of history to return (10, 30, 120, 1440, 10080; defaults to 30).
+	// Number of minutes of history to return (10, 30, 60, 120, 360, 1440, 10080; defaults to 30).
 	Minutes int32 `protobuf:"varint,1,opt,name=minutes,proto3" json:"minutes,omitempty"`
 	// When set, only the points measured after it: the window reads the whole series once, then what came since, as
 	// the samples arrive. The workers running and the gate intervals come whole each time.
@@ -1111,7 +1650,7 @@ type MachineServiceSeriesRequest struct {
 
 func (x *MachineServiceSeriesRequest) Reset() {
 	*x = MachineServiceSeriesRequest{}
-	mi := &file_machine_v1_machine_proto_msgTypes[9]
+	mi := &file_machine_v1_machine_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1123,7 +1662,7 @@ func (x *MachineServiceSeriesRequest) String() string {
 func (*MachineServiceSeriesRequest) ProtoMessage() {}
 
 func (x *MachineServiceSeriesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_machine_v1_machine_proto_msgTypes[9]
+	mi := &file_machine_v1_machine_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1136,7 +1675,7 @@ func (x *MachineServiceSeriesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MachineServiceSeriesRequest.ProtoReflect.Descriptor instead.
 func (*MachineServiceSeriesRequest) Descriptor() ([]byte, []int) {
-	return file_machine_v1_machine_proto_rawDescGZIP(), []int{9}
+	return file_machine_v1_machine_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *MachineServiceSeriesRequest) GetMinutes() int32 {
@@ -1178,7 +1717,7 @@ type MachineServiceSeriesResponse struct {
 
 func (x *MachineServiceSeriesResponse) Reset() {
 	*x = MachineServiceSeriesResponse{}
-	mi := &file_machine_v1_machine_proto_msgTypes[10]
+	mi := &file_machine_v1_machine_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1190,7 +1729,7 @@ func (x *MachineServiceSeriesResponse) String() string {
 func (*MachineServiceSeriesResponse) ProtoMessage() {}
 
 func (x *MachineServiceSeriesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_machine_v1_machine_proto_msgTypes[10]
+	mi := &file_machine_v1_machine_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1203,7 +1742,7 @@ func (x *MachineServiceSeriesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MachineServiceSeriesResponse.ProtoReflect.Descriptor instead.
 func (*MachineServiceSeriesResponse) Descriptor() ([]byte, []int) {
-	return file_machine_v1_machine_proto_rawDescGZIP(), []int{10}
+	return file_machine_v1_machine_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *MachineServiceSeriesResponse) GetMachine() *MachineSeries {
@@ -1241,6 +1780,87 @@ func (x *MachineServiceSeriesResponse) GetDisk() *Disk {
 	return nil
 }
 
+type MachineServiceMeasureDiskRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MachineServiceMeasureDiskRequest) Reset() {
+	*x = MachineServiceMeasureDiskRequest{}
+	mi := &file_machine_v1_machine_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MachineServiceMeasureDiskRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MachineServiceMeasureDiskRequest) ProtoMessage() {}
+
+func (x *MachineServiceMeasureDiskRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_machine_v1_machine_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MachineServiceMeasureDiskRequest.ProtoReflect.Descriptor instead.
+func (*MachineServiceMeasureDiskRequest) Descriptor() ([]byte, []int) {
+	return file_machine_v1_machine_proto_rawDescGZIP(), []int{14}
+}
+
+type MachineServiceMeasureDiskResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Whether a measure was already going: it goes on, and no other starts.
+	Already       bool `protobuf:"varint,1,opt,name=already,proto3" json:"already,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MachineServiceMeasureDiskResponse) Reset() {
+	*x = MachineServiceMeasureDiskResponse{}
+	mi := &file_machine_v1_machine_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MachineServiceMeasureDiskResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MachineServiceMeasureDiskResponse) ProtoMessage() {}
+
+func (x *MachineServiceMeasureDiskResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_machine_v1_machine_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MachineServiceMeasureDiskResponse.ProtoReflect.Descriptor instead.
+func (*MachineServiceMeasureDiskResponse) Descriptor() ([]byte, []int) {
+	return file_machine_v1_machine_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *MachineServiceMeasureDiskResponse) GetAlready() bool {
+	if x != nil {
+		return x.Already
+	}
+	return false
+}
+
 type MachineSeries struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Logical cores on the machine.
@@ -1259,7 +1879,7 @@ type MachineSeries struct {
 
 func (x *MachineSeries) Reset() {
 	*x = MachineSeries{}
-	mi := &file_machine_v1_machine_proto_msgTypes[11]
+	mi := &file_machine_v1_machine_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1271,7 +1891,7 @@ func (x *MachineSeries) String() string {
 func (*MachineSeries) ProtoMessage() {}
 
 func (x *MachineSeries) ProtoReflect() protoreflect.Message {
-	mi := &file_machine_v1_machine_proto_msgTypes[11]
+	mi := &file_machine_v1_machine_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1284,7 +1904,7 @@ func (x *MachineSeries) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MachineSeries.ProtoReflect.Descriptor instead.
 func (*MachineSeries) Descriptor() ([]byte, []int) {
-	return file_machine_v1_machine_proto_rawDescGZIP(), []int{11}
+	return file_machine_v1_machine_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *MachineSeries) GetCores() int32 {
@@ -1345,7 +1965,7 @@ type MachinePoint struct {
 
 func (x *MachinePoint) Reset() {
 	*x = MachinePoint{}
-	mi := &file_machine_v1_machine_proto_msgTypes[12]
+	mi := &file_machine_v1_machine_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1357,7 +1977,7 @@ func (x *MachinePoint) String() string {
 func (*MachinePoint) ProtoMessage() {}
 
 func (x *MachinePoint) ProtoReflect() protoreflect.Message {
-	mi := &file_machine_v1_machine_proto_msgTypes[12]
+	mi := &file_machine_v1_machine_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1370,7 +1990,7 @@ func (x *MachinePoint) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MachinePoint.ProtoReflect.Descriptor instead.
 func (*MachinePoint) Descriptor() ([]byte, []int) {
-	return file_machine_v1_machine_proto_rawDescGZIP(), []int{12}
+	return file_machine_v1_machine_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *MachinePoint) GetTime() *timestamppb.Timestamp {
@@ -1454,7 +2074,7 @@ type WorkerSeries struct {
 
 func (x *WorkerSeries) Reset() {
 	*x = WorkerSeries{}
-	mi := &file_machine_v1_machine_proto_msgTypes[13]
+	mi := &file_machine_v1_machine_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1466,7 +2086,7 @@ func (x *WorkerSeries) String() string {
 func (*WorkerSeries) ProtoMessage() {}
 
 func (x *WorkerSeries) ProtoReflect() protoreflect.Message {
-	mi := &file_machine_v1_machine_proto_msgTypes[13]
+	mi := &file_machine_v1_machine_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1479,7 +2099,7 @@ func (x *WorkerSeries) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkerSeries.ProtoReflect.Descriptor instead.
 func (*WorkerSeries) Descriptor() ([]byte, []int) {
-	return file_machine_v1_machine_proto_rawDescGZIP(), []int{13}
+	return file_machine_v1_machine_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *WorkerSeries) GetTaskId() string {
@@ -1580,7 +2200,7 @@ type WorkerPoint struct {
 
 func (x *WorkerPoint) Reset() {
 	*x = WorkerPoint{}
-	mi := &file_machine_v1_machine_proto_msgTypes[14]
+	mi := &file_machine_v1_machine_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1592,7 +2212,7 @@ func (x *WorkerPoint) String() string {
 func (*WorkerPoint) ProtoMessage() {}
 
 func (x *WorkerPoint) ProtoReflect() protoreflect.Message {
-	mi := &file_machine_v1_machine_proto_msgTypes[14]
+	mi := &file_machine_v1_machine_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1605,7 +2225,7 @@ func (x *WorkerPoint) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkerPoint.ProtoReflect.Descriptor instead.
 func (*WorkerPoint) Descriptor() ([]byte, []int) {
-	return file_machine_v1_machine_proto_rawDescGZIP(), []int{14}
+	return file_machine_v1_machine_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *WorkerPoint) GetTime() *timestamppb.Timestamp {
@@ -1651,21 +2271,27 @@ type GateInterval struct {
 	Heavy bool `protobuf:"varint,9,opt,name=heavy,proto3" json:"heavy,omitempty"`
 	// What it waited for last before it was granted; GATE_WAIT_CAUSE_NONE when it did not wait.
 	WaitCause GateWaitCause `protobuf:"varint,10,opt,name=wait_cause,json=waitCause,proto3,enum=machine.v1.GateWaitCause" json:"wait_cause,omitempty"`
-	// Why it waited last, as the holder was told.
+	// What it waited for, each reason in turn with how long it waited for it, its gate's label first (as djinn gate hook
+	// reads it once admitted); empty when it did not wait.
 	WaitReason string `protobuf:"bytes,11,opt,name=wait_reason,json=waitReason,proto3" json:"wait_reason,omitempty"`
 	// The highest memory its holder's processes used while it held the gate, in bytes; 0 when not measured.
 	PeakMemoryBytes uint64 `protobuf:"varint,12,opt,name=peak_memory_bytes,json=peakMemoryBytes,proto3" json:"peak_memory_bytes,omitempty"`
 	// The command had no measured cost of its own when it asked: its peak was its head's, or unknown.
 	Unmeasured bool `protobuf:"varint,13,opt,name=unmeasured,proto3" json:"unmeasured,omitempty"`
 	// Held outside a running worker (a terminal, a lead, a script, Djinn's merges): it took a worker's slot.
-	Outside       bool `protobuf:"varint,14,opt,name=outside,proto3" json:"outside,omitempty"`
+	Outside bool `protobuf:"varint,14,opt,name=outside,proto3" json:"outside,omitempty"`
+	// Kind of the task that held it (task_id), as GateService.History joins it; unset elsewhere, or when the task is
+	// gone.
+	TaskKind v11.TaskKind `protobuf:"varint,15,opt,name=task_kind,json=taskKind,proto3,enum=plan.v1.TaskKind" json:"task_kind,omitempty"`
+	// Short code of that task (e.g. W12), as GateService.History joins it; empty elsewhere, or when the task is gone.
+	TaskCode      string `protobuf:"bytes,16,opt,name=task_code,json=taskCode,proto3" json:"task_code,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *GateInterval) Reset() {
 	*x = GateInterval{}
-	mi := &file_machine_v1_machine_proto_msgTypes[15]
+	mi := &file_machine_v1_machine_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1677,7 +2303,7 @@ func (x *GateInterval) String() string {
 func (*GateInterval) ProtoMessage() {}
 
 func (x *GateInterval) ProtoReflect() protoreflect.Message {
-	mi := &file_machine_v1_machine_proto_msgTypes[15]
+	mi := &file_machine_v1_machine_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1690,7 +2316,7 @@ func (x *GateInterval) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GateInterval.ProtoReflect.Descriptor instead.
 func (*GateInterval) Descriptor() ([]byte, []int) {
-	return file_machine_v1_machine_proto_rawDescGZIP(), []int{15}
+	return file_machine_v1_machine_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *GateInterval) GetGate() string {
@@ -1791,6 +2417,20 @@ func (x *GateInterval) GetOutside() bool {
 	return false
 }
 
+func (x *GateInterval) GetTaskKind() v11.TaskKind {
+	if x != nil {
+		return x.TaskKind
+	}
+	return v11.TaskKind(0)
+}
+
+func (x *GateInterval) GetTaskCode() string {
+	if x != nil {
+		return x.TaskCode
+	}
+	return ""
+}
+
 type CommandRun struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// When the run ended.
@@ -1820,7 +2460,7 @@ type CommandRun struct {
 
 func (x *CommandRun) Reset() {
 	*x = CommandRun{}
-	mi := &file_machine_v1_machine_proto_msgTypes[16]
+	mi := &file_machine_v1_machine_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1832,7 +2472,7 @@ func (x *CommandRun) String() string {
 func (*CommandRun) ProtoMessage() {}
 
 func (x *CommandRun) ProtoReflect() protoreflect.Message {
-	mi := &file_machine_v1_machine_proto_msgTypes[16]
+	mi := &file_machine_v1_machine_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1845,7 +2485,7 @@ func (x *CommandRun) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommandRun.ProtoReflect.Descriptor instead.
 func (*CommandRun) Descriptor() ([]byte, []int) {
-	return file_machine_v1_machine_proto_rawDescGZIP(), []int{16}
+	return file_machine_v1_machine_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *CommandRun) GetTime() *timestamppb.Timestamp {
@@ -1936,7 +2576,7 @@ type GateServiceAdmitRequest struct {
 
 func (x *GateServiceAdmitRequest) Reset() {
 	*x = GateServiceAdmitRequest{}
-	mi := &file_machine_v1_machine_proto_msgTypes[17]
+	mi := &file_machine_v1_machine_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1948,7 +2588,7 @@ func (x *GateServiceAdmitRequest) String() string {
 func (*GateServiceAdmitRequest) ProtoMessage() {}
 
 func (x *GateServiceAdmitRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_machine_v1_machine_proto_msgTypes[17]
+	mi := &file_machine_v1_machine_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1961,7 +2601,7 @@ func (x *GateServiceAdmitRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GateServiceAdmitRequest.ProtoReflect.Descriptor instead.
 func (*GateServiceAdmitRequest) Descriptor() ([]byte, []int) {
-	return file_machine_v1_machine_proto_rawDescGZIP(), []int{17}
+	return file_machine_v1_machine_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *GateServiceAdmitRequest) GetTaskId() string {
@@ -2003,7 +2643,8 @@ type GateServiceAdmitResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Where the command stands: waiting, or held once admitted.
 	State GateState `protobuf:"varint,1,opt,name=state,proto3,enum=machine.v1.GateState" json:"state,omitempty"`
-	// Why it waits.
+	// Why it waits; once held, what it waited for, each reason in turn with how long it waited for it, or "admitted"
+	// when it did not wait.
 	Reason        string `protobuf:"bytes,2,opt,name=reason,proto3" json:"reason,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -2011,7 +2652,7 @@ type GateServiceAdmitResponse struct {
 
 func (x *GateServiceAdmitResponse) Reset() {
 	*x = GateServiceAdmitResponse{}
-	mi := &file_machine_v1_machine_proto_msgTypes[18]
+	mi := &file_machine_v1_machine_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2023,7 +2664,7 @@ func (x *GateServiceAdmitResponse) String() string {
 func (*GateServiceAdmitResponse) ProtoMessage() {}
 
 func (x *GateServiceAdmitResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_machine_v1_machine_proto_msgTypes[18]
+	mi := &file_machine_v1_machine_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2036,7 +2677,7 @@ func (x *GateServiceAdmitResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GateServiceAdmitResponse.ProtoReflect.Descriptor instead.
 func (*GateServiceAdmitResponse) Descriptor() ([]byte, []int) {
-	return file_machine_v1_machine_proto_rawDescGZIP(), []int{18}
+	return file_machine_v1_machine_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *GateServiceAdmitResponse) GetState() GateState {
@@ -2079,13 +2720,19 @@ type Gate struct {
 	// The tasks of those who wait for it, by identifier, the next one first: a waiter outside any task is left out. The
 	// window counts a task's worker that waits for a gate as waiting for a place.
 	WaitingTaskIds []string `protobuf:"bytes,10,rep,name=waiting_task_ids,json=waitingTaskIds,proto3" json:"waiting_task_ids,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// Project of its holder, by name; empty when nobody holds it or its holder is outside any project. A gate a project
+	// declares (stack@dolmen) is that project's; a gate named for the machine (lint, e2e) is one for every project, held
+	// by a worker of one of them.
+	Project string `protobuf:"bytes,11,opt,name=project,proto3" json:"project,omitempty"`
+	// Projects of those who wait for it, by name, in the order of waiting: empty for a waiter outside any project.
+	WaitingProjects []string `protobuf:"bytes,12,rep,name=waiting_projects,json=waitingProjects,proto3" json:"waiting_projects,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *Gate) Reset() {
 	*x = Gate{}
-	mi := &file_machine_v1_machine_proto_msgTypes[19]
+	mi := &file_machine_v1_machine_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2097,7 +2744,7 @@ func (x *Gate) String() string {
 func (*Gate) ProtoMessage() {}
 
 func (x *Gate) ProtoReflect() protoreflect.Message {
-	mi := &file_machine_v1_machine_proto_msgTypes[19]
+	mi := &file_machine_v1_machine_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2110,7 +2757,7 @@ func (x *Gate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Gate.ProtoReflect.Descriptor instead.
 func (*Gate) Descriptor() ([]byte, []int) {
-	return file_machine_v1_machine_proto_rawDescGZIP(), []int{19}
+	return file_machine_v1_machine_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *Gate) GetName() string {
@@ -2183,6 +2830,20 @@ func (x *Gate) GetWaitingTaskIds() []string {
 	return nil
 }
 
+func (x *Gate) GetProject() string {
+	if x != nil {
+		return x.Project
+	}
+	return ""
+}
+
+func (x *Gate) GetWaitingProjects() []string {
+	if x != nil {
+		return x.WaitingProjects
+	}
+	return nil
+}
+
 type GateServiceHoldRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Name of the gate: codegen, stack, e2e, paid, or any other name; case is ignored.
@@ -2208,7 +2869,7 @@ type GateServiceHoldRequest struct {
 
 func (x *GateServiceHoldRequest) Reset() {
 	*x = GateServiceHoldRequest{}
-	mi := &file_machine_v1_machine_proto_msgTypes[20]
+	mi := &file_machine_v1_machine_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2220,7 +2881,7 @@ func (x *GateServiceHoldRequest) String() string {
 func (*GateServiceHoldRequest) ProtoMessage() {}
 
 func (x *GateServiceHoldRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_machine_v1_machine_proto_msgTypes[20]
+	mi := &file_machine_v1_machine_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2233,7 +2894,7 @@ func (x *GateServiceHoldRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GateServiceHoldRequest.ProtoReflect.Descriptor instead.
 func (*GateServiceHoldRequest) Descriptor() ([]byte, []int) {
-	return file_machine_v1_machine_proto_rawDescGZIP(), []int{20}
+	return file_machine_v1_machine_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *GateServiceHoldRequest) GetName() string {
@@ -2290,7 +2951,7 @@ type GateServiceHoldResponse struct {
 
 func (x *GateServiceHoldResponse) Reset() {
 	*x = GateServiceHoldResponse{}
-	mi := &file_machine_v1_machine_proto_msgTypes[21]
+	mi := &file_machine_v1_machine_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2302,7 +2963,7 @@ func (x *GateServiceHoldResponse) String() string {
 func (*GateServiceHoldResponse) ProtoMessage() {}
 
 func (x *GateServiceHoldResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_machine_v1_machine_proto_msgTypes[21]
+	mi := &file_machine_v1_machine_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2315,7 +2976,7 @@ func (x *GateServiceHoldResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GateServiceHoldResponse.ProtoReflect.Descriptor instead.
 func (*GateServiceHoldResponse) Descriptor() ([]byte, []int) {
-	return file_machine_v1_machine_proto_rawDescGZIP(), []int{21}
+	return file_machine_v1_machine_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *GateServiceHoldResponse) GetState() GateState {
@@ -2340,7 +3001,7 @@ type GateServiceListRequest struct {
 
 func (x *GateServiceListRequest) Reset() {
 	*x = GateServiceListRequest{}
-	mi := &file_machine_v1_machine_proto_msgTypes[22]
+	mi := &file_machine_v1_machine_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2352,7 +3013,7 @@ func (x *GateServiceListRequest) String() string {
 func (*GateServiceListRequest) ProtoMessage() {}
 
 func (x *GateServiceListRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_machine_v1_machine_proto_msgTypes[22]
+	mi := &file_machine_v1_machine_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2365,7 +3026,7 @@ func (x *GateServiceListRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GateServiceListRequest.ProtoReflect.Descriptor instead.
 func (*GateServiceListRequest) Descriptor() ([]byte, []int) {
-	return file_machine_v1_machine_proto_rawDescGZIP(), []int{22}
+	return file_machine_v1_machine_proto_rawDescGZIP(), []int{27}
 }
 
 type GateServiceListResponse struct {
@@ -2378,7 +3039,7 @@ type GateServiceListResponse struct {
 
 func (x *GateServiceListResponse) Reset() {
 	*x = GateServiceListResponse{}
-	mi := &file_machine_v1_machine_proto_msgTypes[23]
+	mi := &file_machine_v1_machine_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2390,7 +3051,7 @@ func (x *GateServiceListResponse) String() string {
 func (*GateServiceListResponse) ProtoMessage() {}
 
 func (x *GateServiceListResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_machine_v1_machine_proto_msgTypes[23]
+	mi := &file_machine_v1_machine_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2403,12 +3064,233 @@ func (x *GateServiceListResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GateServiceListResponse.ProtoReflect.Descriptor instead.
 func (*GateServiceListResponse) Descriptor() ([]byte, []int) {
-	return file_machine_v1_machine_proto_rawDescGZIP(), []int{23}
+	return file_machine_v1_machine_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *GateServiceListResponse) GetGates() []*Gate {
 	if x != nil {
 		return x.Gates
+	}
+	return nil
+}
+
+type GateServiceHistoryRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Minutes of history, up to a week (10080): the Gates tab asks 60, 360 or 1440. Not set: 60.
+	Minutes int32 `protobuf:"varint,1,opt,name=minutes,proto3" json:"minutes,omitempty"`
+	// When set, the intervals hold every admission of a worker's command; otherwise only those that waited a second or
+	// more or ran a heavy command, the many that pass at once left out.
+	AllAdmissions bool `protobuf:"varint,2,opt,name=all_admissions,json=allAdmissions,proto3" json:"all_admissions,omitempty"`
+	// Only what changed since this time, the read_time of a previous read: the intervals released after it, those
+	// held now, and the runs that overlap from it to now. The Gates tab keeps the rest of the window it read, and asks
+	// a little before its last read_time, so that an interval kept late is not missed.
+	AfterTime     *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=after_time,json=afterTime,proto3" json:"after_time,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GateServiceHistoryRequest) Reset() {
+	*x = GateServiceHistoryRequest{}
+	mi := &file_machine_v1_machine_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GateServiceHistoryRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GateServiceHistoryRequest) ProtoMessage() {}
+
+func (x *GateServiceHistoryRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_machine_v1_machine_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GateServiceHistoryRequest.ProtoReflect.Descriptor instead.
+func (*GateServiceHistoryRequest) Descriptor() ([]byte, []int) {
+	return file_machine_v1_machine_proto_rawDescGZIP(), []int{29}
+}
+
+func (x *GateServiceHistoryRequest) GetMinutes() int32 {
+	if x != nil {
+		return x.Minutes
+	}
+	return 0
+}
+
+func (x *GateServiceHistoryRequest) GetAllAdmissions() bool {
+	if x != nil {
+		return x.AllAdmissions
+	}
+	return false
+}
+
+func (x *GateServiceHistoryRequest) GetAfterTime() *timestamppb.Timestamp {
+	if x != nil {
+		return x.AfterTime
+	}
+	return nil
+}
+
+type GateServiceHistoryResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Where the window starts: minutes before read_time.
+	StartTime *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=start_time,json=startTime,proto3" json:"start_time,omitempty"`
+	// When Djinn read the history: where the window ends.
+	ReadTime *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=read_time,json=readTime,proto3" json:"read_time,omitempty"`
+	// The gate intervals released after start_time, the first released first, then those held now (no release_time).
+	Intervals []*GateInterval `protobuf:"bytes,3,rep,name=intervals,proto3" json:"intervals,omitempty"`
+	// The runs of the workers that overlap the window, the first started first. A run with no end counts only while its
+	// task runs: an ended task's run left open is left out.
+	Runs          []*WorkerRun `protobuf:"bytes,4,rep,name=runs,proto3" json:"runs,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GateServiceHistoryResponse) Reset() {
+	*x = GateServiceHistoryResponse{}
+	mi := &file_machine_v1_machine_proto_msgTypes[30]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GateServiceHistoryResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GateServiceHistoryResponse) ProtoMessage() {}
+
+func (x *GateServiceHistoryResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_machine_v1_machine_proto_msgTypes[30]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GateServiceHistoryResponse.ProtoReflect.Descriptor instead.
+func (*GateServiceHistoryResponse) Descriptor() ([]byte, []int) {
+	return file_machine_v1_machine_proto_rawDescGZIP(), []int{30}
+}
+
+func (x *GateServiceHistoryResponse) GetStartTime() *timestamppb.Timestamp {
+	if x != nil {
+		return x.StartTime
+	}
+	return nil
+}
+
+func (x *GateServiceHistoryResponse) GetReadTime() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ReadTime
+	}
+	return nil
+}
+
+func (x *GateServiceHistoryResponse) GetIntervals() []*GateInterval {
+	if x != nil {
+		return x.Intervals
+	}
+	return nil
+}
+
+func (x *GateServiceHistoryResponse) GetRuns() []*WorkerRun {
+	if x != nil {
+		return x.Runs
+	}
+	return nil
+}
+
+// WorkerRun is a run of a task's worker, from its start to its end.
+type WorkerRun struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The task the worker runs.
+	TaskId string `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	// Short code of the task (e.g. W12).
+	Code string `protobuf:"bytes,2,opt,name=code,proto3" json:"code,omitempty"`
+	// Kind of the task: work, investigation, mockup, ifrit, correction, review, watcher.
+	Kind v11.TaskKind `protobuf:"varint,3,opt,name=kind,proto3,enum=plan.v1.TaskKind" json:"kind,omitempty"`
+	// When the run started.
+	StartTime *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=start_time,json=startTime,proto3" json:"start_time,omitempty"`
+	// When the run ended; unset while it runs.
+	EndTime       *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=end_time,json=endTime,proto3" json:"end_time,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WorkerRun) Reset() {
+	*x = WorkerRun{}
+	mi := &file_machine_v1_machine_proto_msgTypes[31]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WorkerRun) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WorkerRun) ProtoMessage() {}
+
+func (x *WorkerRun) ProtoReflect() protoreflect.Message {
+	mi := &file_machine_v1_machine_proto_msgTypes[31]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WorkerRun.ProtoReflect.Descriptor instead.
+func (*WorkerRun) Descriptor() ([]byte, []int) {
+	return file_machine_v1_machine_proto_rawDescGZIP(), []int{31}
+}
+
+func (x *WorkerRun) GetTaskId() string {
+	if x != nil {
+		return x.TaskId
+	}
+	return ""
+}
+
+func (x *WorkerRun) GetCode() string {
+	if x != nil {
+		return x.Code
+	}
+	return ""
+}
+
+func (x *WorkerRun) GetKind() v11.TaskKind {
+	if x != nil {
+		return x.Kind
+	}
+	return v11.TaskKind(0)
+}
+
+func (x *WorkerRun) GetStartTime() *timestamppb.Timestamp {
+	if x != nil {
+		return x.StartTime
+	}
+	return nil
+}
+
+func (x *WorkerRun) GetEndTime() *timestamppb.Timestamp {
+	if x != nil {
+		return x.EndTime
 	}
 	return nil
 }
@@ -2471,7 +3353,7 @@ type CommandCost struct {
 
 func (x *CommandCost) Reset() {
 	*x = CommandCost{}
-	mi := &file_machine_v1_machine_proto_msgTypes[24]
+	mi := &file_machine_v1_machine_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2483,7 +3365,7 @@ func (x *CommandCost) String() string {
 func (*CommandCost) ProtoMessage() {}
 
 func (x *CommandCost) ProtoReflect() protoreflect.Message {
-	mi := &file_machine_v1_machine_proto_msgTypes[24]
+	mi := &file_machine_v1_machine_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2496,7 +3378,7 @@ func (x *CommandCost) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommandCost.ProtoReflect.Descriptor instead.
 func (*CommandCost) Descriptor() ([]byte, []int) {
-	return file_machine_v1_machine_proto_rawDescGZIP(), []int{24}
+	return file_machine_v1_machine_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *CommandCost) GetId() string {
@@ -2663,14 +3545,30 @@ func (x *CommandCost) GetAsked() int32 {
 type CommandServiceListRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Only the commands of this project, by name or identifier.
-	Project       string `protobuf:"bytes,1,opt,name=project,proto3" json:"project,omitempty"`
+	Project string `protobuf:"bytes,1,opt,name=project,proto3" json:"project,omitempty"`
+	// The most total time first (runs times their mean duration), as the Gates tab ranks them: the one worth making
+	// faster on top. Not set: the longest held first.
+	ByTotal bool `protobuf:"varint,2,opt,name=by_total,json=byTotal,proto3" json:"by_total,omitempty"`
+	// The most commands to return, from page_token on. Not set: all of them.
+	PageSize int32 `protobuf:"varint,3,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	// The next_page_token of a previous list, to fetch the page after it.
+	PageToken string `protobuf:"bytes,4,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
+	// Leave each command's recent runs out (recent_runs, recent_held_seconds): a table of the commands needs their
+	// figures alone, and the runs weigh most of the list.
+	Brief bool `protobuf:"varint,5,opt,name=brief,proto3" json:"brief,omitempty"`
+	// Only the command of this identifier, its recent runs included: the row the Gates tab opens.
+	Id string `protobuf:"bytes,6,opt,name=id,proto3" json:"id,omitempty"`
+	// Add the summary of the gates over every command listed, whatever the page (summary).
+	Summary bool `protobuf:"varint,7,opt,name=summary,proto3" json:"summary,omitempty"`
+	// Only the commands of this text, case ignored: with project, the band of a gate the Gates tab opens.
+	Command       string `protobuf:"bytes,8,opt,name=command,proto3" json:"command,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *CommandServiceListRequest) Reset() {
 	*x = CommandServiceListRequest{}
-	mi := &file_machine_v1_machine_proto_msgTypes[25]
+	mi := &file_machine_v1_machine_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2682,7 +3580,7 @@ func (x *CommandServiceListRequest) String() string {
 func (*CommandServiceListRequest) ProtoMessage() {}
 
 func (x *CommandServiceListRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_machine_v1_machine_proto_msgTypes[25]
+	mi := &file_machine_v1_machine_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2695,7 +3593,7 @@ func (x *CommandServiceListRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommandServiceListRequest.ProtoReflect.Descriptor instead.
 func (*CommandServiceListRequest) Descriptor() ([]byte, []int) {
-	return file_machine_v1_machine_proto_rawDescGZIP(), []int{25}
+	return file_machine_v1_machine_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *CommandServiceListRequest) GetProject() string {
@@ -2705,17 +3603,72 @@ func (x *CommandServiceListRequest) GetProject() string {
 	return ""
 }
 
+func (x *CommandServiceListRequest) GetByTotal() bool {
+	if x != nil {
+		return x.ByTotal
+	}
+	return false
+}
+
+func (x *CommandServiceListRequest) GetPageSize() int32 {
+	if x != nil {
+		return x.PageSize
+	}
+	return 0
+}
+
+func (x *CommandServiceListRequest) GetPageToken() string {
+	if x != nil {
+		return x.PageToken
+	}
+	return ""
+}
+
+func (x *CommandServiceListRequest) GetBrief() bool {
+	if x != nil {
+		return x.Brief
+	}
+	return false
+}
+
+func (x *CommandServiceListRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *CommandServiceListRequest) GetSummary() bool {
+	if x != nil {
+		return x.Summary
+	}
+	return false
+}
+
+func (x *CommandServiceListRequest) GetCommand() string {
+	if x != nil {
+		return x.Command
+	}
+	return ""
+}
+
 type CommandServiceListResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The commands, by project, the most run first.
-	Costs         []*CommandCost `protobuf:"bytes,1,rep,name=costs,proto3" json:"costs,omitempty"`
+	Costs []*CommandCost `protobuf:"bytes,1,rep,name=costs,proto3" json:"costs,omitempty"`
+	// Token to fetch the next page; empty on the last.
+	NextPageToken string `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
+	// How many commands the request matches, every page together.
+	Total int32 `protobuf:"varint,3,opt,name=total,proto3" json:"total,omitempty"`
+	// The gates over the commands' recent runs, when asked: what the Gates tab shows before any list.
+	Summary       *GatesSummary `protobuf:"bytes,4,opt,name=summary,proto3" json:"summary,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *CommandServiceListResponse) Reset() {
 	*x = CommandServiceListResponse{}
-	mi := &file_machine_v1_machine_proto_msgTypes[26]
+	mi := &file_machine_v1_machine_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2727,7 +3680,7 @@ func (x *CommandServiceListResponse) String() string {
 func (*CommandServiceListResponse) ProtoMessage() {}
 
 func (x *CommandServiceListResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_machine_v1_machine_proto_msgTypes[26]
+	mi := &file_machine_v1_machine_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2740,7 +3693,7 @@ func (x *CommandServiceListResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommandServiceListResponse.ProtoReflect.Descriptor instead.
 func (*CommandServiceListResponse) Descriptor() ([]byte, []int) {
-	return file_machine_v1_machine_proto_rawDescGZIP(), []int{26}
+	return file_machine_v1_machine_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *CommandServiceListResponse) GetCosts() []*CommandCost {
@@ -2748,6 +3701,265 @@ func (x *CommandServiceListResponse) GetCosts() []*CommandCost {
 		return x.Costs
 	}
 	return nil
+}
+
+func (x *CommandServiceListResponse) GetNextPageToken() string {
+	if x != nil {
+		return x.NextPageToken
+	}
+	return ""
+}
+
+func (x *CommandServiceListResponse) GetTotal() int32 {
+	if x != nil {
+		return x.Total
+	}
+	return 0
+}
+
+func (x *CommandServiceListResponse) GetSummary() *GatesSummary {
+	if x != nil {
+		return x.Summary
+	}
+	return nil
+}
+
+// GatesSummary is what the commands' recent runs (up to 200 a command) say of the gates, whole: the figures of the
+// Gates tab and the waits for each gate, so that the tab reads a page of the commands and not all of them.
+type GatesSummary struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// How many runs were asked of a gate: djinn gate run asked it, whether the command then ran to its end or not.
+	Asked int32 `protobuf:"varint,1,opt,name=asked,proto3" json:"asked,omitempty"`
+	// How many ran to their end.
+	Ran int32 `protobuf:"varint,2,opt,name=ran,proto3" json:"ran,omitempty"`
+	// The recent runs under a gate, measured.
+	Holds int32 `protobuf:"varint,3,opt,name=holds,proto3" json:"holds,omitempty"`
+	// 50th percentile of their wait before the grant, in seconds, nearest rank.
+	P50WaitSeconds float64 `protobuf:"fixed64,4,opt,name=p50_wait_seconds,json=p50WaitSeconds,proto3" json:"p50_wait_seconds,omitempty"`
+	// 90th percentile of their wait before the grant, in seconds, nearest rank.
+	P90WaitSeconds float64 `protobuf:"fixed64,5,opt,name=p90_wait_seconds,json=p90WaitSeconds,proto3" json:"p90_wait_seconds,omitempty"`
+	// The longest wait, in seconds.
+	MaxWaitSeconds float64 `protobuf:"fixed64,6,opt,name=max_wait_seconds,json=maxWaitSeconds,proto3" json:"max_wait_seconds,omitempty"`
+	// How many waited over 5 seconds: the waits a worker notices.
+	LongWaits int32 `protobuf:"varint,7,opt,name=long_waits,json=longWaits,proto3" json:"long_waits,omitempty"`
+	// The command of the highest peak memory, its recent runs left out; absent when none was measured.
+	Peak *CommandCost `protobuf:"bytes,8,opt,name=peak,proto3" json:"peak,omitempty"`
+	// The waits for each gate in each project, the most held first.
+	Gates         []*GateWaits `protobuf:"bytes,9,rep,name=gates,proto3" json:"gates,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GatesSummary) Reset() {
+	*x = GatesSummary{}
+	mi := &file_machine_v1_machine_proto_msgTypes[35]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GatesSummary) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GatesSummary) ProtoMessage() {}
+
+func (x *GatesSummary) ProtoReflect() protoreflect.Message {
+	mi := &file_machine_v1_machine_proto_msgTypes[35]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GatesSummary.ProtoReflect.Descriptor instead.
+func (*GatesSummary) Descriptor() ([]byte, []int) {
+	return file_machine_v1_machine_proto_rawDescGZIP(), []int{35}
+}
+
+func (x *GatesSummary) GetAsked() int32 {
+	if x != nil {
+		return x.Asked
+	}
+	return 0
+}
+
+func (x *GatesSummary) GetRan() int32 {
+	if x != nil {
+		return x.Ran
+	}
+	return 0
+}
+
+func (x *GatesSummary) GetHolds() int32 {
+	if x != nil {
+		return x.Holds
+	}
+	return 0
+}
+
+func (x *GatesSummary) GetP50WaitSeconds() float64 {
+	if x != nil {
+		return x.P50WaitSeconds
+	}
+	return 0
+}
+
+func (x *GatesSummary) GetP90WaitSeconds() float64 {
+	if x != nil {
+		return x.P90WaitSeconds
+	}
+	return 0
+}
+
+func (x *GatesSummary) GetMaxWaitSeconds() float64 {
+	if x != nil {
+		return x.MaxWaitSeconds
+	}
+	return 0
+}
+
+func (x *GatesSummary) GetLongWaits() int32 {
+	if x != nil {
+		return x.LongWaits
+	}
+	return 0
+}
+
+func (x *GatesSummary) GetPeak() *CommandCost {
+	if x != nil {
+		return x.Peak
+	}
+	return nil
+}
+
+func (x *GatesSummary) GetGates() []*GateWaits {
+	if x != nil {
+		return x.Gates
+	}
+	return nil
+}
+
+// GateWaits is the waits for a gate in a project over the recent runs held under it: a median and a 90th percentile,
+// never a sum or a mean (the Statistics tab's rule).
+type GateWaits struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Gate name.
+	Gate string `protobuf:"bytes,1,opt,name=gate,proto3" json:"gate,omitempty"`
+	// How many recent runs held it.
+	Holds int32 `protobuf:"varint,2,opt,name=holds,proto3" json:"holds,omitempty"`
+	// 50th percentile of the wait, in seconds, nearest rank.
+	P50Seconds float64 `protobuf:"fixed64,3,opt,name=p50_seconds,json=p50Seconds,proto3" json:"p50_seconds,omitempty"`
+	// 90th percentile of the wait, in seconds, nearest rank.
+	P90Seconds float64 `protobuf:"fixed64,4,opt,name=p90_seconds,json=p90Seconds,proto3" json:"p90_seconds,omitempty"`
+	// The longest wait, in seconds.
+	MaxSeconds float64 `protobuf:"fixed64,5,opt,name=max_seconds,json=maxSeconds,proto3" json:"max_seconds,omitempty"`
+	// How many waited over 5 seconds.
+	Long int32 `protobuf:"varint,6,opt,name=long,proto3" json:"long,omitempty"`
+	// The newest run under the gate: its last hold.
+	Last *CommandRun `protobuf:"bytes,7,opt,name=last,proto3" json:"last,omitempty"`
+	// The command of that run.
+	LastCommand string `protobuf:"bytes,8,opt,name=last_command,json=lastCommand,proto3" json:"last_command,omitempty"`
+	// Project of the commands that held it, by name: a gate is counted apart for each project whose workers held it.
+	Project       string `protobuf:"bytes,9,opt,name=project,proto3" json:"project,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GateWaits) Reset() {
+	*x = GateWaits{}
+	mi := &file_machine_v1_machine_proto_msgTypes[36]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GateWaits) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GateWaits) ProtoMessage() {}
+
+func (x *GateWaits) ProtoReflect() protoreflect.Message {
+	mi := &file_machine_v1_machine_proto_msgTypes[36]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GateWaits.ProtoReflect.Descriptor instead.
+func (*GateWaits) Descriptor() ([]byte, []int) {
+	return file_machine_v1_machine_proto_rawDescGZIP(), []int{36}
+}
+
+func (x *GateWaits) GetGate() string {
+	if x != nil {
+		return x.Gate
+	}
+	return ""
+}
+
+func (x *GateWaits) GetHolds() int32 {
+	if x != nil {
+		return x.Holds
+	}
+	return 0
+}
+
+func (x *GateWaits) GetP50Seconds() float64 {
+	if x != nil {
+		return x.P50Seconds
+	}
+	return 0
+}
+
+func (x *GateWaits) GetP90Seconds() float64 {
+	if x != nil {
+		return x.P90Seconds
+	}
+	return 0
+}
+
+func (x *GateWaits) GetMaxSeconds() float64 {
+	if x != nil {
+		return x.MaxSeconds
+	}
+	return 0
+}
+
+func (x *GateWaits) GetLong() int32 {
+	if x != nil {
+		return x.Long
+	}
+	return 0
+}
+
+func (x *GateWaits) GetLast() *CommandRun {
+	if x != nil {
+		return x.Last
+	}
+	return nil
+}
+
+func (x *GateWaits) GetLastCommand() string {
+	if x != nil {
+		return x.LastCommand
+	}
+	return ""
+}
+
+func (x *GateWaits) GetProject() string {
+	if x != nil {
+		return x.Project
+	}
+	return ""
 }
 
 type CommandServiceRecordRequest struct {
@@ -2782,7 +3994,7 @@ type CommandServiceRecordRequest struct {
 
 func (x *CommandServiceRecordRequest) Reset() {
 	*x = CommandServiceRecordRequest{}
-	mi := &file_machine_v1_machine_proto_msgTypes[27]
+	mi := &file_machine_v1_machine_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2794,7 +4006,7 @@ func (x *CommandServiceRecordRequest) String() string {
 func (*CommandServiceRecordRequest) ProtoMessage() {}
 
 func (x *CommandServiceRecordRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_machine_v1_machine_proto_msgTypes[27]
+	mi := &file_machine_v1_machine_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2807,7 +4019,7 @@ func (x *CommandServiceRecordRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommandServiceRecordRequest.ProtoReflect.Descriptor instead.
 func (*CommandServiceRecordRequest) Descriptor() ([]byte, []int) {
-	return file_machine_v1_machine_proto_rawDescGZIP(), []int{27}
+	return file_machine_v1_machine_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *CommandServiceRecordRequest) GetTaskId() string {
@@ -2897,7 +4109,7 @@ type CommandServiceRecordResponse struct {
 
 func (x *CommandServiceRecordResponse) Reset() {
 	*x = CommandServiceRecordResponse{}
-	mi := &file_machine_v1_machine_proto_msgTypes[28]
+	mi := &file_machine_v1_machine_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2909,7 +4121,7 @@ func (x *CommandServiceRecordResponse) String() string {
 func (*CommandServiceRecordResponse) ProtoMessage() {}
 
 func (x *CommandServiceRecordResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_machine_v1_machine_proto_msgTypes[28]
+	mi := &file_machine_v1_machine_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2922,12 +4134,130 @@ func (x *CommandServiceRecordResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommandServiceRecordResponse.ProtoReflect.Descriptor instead.
 func (*CommandServiceRecordResponse) Descriptor() ([]byte, []int) {
-	return file_machine_v1_machine_proto_rawDescGZIP(), []int{28}
+	return file_machine_v1_machine_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *CommandServiceRecordResponse) GetCost() *CommandCost {
 	if x != nil {
 		return x.Cost
+	}
+	return nil
+}
+
+type CommandServiceForgetRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The project, by name or identifier.
+	Project string `protobuf:"bytes,1,opt,name=project,proto3" json:"project,omitempty"`
+	// The command of this key, case ignored, as djinn command list shows it.
+	Command string `protobuf:"bytes,2,opt,name=command,proto3" json:"command,omitempty"`
+	// The commands whose key starts with these words, whole, case ignored: cat forgets cat and cat notes.md, not
+	// catalog.
+	Head string `protobuf:"bytes,3,opt,name=head,proto3" json:"head,omitempty"`
+	// All the commands of the project.
+	All           bool `protobuf:"varint,4,opt,name=all,proto3" json:"all,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CommandServiceForgetRequest) Reset() {
+	*x = CommandServiceForgetRequest{}
+	mi := &file_machine_v1_machine_proto_msgTypes[39]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CommandServiceForgetRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CommandServiceForgetRequest) ProtoMessage() {}
+
+func (x *CommandServiceForgetRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_machine_v1_machine_proto_msgTypes[39]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CommandServiceForgetRequest.ProtoReflect.Descriptor instead.
+func (*CommandServiceForgetRequest) Descriptor() ([]byte, []int) {
+	return file_machine_v1_machine_proto_rawDescGZIP(), []int{39}
+}
+
+func (x *CommandServiceForgetRequest) GetProject() string {
+	if x != nil {
+		return x.Project
+	}
+	return ""
+}
+
+func (x *CommandServiceForgetRequest) GetCommand() string {
+	if x != nil {
+		return x.Command
+	}
+	return ""
+}
+
+func (x *CommandServiceForgetRequest) GetHead() string {
+	if x != nil {
+		return x.Head
+	}
+	return ""
+}
+
+func (x *CommandServiceForgetRequest) GetAll() bool {
+	if x != nil {
+		return x.All
+	}
+	return false
+}
+
+type CommandServiceForgetResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The keys of the commands forgotten; none when nothing matched.
+	Commands      []string `protobuf:"bytes,1,rep,name=commands,proto3" json:"commands,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CommandServiceForgetResponse) Reset() {
+	*x = CommandServiceForgetResponse{}
+	mi := &file_machine_v1_machine_proto_msgTypes[40]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CommandServiceForgetResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CommandServiceForgetResponse) ProtoMessage() {}
+
+func (x *CommandServiceForgetResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_machine_v1_machine_proto_msgTypes[40]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CommandServiceForgetResponse.ProtoReflect.Descriptor instead.
+func (*CommandServiceForgetResponse) Descriptor() ([]byte, []int) {
+	return file_machine_v1_machine_proto_rawDescGZIP(), []int{40}
+}
+
+func (x *CommandServiceForgetResponse) GetCommands() []string {
+	if x != nil {
+		return x.Commands
 	}
 	return nil
 }
@@ -2976,19 +4306,59 @@ const file_machine_v1_machine_proto_rawDesc = "" +
 	"\x04code\x18\x03 \x01(\tR\x04code\x12\x14\n" +
 	"\x05title\x18\x04 \x01(\tR\x05title\x120\n" +
 	"\tresources\x18\x05 \x01(\v2\x12.plan.v1.ResourcesR\tresources\x12\x16\n" +
-	"\x06paused\x18\x06 \x01(\bR\x06paused\"\xc2\x01\n" +
+	"\x06paused\x18\x06 \x01(\bR\x06paused\"\xd2\x02\n" +
 	"\x04Disk\x12\x12\n" +
 	"\x04path\x18\x01 \x01(\tR\x04path\x12\x1f\n" +
 	"\vtotal_bytes\x18\x02 \x01(\x04R\n" +
 	"totalBytes\x12'\n" +
 	"\x0favailable_bytes\x18\x03 \x01(\x04R\x0eavailableBytes\x120\n" +
 	"\afolders\x18\x04 \x03(\v2\x16.machine.v1.DiskFolderR\afolders\x12*\n" +
-	"\x05items\x18\x05 \x03(\v2\x14.machine.v1.DiskItemR\x05items\"?\n" +
+	"\x05items\x18\x05 \x03(\v2\x14.machine.v1.DiskItemR\x05items\x12=\n" +
+	"\fmeasure_time\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\vmeasureTime\x12\x1c\n" +
+	"\tmeasuring\x18\a \x01(\bR\tmeasuring\x121\n" +
+	"\afreeing\x18\b \x01(\v2\x17.machine.v1.DiskFreeingR\afreeing\"\xaf\x02\n" +
+	"\vDiskFreeing\x12\x14\n" +
+	"\x05total\x18\x01 \x01(\x05R\x05total\x12\x12\n" +
+	"\x04done\x18\x02 \x01(\x05R\x04done\x12\x1f\n" +
+	"\vfreed_bytes\x18\x03 \x01(\x04R\n" +
+	"freedBytes\x12\x12\n" +
+	"\x04kept\x18\x04 \x01(\x05R\x04kept\x129\n" +
+	"\n" +
+	"start_time\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tstartTime\x125\n" +
+	"\bend_time\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\aendTime\x12\x19\n" +
+	"\bwish_ids\x18\a \x03(\tR\awishIds\x124\n" +
+	"\x06azimas\x18\b \x03(\v2\x1c.machine.v1.DiskFreeingAzimaR\x06azimas\"\xe1\x01\n" +
+	"\x10DiskFreeingAzima\x12\x19\n" +
+	"\bazima_id\x18\x01 \x01(\tR\aazimaId\x12\x17\n" +
+	"\awish_id\x18\x02 \x01(\tR\x06wishId\x12\x14\n" +
+	"\x05total\x18\x03 \x01(\x05R\x05total\x12\x12\n" +
+	"\x04done\x18\x04 \x01(\x05R\x04done\x12\x1f\n" +
+	"\vfreed_bytes\x18\x05 \x01(\x04R\n" +
+	"freedBytes\x12\x12\n" +
+	"\x04kept\x18\x06 \x01(\x05R\x04kept\x12:\n" +
+	"\n" +
+	"kept_items\x18\a \x03(\v2\x1b.machine.v1.DiskFreeingKeptR\tkeptItems\"\xc4\x01\n" +
+	"\x0fDiskFreeingKept\x12\x17\n" +
+	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12/\n" +
+	"\x04part\x18\x02 \x01(\x0e2\x1b.machine.v1.DiskFreeingPartR\x04part\x125\n" +
+	"\x06reason\x18\x03 \x01(\x0e2\x1d.machine.v1.DiskFreeingReasonR\x06reason\x12\x18\n" +
+	"\acommits\x18\x04 \x01(\x05R\acommits\x12\x16\n" +
+	"\x06detail\x18\x05 \x01(\tR\x06detail\"\xfc\x02\n" +
 	"\n" +
 	"DiskFolder\x12\x12\n" +
 	"\x04path\x18\x01 \x01(\tR\x04path\x12\x1d\n" +
 	"\n" +
-	"size_bytes\x18\x02 \x01(\x04R\tsizeBytes\"\x9f\x02\n" +
+	"size_bytes\x18\x02 \x01(\x04R\tsizeBytes\x12\x18\n" +
+	"\apartial\x18\x03 \x01(\bR\apartial\x12\x12\n" +
+	"\x04kind\x18\x04 \x01(\tR\x04kind\x12\x18\n" +
+	"\aproject\x18\x05 \x01(\tR\aproject\x12)\n" +
+	"\x10integrated_bytes\x18\x06 \x01(\x04R\x0fintegratedBytes\x12\x14\n" +
+	"\x05count\x18\a \x01(\x05R\x05count\x12)\n" +
+	"\x10integrated_count\x18\b \x01(\x05R\x0fintegratedCount\x12=\n" +
+	"\fmeasure_time\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\vmeasureTime\x12#\n" +
+	"\rcascade_bytes\x18\n" +
+	" \x01(\x04R\fcascadeBytes\x12#\n" +
+	"\rcascade_count\x18\v \x01(\x05R\fcascadeCount\"\xb9\x02\n" +
 	"\bDiskItem\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x12\n" +
 	"\x04path\x18\x02 \x01(\tR\x04path\x12\x1d\n" +
@@ -2999,7 +4369,9 @@ const file_machine_v1_machine_proto_rawDesc = "" +
 	"\x04risk\x18\x06 \x01(\x0e2\x14.machine.v1.DiskRiskR\x04risk\x12\x18\n" +
 	"\acommand\x18\a \x01(\tR\acommand\x12\x14\n" +
 	"\x05count\x18\b \x01(\x05R\x05count\x12\x14\n" +
-	"\x05djinn\x18\t \x01(\bR\x05djinn\"\xba\x01\n" +
+	"\x05djinn\x18\t \x01(\bR\x05djinn\x12\x18\n" +
+	"\apartial\x18\n" +
+	" \x01(\bR\apartial\"\xba\x01\n" +
 	"\x03Gpu\x12\x16\n" +
 	"\x06vendor\x18\x01 \x01(\tR\x06vendor\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x16\n" +
@@ -3019,7 +4391,10 @@ const file_machine_v1_machine_proto_rawDesc = "" +
 	"\aworkers\x18\x02 \x03(\v2\x18.machine.v1.WorkerSeriesR\aworkers\x12.\n" +
 	"\x05gates\x18\x03 \x03(\v2\x18.machine.v1.GateIntervalR\x05gates\x12%\n" +
 	"\x0eworker_measure\x18\x04 \x01(\tR\rworkerMeasure\x12$\n" +
-	"\x04disk\x18\x05 \x01(\v2\x10.machine.v1.DiskR\x04disk\"\xe6\x01\n" +
+	"\x04disk\x18\x05 \x01(\v2\x10.machine.v1.DiskR\x04disk\"\"\n" +
+	" MachineServiceMeasureDiskRequest\"=\n" +
+	"!MachineServiceMeasureDiskResponse\x12\x18\n" +
+	"\aalready\x18\x01 \x01(\bR\aalready\"\xe6\x01\n" +
 	"\rMachineSeries\x12\x14\n" +
 	"\x05cores\x18\x01 \x01(\x05R\x05cores\x12,\n" +
 	"\x12memory_total_bytes\x18\x02 \x01(\x04R\x10memoryTotalBytes\x12(\n" +
@@ -3053,7 +4428,7 @@ const file_machine_v1_machine_proto_rawDesc = "" +
 	"\x04time\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x04time\x12\x1f\n" +
 	"\vcpu_percent\x18\x02 \x01(\x01R\n" +
 	"cpuPercent\x12!\n" +
-	"\fmemory_bytes\x18\x03 \x01(\x04R\vmemoryBytes\"\xa5\x04\n" +
+	"\fmemory_bytes\x18\x03 \x01(\x04R\vmemoryBytes\"\xf2\x04\n" +
 	"\fGateInterval\x12\x12\n" +
 	"\x04gate\x18\x01 \x01(\tR\x04gate\x12\x18\n" +
 	"\acommand\x18\x02 \x01(\tR\acommand\x12\x17\n" +
@@ -3075,7 +4450,9 @@ const file_machine_v1_machine_proto_rawDesc = "" +
 	"\n" +
 	"unmeasured\x18\r \x01(\bR\n" +
 	"unmeasured\x12\x18\n" +
-	"\aoutside\x18\x0e \x01(\bR\aoutside\"\xc7\x02\n" +
+	"\aoutside\x18\x0e \x01(\bR\aoutside\x12.\n" +
+	"\ttask_kind\x18\x0f \x01(\x0e2\x11.plan.v1.TaskKindR\btaskKind\x12\x1b\n" +
+	"\ttask_code\x18\x10 \x01(\tR\btaskCode\"\xc7\x02\n" +
 	"\n" +
 	"CommandRun\x12.\n" +
 	"\x04time\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x04time\x12\x18\n" +
@@ -3098,7 +4475,7 @@ const file_machine_v1_machine_proto_rawDesc = "" +
 	"\x05match\x18\x05 \x01(\tB\b\xbaH\x05r\x03\x18\xe0\x03R\x05match\"_\n" +
 	"\x18GateServiceAdmitResponse\x12+\n" +
 	"\x05state\x18\x01 \x01(\x0e2\x15.machine.v1.GateStateR\x05state\x12\x16\n" +
-	"\x06reason\x18\x02 \x01(\tR\x06reason\"\xf2\x02\n" +
+	"\x06reason\x18\x02 \x01(\tR\x06reason\"\xb7\x03\n" +
 	"\x04Gate\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
 	"\x06holder\x18\x02 \x01(\tR\x06holder\x12$\n" +
@@ -3112,7 +4489,9 @@ const file_machine_v1_machine_proto_rawDesc = "" +
 	"expireTime\x12\x14\n" +
 	"\x05ifrit\x18\t \x01(\bR\x05ifrit\x12(\n" +
 	"\x10waiting_task_ids\x18\n" +
-	" \x03(\tR\x0ewaitingTaskIds\"\x90\x02\n" +
+	" \x03(\tR\x0ewaitingTaskIds\x12\x18\n" +
+	"\aproject\x18\v \x01(\tR\aproject\x12)\n" +
+	"\x10waiting_projects\x18\f \x03(\tR\x0fwaitingProjects\"\x90\x02\n" +
 	"\x16GateServiceHoldRequest\x12;\n" +
 	"\x04name\x18\x01 \x01(\tB'\xbaH$\xc8\x01\x01r\x1f2\x1d^[A-Za-z][A-Za-z0-9_-]{0,39}$R\x04name\x12$\n" +
 	"\atask_id\x18\x02 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x06taskId\x12\x1c\n" +
@@ -3125,7 +4504,26 @@ const file_machine_v1_machine_proto_rawDesc = "" +
 	"\x06reason\x18\x02 \x01(\tR\x06reason\"\x18\n" +
 	"\x16GateServiceListRequest\"A\n" +
 	"\x17GateServiceListResponse\x12&\n" +
-	"\x05gates\x18\x01 \x03(\v2\x10.machine.v1.GateR\x05gates\"\x8d\a\n" +
+	"\x05gates\x18\x01 \x03(\v2\x10.machine.v1.GateR\x05gates\"\xa3\x01\n" +
+	"\x19GateServiceHistoryRequest\x12$\n" +
+	"\aminutes\x18\x01 \x01(\x05B\n" +
+	"\xbaH\a\x1a\x05\x18\xe0N(\x00R\aminutes\x12%\n" +
+	"\x0eall_admissions\x18\x02 \x01(\bR\rallAdmissions\x129\n" +
+	"\n" +
+	"after_time\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\tafterTime\"\xf3\x01\n" +
+	"\x1aGateServiceHistoryResponse\x129\n" +
+	"\n" +
+	"start_time\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\tstartTime\x127\n" +
+	"\tread_time\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\breadTime\x126\n" +
+	"\tintervals\x18\x03 \x03(\v2\x18.machine.v1.GateIntervalR\tintervals\x12)\n" +
+	"\x04runs\x18\x04 \x03(\v2\x15.machine.v1.WorkerRunR\x04runs\"\xd1\x01\n" +
+	"\tWorkerRun\x12\x17\n" +
+	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x12\n" +
+	"\x04code\x18\x02 \x01(\tR\x04code\x12%\n" +
+	"\x04kind\x18\x03 \x01(\x0e2\x11.plan.v1.TaskKindR\x04kind\x129\n" +
+	"\n" +
+	"start_time\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\tstartTime\x125\n" +
+	"\bend_time\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\aendTime\"\x8d\a\n" +
 	"\vCommandCost\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\x12\x1d\n" +
 	"\n" +
@@ -3156,11 +4554,47 @@ const file_machine_v1_machine_proto_rawDesc = "" +
 	"\x05asked\x18\x17 \x01(\x05R\x05asked:\x19\xd2\xf3\x18\x15\n" +
 	"\n" +
 	"project_id\n" +
-	"\acommand\">\n" +
+	"\acommand\"\x9b\x02\n" +
 	"\x19CommandServiceListRequest\x12!\n" +
-	"\aproject\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x18dR\aproject\"K\n" +
+	"\aproject\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x18dR\aproject\x12\x19\n" +
+	"\bby_total\x18\x02 \x01(\bR\abyTotal\x12'\n" +
+	"\tpage_size\x18\x03 \x01(\x05B\n" +
+	"\xbaH\a\x1a\x05\x18\xe8\a(\x00R\bpageSize\x12&\n" +
+	"\n" +
+	"page_token\x18\x04 \x01(\tB\a\xbaH\x04r\x02\x18\x14R\tpageToken\x12\x14\n" +
+	"\x05brief\x18\x05 \x01(\bR\x05brief\x12\x1b\n" +
+	"\x02id\x18\x06 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x02id\x12\x18\n" +
+	"\asummary\x18\a \x01(\bR\asummary\x12\"\n" +
+	"\acommand\x18\b \x01(\tB\b\xbaH\x05r\x03\x18\xc8\x01R\acommand\"\xbd\x01\n" +
 	"\x1aCommandServiceListResponse\x12-\n" +
-	"\x05costs\x18\x01 \x03(\v2\x17.machine.v1.CommandCostR\x05costs\"\xad\x03\n" +
+	"\x05costs\x18\x01 \x03(\v2\x17.machine.v1.CommandCostR\x05costs\x12&\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\x12\x14\n" +
+	"\x05total\x18\x03 \x01(\x05R\x05total\x122\n" +
+	"\asummary\x18\x04 \x01(\v2\x18.machine.v1.GatesSummaryR\asummary\"\xc3\x02\n" +
+	"\fGatesSummary\x12\x14\n" +
+	"\x05asked\x18\x01 \x01(\x05R\x05asked\x12\x10\n" +
+	"\x03ran\x18\x02 \x01(\x05R\x03ran\x12\x14\n" +
+	"\x05holds\x18\x03 \x01(\x05R\x05holds\x12(\n" +
+	"\x10p50_wait_seconds\x18\x04 \x01(\x01R\x0ep50WaitSeconds\x12(\n" +
+	"\x10p90_wait_seconds\x18\x05 \x01(\x01R\x0ep90WaitSeconds\x12(\n" +
+	"\x10max_wait_seconds\x18\x06 \x01(\x01R\x0emaxWaitSeconds\x12\x1d\n" +
+	"\n" +
+	"long_waits\x18\a \x01(\x05R\tlongWaits\x12+\n" +
+	"\x04peak\x18\b \x01(\v2\x17.machine.v1.CommandCostR\x04peak\x12+\n" +
+	"\x05gates\x18\t \x03(\v2\x15.machine.v1.GateWaitsR\x05gates\"\x95\x02\n" +
+	"\tGateWaits\x12\x12\n" +
+	"\x04gate\x18\x01 \x01(\tR\x04gate\x12\x14\n" +
+	"\x05holds\x18\x02 \x01(\x05R\x05holds\x12\x1f\n" +
+	"\vp50_seconds\x18\x03 \x01(\x01R\n" +
+	"p50Seconds\x12\x1f\n" +
+	"\vp90_seconds\x18\x04 \x01(\x01R\n" +
+	"p90Seconds\x12\x1f\n" +
+	"\vmax_seconds\x18\x05 \x01(\x01R\n" +
+	"maxSeconds\x12\x12\n" +
+	"\x04long\x18\x06 \x01(\x05R\x04long\x12*\n" +
+	"\x04last\x18\a \x01(\v2\x16.machine.v1.CommandRunR\x04last\x12!\n" +
+	"\flast_command\x18\b \x01(\tR\vlastCommand\x12\x18\n" +
+	"\aproject\x18\t \x01(\tR\aproject\"\xad\x03\n" +
 	"\x1bCommandServiceRecordRequest\x12$\n" +
 	"\atask_id\x18\x01 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x06taskId\x12&\n" +
 	"\tdirectory\x18\x02 \x01(\tB\b\xbaH\x05r\x03\x18\x80 R\tdirectory\x12%\n" +
@@ -3176,7 +4610,29 @@ const file_machine_v1_machine_proto_rawDesc = "" +
 	" \x01(\tR\x04gate\x12\x1b\n" +
 	"\x04tree\x18\v \x01(\tB\a\xbaH\x04r\x02\x18@R\x04tree\"K\n" +
 	"\x1cCommandServiceRecordResponse\x12+\n" +
-	"\x04cost\x18\x01 \x01(\v2\x17.machine.v1.CommandCostR\x04cost*d\n" +
+	"\x04cost\x18\x01 \x01(\v2\x17.machine.v1.CommandCostR\x04cost\"\xc2\x02\n" +
+	"\x1bCommandServiceForgetRequest\x12$\n" +
+	"\aproject\x18\x01 \x01(\tB\n" +
+	"\xbaH\a\xc8\x01\x01r\x02\x18dR\aproject\x12\"\n" +
+	"\acommand\x18\x02 \x01(\tB\b\xbaH\x05r\x03\x18\xc8\x01R\acommand\x12\x1c\n" +
+	"\x04head\x18\x03 \x01(\tB\b\xbaH\x05r\x03\x18\xc8\x01R\x04head\x12\x10\n" +
+	"\x03all\x18\x04 \x01(\bR\x03all:\xa8\x01\xbaH\xa4\x01\x1a\xa1\x01\n" +
+	"\x1acommand_service_forget.one\x12/say what to forget: one of command, head or all\x1aR(this.command != '' ? 1 : 0) + (this.head != '' ? 1 : 0) + (this.all ? 1 : 0) == 1\":\n" +
+	"\x1cCommandServiceForgetResponse\x12\x1a\n" +
+	"\bcommands\x18\x01 \x03(\tR\bcommands*\xad\x01\n" +
+	"\x0fDiskFreeingPart\x12!\n" +
+	"\x1dDISK_FREEING_PART_UNSPECIFIED\x10\x00\x12\x1e\n" +
+	"\x1aDISK_FREEING_PART_WORKTREE\x10\x01\x12\x1d\n" +
+	"\x19DISK_FREEING_PART_SCRATCH\x10\x02\x12\x1c\n" +
+	"\x18DISK_FREEING_PART_BRANCH\x10\x03\x12\x1a\n" +
+	"\x16DISK_FREEING_PART_TASK\x10\x04*\xe3\x01\n" +
+	"\x11DiskFreeingReason\x12#\n" +
+	"\x1fDISK_FREEING_REASON_UNSPECIFIED\x10\x00\x12#\n" +
+	"\x1fDISK_FREEING_REASON_UNCOMMITTED\x10\x01\x12 \n" +
+	"\x1cDISK_FREEING_REASON_UNPUSHED\x10\x02\x12\x1f\n" +
+	"\x1bDISK_FREEING_REASON_RUNNING\x10\x03\x12\"\n" +
+	"\x1eDISK_FREEING_REASON_NO_PROJECT\x10\x04\x12\x1d\n" +
+	"\x19DISK_FREEING_REASON_ERROR\x10\x05*d\n" +
 	"\bDiskRisk\x12\x19\n" +
 	"\x15DISK_RISK_UNSPECIFIED\x10\x00\x12\x12\n" +
 	"\x0eDISK_RISK_SAFE\x10\x01\x12\x15\n" +
@@ -3198,17 +4654,20 @@ const file_machine_v1_machine_proto_rawDesc = "" +
 	"\x16GATE_STATE_UNSPECIFIED\x10\x00\x12\x16\n" +
 	"\x12GATE_STATE_WAITING\x10\x01\x12\x13\n" +
 	"\x0fGATE_STATE_HELD\x10\x02\x12\x19\n" +
-	"\x15GATE_STATE_TAKEN_BACK\x10\x032\xd6\x01\n" +
+	"\x15GATE_STATE_TAKEN_BACK\x10\x032\xcc\x02\n" +
 	"\x0eMachineService\x12^\n" +
 	"\x04Show\x12%.machine.v1.MachineServiceShowRequest\x1a&.machine.v1.MachineServiceShowResponse\"\a\xc8\xf3\x18\x01\x90\x02\x01\x12d\n" +
-	"\x06Series\x12'.machine.v1.MachineServiceSeriesRequest\x1a(.machine.v1.MachineServiceSeriesResponse\"\a\xc8\xf3\x18\x01\x90\x02\x012\x9c\x02\n" +
+	"\x06Series\x12'.machine.v1.MachineServiceSeriesRequest\x1a(.machine.v1.MachineServiceSeriesResponse\"\a\xc8\xf3\x18\x01\x90\x02\x01\x12t\n" +
+	"\vMeasureDisk\x12,.machine.v1.MachineServiceMeasureDiskRequest\x1a-.machine.v1.MachineServiceMeasureDiskResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x012\xff\x02\n" +
 	"\vGateService\x12W\n" +
 	"\x04Hold\x12\".machine.v1.GateServiceHoldRequest\x1a#.machine.v1.GateServiceHoldResponse\"\x04\xc8\xf3\x18\x010\x01\x12X\n" +
-	"\x04List\x12\".machine.v1.GateServiceListRequest\x1a#.machine.v1.GateServiceListResponse\"\a\xc8\xf3\x18\x01\x90\x02\x01\x12Z\n" +
-	"\x05Admit\x12#.machine.v1.GateServiceAdmitRequest\x1a$.machine.v1.GateServiceAdmitResponse\"\x04\xe0\xf3\x18\x010\x012\xd3\x01\n" +
+	"\x04List\x12\".machine.v1.GateServiceListRequest\x1a#.machine.v1.GateServiceListResponse\"\a\xc8\xf3\x18\x01\x90\x02\x01\x12a\n" +
+	"\aHistory\x12%.machine.v1.GateServiceHistoryRequest\x1a&.machine.v1.GateServiceHistoryResponse\"\a\xc8\xf3\x18\x01\x90\x02\x01\x12Z\n" +
+	"\x05Admit\x12#.machine.v1.GateServiceAdmitRequest\x1a$.machine.v1.GateServiceAdmitResponse\"\x04\xe0\xf3\x18\x010\x012\xba\x02\n" +
 	"\x0eCommandService\x12^\n" +
 	"\x04List\x12%.machine.v1.CommandServiceListRequest\x1a&.machine.v1.CommandServiceListResponse\"\a\xc8\xf3\x18\x01\x90\x02\x01\x12a\n" +
-	"\x06Record\x12'.machine.v1.CommandServiceRecordRequest\x1a(.machine.v1.CommandServiceRecordResponse\"\x04\xc8\xf3\x18\x02B\x9e\x01\n" +
+	"\x06Record\x12'.machine.v1.CommandServiceRecordRequest\x1a(.machine.v1.CommandServiceRecordResponse\"\x04\xc8\xf3\x18\x02\x12e\n" +
+	"\x06Forget\x12'.machine.v1.CommandServiceForgetRequest\x1a(.machine.v1.CommandServiceForgetResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x02B\x9e\x01\n" +
 	"\x0ecom.machine.v1B\fMachineProtoP\x01Z5github.com/empowill/djinn/gen/go/machine/v1;machinev1\xa2\x02\x03MXX\xaa\x02\n" +
 	"Machine.V1\xca\x02\n" +
 	"Machine\\V1\xe2\x02\x16Machine\\V1\\GPBMetadata\xea\x02\vMachine::V1b\x06proto3"
@@ -3225,107 +4684,150 @@ func file_machine_v1_machine_proto_rawDescGZIP() []byte {
 	return file_machine_v1_machine_proto_rawDescData
 }
 
-var file_machine_v1_machine_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
-var file_machine_v1_machine_proto_msgTypes = make([]protoimpl.MessageInfo, 29)
+var file_machine_v1_machine_proto_enumTypes = make([]protoimpl.EnumInfo, 6)
+var file_machine_v1_machine_proto_msgTypes = make([]protoimpl.MessageInfo, 41)
 var file_machine_v1_machine_proto_goTypes = []any{
-	(DiskRisk)(0),                        // 0: machine.v1.DiskRisk
-	(GateMode)(0),                        // 1: machine.v1.GateMode
-	(GateWaitCause)(0),                   // 2: machine.v1.GateWaitCause
-	(GateState)(0),                       // 3: machine.v1.GateState
-	(*Pressure)(nil),                     // 4: machine.v1.Pressure
-	(*Machine)(nil),                      // 5: machine.v1.Machine
-	(*WorkerUse)(nil),                    // 6: machine.v1.WorkerUse
-	(*Disk)(nil),                         // 7: machine.v1.Disk
-	(*DiskFolder)(nil),                   // 8: machine.v1.DiskFolder
-	(*DiskItem)(nil),                     // 9: machine.v1.DiskItem
-	(*Gpu)(nil),                          // 10: machine.v1.Gpu
-	(*MachineServiceShowRequest)(nil),    // 11: machine.v1.MachineServiceShowRequest
-	(*MachineServiceShowResponse)(nil),   // 12: machine.v1.MachineServiceShowResponse
-	(*MachineServiceSeriesRequest)(nil),  // 13: machine.v1.MachineServiceSeriesRequest
-	(*MachineServiceSeriesResponse)(nil), // 14: machine.v1.MachineServiceSeriesResponse
-	(*MachineSeries)(nil),                // 15: machine.v1.MachineSeries
-	(*MachinePoint)(nil),                 // 16: machine.v1.MachinePoint
-	(*WorkerSeries)(nil),                 // 17: machine.v1.WorkerSeries
-	(*WorkerPoint)(nil),                  // 18: machine.v1.WorkerPoint
-	(*GateInterval)(nil),                 // 19: machine.v1.GateInterval
-	(*CommandRun)(nil),                   // 20: machine.v1.CommandRun
-	(*GateServiceAdmitRequest)(nil),      // 21: machine.v1.GateServiceAdmitRequest
-	(*GateServiceAdmitResponse)(nil),     // 22: machine.v1.GateServiceAdmitResponse
-	(*Gate)(nil),                         // 23: machine.v1.Gate
-	(*GateServiceHoldRequest)(nil),       // 24: machine.v1.GateServiceHoldRequest
-	(*GateServiceHoldResponse)(nil),      // 25: machine.v1.GateServiceHoldResponse
-	(*GateServiceListRequest)(nil),       // 26: machine.v1.GateServiceListRequest
-	(*GateServiceListResponse)(nil),      // 27: machine.v1.GateServiceListResponse
-	(*CommandCost)(nil),                  // 28: machine.v1.CommandCost
-	(*CommandServiceListRequest)(nil),    // 29: machine.v1.CommandServiceListRequest
-	(*CommandServiceListResponse)(nil),   // 30: machine.v1.CommandServiceListResponse
-	(*CommandServiceRecordRequest)(nil),  // 31: machine.v1.CommandServiceRecordRequest
-	(*CommandServiceRecordResponse)(nil), // 32: machine.v1.CommandServiceRecordResponse
-	(*timestamppb.Timestamp)(nil),        // 33: google.protobuf.Timestamp
-	(v1.LoadNotch)(0),                    // 34: djinn.v1.LoadNotch
-	(*v11.Resources)(nil),                // 35: plan.v1.Resources
-	(v11.Provider)(0),                    // 36: plan.v1.Provider
+	(DiskFreeingPart)(0),                      // 0: machine.v1.DiskFreeingPart
+	(DiskFreeingReason)(0),                    // 1: machine.v1.DiskFreeingReason
+	(DiskRisk)(0),                             // 2: machine.v1.DiskRisk
+	(GateMode)(0),                             // 3: machine.v1.GateMode
+	(GateWaitCause)(0),                        // 4: machine.v1.GateWaitCause
+	(GateState)(0),                            // 5: machine.v1.GateState
+	(*Pressure)(nil),                          // 6: machine.v1.Pressure
+	(*Machine)(nil),                           // 7: machine.v1.Machine
+	(*WorkerUse)(nil),                         // 8: machine.v1.WorkerUse
+	(*Disk)(nil),                              // 9: machine.v1.Disk
+	(*DiskFreeing)(nil),                       // 10: machine.v1.DiskFreeing
+	(*DiskFreeingAzima)(nil),                  // 11: machine.v1.DiskFreeingAzima
+	(*DiskFreeingKept)(nil),                   // 12: machine.v1.DiskFreeingKept
+	(*DiskFolder)(nil),                        // 13: machine.v1.DiskFolder
+	(*DiskItem)(nil),                          // 14: machine.v1.DiskItem
+	(*Gpu)(nil),                               // 15: machine.v1.Gpu
+	(*MachineServiceShowRequest)(nil),         // 16: machine.v1.MachineServiceShowRequest
+	(*MachineServiceShowResponse)(nil),        // 17: machine.v1.MachineServiceShowResponse
+	(*MachineServiceSeriesRequest)(nil),       // 18: machine.v1.MachineServiceSeriesRequest
+	(*MachineServiceSeriesResponse)(nil),      // 19: machine.v1.MachineServiceSeriesResponse
+	(*MachineServiceMeasureDiskRequest)(nil),  // 20: machine.v1.MachineServiceMeasureDiskRequest
+	(*MachineServiceMeasureDiskResponse)(nil), // 21: machine.v1.MachineServiceMeasureDiskResponse
+	(*MachineSeries)(nil),                     // 22: machine.v1.MachineSeries
+	(*MachinePoint)(nil),                      // 23: machine.v1.MachinePoint
+	(*WorkerSeries)(nil),                      // 24: machine.v1.WorkerSeries
+	(*WorkerPoint)(nil),                       // 25: machine.v1.WorkerPoint
+	(*GateInterval)(nil),                      // 26: machine.v1.GateInterval
+	(*CommandRun)(nil),                        // 27: machine.v1.CommandRun
+	(*GateServiceAdmitRequest)(nil),           // 28: machine.v1.GateServiceAdmitRequest
+	(*GateServiceAdmitResponse)(nil),          // 29: machine.v1.GateServiceAdmitResponse
+	(*Gate)(nil),                              // 30: machine.v1.Gate
+	(*GateServiceHoldRequest)(nil),            // 31: machine.v1.GateServiceHoldRequest
+	(*GateServiceHoldResponse)(nil),           // 32: machine.v1.GateServiceHoldResponse
+	(*GateServiceListRequest)(nil),            // 33: machine.v1.GateServiceListRequest
+	(*GateServiceListResponse)(nil),           // 34: machine.v1.GateServiceListResponse
+	(*GateServiceHistoryRequest)(nil),         // 35: machine.v1.GateServiceHistoryRequest
+	(*GateServiceHistoryResponse)(nil),        // 36: machine.v1.GateServiceHistoryResponse
+	(*WorkerRun)(nil),                         // 37: machine.v1.WorkerRun
+	(*CommandCost)(nil),                       // 38: machine.v1.CommandCost
+	(*CommandServiceListRequest)(nil),         // 39: machine.v1.CommandServiceListRequest
+	(*CommandServiceListResponse)(nil),        // 40: machine.v1.CommandServiceListResponse
+	(*GatesSummary)(nil),                      // 41: machine.v1.GatesSummary
+	(*GateWaits)(nil),                         // 42: machine.v1.GateWaits
+	(*CommandServiceRecordRequest)(nil),       // 43: machine.v1.CommandServiceRecordRequest
+	(*CommandServiceRecordResponse)(nil),      // 44: machine.v1.CommandServiceRecordResponse
+	(*CommandServiceForgetRequest)(nil),       // 45: machine.v1.CommandServiceForgetRequest
+	(*CommandServiceForgetResponse)(nil),      // 46: machine.v1.CommandServiceForgetResponse
+	(*timestamppb.Timestamp)(nil),             // 47: google.protobuf.Timestamp
+	(v1.LoadNotch)(0),                         // 48: djinn.v1.LoadNotch
+	(*v11.Resources)(nil),                     // 49: plan.v1.Resources
+	(v11.Provider)(0),                         // 50: plan.v1.Provider
+	(v11.TaskKind)(0),                         // 51: plan.v1.TaskKind
 }
 var file_machine_v1_machine_proto_depIdxs = []int32{
-	4,  // 0: machine.v1.Machine.cpu_pressure:type_name -> machine.v1.Pressure
-	4,  // 1: machine.v1.Machine.memory_pressure:type_name -> machine.v1.Pressure
-	33, // 2: machine.v1.Machine.read_time:type_name -> google.protobuf.Timestamp
-	7,  // 3: machine.v1.Machine.disk:type_name -> machine.v1.Disk
-	10, // 4: machine.v1.Machine.gpus:type_name -> machine.v1.Gpu
-	6,  // 5: machine.v1.Machine.worker_uses:type_name -> machine.v1.WorkerUse
-	34, // 6: machine.v1.Machine.load:type_name -> djinn.v1.LoadNotch
-	33, // 7: machine.v1.Machine.network_down_since:type_name -> google.protobuf.Timestamp
-	35, // 8: machine.v1.WorkerUse.resources:type_name -> plan.v1.Resources
-	8,  // 9: machine.v1.Disk.folders:type_name -> machine.v1.DiskFolder
-	9,  // 10: machine.v1.Disk.items:type_name -> machine.v1.DiskItem
-	0,  // 11: machine.v1.DiskItem.risk:type_name -> machine.v1.DiskRisk
-	5,  // 12: machine.v1.MachineServiceShowResponse.machine:type_name -> machine.v1.Machine
-	33, // 13: machine.v1.MachineServiceSeriesRequest.since:type_name -> google.protobuf.Timestamp
-	15, // 14: machine.v1.MachineServiceSeriesResponse.machine:type_name -> machine.v1.MachineSeries
-	17, // 15: machine.v1.MachineServiceSeriesResponse.workers:type_name -> machine.v1.WorkerSeries
-	19, // 16: machine.v1.MachineServiceSeriesResponse.gates:type_name -> machine.v1.GateInterval
-	7,  // 17: machine.v1.MachineServiceSeriesResponse.disk:type_name -> machine.v1.Disk
-	16, // 18: machine.v1.MachineSeries.points:type_name -> machine.v1.MachinePoint
-	33, // 19: machine.v1.MachinePoint.time:type_name -> google.protobuf.Timestamp
-	36, // 20: machine.v1.WorkerSeries.provider:type_name -> plan.v1.Provider
-	18, // 21: machine.v1.WorkerSeries.points:type_name -> machine.v1.WorkerPoint
-	19, // 22: machine.v1.WorkerSeries.gates:type_name -> machine.v1.GateInterval
-	33, // 23: machine.v1.WorkerPoint.time:type_name -> google.protobuf.Timestamp
-	33, // 24: machine.v1.GateInterval.asked_time:type_name -> google.protobuf.Timestamp
-	33, // 25: machine.v1.GateInterval.grant_time:type_name -> google.protobuf.Timestamp
-	33, // 26: machine.v1.GateInterval.release_time:type_name -> google.protobuf.Timestamp
-	1,  // 27: machine.v1.GateInterval.mode:type_name -> machine.v1.GateMode
-	2,  // 28: machine.v1.GateInterval.wait_cause:type_name -> machine.v1.GateWaitCause
-	33, // 29: machine.v1.CommandRun.time:type_name -> google.protobuf.Timestamp
-	3,  // 30: machine.v1.GateServiceAdmitResponse.state:type_name -> machine.v1.GateState
-	33, // 31: machine.v1.Gate.since:type_name -> google.protobuf.Timestamp
-	35, // 32: machine.v1.Gate.resources:type_name -> plan.v1.Resources
-	33, // 33: machine.v1.Gate.expire_time:type_name -> google.protobuf.Timestamp
-	3,  // 34: machine.v1.GateServiceHoldResponse.state:type_name -> machine.v1.GateState
-	23, // 35: machine.v1.GateServiceListResponse.gates:type_name -> machine.v1.Gate
-	33, // 36: machine.v1.CommandCost.last_time:type_name -> google.protobuf.Timestamp
-	20, // 37: machine.v1.CommandCost.recent_runs:type_name -> machine.v1.CommandRun
-	28, // 38: machine.v1.CommandServiceListResponse.costs:type_name -> machine.v1.CommandCost
-	28, // 39: machine.v1.CommandServiceRecordResponse.cost:type_name -> machine.v1.CommandCost
-	11, // 40: machine.v1.MachineService.Show:input_type -> machine.v1.MachineServiceShowRequest
-	13, // 41: machine.v1.MachineService.Series:input_type -> machine.v1.MachineServiceSeriesRequest
-	24, // 42: machine.v1.GateService.Hold:input_type -> machine.v1.GateServiceHoldRequest
-	26, // 43: machine.v1.GateService.List:input_type -> machine.v1.GateServiceListRequest
-	21, // 44: machine.v1.GateService.Admit:input_type -> machine.v1.GateServiceAdmitRequest
-	29, // 45: machine.v1.CommandService.List:input_type -> machine.v1.CommandServiceListRequest
-	31, // 46: machine.v1.CommandService.Record:input_type -> machine.v1.CommandServiceRecordRequest
-	12, // 47: machine.v1.MachineService.Show:output_type -> machine.v1.MachineServiceShowResponse
-	14, // 48: machine.v1.MachineService.Series:output_type -> machine.v1.MachineServiceSeriesResponse
-	25, // 49: machine.v1.GateService.Hold:output_type -> machine.v1.GateServiceHoldResponse
-	27, // 50: machine.v1.GateService.List:output_type -> machine.v1.GateServiceListResponse
-	22, // 51: machine.v1.GateService.Admit:output_type -> machine.v1.GateServiceAdmitResponse
-	30, // 52: machine.v1.CommandService.List:output_type -> machine.v1.CommandServiceListResponse
-	32, // 53: machine.v1.CommandService.Record:output_type -> machine.v1.CommandServiceRecordResponse
-	47, // [47:54] is the sub-list for method output_type
-	40, // [40:47] is the sub-list for method input_type
-	40, // [40:40] is the sub-list for extension type_name
-	40, // [40:40] is the sub-list for extension extendee
-	0,  // [0:40] is the sub-list for field type_name
+	6,  // 0: machine.v1.Machine.cpu_pressure:type_name -> machine.v1.Pressure
+	6,  // 1: machine.v1.Machine.memory_pressure:type_name -> machine.v1.Pressure
+	47, // 2: machine.v1.Machine.read_time:type_name -> google.protobuf.Timestamp
+	9,  // 3: machine.v1.Machine.disk:type_name -> machine.v1.Disk
+	15, // 4: machine.v1.Machine.gpus:type_name -> machine.v1.Gpu
+	8,  // 5: machine.v1.Machine.worker_uses:type_name -> machine.v1.WorkerUse
+	48, // 6: machine.v1.Machine.load:type_name -> djinn.v1.LoadNotch
+	47, // 7: machine.v1.Machine.network_down_since:type_name -> google.protobuf.Timestamp
+	49, // 8: machine.v1.WorkerUse.resources:type_name -> plan.v1.Resources
+	13, // 9: machine.v1.Disk.folders:type_name -> machine.v1.DiskFolder
+	14, // 10: machine.v1.Disk.items:type_name -> machine.v1.DiskItem
+	47, // 11: machine.v1.Disk.measure_time:type_name -> google.protobuf.Timestamp
+	10, // 12: machine.v1.Disk.freeing:type_name -> machine.v1.DiskFreeing
+	47, // 13: machine.v1.DiskFreeing.start_time:type_name -> google.protobuf.Timestamp
+	47, // 14: machine.v1.DiskFreeing.end_time:type_name -> google.protobuf.Timestamp
+	11, // 15: machine.v1.DiskFreeing.azimas:type_name -> machine.v1.DiskFreeingAzima
+	12, // 16: machine.v1.DiskFreeingAzima.kept_items:type_name -> machine.v1.DiskFreeingKept
+	0,  // 17: machine.v1.DiskFreeingKept.part:type_name -> machine.v1.DiskFreeingPart
+	1,  // 18: machine.v1.DiskFreeingKept.reason:type_name -> machine.v1.DiskFreeingReason
+	47, // 19: machine.v1.DiskFolder.measure_time:type_name -> google.protobuf.Timestamp
+	2,  // 20: machine.v1.DiskItem.risk:type_name -> machine.v1.DiskRisk
+	7,  // 21: machine.v1.MachineServiceShowResponse.machine:type_name -> machine.v1.Machine
+	47, // 22: machine.v1.MachineServiceSeriesRequest.since:type_name -> google.protobuf.Timestamp
+	22, // 23: machine.v1.MachineServiceSeriesResponse.machine:type_name -> machine.v1.MachineSeries
+	24, // 24: machine.v1.MachineServiceSeriesResponse.workers:type_name -> machine.v1.WorkerSeries
+	26, // 25: machine.v1.MachineServiceSeriesResponse.gates:type_name -> machine.v1.GateInterval
+	9,  // 26: machine.v1.MachineServiceSeriesResponse.disk:type_name -> machine.v1.Disk
+	23, // 27: machine.v1.MachineSeries.points:type_name -> machine.v1.MachinePoint
+	47, // 28: machine.v1.MachinePoint.time:type_name -> google.protobuf.Timestamp
+	50, // 29: machine.v1.WorkerSeries.provider:type_name -> plan.v1.Provider
+	25, // 30: machine.v1.WorkerSeries.points:type_name -> machine.v1.WorkerPoint
+	26, // 31: machine.v1.WorkerSeries.gates:type_name -> machine.v1.GateInterval
+	47, // 32: machine.v1.WorkerPoint.time:type_name -> google.protobuf.Timestamp
+	47, // 33: machine.v1.GateInterval.asked_time:type_name -> google.protobuf.Timestamp
+	47, // 34: machine.v1.GateInterval.grant_time:type_name -> google.protobuf.Timestamp
+	47, // 35: machine.v1.GateInterval.release_time:type_name -> google.protobuf.Timestamp
+	3,  // 36: machine.v1.GateInterval.mode:type_name -> machine.v1.GateMode
+	4,  // 37: machine.v1.GateInterval.wait_cause:type_name -> machine.v1.GateWaitCause
+	51, // 38: machine.v1.GateInterval.task_kind:type_name -> plan.v1.TaskKind
+	47, // 39: machine.v1.CommandRun.time:type_name -> google.protobuf.Timestamp
+	5,  // 40: machine.v1.GateServiceAdmitResponse.state:type_name -> machine.v1.GateState
+	47, // 41: machine.v1.Gate.since:type_name -> google.protobuf.Timestamp
+	49, // 42: machine.v1.Gate.resources:type_name -> plan.v1.Resources
+	47, // 43: machine.v1.Gate.expire_time:type_name -> google.protobuf.Timestamp
+	5,  // 44: machine.v1.GateServiceHoldResponse.state:type_name -> machine.v1.GateState
+	30, // 45: machine.v1.GateServiceListResponse.gates:type_name -> machine.v1.Gate
+	47, // 46: machine.v1.GateServiceHistoryRequest.after_time:type_name -> google.protobuf.Timestamp
+	47, // 47: machine.v1.GateServiceHistoryResponse.start_time:type_name -> google.protobuf.Timestamp
+	47, // 48: machine.v1.GateServiceHistoryResponse.read_time:type_name -> google.protobuf.Timestamp
+	26, // 49: machine.v1.GateServiceHistoryResponse.intervals:type_name -> machine.v1.GateInterval
+	37, // 50: machine.v1.GateServiceHistoryResponse.runs:type_name -> machine.v1.WorkerRun
+	51, // 51: machine.v1.WorkerRun.kind:type_name -> plan.v1.TaskKind
+	47, // 52: machine.v1.WorkerRun.start_time:type_name -> google.protobuf.Timestamp
+	47, // 53: machine.v1.WorkerRun.end_time:type_name -> google.protobuf.Timestamp
+	47, // 54: machine.v1.CommandCost.last_time:type_name -> google.protobuf.Timestamp
+	27, // 55: machine.v1.CommandCost.recent_runs:type_name -> machine.v1.CommandRun
+	38, // 56: machine.v1.CommandServiceListResponse.costs:type_name -> machine.v1.CommandCost
+	41, // 57: machine.v1.CommandServiceListResponse.summary:type_name -> machine.v1.GatesSummary
+	38, // 58: machine.v1.GatesSummary.peak:type_name -> machine.v1.CommandCost
+	42, // 59: machine.v1.GatesSummary.gates:type_name -> machine.v1.GateWaits
+	27, // 60: machine.v1.GateWaits.last:type_name -> machine.v1.CommandRun
+	38, // 61: machine.v1.CommandServiceRecordResponse.cost:type_name -> machine.v1.CommandCost
+	16, // 62: machine.v1.MachineService.Show:input_type -> machine.v1.MachineServiceShowRequest
+	18, // 63: machine.v1.MachineService.Series:input_type -> machine.v1.MachineServiceSeriesRequest
+	20, // 64: machine.v1.MachineService.MeasureDisk:input_type -> machine.v1.MachineServiceMeasureDiskRequest
+	31, // 65: machine.v1.GateService.Hold:input_type -> machine.v1.GateServiceHoldRequest
+	33, // 66: machine.v1.GateService.List:input_type -> machine.v1.GateServiceListRequest
+	35, // 67: machine.v1.GateService.History:input_type -> machine.v1.GateServiceHistoryRequest
+	28, // 68: machine.v1.GateService.Admit:input_type -> machine.v1.GateServiceAdmitRequest
+	39, // 69: machine.v1.CommandService.List:input_type -> machine.v1.CommandServiceListRequest
+	43, // 70: machine.v1.CommandService.Record:input_type -> machine.v1.CommandServiceRecordRequest
+	45, // 71: machine.v1.CommandService.Forget:input_type -> machine.v1.CommandServiceForgetRequest
+	17, // 72: machine.v1.MachineService.Show:output_type -> machine.v1.MachineServiceShowResponse
+	19, // 73: machine.v1.MachineService.Series:output_type -> machine.v1.MachineServiceSeriesResponse
+	21, // 74: machine.v1.MachineService.MeasureDisk:output_type -> machine.v1.MachineServiceMeasureDiskResponse
+	32, // 75: machine.v1.GateService.Hold:output_type -> machine.v1.GateServiceHoldResponse
+	34, // 76: machine.v1.GateService.List:output_type -> machine.v1.GateServiceListResponse
+	36, // 77: machine.v1.GateService.History:output_type -> machine.v1.GateServiceHistoryResponse
+	29, // 78: machine.v1.GateService.Admit:output_type -> machine.v1.GateServiceAdmitResponse
+	40, // 79: machine.v1.CommandService.List:output_type -> machine.v1.CommandServiceListResponse
+	44, // 80: machine.v1.CommandService.Record:output_type -> machine.v1.CommandServiceRecordResponse
+	46, // 81: machine.v1.CommandService.Forget:output_type -> machine.v1.CommandServiceForgetResponse
+	72, // [72:82] is the sub-list for method output_type
+	62, // [62:72] is the sub-list for method input_type
+	62, // [62:62] is the sub-list for extension type_name
+	62, // [62:62] is the sub-list for extension extendee
+	0,  // [0:62] is the sub-list for field type_name
 }
 
 func init() { file_machine_v1_machine_proto_init() }
@@ -3339,8 +4841,8 @@ func file_machine_v1_machine_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_machine_v1_machine_proto_rawDesc), len(file_machine_v1_machine_proto_rawDesc)),
-			NumEnums:      4,
-			NumMessages:   29,
+			NumEnums:      6,
+			NumMessages:   41,
 			NumExtensions: 0,
 			NumServices:   3,
 		},

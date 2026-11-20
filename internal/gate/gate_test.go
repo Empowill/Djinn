@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -32,6 +33,7 @@ func TestTake(t *testing.T) {
 		t.Parallel()
 		f := &tasks{rank: map[string]int{"W1": 0, "W2": 0}}
 		g := New(nil, nil, f)
+		g.ProjectResolver(func(taskID, _ string) string { return map[string]string{"W1": "djinn", "W2": "dolmen"}[taskID] })
 		first := await(t, func() <-chan func() { c, _ := take(t, g, "Codegen", "W1"); return c }(), "first grant")
 		second, waits := take(t, g, "codegen", "W2")
 		if why := times(await(t, waits, "reason")); why != "held by W1, for Ns" {
@@ -43,6 +45,10 @@ func TestTake(t *testing.T) {
 		if l := g.List(); len(l) != 2 || l[0].Name != "codegen" || l[0].HolderTaskID != "W1" || !slices.Equal(l[0].Waiting, []string{"W2"}) ||
 			!slices.Equal(l[0].WaitingTaskIDs, []string{"W2"}) || l[1].WaitingTaskIDs != nil {
 			t.Errorf("list = %+v", l)
+		}
+		// Each says its project: the holder's, and the waiters' in their order; a holder outside any task has none.
+		if l := g.List(); l[0].Project != "djinn" || !slices.Equal(l[0].WaitingProjects, []string{"dolmen"}) || l[1].Project != "" {
+			t.Errorf("projects = %+v", l)
 		}
 		// What a task holds, a worker that waits holding nothing; the holder outside any task is no task's.
 		if !slices.Equal(g.Held("W1"), []string{"codegen"}) || g.Held("W2") != nil || g.Held("") != nil {
@@ -90,6 +96,25 @@ func TestTake(t *testing.T) {
 		await(t, granted, "grant after the pressure")()
 	})
 
+	// On macOS, Djinn leaves the load to the system (Q103 B, W166): W163's runner, a load of 32 on 3 cores, its memory
+	// mostly free and its level normal, grants the gate at once; the same figures on Linux without PSI hold it.
+	t.Run("macOS load delegated", func(t *testing.T) {
+		t.Parallel()
+		mac := loaded{machine.Snapshot{OS: "darwin", Cores: 3, MemoryTotal: 7 * machine.GiB,
+			MemoryAvailable: 7 * machine.GiB * 83 / 100, MemoryLevel: 1, LoadKnown: true, Load1: 32}}
+		granted, _ := take(t, New(mac, nil, nil), "stack", "")
+		await(t, granted, "a gate on a loaded Mac")()
+		linux := mac
+		linux.s.OS, linux.s.MemoryLevel = "linux", 0
+		g := New(linux, nil, nil)
+		g.tick = 10 * time.Millisecond
+		granted, waits := take(t, g, "stack", "")
+		if why := await(t, waits, "reason"); why != "the machine is under pressure: the load is 32.0 on 3 cores (2.0 a core at most)" {
+			t.Errorf("Linux waits because %q", why)
+		}
+		notGranted(t, granted, "a gate on a loaded Linux without PSI")
+	})
+
 	// When a gate frees, the waiter of the first wish of the rank gets it, whoever came first.
 	t.Run("wish rank order", func(t *testing.T) {
 		t.Parallel()
@@ -106,6 +131,50 @@ func TestTake(t *testing.T) {
 		await(t, high, "the high wish's grant")()
 		await(t, low, "the low wish's grant")()
 		await(t, outside, "the grant outside any task")()
+	})
+
+	// Workers of wishes ranked 3, 1 and 2 wait for a full gate, in that order, after a holder outside any task: once it
+	// frees, it goes to the wish ranked 1, then 2, then 3, each holding it until it gives it back, and the holder outside
+	// any task last, though it asked first (W118).
+	t.Run("wishes ranked 3, 1, 2 served 1, 2, 3", func(t *testing.T) {
+		t.Parallel()
+		f := &tasks{rank: map[string]int{"holder": 0, "R3": 3, "R1": 1, "R2": 2}}
+		g := New(nil, nil, f)
+		give := await(t, func() <-chan func() { c, _ := take(t, g, "test", "holder"); return c }(), "first grant")
+		granted := map[string]<-chan func(){}
+		for _, id := range []string{"", "R3", "R1", "R2"} {
+			c, waits := take(t, g, "test", id)
+			await(t, waits, id+" waits")
+			granted[id] = c
+		}
+		give()
+		served := []string{"R1", "R2", "R3", ""}
+		for i, id := range served {
+			next := await(t, granted[id], "the grant of "+id)
+			for _, other := range served[i+1:] {
+				notGranted(t, granted[other], "the gate held by "+id+", for "+other)
+			}
+			next()
+		}
+	})
+
+	// Workers of the same rank are served in the order they asked, whatever their task's name (W118).
+	t.Run("same rank first come", func(t *testing.T) {
+		t.Parallel()
+		f := &tasks{rank: map[string]int{"holder": 0, "W3": 1, "W1": 1, "W2": 1}}
+		g := New(nil, nil, f)
+		give := await(t, func() <-chan func() { c, _ := take(t, g, "test", "holder"); return c }(), "first grant")
+		granted := map[string]<-chan func(){}
+		arrival := []string{"W3", "W1", "W2"}
+		for _, id := range arrival {
+			c, waits := take(t, g, "test", id)
+			await(t, waits, id+" waits")
+			granted[id] = c
+		}
+		give()
+		for _, id := range arrival {
+			await(t, granted[id], "the grant of "+id)()
+		}
 	})
 
 	// Within a wish, the waiter whose azima is ranked first gets the gate, whoever came first; work of no azima after
@@ -197,20 +266,25 @@ func TestTake(t *testing.T) {
 		f := &tasks{rank: map[string]int{"M": 0, "W1": 0, "W2": 0, "W3": 0}, works: map[string]bool{"W1": true, "W2": true, "W3": true}}
 		m := calm()
 		m.setFree(18 * machine.GiB / 10)
-		g := New(m, peaks{"go tool task test": 5 * machine.GiB, "go tool task lint": 200 << 20}, f)
+		g := New(m, peaks{"go tool task test": 5 * machine.GiB, "go tool task lint": 200 << 20, "go vet ./...": 100 << 20}, f)
 		g.tick = 10 * time.Millisecond
+		// A measured command holds a gate: alone, the merge would pass (Room).
+		vet, _ := run(t, g, "vet", "W3", "go vet ./...")
+		giveVet := await(t, vet, "the vet's grant")
 
 		heavy, heavyWaits := merge(t, g, "test", "M", "go tool task test")
-		if why := await(t, heavyWaits, "the merge waits"); why != "a merge or a push, served before the workers: go tool task test peaks at 5.0 GiB, 1.8 GiB free" {
+		const short = "go tool task test peaks at 5.0 GiB, 1.8 GiB free, 100 MiB of it for the commands holding a gate"
+		if why := await(t, heavyWaits, "the merge waits"); why != "a merge or a push, served before the workers: "+short {
 			t.Errorf("the merge waits because %q", why)
 		}
 		light, lightWaits := run(t, g, "test", "W1", "go tool task lint")
-		if why := await(t, lightWaits, "the worker waits"); why != "a merge or a push goes first: go tool task test peaks at 5.0 GiB, 1.8 GiB free" {
+		if why := await(t, lightWaits, "the worker waits"); why != "a merge or a push goes first: "+short {
 			t.Errorf("the worker waits because %q", why)
 		}
 		notGranted(t, light, "a gate a merge waits for")
 		m.setFree(8 * machine.GiB)
 		giveTest := await(t, heavy, "the merge's grant once memory frees")
+		giveVet()
 		notGranted(t, light, "a gate a merge holds")
 		giveTest()
 		await(t, light, "the worker's grant after the merge")()
@@ -243,16 +317,23 @@ func TestTake(t *testing.T) {
 		f := &tasks{rank: map[string]int{"W1": 0}}
 		m := calm()
 		m.setFree(18 * machine.GiB / 10)
-		g := New(m, peaks{"go tool task e2e": 31 * machine.GiB / 10, "go tool task test": 5 * machine.GiB, "go tool task lint": 200 << 20}, f)
+		g := New(m, peaks{
+			"go tool task e2e": 31 * machine.GiB / 10, "go tool task test": 5 * machine.GiB, "go tool task lint": 200 << 20,
+			"go vet ./...": 100 << 20,
+		}, f)
 		g.tick = 10 * time.Millisecond
 		g.Heavy(64*machine.GiB, time.Hour) // The memory alone keeps them apart here, not their turn (TestAdmission).
+		vet, _ := run(t, g, "vet", "", "go vet ./...")
+		giveVet := await(t, vet, "the vet's grant")
+		defer giveVet()
 
 		heavy, waits := run(t, g, "e2e", "W1", "go tool task e2e")
-		if why := await(t, waits, "reason"); why != "go tool task e2e peaks at 3.1 GiB, 1.8 GiB free" {
+		const short = "go tool task e2e peaks at 3.1 GiB, 1.8 GiB free, 100 MiB of it for the commands holding a gate"
+		if why := await(t, waits, "reason"); why != short {
 			t.Errorf("the heavy command waits because %q", why)
 		}
 		notGranted(t, heavy, "a command the machine cannot hold")
-		if !slices.Contains(f.noted(), "W1 gate e2e: waiting: go tool task e2e peaks at 3.1 GiB, 1.8 GiB free") {
+		if !slices.Contains(f.noted(), "W1 gate e2e: waiting: "+short) {
 			t.Errorf("notes = %q", f.noted())
 		}
 		light, _ := run(t, g, "lint", "", "go tool task lint")
@@ -265,12 +346,123 @@ func TestTake(t *testing.T) {
 
 		// The e2e run holds its gate: its peak counts as taken until it gives it back.
 		test, waits := run(t, g, "test", "", "go tool task test")
-		if why := await(t, waits, "reason"); why != "go tool task test peaks at 5.0 GiB, 8.0 GiB free, 3.1 GiB of it for the commands holding a gate" {
+		if why := await(t, waits, "reason"); why != "go tool task test peaks at 5.0 GiB, 8.0 GiB free, 3.2 GiB of it for the commands holding a gate" {
 			t.Errorf("the second heavy command waits because %q", why)
 		}
 		notGranted(t, test, "a command beside a heavy holder")
 		giveE2E()
 		await(t, test, "the second heavy command's grant")()
+	})
+
+	// A command that nothing measured holds a gate beside passes whatever its peak: waiting would free nothing for it.
+	// Beside one, it waits for the memory MemoryWait at most, then is admitted all the same, told why (W139).
+	t.Run("memory: alone passes, the wait is bounded", func(t *testing.T) {
+		t.Parallel()
+		f := &tasks{rank: map[string]int{"W1": 0, "W2": 0}}
+		m := calm()
+		m.setFree(18 * machine.GiB / 10)
+		g := New(m, peaks{"go tool task e2e": 12 * machine.GiB, "go vet ./...": 100 << 20}, f)
+		g.tick = 10 * time.Millisecond
+		g.memWait = 300 * time.Millisecond
+		g.Heavy(64*machine.GiB, time.Hour)
+
+		alone, _ := run(t, g, "e2e", "W1", "go tool task e2e")
+		await(t, alone, "the grant of a command alone")()
+
+		vet, _ := run(t, g, "vet", "", "go vet ./...")
+		giveVet := await(t, vet, "the vet's grant")
+		defer giveVet()
+		heavy, waits := run(t, g, "e2e", "W2", "go tool task e2e")
+		const short = "go tool task e2e peaks at 8.0 GiB (counted at 50% of 16.0 GiB), 1.8 GiB free, 100 MiB of it for the commands holding a gate"
+		if why := await(t, waits, "reason"); why != short {
+			t.Errorf("waits because %q", why)
+		}
+		await(t, heavy, "the grant past the memory wait")()
+		const forced = "admitted after 300ms waiting for memory, the most a command waits for it: " + short
+		if why := await(t, waits, "the reason it was admitted"); why != forced {
+			t.Errorf("admitted because %q", why)
+		}
+		if !slices.Contains(f.noted(), "W2 gate e2e: "+forced) {
+			t.Errorf("notes = %q", f.noted())
+		}
+	})
+
+	// Under macOS's warning pressure, a heavy command beside a measured holder waits, as long as for the memory at
+	// most, then is admitted, told why; a light one goes (Q86 A, W141). Back to normal, the heavy one goes at once.
+	t.Run("warning pressure: heavy waits, bounded", func(t *testing.T) {
+		t.Parallel()
+		f := &tasks{rank: map[string]int{"W1": 0, "W2": 0}}
+		m := calm()
+		m.setLevel(machine.MemoryWarning)
+		g := New(m, peaks{"go tool task e2e": 3 * machine.GiB, "go vet ./...": 100 << 20, "go tool task lint": 200 << 20}, f)
+		g.tick = 10 * time.Millisecond
+		g.memWait = 300 * time.Millisecond
+
+		alone, _ := run(t, g, "e2e", "W1", "go tool task e2e")
+		await(t, alone, "the grant of a heavy command alone")()
+
+		vet, _ := run(t, g, "vet", "", "go vet ./...")
+		giveVet := await(t, vet, "the vet's grant under warning")
+		defer giveVet()
+		light, _ := run(t, g, "lint", "", "go tool task lint")
+		await(t, light, "the light command's grant under warning")()
+
+		heavy, waits := run(t, g, "e2e", "W2", "go tool task e2e")
+		const short = "the system reports warning memory pressure, and go tool task e2e is heavy"
+		if why := await(t, waits, "reason"); why != short {
+			t.Errorf("waits because %q", why)
+		}
+		await(t, heavy, "the grant past the memory wait")()
+		const forced = "admitted after 300ms waiting for memory, the most a command waits for it: " + short
+		if why := await(t, waits, "the reason it was admitted"); why != forced {
+			t.Errorf("admitted because %q", why)
+		}
+	})
+	t.Run("warning pressure ends: heavy goes", func(t *testing.T) {
+		t.Parallel()
+		m := calm()
+		m.setLevel(machine.MemoryWarning)
+		g := New(m, peaks{"go tool task e2e": 3 * machine.GiB, "go vet ./...": 100 << 20}, nil)
+		g.tick = 10 * time.Millisecond
+		vet, _ := run(t, g, "vet", "", "go vet ./...")
+		giveVet := await(t, vet, "the vet's grant under warning")
+		defer giveVet()
+		heavy, waits := run(t, g, "e2e", "", "go tool task e2e")
+		await(t, waits, "reason")
+		notGranted(t, heavy, "a heavy command under warning")
+		m.setLevel(1)
+		await(t, heavy, "the heavy command's grant once the pressure is normal")()
+	})
+
+	// On macOS the pressure level judges the memory, not the GB free (L30): at normal pressure a command peaking past
+	// the memory available goes beside a measured holder; at warning, a light one goes too; at critical, all wait.
+	t.Run("macOS: the level decides, not the memory free", func(t *testing.T) {
+		t.Parallel()
+		m := calm()
+		m.setLevel(1)
+		m.setFree(18 * machine.GiB / 10)
+		g := New(m, peaks{"go tool task e2e": 7 * machine.GiB, "go vet ./...": 100 << 20, "go tool task lint": 200 << 20}, nil)
+		g.tick = 10 * time.Millisecond
+		g.memWait = time.Hour
+		vet, _ := run(t, g, "vet", "", "go vet ./...")
+		giveVet := await(t, vet, "the vet's grant")
+		defer giveVet()
+		heavy, _ := run(t, g, "e2e", "", "go tool task e2e")
+		await(t, heavy, "the grant of a 7 GB command beside a holder, 1.8 GB free, at normal pressure")()
+
+		m.setLevel(machine.MemoryWarning)
+		light, _ := run(t, g, "lint", "", "go tool task lint")
+		await(t, light, "the light command's grant at warning")()
+
+		m.setLevel(machine.MemoryCritical)
+		lint, waits := run(t, g, "lint", "", "go tool task lint")
+		const critical = "the machine is under pressure: the system reports critical memory pressure"
+		if why := await(t, waits, "reason"); why != critical {
+			t.Errorf("waits because %q", why)
+		}
+		notGranted(t, lint, "a light command at critical")
+		m.setLevel(1)
+		await(t, lint, "the grant once the pressure is normal")()
 	})
 
 	// A waiter that leaves is forgotten; the gate goes to the next one.
@@ -538,17 +730,13 @@ func TestSharedFirstOnEqualTimes(t *testing.T) {
 	f := &tasks{rank: map[string]int{"W1": 0, "W2": 0, "W3": 0, "W4": 0}}
 	g := New(box, &measured{costs: map[string]machine.Cost{"go tool task lint": {Peak: 300 << 20}}}, f)
 	g.tick = 10 * time.Millisecond
+	at := time.Now()
+	g.granted = func() time.Time { return at } // Set before any grant: keep reads a holder's grant time bare.
 	var gives []func()
 	for _, id := range []string{"W1", "W2", "W3", "W4"} {
 		c, _ := run(t, g, "lint", id, "go tool task lint")
 		gives = append(gives, await(t, c, id+"'s lint"))
 	}
-	g.mu.Lock()
-	at := time.Now()
-	for w := range g.shared {
-		w.since = at
-	}
-	g.mu.Unlock()
 	for range 50 {
 		if l := g.List(); len(l) != 1 || l[0].HolderTaskID != "W1" || l[0].Shared != 4 {
 			t.Fatalf("list = %+v", l)
@@ -694,7 +882,7 @@ func TestIntervals(t *testing.T) {
 			t.Errorf("%s: the first, with no wait: %v", when, iv)
 		}
 		if iv := byCommand["go vet ./..."]; iv.GetWaitCause() != machinev1.GateWaitCause_GATE_WAIT_CAUSE_HELD ||
-			!strings.HasPrefix(iv.GetWaitReason(), "held by W1: go test ./..., for ") || !iv.GetUnmeasured() {
+			!regexp.MustCompile(`^held by W1: go test \./\.\.\. \([0-9]+s\)$`).MatchString(iv.GetWaitReason()) || !iv.GetUnmeasured() {
 			t.Errorf("%s: the second, waiting for the first: %v", when, iv)
 		}
 		if iv := byCommand["npm ci"]; iv.GetMode() != machinev1.GateMode_GATE_MODE_SHARED || iv.GetGate() != Commands ||
@@ -719,4 +907,54 @@ func TestIntervals(t *testing.T) {
 	again := New(nil, nil, f)
 	again.Keep(machine.NewIntervals(db))
 	check(again, "after a restart")
+}
+
+// TestWaited: what a holder waited for names each reason in turn with its own time, its gate's label first; the
+// pressure and the memory, whose figures change as it waits, are one reason with their last figures; one admitted past
+// the memory wait says so in place of its memory; past five reasons, the first two, the last two, and how many between.
+func TestWaited(t *testing.T) {
+	t.Parallel()
+	const (
+		held     = machinev1.GateWaitCause_GATE_WAIT_CAUSE_HELD
+		pressure = machinev1.GateWaitCause_GATE_WAIT_CAUSE_PRESSURE
+		memory   = machinev1.GateWaitCause_GATE_WAIT_CAUSE_MEMORY
+	)
+	at := time.Date(2026, 11, 20, 10, 0, 0, 0, time.UTC)
+	stints := func(texts ...string) []stint {
+		out := make([]stint, len(texts))
+		for i, text := range texts {
+			out[i] = stint{text: text, kind: held, from: at.Add(time.Duration(i) * 10 * time.Second)}
+		}
+		return out
+	}
+	for _, c := range []struct {
+		name string
+		w    waiter
+		want string
+	}{
+		{"none", waiter{}, ""},
+		{"one, labelled", waiter{label: "stack (dolmen, .agents/djinn.yaml)", stints: stints("held by W2"), since: at.Add(11 * time.Second)},
+			"stack (dolmen, .agents/djinn.yaml): held by W2 (11s)"},
+		{"in turn", waiter{stints: stints("shared by W1", "held by W2"), since: at.Add(21 * time.Second)},
+			"shared by W1 (10s), then held by W2 (11s)"},
+		{"forced past the memory", waiter{
+			stints: []stint{{text: "held by W2", kind: held, from: at}, {text: "short of memory", kind: memory, from: at.Add(5 * time.Second)}},
+			since:  at.Add(65 * time.Second), forced: "admitted after 1m0s waiting for memory, the most a command waits for it: short of memory",
+		}, "held by W2 (5s), then admitted after 1m0s waiting for memory, the most a command waits for it: short of memory"},
+		{"many", waiter{stints: stints("a", "b", "c", "d", "e", "f"), since: at.Add(60 * time.Second)},
+			"a (10s), then b (10s), then 2 more, then e (10s), then f (10s)"},
+	} {
+		if got := c.w.waited(); got != c.want {
+			t.Errorf("%s: %q, want %q", c.name, got, c.want)
+		}
+	}
+
+	var w waiter
+	w.wait("the machine is under pressure: cpu 91%", pressure)
+	w.wait("the machine is under pressure: cpu 93%", pressure)
+	w.wait("held by W2", held)
+	w.wait("held by W2", held)
+	if len(w.stints) != 2 || w.stints[0].text != "the machine is under pressure: cpu 93%" || w.stints[1].text != "held by W2" {
+		t.Errorf("stints = %+v", w.stints)
+	}
 }

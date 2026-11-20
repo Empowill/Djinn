@@ -2,6 +2,7 @@ package machine
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"runtime"
 	"slices"
@@ -33,7 +34,7 @@ func WithSeriesWorkers(fn func(cutoff time.Time, gateIntervals []*machinev1.Gate
 }
 
 // WithSeriesIntervals sets the function returning the gate intervals released after cutoff, then those held now: every
-// admission when all is true (gate.Gates.Intervals, kept in the store for a week).
+// admission when all is true (gate.Gates.Intervals, kept in the store for three months).
 func WithSeriesIntervals(fn func(cutoff time.Time, all bool) []*machinev1.GateInterval) HandlerOption {
 	return func(s *service) { s.intervals = fn }
 }
@@ -52,6 +53,18 @@ func WithDiskFolders(fn func() []*machinev1.DiskFolder) HandlerOption {
 // WithDiskItems sets the function returning the known caches and stores on the machine, biggest first.
 func WithDiskItems(fn func() []*machinev1.DiskItem) HandlerOption {
 	return func(s *service) { s.diskItems = fn }
+}
+
+// WithDiskMeasure sets the functions telling when the disk was last measured whole and whether a measure is going
+// (the harness's DiskState), and measuring it again now (its MeasureDisk).
+func WithDiskMeasure(state func() (time.Time, bool), measure func() bool) HandlerOption {
+	return func(s *service) { s.diskState, s.measureDisk = state, measure }
+}
+
+// WithDiskFreeing sets the function telling how far the last pass freeing finished tasks' folders is (the harness's
+// Freeing).
+func WithDiskFreeing(fn func() *machinev1.DiskFreeing) HandlerOption {
+	return func(s *service) { s.diskFreeing = fn }
 }
 
 // Handler returns the Connect handler of MachineService on m, and its path prefix. running counts the workers that
@@ -76,6 +89,9 @@ type service struct {
 	network     func() *timestamppb.Timestamp
 	diskFolders func() []*machinev1.DiskFolder
 	diskItems   func() []*machinev1.DiskItem
+	diskState   func() (time.Time, bool)
+	measureDisk func() bool
+	diskFreeing func() *machinev1.DiskFreeing
 }
 
 func (s *service) disk(snap Snapshot) *machinev1.Disk {
@@ -95,16 +111,37 @@ func (s *service) disk(snap Snapshot) *machinev1.Disk {
 	case s.diskItems != nil:
 		items = s.diskItems()
 	}
-	if snap.Disk == nil && len(folders) == 0 && len(items) == 0 {
+	var freeing *machinev1.DiskFreeing
+	if s.diskFreeing != nil {
+		freeing = s.diskFreeing()
+	}
+	// A cascade shows in the window before the disk is measured: the band of a granted wish follows it.
+	if snap.Disk == nil && len(folders) == 0 && len(items) == 0 && freeing == nil {
 		return nil
 	}
-	out := &machinev1.Disk{Folders: folders, Items: items}
+	out := &machinev1.Disk{Folders: folders, Items: items, Freeing: freeing}
+	if s.diskState != nil {
+		at, measuring := s.diskState()
+		out.Measuring = measuring
+		if !at.IsZero() {
+			out.MeasureTime = timestamppb.New(at)
+		}
+	}
 	if d := snap.Disk; d != nil {
 		out.Path = d.Path
 		out.TotalBytes = d.Total
 		out.AvailableBytes = d.Available
 	}
 	return out
+}
+
+func (s *service) MeasureDisk(
+	context.Context, *connect.Request[machinev1.MachineServiceMeasureDiskRequest],
+) (*connect.Response[machinev1.MachineServiceMeasureDiskResponse], error) {
+	if s.measureDisk == nil {
+		return nil, connect.NewError(connect.CodeUnavailable, errors.New("no disk is measured here"))
+	}
+	return connect.NewResponse(&machinev1.MachineServiceMeasureDiskResponse{Already: s.measureDisk()}), nil
 }
 
 func (s *service) Show(
@@ -149,8 +186,9 @@ func (s *service) Show(
 	return connect.NewResponse(&machinev1.MachineServiceShowResponse{Machine: out}), nil
 }
 
-// SeriesMinutes are the ranges a series may be asked for: 10 and 30 minutes, 2 hours, a day, a week.
-var SeriesMinutes = []int32{10, 30, 120, 24 * 60, 7 * 24 * 60}
+// SeriesMinutes are the ranges a series may be asked for: 10 and 30 minutes, an hour (the Gates tab), 2 and 6 hours, a
+// day, a week.
+var SeriesMinutes = []int32{10, 30, 60, 120, 6 * 60, 24 * 60, 7 * 24 * 60}
 
 func (s *service) Series(
 	ctx context.Context, req *connect.Request[machinev1.MachineServiceSeriesRequest],

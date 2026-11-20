@@ -65,6 +65,17 @@ func TestService_Show(t *testing.T) {
 					t.Errorf("show: %v", got)
 				}
 			}},
+		// W147: the freeing pass comes before the disk is measured, for the cascade band of a granted wish.
+		{name: "freeing before the disk", notch: djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM,
+			s: Snapshot{Cores: 4, MemoryTotal: 8 * GiB, MemoryAvailable: 4 * GiB},
+			opts: []HandlerOption{WithDiskFreeing(func() *machinev1.DiskFreeing {
+				return &machinev1.DiskFreeing{Total: 2, Azimas: []*machinev1.DiskFreeingAzima{{WishId: "w1", Total: 2}}}
+			})},
+			check: func(t *testing.T, got *machinev1.Machine) {
+				if f := got.GetDisk().GetFreeing(); f.GetTotal() != 2 || len(f.GetAzimas()) != 1 {
+					t.Errorf("freeing = %v; want the pass", f)
+				}
+			}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -204,5 +215,67 @@ func TestService_Series(t *testing.T) {
 				t.Errorf("workers asked from %v, want after the first point", asked)
 			}
 		})
+	}
+}
+
+// TestService_SeriesMinutes: the gate intervals of a series are those of the window asked, an hour and 6 hours
+// included (the Gates tab reads the hour); a range not offered reads the default 30 minutes.
+func TestService_SeriesMinutes(t *testing.T) {
+	t.Parallel()
+	for minutes, want := range map[int32]time.Duration{60: time.Hour, 360: 6 * time.Hour, 45: 30 * time.Minute} {
+		var asked time.Time
+		client := serveMachine(t, nil, func() int { return 0 }, nil,
+			WithSeriesIntervals(func(cutoff time.Time, _ bool) []*machinev1.GateInterval { asked = cutoff; return nil }))
+		before := time.Now()
+		if _, err := client.Series(t.Context(), connect.NewRequest(&machinev1.MachineServiceSeriesRequest{Minutes: minutes})); err != nil {
+			t.Fatal(err)
+		}
+		if got := before.Sub(asked); got < want-time.Second || got > want+time.Second {
+			t.Errorf("%d minutes: intervals from %v ago, want %v", minutes, got, want)
+		}
+	}
+}
+
+// TestService_MeasureDisk (W135): the Disk tab's button measures the disk again through MeasureDisk, and Series says
+// when the disk was last measured and whether a measure goes.
+func TestService_MeasureDisk(t *testing.T) {
+	t.Parallel()
+	at := time.Date(2026, 11, 18, 14, 32, 0, 0, time.UTC)
+	asked, measuring := 0, false
+	client := serveMachine(t, nil, func() int { return 0 }, nil,
+		WithDiskFolders(func() []*machinev1.DiskFolder { return []*machinev1.DiskFolder{{Path: "/logs", SizeBytes: 1}} }),
+		WithDiskMeasure(func() (time.Time, bool) { return at, measuring }, func() bool {
+			asked++
+			already := measuring
+			measuring = true
+			return already
+		}))
+	series := func() *machinev1.Disk {
+		res, err := client.Series(t.Context(), connect.NewRequest(&machinev1.MachineServiceSeriesRequest{}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res.Msg.GetDisk()
+	}
+	if d := series(); !d.GetMeasureTime().AsTime().Equal(at) || d.GetMeasuring() {
+		t.Errorf("disk = %v; want measured at %v, not measuring", d, at)
+	}
+	for i, want := range []bool{false, true} {
+		res, err := client.MeasureDisk(t.Context(), connect.NewRequest(&machinev1.MachineServiceMeasureDiskRequest{}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res.Msg.GetAlready() != want {
+			t.Errorf("press %d: already = %v; want %v", i+1, res.Msg.GetAlready(), want)
+		}
+	}
+	if asked != 2 || !series().GetMeasuring() {
+		t.Errorf("asked %d times, measuring %v; want 2, true", asked, measuring)
+	}
+
+	// No disk measured here: the button is refused, not silent.
+	bare := serveMachine(t, nil, func() int { return 0 }, nil)
+	if _, err := bare.MeasureDisk(t.Context(), connect.NewRequest(&machinev1.MachineServiceMeasureDiskRequest{})); connect.CodeOf(err) != connect.CodeUnavailable {
+		t.Errorf("MeasureDisk without a disk: %v; want unavailable", err)
 	}
 }

@@ -41,6 +41,8 @@ import (
 	uiv1 "github.com/empowill/djinn/gen/go/ui/v1"
 	"github.com/empowill/djinn/gen/go/ui/v1/uiv1connect"
 	"github.com/empowill/djinn/internal/cli"
+	"github.com/empowill/djinn/internal/lockx"
+	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/machine"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/server"
@@ -345,11 +347,48 @@ func TestRunUp(t *testing.T) {
 		{"a crash holds the workers", upCrashHoldsTheWorkers},
 		{"--paused holds the workers once", upPausedHoldsTheWorkers},
 		{"memory near full holds the workers", upMemoryHoldsTheWorkers},
+		{"a docker that does not answer delays no start", upDockerSlowDelaysNoStart},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
 			c.run(t)
 		})
+	}
+}
+
+// upDockerSlowDelaysNoStart: the containers a past run left are removed in the background: a docker that does not
+// answer, as a Windows runner's daemon (W80), delays no start. djinn up answers while it still runs; with the removal
+// on the way, it would wait for its half minute first, past answering's deadline.
+func upDockerSlowDelaysNoStart(t *testing.T) {
+	home, bin := t.TempDir(), t.TempDir()
+	pidFile := filepath.Join(t.TempDir(), "docker.pid")
+	script := "#!/bin/sh\necho $$ > '" + pidFile + "'\nexec sleep 120\n"
+	if err := os.WriteFile(filepath.Join(bin, "docker"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if b, err := os.ReadFile(pidFile); err == nil {
+			if pid, err := strconv.Atoi(strings.TrimSpace(string(b))); err == nil {
+				_ = syscall.Kill(pid, syscall.SIGKILL)
+			}
+		}
+	})
+	up(t, home, environ(home, bin))
+	var b []byte
+	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+		if b, _ = os.ReadFile(pidFile); strings.HasSuffix(string(b), "\n") {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("djinn up never asked docker for the containers left")
+		}
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(b)))
+	if err != nil {
+		t.Fatalf("the fake docker's pid %q: %v", b, err)
+	}
+	if err := syscall.Kill(pid, 0); err != nil {
+		t.Fatalf("djinn up answered once docker had ended (%v): its start waited for it", err)
 	}
 }
 
@@ -399,6 +438,62 @@ func upReplacesTheAddressOfACrash(t *testing.T) {
 	addr := answering(t, home, errs.String)
 	if addr == stale || !strings.Contains(errs.String(), "did not stop cleanly") {
 		t.Fatalf("address %q after a crash, stderr:\n%s", addr, errs.String())
+	}
+}
+
+// TestUpRefusesAHeldDataFolder: a djinn up whose data folder another holds, at an address that does not answer (a
+// djinn up under wine, W83), ends before it writes anything there: the address stays, no crash file. Once the lock
+// goes, the dead address is a djinn up that did not stop cleanly, as before the lock.
+func TestUpRefusesAHeldDataFolder(t *testing.T) {
+	t.Parallel()
+	home := t.TempDir()
+	// A port that was open, and no longer is: what a djinn under wine wrote, which this one cannot reach.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dead := "http://" + ln.Addr().String() + "/?token=wine"
+	ln.Close()
+	if _, err := server.WriteAddr(home, dead); err != nil {
+		t.Fatal(err)
+	}
+	addrFile := filepath.Join(home, server.AddrFile)
+	before, err := os.Stat(addrFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	held, err := lockx.Hold(filepath.Join(home, server.LockFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	env := environ(home, t.TempDir())
+	code, out, errs := runDjinn(t, env, "up")
+	if code != 1 || !strings.Contains(errs, "another djinn up holds the data folder "+home) {
+		t.Fatalf("djinn up on a held data folder: exit %d, want 1 saying another holds it\n%s%s", code, out, errs)
+	}
+	if b, err := os.ReadFile(addrFile); err != nil || strings.TrimSpace(string(b)) != dead {
+		t.Errorf("the address after a refused djinn up: %q, %v; want %q", b, err, dead)
+	}
+	if after, err := os.Stat(addrFile); err != nil || !after.ModTime().Equal(before.ModTime()) {
+		t.Errorf("a refused djinn up wrote the address again: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(logx.Folder(home), logx.CrashFile)); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("a refused djinn up made its crash file: %v", err)
+	}
+	if err := held.Release(); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(os.Args[0], "up")
+	cmd.Env = env
+	stderr := &buffer{}
+	cmd.Stderr = stderr
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = cmd.Process.Signal(syscall.SIGINT); _ = cmd.Wait() })
+	addr := answering(t, home, stderr.String)
+	if addr == dead || !strings.Contains(stderr.String(), "did not stop cleanly") {
+		t.Fatalf("address %q once the lock went, stderr:\n%s", addr, stderr.String())
 	}
 }
 

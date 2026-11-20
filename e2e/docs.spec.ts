@@ -299,7 +299,7 @@ test("the Grimoire opens from the menu as a page of the window, not a modal, in 
   await page.emulateMedia({ colorScheme: "light" });
   await page.goto(djinnURL());
   // The settings lead to it no more: the side panel's Grimoire does, just under the Hourglass.
-  await page.getByTitle("Connections & preferences").click();
+  await page.getByRole("button", { name: "Connections & preferences" }).click();
   await expect(page.getByRole("dialog")).toBeVisible();
   await expect(page.getByRole("dialog").getByText("Documentation")).toHaveCount(
     0,

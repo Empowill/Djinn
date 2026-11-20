@@ -229,7 +229,7 @@ included, so the session that builds Djinn can move into Djinn and keep going.
   (`TestCrashReopensTheLeads`: a test djinn killed by its PID with SIGKILL, then started again, runs the fake
   `claude --resume <session>` in its folder and shows it; stopped with SIGTERM, the note is gone and the next one starts
   no claude; `TestChangedFollowsWhatRuns`).
-- [x] Every start resumes the lead of the first active wish, as `djinn wish resume` does (its provider's resume
+- [x] Every start resumes the lead of the first active wish, as `djinn lead resume` does (its provider's resume
   line, in its folder, never the home folder), unless a lead came back already: from a menu, after a Quit, after
   an update whose lead was in another terminal. (`cmd/djinn/firstlead.go`; `TestCrashReopensTheLeads`, its last
   step)
@@ -303,8 +303,8 @@ included, so the session that builds Djinn can move into Djinn and keep going.
   lines, `djinn wish describe`, edited in the wish's head), its azimas, what runs and waits, its open questions, its
   latest decisions and blocks, the last lead and when a lead last acted (the journal's latest spawn, block, question…
   that names no worker), then the rules. No lead writes a hand-off for the next one: the plan is the hand-off.
-  Picking the recorded lead's agent resumes its session; another agent starts a new lead (`WishService.Resume` with
-  `provider`). A new claude lead becomes the wish's lead; codex once `djinn wish set-lead` gives its session; an
+  Picking the recorded lead's agent resumes its session; another agent starts a new lead (`LeadService.Resume` with
+  `provider`). A new claude lead becomes the lead; codex once `djinn lead set` gives its session; an
   antigravity lead cannot be resumed, so the record stays. A terminal that runs a program is never replaced: the note
   says to exit it there.
 - **Restart**: the running terminals are noted in `restart.json` (name, the exact command line, folder) and run

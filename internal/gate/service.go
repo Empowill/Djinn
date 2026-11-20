@@ -1,6 +1,7 @@
 package gate
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"net/http"
@@ -17,13 +18,18 @@ import (
 )
 
 // Handler returns the Connect handler of GateService on g, and its path prefix.
-func Handler(g *Gates) (string, http.Handler) {
-	return machinev1connect.NewGateServiceHandler(&service{g: g}, connect.WithInterceptors(plan.WorkerGuard, plan.Validate))
+func Handler(g *Gates, opts ...HandlerOption) (string, http.Handler) {
+	s := &service{g: g}
+	for _, o := range opts {
+		o(s)
+	}
+	return machinev1connect.NewGateServiceHandler(s, connect.WithInterceptors(plan.WorkerGuard, plan.Validate))
 }
 
 type service struct {
 	machinev1connect.UnimplementedGateServiceHandler
-	g *Gates
+	g    *Gates
+	past Past
 }
 
 // Hold takes the gate, says why it waits, then that it holds it, and gives it back when the call ends: the
@@ -89,7 +95,7 @@ func (s *service) Admit(
 		return err
 	}
 	agent, match := int(req.Msg.GetAgentPid()), req.Msg.GetMatch()
-	_, err = s.g.Take(ctx, Request{
+	hold, err := s.g.Take(ctx, Request{
 		Shared: true, TaskID: taskID, What: req.Msg.GetWhat(), Dir: req.Msg.GetDirectory(),
 		Find: func(skip func(int) bool) int { return machine.FindCommand(agent, match, skip) },
 	}, func(why string) {
@@ -102,7 +108,10 @@ func (s *service) Admit(
 		return plan.Status(err)
 	}
 	// Held until the command's shell ends (keep), not until this call does: the hook ends now, and the command runs.
-	return stream.Send(&machinev1.GateServiceAdmitResponse{State: machinev1.GateState_GATE_STATE_HELD, Reason: "admitted"})
+	// What it waited for, each reason with its own time: the last reason told, named as it began, would be stale (W174).
+	return stream.Send(&machinev1.GateServiceAdmitResponse{
+		State: machinev1.GateState_GATE_STATE_HELD, Reason: cmp.Or(hold.Waited(), "admitted"),
+	})
 }
 
 // ownTask is the task a call names, a worker's own when it names none; a worker naming another's is refused.
@@ -127,6 +136,7 @@ func (s *service) List(
 		gate := &machinev1.Gate{
 			Name: st.Name, Holder: st.Holder, HolderTaskId: st.HolderTaskID, Waiting: st.Waiting,
 			WaitingTaskIds: st.WaitingTaskIDs, TakesSlot: st.TakesSlot, Resources: st.Use, Ifrit: st.Ifrit,
+			Project: st.Project, WaitingProjects: st.WaitingProjects,
 		}
 		if !st.Since.IsZero() {
 			gate.Since = timestamppb.New(st.Since)

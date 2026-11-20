@@ -174,12 +174,13 @@ func times(s string) string {
 	return regexp.MustCompile(`[0-9][0-9.hms]*s\b`).ReplaceAllString(s, "Ns")
 }
 
-// box is a fake machine of 8 cores and 16 GiB, under the default policy; a test sets its CPU pressure and the
-// memory free as it goes.
+// box is a fake machine of 8 cores and 16 GiB, under the default policy; a test sets its CPU pressure, the memory
+// free and macOS's memory pressure level as it goes.
 type box struct {
-	mu   sync.Mutex
-	cpu  float64 // percent of the last 10 s tasks waited for the CPU
-	free uint64
+	mu    sync.Mutex
+	cpu   float64 // percent of the last 10 s tasks waited for the CPU
+	free  uint64
+	level int // macOS's memory pressure level; 0 like Linux
 }
 
 // squeezed says the CPU pressure of a box under pressure.
@@ -192,8 +193,16 @@ func (b *box) Snapshot() machine.Snapshot {
 	defer b.mu.Unlock()
 	return machine.Snapshot{
 		Cores: 8, MemoryTotal: 16 * machine.GiB, MemoryAvailable: b.free,
-		CPU: &machine.Pressure{Some: b.cpu}, Memory: &machine.Pressure{},
+		CPU: &machine.Pressure{Some: b.cpu}, Memory: &machine.Pressure{}, MemoryLevel: b.level, OS: b.os(),
 	}
+}
+
+// os is the box's system: macOS once it reports a memory pressure level, Linux before.
+func (b *box) os() string {
+	if b.level > 0 {
+		return "darwin"
+	}
+	return "linux"
 }
 
 func (b *box) Policy() machine.Policy { return machine.DefaultPolicy() }
@@ -207,11 +216,23 @@ func (b *box) squeeze(on bool) {
 	}
 }
 
+func (b *box) setLevel(level int) {
+	b.mu.Lock()
+	b.level = level
+	b.mu.Unlock()
+}
+
 func (b *box) setFree(free uint64) {
 	b.mu.Lock()
 	b.free = free
 	b.mu.Unlock()
 }
+
+// loaded is a machine whose reading never changes.
+type loaded struct{ s machine.Snapshot }
+
+func (l loaded) Snapshot() machine.Snapshot { return l.s }
+func (l loaded) Policy() machine.Policy     { return machine.DefaultPolicy() }
 
 // peaks is fake costs: the highest peak memory of each command measured, wherever it runs.
 type peaks map[string]uint64

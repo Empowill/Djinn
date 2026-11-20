@@ -2,6 +2,7 @@ package plan
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -32,9 +33,13 @@ func CleanContext(context string) string {
 
 // CleanVersions cuts from every stored question the history Revise appended to its context until W114, in its
 // context and in its rounds' (CleanContext), each change journaled: run as djinn up opens the store, it changes
-// nothing once done.
+// nothing once done. The questions or the journal not migrated at start (store.ErrUnmigrated) leave the cleaning to a
+// later start: the store warned already, and djinn up goes on (Q42).
 func CleanVersions(ctx context.Context, s *store.Store) error {
 	questions, err := store.List[*planv1.Question](ctx, s, nil)
+	if errors.Is(err, store.ErrUnmigrated) {
+		return nil
+	}
 	if err != nil {
 		return err
 	}
@@ -57,7 +62,9 @@ func CleanVersions(ctx context.Context, s *store.Store) error {
 				return err
 			}
 			return tx.Put(q)
-		}); err != nil {
+		}); errors.Is(err, store.ErrUnmigrated) {
+			return nil
+		} else if err != nil {
 			return fmt.Errorf("clean the versions of %s: %w", q.GetCode(), err)
 		}
 	}
@@ -141,6 +148,11 @@ func (q *Questions) Revise(
 			}
 			if len(m.GetSleepUntil()) > 0 {
 				if err := sleepUntil(ctx, tx, question, m.GetSleepUntil(), round.GetCreateTime().AsTime()); err != nil {
+					return err
+				}
+			}
+			if len(m.GetHolds()) > 0 {
+				if err := setHolds(ctx, tx, question, m.GetHolds()); err != nil {
 					return err
 				}
 			}

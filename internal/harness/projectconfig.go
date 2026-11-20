@@ -42,10 +42,43 @@ func (h *Harness) projectContainers(project *planv1.Project) (*djinnv1.Container
 	return read.Config.GetContainers(), read.File
 }
 
+// projectAdmits says whether the commands of project's workers wait for their admission by the gates: unless its
+// djinn.yaml, read on the reference branch, says admit: false under gates_options (W139). A file that does not read
+// admits them, Djinn's default; projectContainers warns of it.
+func (h *Harness) projectAdmits(project *planv1.Project) bool {
+	if project == nil {
+		return true
+	}
+	dir := plan.ConfigDir(h.home, project)
+	if dir == "" {
+		return true
+	}
+	read, err := plan.ReadProjectConfig(dir)
+	if err != nil {
+		return true
+	}
+	if options := read.Config.GetGatesOptions(); options == nil || options.Admit == nil || options.GetAdmit() {
+		return true
+	}
+	warnProjectConfig(project, project.GetId()+"\x00admit", "the project's workers' commands wait for no admission by the gates",
+		"file", read.File)
+	return false
+}
+
 // warnProjectConfig logs msg about project's djinn.yaml, once per key.
 func warnProjectConfig(project *planv1.Project, key, msg string, args ...any) {
 	if _, seen := projectConfigWarned.LoadOrStore(key, true); seen {
 		return
 	}
 	logx.L().Warn(msg, append([]any{"project", project.GetId()}, args...)...)
+}
+
+// ProjectGates are the gates project declares in its djinn.yaml, as Djinn applies them on this machine
+// (plan.LoadProjectGates): what is wrong in the declaration, a gate left out, a pattern of one word, is warned once.
+func (h *Harness) ProjectGates(project *planv1.Project) plan.ProjectGates {
+	read := plan.LoadProjectGates(h.home, project)
+	for _, w := range read.Warnings {
+		warnProjectConfig(project, project.GetId()+"\x00gates\x00"+w, "Djinn's gates: "+w, "file", read.File)
+	}
+	return read
 }

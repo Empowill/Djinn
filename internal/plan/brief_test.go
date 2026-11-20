@@ -36,9 +36,9 @@ func TestBrief(t *testing.T) {
 		}
 	}
 	// The checks Djinn runs on the project's work, which the lead and each worker learn.
-	writeSettings(t, filepath.Join(repo, SettingsFile), "setup: \"npm ci\"\ninstall_questions: when_needed\n"+
-		"checks { name: \"lint\" command: \"go tool task lint\" when: CHECK_WHEN_COMMIT }\n"+
-		"checks { name: \"test\" command: \"go tool task test\" when: CHECK_WHEN_PUSH }\n")
+	writeSettings(t, filepath.Join(repo, ProjectConfigFiles[1]), teamYAML("setup: npm ci\ninstall_questions: when_needed\n"+
+		"checks:\n  - {name: lint, command: go tool task lint, when: commit}\n"+
+		"  - {name: test, command: go tool task test, when: push}\n"))
 	// A description and an azima, which the wish's part opens with.
 	description := "Ship the API to the shop.\nScope: the store, not the web."
 	if _, err := c.wishes.Describe(ctx, connect.NewRequest(&planv1.WishServiceDescribeRequest{WishId: wish.GetId(), Text: description})); err != nil {
@@ -893,7 +893,7 @@ func TestBriefRules(t *testing.T) {
 			var projects []*planv1.Project
 			if tc.install != planv1.InstallQuestions_INSTALL_QUESTIONS_UNSPECIFIED {
 				repo := t.TempDir()
-				writeSettings(t, filepath.Join(repo, SettingsFile), "install_questions: "+InstallQuestionsWord(tc.install)+"\n")
+				writeSettings(t, filepath.Join(repo, ProjectConfigFiles[1]), teamYAML("install_questions: "+InstallQuestionsWord(tc.install)+"\n"))
 				projects = []*planv1.Project{{Name: "djinn", Directory: repo}}
 			}
 			home := t.TempDir()
@@ -1044,7 +1044,7 @@ func TestGlobalBrief(t *testing.T) {
 	if err := os.MkdirAll(repo, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	writeSettings(t, filepath.Join(repo, SettingsFile), "install_questions: never\n")
+	writeSettings(t, filepath.Join(repo, ProjectConfigFiles[1]), teamYAML("install_questions: never\n"))
 	if _, err := c.projects.Add(ctx, connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: repo})); err != nil {
 		t.Fatal(err)
 	}

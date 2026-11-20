@@ -53,3 +53,10 @@ test("a key keeps its text and wakes no one, unless the pill shows something new
   assert.equal(heard, 2, "a blank box disables Send");
   assert.equal(draft.begin(), undefined);
 });
+
+test("a file pasted alone sends with a blank text", () => {
+  const draft = createDraft();
+  draft.set({ text: " ", files: [{ id: "1", file: {} }] });
+  assert.equal(draft.begin(), "", "the files go without a word");
+  assert.equal(draft.get().busy, true);
+});

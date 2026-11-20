@@ -561,6 +561,8 @@ func TestHoldPush(t *testing.T) {
 		if w2ID == "" {
 			t.Fatalf("the push %v; want corrected by a worker", in.pushState(t))
 		}
+		// Stopped before its worker said its session, it would have none to resume (W73: red on CI).
+		in.follow(t, w2ID)("its worker said its session", saidSession(w2ID))
 
 		if _, err := in.tasks.Stop(t.Context(), connect.NewRequest(&planv1.TaskServiceStopRequest{TaskId: w2ID})); err != nil {
 			t.Fatal(err)
@@ -588,8 +590,8 @@ func TestHoldPush(t *testing.T) {
 		if state, hold := in.pushState(t), in.hold(t); hold.GetHeld() != "" || hold.GetCorrectedBy() != "" || state.GetQuestionId() != "" {
 			t.Errorf("after the push, the push still held: %v", state)
 		}
-		if qs := in.questions(t); len(qs) != 0 {
-			t.Errorf("questions %v; want none", qs)
+		if qs := slices.DeleteFunc(in.questions(t), pullRequestQuestion); len(qs) != 0 {
+			t.Errorf("questions %v; want none but the pull request's", qs)
 		}
 		tasks, err := store.List[*planv1.Task](t.Context(), in.db, store.Where{"wish_id": in.wishID})
 		if err != nil {

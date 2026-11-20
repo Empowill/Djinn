@@ -2,6 +2,7 @@ package bigwish_test
 
 import (
 	"bytes"
+	"fmt"
 	"slices"
 	"testing"
 
@@ -124,7 +125,7 @@ func TestData(t *testing.T) {
 }
 
 // testImport: the store takes the real size through WishService.ImportData, as djinn wish import does, and gives it
-// back whole through WishService.Snapshot. With fewer events: the 27 000 of the real size take 4 s to import (a
+// back through WishService.Snapshot, the events left out: they stay in the store, where a task's page reads them. With fewer events: the 27 000 of the real size take 4 s to import (a
 // statement prepared for each Put), past what a unit test may take; their shape is the same at any count.
 func testImport(t *testing.T) {
 	size := bigwish.Real
@@ -152,10 +153,10 @@ func testImport(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, want := snap.Msg.GetExport(), bigwish.Make(size)
-	if len(got.GetTasks()) != len(want.GetTasks()) || len(got.GetEvents()) != len(want.GetEvents()) ||
+	if len(got.GetTasks()) != len(want.GetTasks()) || len(got.GetEvents()) != 0 ||
 		len(got.GetCommands()) != len(want.GetCommands()) {
-		t.Fatalf("read back %d tasks, %d events, %d commands; want %d, %d, %d", len(got.GetTasks()), len(got.GetEvents()),
-			len(got.GetCommands()), len(want.GetTasks()), len(want.GetEvents()), len(want.GetCommands()))
+		t.Fatalf("read back %d tasks, %d events, %d commands; want %d, 0, %d", len(got.GetTasks()), len(got.GetEvents()),
+			len(got.GetCommands()), len(want.GetTasks()), len(want.GetCommands()))
 	}
 	for i, q := range want.GetQuestions() {
 		if !proto.Equal(got.GetQuestions()[i], q) {
@@ -167,9 +168,20 @@ func testImport(t *testing.T) {
 			t.Fatalf("block %d read back as %v", i, got.GetBlocks()[i])
 		}
 	}
+	stored, err := store.List[*planv1.TaskEvent](ctx, s, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stored) != len(want.GetEvents()) {
+		t.Fatalf("%d events stored, want %d", len(stored), len(want.GetEvents()))
+	}
+	byKey := map[string]*planv1.TaskEvent{}
+	for _, e := range stored {
+		byKey[fmt.Sprint(e.GetTaskId(), e.GetSeq())] = e
+	}
 	for i, e := range want.GetEvents() {
-		if !proto.Equal(got.GetEvents()[i], e) {
-			t.Fatalf("event %d read back as %v", i, got.GetEvents()[i])
+		if g := byKey[fmt.Sprint(e.GetTaskId(), e.GetSeq())]; !proto.Equal(g, e) {
+			t.Fatalf("event %d read back as %v", i, g)
 		}
 	}
 	for i, c := range want.GetCommands() {

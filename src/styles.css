@@ -218,11 +218,14 @@ button {
   justify-content: space-between;
   padding: 0 0.4375rem;
 }
+/* The EARLY ACCESS tag sits under the wordmark, in line with its letters: beside it, it would not fit with the toggle
+   (W61). */
 .sidebar-brand-main {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: flex-start;
   min-width: 0;
-  gap: 0.75rem;
+  gap: 0.25rem;
 }
 .sidebar-toggle {
   display: inline-flex;
@@ -297,13 +300,21 @@ html[data-theme="light"] .wordmark-period {
   width: 1.5rem;
   height: 1.5rem;
 }
+/* Under the pointer it says the running Djinn's version (L10 A). */
 .version-tag {
-  font: var(--font-size-body, 0.75rem) var(--mono);
+  margin-left: 2.375rem;
+  font: var(--font-size-body, 0.75rem) / 1.2 var(--mono);
   color: var(--n-79);
   letter-spacing: 0.4px;
+  white-space: nowrap;
   border: 1px solid var(--n-33);
   border-radius: 0.1875rem;
-  padding: 0.25rem 0.3125rem;
+  padding: 0.125rem 0.3125rem;
+  cursor: default;
+}
+.version-tag:hover {
+  border-color: var(--n-47);
+  color: var(--n-de);
 }
 .new-mission {
   display: flex;
@@ -458,12 +469,20 @@ html[data-theme="light"] .wordmark-period {
 .profile > span:nth-child(2) {
   font-size: var(--font-size-body, 0.75rem);
   flex: 1;
+  min-width: 0;
 }
+/* A long version (local-v0.1.0-3-g1a2b3c4-dirty) ends in an ellipsis: the tooltip gives it whole (L10 B). */
 .profile small {
   display: block;
   color: var(--n-8f);
   font-size: var(--font-size-body, 0.75rem);
   margin-top: 0.1875rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.profile-version {
+  font-family: var(--mono);
 }
 .profile > svg {
   color: var(--n-79);
@@ -1755,6 +1774,8 @@ html[data-still] .djinn-eye-flame,
 html[data-still] .djinn-eye-lid,
 html[data-still] .lead-side-log-line,
 html[data-still] .motes i,
+html[data-still] .gates-seal-orbit,
+html[data-still] .gates-seal-flame,
 html[data-still] #djinn-splash * {
   animation-play-state: paused !important;
 }
@@ -1802,14 +1823,17 @@ html[data-still] .operating-load * {
   .sidebar {
     --sidebar-pad: 0.6875rem;
   }
-  .version-tag {
-    font-size: var(--font-size-body, 0.75rem);
-  }
   .sidebar-brand {
     padding: 0 0.1875rem;
   }
   .brand {
     font-size: 1.6875rem;
+  }
+  /* The panel is narrower: a tighter tag keeps clear of the toggle (W115). Its size stays: on Linux a mono letter
+     takes 7px at 11px as at 12px, the advance rounded to the pixel. */
+  .version-tag {
+    letter-spacing: 0;
+    padding: 0.125rem 0.25rem;
   }
   .new-mission {
     font-size: var(--font-size-body, 0.75rem);
@@ -1882,6 +1906,10 @@ html[data-still] .operating-load * {
 @media (max-width: 1080px) {
   .app {
     --sidebar-width: 11.875rem;
+  }
+  /* Its narrowest unfolded: the brand takes the panel's padding only, so that the tag keeps clear of the toggle (W115). */
+  .sidebar-brand {
+    padding: 0;
   }
   .overview-content {
     padding: 0 1.875rem 1.5625rem;
@@ -2103,10 +2131,6 @@ html[data-motion="reduced"] *::after {
   font-size: 1.5625rem;
 }
 .form-tip {
-  display: none;
-}
-
-.version-tag {
   display: none;
 }
 
@@ -2633,6 +2657,14 @@ html.native-mac .app .page-header {
   pointer-events: none;
   white-space: normal;
 }
+/* The lines under a tooltip's text: the version and where it comes from (W61). */
+.app-tooltip-line {
+  display: block;
+  margin-top: 0.125rem;
+  color: var(--n-a9);
+  font-family: var(--mono);
+  overflow-wrap: anywhere;
+}
 .app-tooltip .key-hint {
   flex: 0 0 auto;
   white-space: nowrap;
@@ -2684,6 +2716,7 @@ html.native-mac .app .page-header {
   .workspace-action-leading,
   .workspace-action-send,
   .workspace-action-close,
+  .lead-file-remove,
   .review .question-row .option-letter,
   .view-tabs > button:not(.active)
 ) {
@@ -2736,7 +2769,8 @@ html.native-mac .app .page-header {
   .operating-load-stop,
   .workspace-action-leading,
   .workspace-action-send,
-  .workspace-action-close
+  .workspace-action-close,
+  .lead-file-remove
 )::after {
   content: "";
   position: absolute;
@@ -2791,6 +2825,7 @@ html.native-mac .app .page-header {
     .workspace-action-leading,
     .workspace-action-send:not(:disabled),
     .workspace-action-close,
+    .lead-file-remove:not(:disabled),
     .view-tabs > button
   ):hover::after,
 :where(.review .question-row .option:hover .option-letter)::after {

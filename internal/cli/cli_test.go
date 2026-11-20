@@ -211,6 +211,19 @@ func (f projects) PushStrategy(_ context.Context, req *connect.Request[planv1.Pr
 	}), nil
 }
 
+// Gates is a project whose config_branch names a branch with one gate, as W191's handler answers it.
+func (f projects) Gates(_ context.Context, req *connect.Request[planv1.ProjectServiceGatesRequest]) (*connect.Response[planv1.ProjectServiceGatesResponse], error) {
+	f.record(req.Msg)
+	return connect.NewResponse(&planv1.ProjectServiceGatesResponse{
+		Gates:         []*djinnv1.ProjectGate{{Name: "stack", Alone: []string{"task run-back"}}},
+		File:          ".agents/djinn.yaml",
+		DeveloperFile: "/home/dev/.config/djinn/projects/p/settings.txtpb",
+		Read:          "Read .agents/djinn.yaml on origin/djinn/gates (859701c00a).",
+		Ref:           "origin/djinn/gates",
+		ConfigBranch:  "djinn/gates",
+	}), nil
+}
+
 type wishes struct {
 	planv1connect.UnimplementedWishServiceHandler
 	*fake
@@ -458,6 +471,23 @@ func TestJSONOnly(t *testing.T) {
 				t.Errorf("request = %v", got)
 			}
 		})
+	}
+}
+
+// TestHeadlineFirst (W192): djinn project gates prints its read line first, though read is numbered after the gates,
+// the file and the developer's settings file; the other fields keep their order.
+func TestHeadlineFirst(t *testing.T) {
+	t.Parallel()
+	_, run := serve(t)
+	code, out, errs := run("project", "gates", "api")
+	want := "read: Read .agents/djinn.yaml on origin/djinn/gates (859701c00a).\n" +
+		"gates:\n  - name: stack\n    alone:\n      - task run-back\n" +
+		"file: .agents/djinn.yaml\n" +
+		"developer_file: /home/dev/.config/djinn/projects/p/settings.txtpb\n" +
+		"ref: origin/djinn/gates\n" +
+		"config_branch: djinn/gates\n"
+	if code != 0 || out != want {
+		t.Errorf("djinn project gates: code %d, stderr %s\nstdout:\n%s\nwant:\n%s", code, errs, out, want)
 	}
 }
 

@@ -19,7 +19,7 @@ and it ends when you say it is granted.
 | Merged work | Each task's work once merged, to review. | The Review tab |
 | Tilasms | The material that explains the wish: pages, diagrams, demonstrations. | The Tilasms tab |
 | Blocks | What the Djinn and the workers write down for one another. | The For agents tab |
-| History | The commands run for the wish, and the batches of the driven Djinn that touched it. | The History tab |
+| History | The commands run for the wish, and the batches of the driven Djinn that touched it. It follows the wish as it changes, every five seconds at most. | The History tab |
 
 Djinn keeps all of it, and the Djinn reads where the wish stands each time it turns to it: a wish is its own memory,
 and what was decided a week ago is still there, with why.
@@ -121,6 +121,15 @@ Only you grant a wish; Djinn never grants a wish by itself, not even one made fr
 work is done. When you click **My wish is granted**, the Djinn folds back into the spout of the lamp under the Khatam
 seal and leaves the wish's summary card at the top of the archive — its tasks, tilasms, decisions, duration, cumulative
 worker cost, and the Djinn's closing word — with **Reopen** to bring it back if something was left.
+
+Granting also frees the disk at once: Djinn removes, azima by azima, the worktree, scratch and local branch of every
+finished task of the wish (see the task page for what stays). A band under the wish's header follows this cascade: one
+segment per azima, green when freed, hatched amber when something was kept, the total freed on the right, and below
+each azima what it freed, or what it kept and why — a worktree with changes not committed, a local branch with commits
+not pushed, its only copy. A small wish still shows for a moment: each azima stays on screen 350 ms at least and the
+whole cascade 2.5 seconds; only the display waits, never the cleanup. Eight seconds after the end, the band folds into
+a one-line summary (what it freed, how many azimas it cleared, how many it kept of), which opens the detail again on a
+click. A wish opened long after its grant shows the summary only, while it is the last cleanup Djinn ran.
 
 ## Deleting a wish
 

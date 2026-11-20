@@ -475,3 +475,134 @@ test("in the Circle, a threshold chosen goes to Djinn at once (LoadService.SetBr
       if (handle?.constructor?.name === "MessagePort") handle.unref();
   }
 });
+
+// The Circle's tab of the workers' instructions (W114, Q70 B): this machine's text for each kind, the default of every
+// project; a text set shows Remove, a kind without its own says it takes the general text.
+test("the Circle's instructions tab: one field per kind, the general first, Remove where this machine sets a text", () => {
+  const html = s.renderToStaticMarkup(
+    h(s.SummoningCircle, {
+      initialRows: [],
+      initialAgents: {
+        env: environment(),
+        checking: false,
+        error: "",
+        check() {},
+        setPaused() {},
+        order: [],
+        usage: [],
+      },
+      initialTasks: [],
+      initialTab: "instructions",
+      initialInstructions: {
+        general: "Run the tasks, not the tools.",
+        mockup: "Both themes.",
+      },
+    }),
+  );
+  assert.deepEqual(
+    [
+      ...html.matchAll(
+        /role="tab"[^>]*aria-selected="(true|false)"[^>]*>([^<]+)/g,
+      ),
+    ].map((m) => `${m[2]}${m[1] === "true" ? " *" : ""}`),
+    ["Agents and models", "Workers&#x27; instructions *"],
+  );
+  assert.doesNotMatch(html, /Models by worker kind/);
+  assert.deepEqual(
+    [...html.matchAll(/data-instruction="([a-z]+)"/g)].map((m) => m[1]),
+    ["general", "work", "investigation", "mockup", "ifrit"],
+  );
+  const row = (name) => {
+    const start = html.indexOf(`data-instruction="${name}"`);
+    const next = html.indexOf("data-instruction=", start + 1);
+    return html.slice(start, next > 0 ? next : undefined);
+  };
+  assert.match(row("general"), />Run the tasks, not the tools\.<\/textarea>/);
+  assert.match(row("general"), />Remove</);
+  assert.match(row("mockup"), />Both themes\.<\/textarea>/);
+  assert.match(
+    row("work"),
+    /placeholder="Nothing of its own: the general text\."/,
+  );
+  assert.doesNotMatch(row("work"), />Remove</);
+});
+
+test("in the Circle, a text saved goes to Djinn (LeadService.Instructions), and the tab shows Djinn's answer", async () => {
+  const container = setupMockDom();
+  const below = (el, out = []) => {
+    for (const child of el.childNodes) {
+      out.push(child);
+      below(child, out);
+    }
+    return out;
+  };
+  const props = (el) =>
+    el[Object.keys(el).find((k) => k.startsWith("__reactProps$"))];
+  const settle = async () => {
+    for (let i = 0; i < 4; i++)
+      await s.act(() => new Promise((r) => setTimeout(r, 0)));
+  };
+  const text = (node) =>
+    node.childNodes.length > 0
+      ? node.childNodes.map(text).join("")
+      : (node.nodeValue ?? node.textContent ?? "");
+  const sets = [];
+  let held = { general: "Run the tasks, not the tools." };
+  const inRow = (name) => {
+    const rowEl = below(container).find(
+      (el) => el.attributes?.["data-instruction"] === name,
+    );
+    return below(rowEl);
+  };
+  const button = (name, label) =>
+    inRow(name).find((el) => el.nodeName === "BUTTON" && text(el) === label);
+  const root = s.createRoot(container);
+  try {
+    await s.act(async () =>
+      root.render(
+        h(s.SummoningCircle, {
+          initialRows: [],
+          initialAgents: {
+            env: environment(),
+            checking: false,
+            error: "",
+            check() {},
+            setPaused() {},
+            order: [],
+            usage: [],
+          },
+          initialTasks: [],
+          initialTab: "instructions",
+          initialInstructions: held,
+          onSetInstruction: async (req) => {
+            sets.push(req);
+            held = { ...held, work: req.text };
+            return held;
+          },
+        }),
+      ),
+    );
+    await settle();
+    assert.equal(button("work", "Remove"), undefined);
+    const box = inRow("work").find((el) => el.nodeName === "TEXTAREA");
+    await s.act(() => {
+      box.value = "Commit before you end.";
+      props(box).onChange({ target: box });
+    });
+    await s.act(async () => props(button("work", "Save")).onClick());
+    await settle();
+    assert.deepEqual(sets, [
+      {
+        kind: s.InstructionKind.WORK,
+        text: "Commit before you end.",
+        unset: false,
+      },
+    ]);
+    assert.ok(button("work", "Remove"), "the text set shows Remove");
+  } finally {
+    s.act(() => root.unmount());
+    await new Promise((r) => setTimeout(r, 30));
+    for (const handle of process._getActiveHandles())
+      if (handle?.constructor?.name === "MessagePort") handle.unref();
+  }
+});

@@ -78,14 +78,34 @@ test("leaving the Hourglass stops its reads and its timers", async () => {
   // Left: no timer stays.
   assert.equal(machine.left, machine.before);
 
-  // The Gates tab: the gates live, the hour's intervals and the commands, each read again by a timer while it shows.
+  // The Gates tab: the gates live, the history of the gates over the last hour and the commands, each read again by a
+  // timer while it shows; the series are the Machine tab's.
   const gates = await leaves(() => h(s.GatesTab, {}));
   assert.ok(
     gates.reads.gates >= 1 &&
-      gates.reads.series >= 1 &&
+      gates.reads.history.length >= 1 &&
+      gates.reads.history.every((m) => m === 60) &&
       gates.reads.commands >= 1,
     JSON.stringify(gates.reads),
   );
+  assert.equal(gates.reads.series, 0);
+  // The history whole at first; the commands a page, brief, with the summary of them all.
+  assert.equal(gates.reads.historyAfter[0], false);
+  assert.deepEqual(gates.reads.commandAsks[0], {
+    byTotal: true,
+    brief: true,
+    summary: true,
+    pageSize: s.PAGE,
+    pageToken: "",
+  });
+  // Over a day or 6 hours, the history is read over the window chosen, and less often: its timer stops all the same.
+  for (const minutes of [360, 1440]) {
+    const window = await leaves(() =>
+      h(s.GatesTab, { initialPeriod: minutes }),
+    );
+    assert.deepEqual(window.reads.history, [minutes]);
+    assert.equal(window.left, window.before);
+  }
   assert.ok(gates.shown > gates.before);
   assert.equal(gates.left, gates.before);
 });

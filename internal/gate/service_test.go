@@ -7,7 +7,10 @@ import (
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"regexp"
 	"slices"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -15,6 +18,7 @@ import (
 
 	"connectrpc.com/connect"
 
+	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
 	machinev1 "github.com/empowill/djinn/gen/go/machine/v1"
 	"github.com/empowill/djinn/gen/go/machine/v1/machinev1connect"
 	"github.com/empowill/djinn/internal/machine"
@@ -217,4 +221,75 @@ func TestService_Hold(t *testing.T) {
 			t.Errorf("worker holding gate for another task: %v", err)
 		}
 	})
+}
+
+// TestService_AdmitWaited (W174, the trial of W173): a command waits behind an alone one that waits for the gate shared
+// by a first; once admitted, the stream names each holder it waited for in turn, each with the time it waited for it,
+// not the last reason as it was told when it began ("held by W2 …, for 0s"). The Hourglass reads the same in the
+// intervals of the gates (W175): the seed's, held, and the build's, given back, each with its own time, never "for 0s".
+func TestService_AdmitWaited(t *testing.T) {
+	t.Parallel()
+	const seed = "01a1f836-f2e1-7dce-962a-fd5c3b45059e" // W3, by its id: the request names it so
+	f := &tasks{rank: map[string]int{"W1": 0, "W2": 0, seed: 0}}
+	g := New(calm(), nil, f)
+	g.tick = 10 * time.Millisecond
+	g.Declare(func(string, string) Declared {
+		return Declared{Project: "dolmen", File: ".agents/djinn.yaml", Gates: []*djinnv1.ProjectGate{{
+			Name: "stack", Alone: []string{"docker build"}, Beside: []string{"task recette", "task recette-seed"},
+		}}}
+	})
+	client := server(t, g)
+	pid := os.Getpid()
+
+	recette := await(t, func() <-chan func() { c, _ := admit(t, g, "W1", "task recette", pid); return c }(), "W1's recette")
+	build, buildWaits := admit(t, g, "W2", "docker build -t dolmen-empowill:latest .", pid)
+	await(t, buildWaits, "the build waits")
+	command := "task recette-seed"
+	stream, err := client.Admit(t.Context(), connect.NewRequest(&machinev1.GateServiceAdmitRequest{
+		TaskId: seed, What: command, AgentPid: int32(pid), Match: machine.Match(command),
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !stream.Receive() || stream.Msg().GetState() != machinev1.GateState_GATE_STATE_WAITING {
+		t.Fatalf("the seed: %v, %v", stream.Msg(), stream.Err())
+	}
+	const pause = 1500 * time.Millisecond
+	time.Sleep(pause)
+	recette()
+	giveBuild := await(t, build, "the build once the recette ends")
+	time.Sleep(pause)
+	giveBuild()
+	var held string
+	for stream.Receive() {
+		if msg := stream.Msg(); msg.GetState() == machinev1.GateState_GATE_STATE_HELD {
+			held = msg.GetReason()
+		}
+	}
+	const want = "stack (dolmen, .agents/djinn.yaml): behind W2: docker build -t dolmen-empowill:latest ., which waits to hold " +
+		"it alone, shared by W1: task recette (Ns), then held by W2: docker build -t dolmen-empowill:latest . (Ns)"
+	if times(held) != want {
+		t.Fatalf("the seed admitted saying %q, want %q", held, want)
+	}
+	for _, m := range regexp.MustCompile(`\(([0-9]+)s\)`).FindAllStringSubmatch(held, -1) {
+		if n, _ := strconv.Atoi(m[1]); time.Duration(n)*time.Second < pause.Round(time.Second) {
+			t.Errorf("a stint of %ss in %q; each lasted %s", m[1], held, pause)
+		}
+	}
+
+	// The Hourglass: the intervals GateService.History gives, the seed's still held, the build's given back.
+	reasons := map[string]string{}
+	for _, iv := range g.Intervals(time.Time{}, true) {
+		reasons[iv.GetTaskId()] = iv.GetWaitReason()
+		if strings.Contains(iv.GetWaitReason(), ", for ") {
+			t.Errorf("the Hourglass reads %q for %s: a holder's time frozen when the cause changed", iv.GetWaitReason(), iv.GetTaskId())
+		}
+	}
+	if reasons[seed] != held {
+		t.Errorf("the Hourglass reads %q for the seed, its worker %q", reasons[seed], held)
+	}
+	const builds = "stack (dolmen, .agents/djinn.yaml): shared by W1: task recette (Ns)"
+	if times(reasons["W2"]) != builds || reasons["W1"] != "" {
+		t.Errorf("the Hourglass reads %q for the build, %q for the recette; want %q, \"\"", reasons["W2"], reasons["W1"], builds)
+	}
 }

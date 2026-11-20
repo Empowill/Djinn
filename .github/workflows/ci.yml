@@ -7,22 +7,34 @@ on:
   push:
     branches: [main]
   # By hand on any branch, once this trigger is on main: gh workflow run ci.yml --ref <branch>
+  # The macOS launch test alone, by hand only (Q96): gh workflow run ci.yml --ref <branch> -f mac_bench=true
   workflow_dispatch:
+    inputs:
+      mac_bench:
+        description: Run only the macOS launch test (mac-launch), none of the other jobs
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
+# The launch test has a group of its own: dispatched beside a run of the whole CI, it does not cancel it.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.ref }}${{ inputs.mac_bench && '-mac-launch' || '' }}
   cancel-in-progress: true
 
 jobs:
   linux:
     name: Lint and test (Linux)
+    # Skipped when the macOS launch test alone is dispatched (mac_bench).
+    if: ${{ !inputs.mac_bench }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
+      # Two commits: buf breaking compares the protos with the commit before (see the lint below).
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
       - id: go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -61,7 +73,11 @@ jobs:
           path: ~/.cache/golangci-lint
           key: golangci-lint-${{ runner.os }}-${{ github.sha }}
           restore-keys: golangci-lint-${{ runner.os }}-
+      # buf breaking against the commit before: on a pull request, the checkout is the merge with main and its first
+      # parent main's tip, so the request's whole change is judged; on a push to main, the main it moved from.
       - run: go tool task lint
+        env:
+          BREAKING_AGAINST: HEAD^1
       # Go, interface and end-to-end tests (browser mode, headless Chromium), the three at once; the end-to-end on
       # two workers, two djinns (e2e/playwright.config.ts reads CI).
       - run: go tool task test
@@ -89,6 +105,8 @@ jobs:
 
   macos:
     name: Go tests (macos-15)
+    # Skipped when the macOS launch test alone is dispatched (mac_bench).
+    if: ${{ !inputs.mac_bench }}
     runs-on: macos-15
     timeout-minutes: 30
     steps:
@@ -134,6 +152,8 @@ jobs:
   # shell skip, and say why.
   windows:
     name: Tests (Windows)
+    # Skipped when the macOS launch test alone is dispatched (mac_bench).
+    if: ${{ !inputs.mac_bench }}
     runs-on: windows-2025
     timeout-minutes: 40
     # It reports without blocking until it is green once (plan T11); then this line goes.
@@ -214,3 +234,46 @@ jobs:
             ${{ steps.go-env.outputs.mod }}
             ${{ steps.go-env.outputs.build }}
           key: ${{ steps.go-cache.outputs.cache-primary-key }}
+
+  # The launch test on a Mac, by hand only, and only that: a djinn built from the branch starts on a real Mac, with a
+  # data folder of its own, admits a task on the fake provider (no model, no secret), runs one command under a gate in
+  # the worker and one outside it. It prints what macOS reports (kern.memorystatus_vm_pressure_level, vm.swapusage,
+  # memory_pressure), how many workers Djinn admits and why (djinn machine show), the task's start and end and the
+  # gates' admissions, and fails when the work does not start within four minutes (W156, W157, Q95, Q96; the rule it
+  # proves: W152). Never on a push or a pull request; to run it on a branch:
+  #
+  #   gh workflow run ci.yml --ref <branch> -f mac_bench=true
+  #   gh run list --workflow ci.yml --event workflow_dispatch --limit 1    # its run
+  #   gh run watch <run-id>                                                # follow it; gh run view <run-id> --log
+  #
+  # The same test runs on any machine: go tool task ui, go build -tags headless -o <bin> ./cmd/djinn, then
+  # .github/mac-launch-test.sh <bin> <work folder> (off macOS, the macOS readings are skipped).
+  mac-launch:
+    name: Launch work on macOS (macos-15)
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.mac_bench }}
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # The djinn binary embeds the interface: build it first. The headless build needs no window.
+      - run: go tool task ui
+      - run: go build -tags headless -o "$RUNNER_TEMP/djinn" ./cmd/djinn
+      - run: .github/mac-launch-test.sh "$RUNNER_TEMP/djinn" "$RUNNER_TEMP/mac-launch"
+      - name: Keep the djinn's logs
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mac-launch-logs
+          path: |
+            ${{ runner.temp }}/mac-launch/home/logs
+            ${{ runner.temp }}/mac-launch/*.out
+            ${{ runner.temp }}/mac-launch/up.err
+          if-no-files-found: ignore

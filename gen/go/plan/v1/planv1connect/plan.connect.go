@@ -89,11 +89,16 @@ const (
 	ProjectServicePushProcedure = "/plan.v1.ProjectService/Push"
 	// ProjectServiceSetPushProcedure is the fully-qualified name of the ProjectService's SetPush RPC.
 	ProjectServiceSetPushProcedure = "/plan.v1.ProjectService/SetPush"
+	// ProjectServiceInstructionsProcedure is the fully-qualified name of the ProjectService's
+	// Instructions RPC.
+	ProjectServiceInstructionsProcedure = "/plan.v1.ProjectService/Instructions"
 	// ProjectServicePushStrategyProcedure is the fully-qualified name of the ProjectService's
 	// PushStrategy RPC.
 	ProjectServicePushStrategyProcedure = "/plan.v1.ProjectService/PushStrategy"
 	// ProjectServiceAllowProcedure is the fully-qualified name of the ProjectService's Allow RPC.
 	ProjectServiceAllowProcedure = "/plan.v1.ProjectService/Allow"
+	// ProjectServiceGatesProcedure is the fully-qualified name of the ProjectService's Gates RPC.
+	ProjectServiceGatesProcedure = "/plan.v1.ProjectService/Gates"
 	// ProjectServiceForgetSyncProcedure is the fully-qualified name of the ProjectService's ForgetSync
 	// RPC.
 	ProjectServiceForgetSyncProcedure = "/plan.v1.ProjectService/ForgetSync"
@@ -230,6 +235,9 @@ const (
 	LeadServiceGetCircleProcedure = "/plan.v1.LeadService/GetCircle"
 	// LeadServiceSetCircleProcedure is the fully-qualified name of the LeadService's SetCircle RPC.
 	LeadServiceSetCircleProcedure = "/plan.v1.LeadService/SetCircle"
+	// LeadServiceInstructionsProcedure is the fully-qualified name of the LeadService's Instructions
+	// RPC.
+	LeadServiceInstructionsProcedure = "/plan.v1.LeadService/Instructions"
 	// BlockServicePutProcedure is the fully-qualified name of the BlockService's Put RPC.
 	BlockServicePutProcedure = "/plan.v1.BlockService/Put"
 	// BlockServiceListProcedure is the fully-qualified name of the BlockService's List RPC.
@@ -689,18 +697,25 @@ type ProjectServiceClient interface {
 	// List the projects.
 	List(context.Context, *connect.Request[v1.ProjectServiceListRequest]) (*connect.Response[v1.ProjectServiceListResponse], error)
 	// Show a project, and the defaults its workers get: each setting and where it comes from, the repository's
-	// .agents/settings.txtpb or your own file.
+	// .agents/djinn.yaml or your own file.
 	Show(context.Context, *connect.Request[v1.ProjectServiceShowRequest]) (*connect.Response[v1.ProjectServiceShowResponse], error)
 	// Push the project's integration branch for a wish: runs push checks under gates, never with --force.
 	Push(context.Context, *connect.Request[v1.ProjectServicePushRequest]) (*connect.Response[v1.ProjectServicePushResponse], error)
 	// Change when Djinn pushes the project's integration branch (standard cadence or on demand).
 	SetPush(context.Context, *connect.Request[v1.ProjectServiceSetPushRequest]) (*connect.Response[v1.ProjectServiceSetPushResponse], error)
+	// Show the instructions the project's workers get, by kind of task, each with its value in the Summoning Circle, the
+	// repository's .agents/djinn.yaml and your own file; or set one text (--kind) in your own file, where it wins over
+	// the other two. --unset removes yours, and the layers below apply again.
+	Instructions(context.Context, *connect.Request[v1.ProjectServiceInstructionsRequest]) (*connect.Response[v1.ProjectServiceInstructionsResponse], error)
 	// Show or change the push strategy of a project: wish (one branch per wish) or azima (one branch per azima).
 	PushStrategy(context.Context, *connect.Request[v1.ProjectServicePushStrategyRequest]) (*connect.Response[v1.ProjectServicePushStrategyResponse], error)
 	// Show or change the watcher commands (--watch), or an ifrit's serve commands (--serve), you allow in a project for
 	// yourself, besides those its .agents/permissions.txtpb lists: kept in your own settings file, never in the
 	// repository.
 	Allow(context.Context, *connect.Request[v1.ProjectServiceAllowRequest]) (*connect.Response[v1.ProjectServiceAllowResponse], error)
+	// Show the gates the project declares in its djinn.yaml, as Djinn applies them on this machine, or turn one off
+	// (--off) or back on (--on) for yourself: kept in your own settings file, never in the repository.
+	Gates(context.Context, *connect.Request[v1.ProjectServiceGatesRequest]) (*connect.Response[v1.ProjectServiceGatesResponse], error)
 	// Forget the sync of a branch with nothing to push, such as a done azima's whose work landed in main: the project's
 	// syncs leave it out until it gets a new commit. Nothing is deleted, locally or on the remote.
 	ForgetSync(context.Context, *connect.Request[v1.ProjectServiceForgetSyncRequest]) (*connect.Response[v1.ProjectServiceForgetSyncResponse], error)
@@ -713,8 +728,9 @@ type ProjectServiceClient interface {
 	Branches(context.Context, *connect.Request[v1.ProjectServiceBranchesRequest]) (*connect.Response[v1.ProjectServiceBranchesResponse], error)
 	// Choose the project's reference branch for yourself: the branch Djinn keeps the wishes up to date with (merge_main),
 	// that pull requests aim at and that tells whether a branch landed. Written as main_branch in your own settings
-	// file, never in the repository: it wins over the team's .agents/settings.txtpb, where a team that follows another
+	// file, never in the repository: it wins over the team's .agents/djinn.yaml, where a team that follows another
 	// branch names it for everyone. Refused for a branch the repository does not hold, on its remote when it has one.
+	// With --config, the branch Djinn reads the configuration on instead (config_branch), to try it before it merges.
 	SetBranch(context.Context, *connect.Request[v1.ProjectServiceSetBranchRequest]) (*connect.Response[v1.ProjectServiceSetBranchResponse], error)
 	// Mark seen the changes of the project's configuration on its reference branch that ask for your look (a
 	// permission, a wish template, a babysit, the command of a source plugged in here): its gear no longer lights for
@@ -765,6 +781,12 @@ func NewProjectServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(projectServiceMethods.ByName("SetPush")),
 			connect.WithClientOptions(opts...),
 		),
+		instructions: connect.NewClient[v1.ProjectServiceInstructionsRequest, v1.ProjectServiceInstructionsResponse](
+			httpClient,
+			baseURL+ProjectServiceInstructionsProcedure,
+			connect.WithSchema(projectServiceMethods.ByName("Instructions")),
+			connect.WithClientOptions(opts...),
+		),
 		pushStrategy: connect.NewClient[v1.ProjectServicePushStrategyRequest, v1.ProjectServicePushStrategyResponse](
 			httpClient,
 			baseURL+ProjectServicePushStrategyProcedure,
@@ -775,6 +797,12 @@ func NewProjectServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			httpClient,
 			baseURL+ProjectServiceAllowProcedure,
 			connect.WithSchema(projectServiceMethods.ByName("Allow")),
+			connect.WithClientOptions(opts...),
+		),
+		gates: connect.NewClient[v1.ProjectServiceGatesRequest, v1.ProjectServiceGatesResponse](
+			httpClient,
+			baseURL+ProjectServiceGatesProcedure,
+			connect.WithSchema(projectServiceMethods.ByName("Gates")),
 			connect.WithClientOptions(opts...),
 		),
 		forgetSync: connect.NewClient[v1.ProjectServiceForgetSyncRequest, v1.ProjectServiceForgetSyncResponse](
@@ -818,8 +846,10 @@ type projectServiceClient struct {
 	show         *connect.Client[v1.ProjectServiceShowRequest, v1.ProjectServiceShowResponse]
 	push         *connect.Client[v1.ProjectServicePushRequest, v1.ProjectServicePushResponse]
 	setPush      *connect.Client[v1.ProjectServiceSetPushRequest, v1.ProjectServiceSetPushResponse]
+	instructions *connect.Client[v1.ProjectServiceInstructionsRequest, v1.ProjectServiceInstructionsResponse]
 	pushStrategy *connect.Client[v1.ProjectServicePushStrategyRequest, v1.ProjectServicePushStrategyResponse]
 	allow        *connect.Client[v1.ProjectServiceAllowRequest, v1.ProjectServiceAllowResponse]
+	gates        *connect.Client[v1.ProjectServiceGatesRequest, v1.ProjectServiceGatesResponse]
 	forgetSync   *connect.Client[v1.ProjectServiceForgetSyncRequest, v1.ProjectServiceForgetSyncResponse]
 	pull         *connect.Client[v1.ProjectServicePullRequest, v1.ProjectServicePullResponse]
 	branches     *connect.Client[v1.ProjectServiceBranchesRequest, v1.ProjectServiceBranchesResponse]
@@ -852,6 +882,11 @@ func (c *projectServiceClient) SetPush(ctx context.Context, req *connect.Request
 	return c.setPush.CallUnary(ctx, req)
 }
 
+// Instructions calls plan.v1.ProjectService.Instructions.
+func (c *projectServiceClient) Instructions(ctx context.Context, req *connect.Request[v1.ProjectServiceInstructionsRequest]) (*connect.Response[v1.ProjectServiceInstructionsResponse], error) {
+	return c.instructions.CallUnary(ctx, req)
+}
+
 // PushStrategy calls plan.v1.ProjectService.PushStrategy.
 func (c *projectServiceClient) PushStrategy(ctx context.Context, req *connect.Request[v1.ProjectServicePushStrategyRequest]) (*connect.Response[v1.ProjectServicePushStrategyResponse], error) {
 	return c.pushStrategy.CallUnary(ctx, req)
@@ -860,6 +895,11 @@ func (c *projectServiceClient) PushStrategy(ctx context.Context, req *connect.Re
 // Allow calls plan.v1.ProjectService.Allow.
 func (c *projectServiceClient) Allow(ctx context.Context, req *connect.Request[v1.ProjectServiceAllowRequest]) (*connect.Response[v1.ProjectServiceAllowResponse], error) {
 	return c.allow.CallUnary(ctx, req)
+}
+
+// Gates calls plan.v1.ProjectService.Gates.
+func (c *projectServiceClient) Gates(ctx context.Context, req *connect.Request[v1.ProjectServiceGatesRequest]) (*connect.Response[v1.ProjectServiceGatesResponse], error) {
+	return c.gates.CallUnary(ctx, req)
 }
 
 // ForgetSync calls plan.v1.ProjectService.ForgetSync.
@@ -894,18 +934,25 @@ type ProjectServiceHandler interface {
 	// List the projects.
 	List(context.Context, *connect.Request[v1.ProjectServiceListRequest]) (*connect.Response[v1.ProjectServiceListResponse], error)
 	// Show a project, and the defaults its workers get: each setting and where it comes from, the repository's
-	// .agents/settings.txtpb or your own file.
+	// .agents/djinn.yaml or your own file.
 	Show(context.Context, *connect.Request[v1.ProjectServiceShowRequest]) (*connect.Response[v1.ProjectServiceShowResponse], error)
 	// Push the project's integration branch for a wish: runs push checks under gates, never with --force.
 	Push(context.Context, *connect.Request[v1.ProjectServicePushRequest]) (*connect.Response[v1.ProjectServicePushResponse], error)
 	// Change when Djinn pushes the project's integration branch (standard cadence or on demand).
 	SetPush(context.Context, *connect.Request[v1.ProjectServiceSetPushRequest]) (*connect.Response[v1.ProjectServiceSetPushResponse], error)
+	// Show the instructions the project's workers get, by kind of task, each with its value in the Summoning Circle, the
+	// repository's .agents/djinn.yaml and your own file; or set one text (--kind) in your own file, where it wins over
+	// the other two. --unset removes yours, and the layers below apply again.
+	Instructions(context.Context, *connect.Request[v1.ProjectServiceInstructionsRequest]) (*connect.Response[v1.ProjectServiceInstructionsResponse], error)
 	// Show or change the push strategy of a project: wish (one branch per wish) or azima (one branch per azima).
 	PushStrategy(context.Context, *connect.Request[v1.ProjectServicePushStrategyRequest]) (*connect.Response[v1.ProjectServicePushStrategyResponse], error)
 	// Show or change the watcher commands (--watch), or an ifrit's serve commands (--serve), you allow in a project for
 	// yourself, besides those its .agents/permissions.txtpb lists: kept in your own settings file, never in the
 	// repository.
 	Allow(context.Context, *connect.Request[v1.ProjectServiceAllowRequest]) (*connect.Response[v1.ProjectServiceAllowResponse], error)
+	// Show the gates the project declares in its djinn.yaml, as Djinn applies them on this machine, or turn one off
+	// (--off) or back on (--on) for yourself: kept in your own settings file, never in the repository.
+	Gates(context.Context, *connect.Request[v1.ProjectServiceGatesRequest]) (*connect.Response[v1.ProjectServiceGatesResponse], error)
 	// Forget the sync of a branch with nothing to push, such as a done azima's whose work landed in main: the project's
 	// syncs leave it out until it gets a new commit. Nothing is deleted, locally or on the remote.
 	ForgetSync(context.Context, *connect.Request[v1.ProjectServiceForgetSyncRequest]) (*connect.Response[v1.ProjectServiceForgetSyncResponse], error)
@@ -918,8 +965,9 @@ type ProjectServiceHandler interface {
 	Branches(context.Context, *connect.Request[v1.ProjectServiceBranchesRequest]) (*connect.Response[v1.ProjectServiceBranchesResponse], error)
 	// Choose the project's reference branch for yourself: the branch Djinn keeps the wishes up to date with (merge_main),
 	// that pull requests aim at and that tells whether a branch landed. Written as main_branch in your own settings
-	// file, never in the repository: it wins over the team's .agents/settings.txtpb, where a team that follows another
+	// file, never in the repository: it wins over the team's .agents/djinn.yaml, where a team that follows another
 	// branch names it for everyone. Refused for a branch the repository does not hold, on its remote when it has one.
+	// With --config, the branch Djinn reads the configuration on instead (config_branch), to try it before it merges.
 	SetBranch(context.Context, *connect.Request[v1.ProjectServiceSetBranchRequest]) (*connect.Response[v1.ProjectServiceSetBranchResponse], error)
 	// Mark seen the changes of the project's configuration on its reference branch that ask for your look (a
 	// permission, a wish template, a babysit, the command of a source plugged in here): its gear no longer lights for
@@ -966,6 +1014,12 @@ func NewProjectServiceHandler(svc ProjectServiceHandler, opts ...connect.Handler
 		connect.WithSchema(projectServiceMethods.ByName("SetPush")),
 		connect.WithHandlerOptions(opts...),
 	)
+	projectServiceInstructionsHandler := connect.NewUnaryHandler(
+		ProjectServiceInstructionsProcedure,
+		svc.Instructions,
+		connect.WithSchema(projectServiceMethods.ByName("Instructions")),
+		connect.WithHandlerOptions(opts...),
+	)
 	projectServicePushStrategyHandler := connect.NewUnaryHandler(
 		ProjectServicePushStrategyProcedure,
 		svc.PushStrategy,
@@ -976,6 +1030,12 @@ func NewProjectServiceHandler(svc ProjectServiceHandler, opts ...connect.Handler
 		ProjectServiceAllowProcedure,
 		svc.Allow,
 		connect.WithSchema(projectServiceMethods.ByName("Allow")),
+		connect.WithHandlerOptions(opts...),
+	)
+	projectServiceGatesHandler := connect.NewUnaryHandler(
+		ProjectServiceGatesProcedure,
+		svc.Gates,
+		connect.WithSchema(projectServiceMethods.ByName("Gates")),
 		connect.WithHandlerOptions(opts...),
 	)
 	projectServiceForgetSyncHandler := connect.NewUnaryHandler(
@@ -1021,10 +1081,14 @@ func NewProjectServiceHandler(svc ProjectServiceHandler, opts ...connect.Handler
 			projectServicePushHandler.ServeHTTP(w, r)
 		case ProjectServiceSetPushProcedure:
 			projectServiceSetPushHandler.ServeHTTP(w, r)
+		case ProjectServiceInstructionsProcedure:
+			projectServiceInstructionsHandler.ServeHTTP(w, r)
 		case ProjectServicePushStrategyProcedure:
 			projectServicePushStrategyHandler.ServeHTTP(w, r)
 		case ProjectServiceAllowProcedure:
 			projectServiceAllowHandler.ServeHTTP(w, r)
+		case ProjectServiceGatesProcedure:
+			projectServiceGatesHandler.ServeHTTP(w, r)
 		case ProjectServiceForgetSyncProcedure:
 			projectServiceForgetSyncHandler.ServeHTTP(w, r)
 		case ProjectServicePullProcedure:
@@ -1064,12 +1128,20 @@ func (UnimplementedProjectServiceHandler) SetPush(context.Context, *connect.Requ
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.ProjectService.SetPush is not implemented"))
 }
 
+func (UnimplementedProjectServiceHandler) Instructions(context.Context, *connect.Request[v1.ProjectServiceInstructionsRequest]) (*connect.Response[v1.ProjectServiceInstructionsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.ProjectService.Instructions is not implemented"))
+}
+
 func (UnimplementedProjectServiceHandler) PushStrategy(context.Context, *connect.Request[v1.ProjectServicePushStrategyRequest]) (*connect.Response[v1.ProjectServicePushStrategyResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.ProjectService.PushStrategy is not implemented"))
 }
 
 func (UnimplementedProjectServiceHandler) Allow(context.Context, *connect.Request[v1.ProjectServiceAllowRequest]) (*connect.Response[v1.ProjectServiceAllowResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.ProjectService.Allow is not implemented"))
+}
+
+func (UnimplementedProjectServiceHandler) Gates(context.Context, *connect.Request[v1.ProjectServiceGatesRequest]) (*connect.Response[v1.ProjectServiceGatesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.ProjectService.Gates is not implemented"))
 }
 
 func (UnimplementedProjectServiceHandler) ForgetSync(context.Context, *connect.Request[v1.ProjectServiceForgetSyncRequest]) (*connect.Response[v1.ProjectServiceForgetSyncResponse], error) {
@@ -1483,7 +1555,8 @@ type WishServiceClient interface {
 	// running and waiting, its open questions, its latest decisions and blocks, the last lead and when it last
 	// acted), then how to lead it (Djinn's rules, the rules of its projects). No local path, no secret.
 	Brief(context.Context, *connect.Request[v1.WishServiceBriefRequest]) (*connect.Response[v1.WishServiceBriefResponse], error)
-	// Everything a wish holds, as an export carries it, and its projects on this machine, for the window.
+	// What a wish holds, as an export carries it but without its tasks' events (most of a wish, read by task), and its
+	// projects on this machine, for the window.
 	Snapshot(context.Context, *connect.Request[v1.WishServiceSnapshotRequest]) (*connect.Response[v1.WishServiceSnapshotResponse], error)
 	// Allow the wish's workers a right in one of its projects, for every task to come: edit, or auto (edit in their
 	// agent's auto mode); none takes it back. It weighs over the project's configuration, for this wish only.
@@ -1895,7 +1968,8 @@ type WishServiceHandler interface {
 	// running and waiting, its open questions, its latest decisions and blocks, the last lead and when it last
 	// acted), then how to lead it (Djinn's rules, the rules of its projects). No local path, no secret.
 	Brief(context.Context, *connect.Request[v1.WishServiceBriefRequest]) (*connect.Response[v1.WishServiceBriefResponse], error)
-	// Everything a wish holds, as an export carries it, and its projects on this machine, for the window.
+	// What a wish holds, as an export carries it but without its tasks' events (most of a wish, read by task), and its
+	// projects on this machine, for the window.
 	Snapshot(context.Context, *connect.Request[v1.WishServiceSnapshotRequest]) (*connect.Response[v1.WishServiceSnapshotResponse], error)
 	// Allow the wish's workers a right in one of its projects, for every task to come: edit, or auto (edit in their
 	// agent's auto mode); none takes it back. It weighs over the project's configuration, for this wish only.
@@ -2316,7 +2390,8 @@ type LeadServiceClient interface {
 	// queue. The text waits while something is being typed there or a choice is on screen, then goes; texts arrive in
 	// the order written. About a wish, it starts with "About wish <title> (<id>):". The lead must run in its terminal:
 	// djinn lead resume starts it. While Djinn drives the lead, the text is an event of its queue instead, whole: the
-	// next batch's session reads it, and a text written while a batch runs waits for the next one. A worker cannot
+	// next batch's session reads it, and a text written while a batch runs waits for the next one. With --files, each
+	// file is kept in the wish and the text ends with a line "Files: <path> (<type>, <size>)" for it. A worker cannot
 	// call it, and djinn mcp has no tool for it.
 	Tell(context.Context, *connect.Request[v1.LeadServiceTellRequest]) (*connect.Response[v1.LeadServiceTellResponse], error)
 	// Acknowledge the developer in the window, in a bubble held to the Lamp pill that fades 2 minutes after it shows:
@@ -2392,6 +2467,10 @@ type LeadServiceClient interface {
 	// Set one row of the global Summoning Circle (lead, investigation, mockup, ifrit, work, correction, review, or
 	// question). For every kind except lead, an empty model means "Same as lead".
 	SetCircle(context.Context, *connect.Request[v1.LeadServiceSetCircleRequest]) (*connect.Response[v1.LeadServiceSetCircleResponse], error)
+	// Show the workers' instructions on this machine, the Summoning Circle's, by kind of task: the default of every
+	// project, which a project's repository, then your own file of the project, win over, kind by kind; or set one text
+	// (--kind). --unset removes it.
+	Instructions(context.Context, *connect.Request[v1.LeadServiceInstructionsRequest]) (*connect.Response[v1.LeadServiceInstructionsResponse], error)
 }
 
 // NewLeadServiceClient constructs a client for the plan.v1.LeadService service. By default, it uses
@@ -2564,6 +2643,12 @@ func NewLeadServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(leadServiceMethods.ByName("SetCircle")),
 			connect.WithClientOptions(opts...),
 		),
+		instructions: connect.NewClient[v1.LeadServiceInstructionsRequest, v1.LeadServiceInstructionsResponse](
+			httpClient,
+			baseURL+LeadServiceInstructionsProcedure,
+			connect.WithSchema(leadServiceMethods.ByName("Instructions")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -2594,6 +2679,7 @@ type leadServiceClient struct {
 	unlimited     *connect.Client[v1.LeadServiceUnlimitedRequest, v1.LeadServiceUnlimitedResponse]
 	getCircle     *connect.Client[v1.LeadServiceGetCircleRequest, v1.LeadServiceGetCircleResponse]
 	setCircle     *connect.Client[v1.LeadServiceSetCircleRequest, v1.LeadServiceSetCircleResponse]
+	instructions  *connect.Client[v1.LeadServiceInstructionsRequest, v1.LeadServiceInstructionsResponse]
 }
 
 // Set calls plan.v1.LeadService.Set.
@@ -2721,6 +2807,11 @@ func (c *leadServiceClient) SetCircle(ctx context.Context, req *connect.Request[
 	return c.setCircle.CallUnary(ctx, req)
 }
 
+// Instructions calls plan.v1.LeadService.Instructions.
+func (c *leadServiceClient) Instructions(ctx context.Context, req *connect.Request[v1.LeadServiceInstructionsRequest]) (*connect.Response[v1.LeadServiceInstructionsResponse], error) {
+	return c.instructions.CallUnary(ctx, req)
+}
+
 // LeadServiceHandler is an implementation of the plan.v1.LeadService service.
 type LeadServiceHandler interface {
 	// Record the lead of Djinn: the agent session that drives it, for djinn lead resume to take it back. Starts
@@ -2767,7 +2858,8 @@ type LeadServiceHandler interface {
 	// queue. The text waits while something is being typed there or a choice is on screen, then goes; texts arrive in
 	// the order written. About a wish, it starts with "About wish <title> (<id>):". The lead must run in its terminal:
 	// djinn lead resume starts it. While Djinn drives the lead, the text is an event of its queue instead, whole: the
-	// next batch's session reads it, and a text written while a batch runs waits for the next one. A worker cannot
+	// next batch's session reads it, and a text written while a batch runs waits for the next one. With --files, each
+	// file is kept in the wish and the text ends with a line "Files: <path> (<type>, <size>)" for it. A worker cannot
 	// call it, and djinn mcp has no tool for it.
 	Tell(context.Context, *connect.Request[v1.LeadServiceTellRequest]) (*connect.Response[v1.LeadServiceTellResponse], error)
 	// Acknowledge the developer in the window, in a bubble held to the Lamp pill that fades 2 minutes after it shows:
@@ -2843,6 +2935,10 @@ type LeadServiceHandler interface {
 	// Set one row of the global Summoning Circle (lead, investigation, mockup, ifrit, work, correction, review, or
 	// question). For every kind except lead, an empty model means "Same as lead".
 	SetCircle(context.Context, *connect.Request[v1.LeadServiceSetCircleRequest]) (*connect.Response[v1.LeadServiceSetCircleResponse], error)
+	// Show the workers' instructions on this machine, the Summoning Circle's, by kind of task: the default of every
+	// project, which a project's repository, then your own file of the project, win over, kind by kind; or set one text
+	// (--kind). --unset removes it.
+	Instructions(context.Context, *connect.Request[v1.LeadServiceInstructionsRequest]) (*connect.Response[v1.LeadServiceInstructionsResponse], error)
 }
 
 // NewLeadServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -3011,6 +3107,12 @@ func NewLeadServiceHandler(svc LeadServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(leadServiceMethods.ByName("SetCircle")),
 		connect.WithHandlerOptions(opts...),
 	)
+	leadServiceInstructionsHandler := connect.NewUnaryHandler(
+		LeadServiceInstructionsProcedure,
+		svc.Instructions,
+		connect.WithSchema(leadServiceMethods.ByName("Instructions")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/plan.v1.LeadService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case LeadServiceSetProcedure:
@@ -3063,6 +3165,8 @@ func NewLeadServiceHandler(svc LeadServiceHandler, opts ...connect.HandlerOption
 			leadServiceGetCircleHandler.ServeHTTP(w, r)
 		case LeadServiceSetCircleProcedure:
 			leadServiceSetCircleHandler.ServeHTTP(w, r)
+		case LeadServiceInstructionsProcedure:
+			leadServiceInstructionsHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -3170,6 +3274,10 @@ func (UnimplementedLeadServiceHandler) GetCircle(context.Context, *connect.Reque
 
 func (UnimplementedLeadServiceHandler) SetCircle(context.Context, *connect.Request[v1.LeadServiceSetCircleRequest]) (*connect.Response[v1.LeadServiceSetCircleResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.LeadService.SetCircle is not implemented"))
+}
+
+func (UnimplementedLeadServiceHandler) Instructions(context.Context, *connect.Request[v1.LeadServiceInstructionsRequest]) (*connect.Response[v1.LeadServiceInstructionsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.LeadService.Instructions is not implemented"))
 }
 
 // BlockServiceClient is a client for the plan.v1.BlockService service.

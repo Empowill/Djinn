@@ -79,7 +79,7 @@ address in the data folder, for the other commands.`,
 		{
 			Name: "--disk-full-gb", Type: "int", Default: "10", Env: "DJINN_DISK_FULL_GB",
 			Help: "Under this many GB free where Djinn's data folder or the Go build cache is, tell the lead the disk is " +
-				"almost full, naming the biggest folders, and hold the push checks until space comes back; 0 never; " +
+				"almost full, naming the biggest sources on the disk, and hold the push checks until space comes back; 0 never; " +
 				"default $DJINN_DISK_FULL_GB.",
 		},
 		{
@@ -109,6 +109,13 @@ address in the data folder, for the other commands.`,
 			Help: "Serve Go's profiles of djinn up at /debug/pprof/, on its own address only (the Unix socket, or the " +
 				"loopback server and its token), to measure what it spends its CPU and memory on; default " +
 				"$DJINN_PPROF (on or off), else off.",
+		},
+		{
+			Name: "--update-check", Type: "bool", Default: "true", Env: "DJINN_UPDATE_CHECK",
+			Help: "Look for a newer release of Djinn: at start, then every 6 hours, a release binary asks GitHub's API, " +
+				"one installed with go install the Go module proxy; nothing downloads before you click Update. Off, " +
+				"Djinn sends nothing on its own, and only a newer binary installed at its path is offered; default " +
+				"$DJINN_UPDATE_CHECK (on or off), else on.",
 		},
 	},
 }

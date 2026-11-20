@@ -180,6 +180,13 @@ message Settings {
   // available (LoadService.SetBrake, the Summoning Circle). Unset: 5. 0: no brake. djinn up --brake-memory, or
   // DJINN_BRAKE_MEMORY, comes first.
   optional uint32 brake_memory_percent = 17 [(buf.validate.field).uint32.lte = 95];
+  // The names of the migrations of the local settings djinn up has applied, in the order it applied them
+  // (plan.Migrate, docs/migrations.md). A name stays here once applied; a migration that could not apply is not here,
+  // and the next start tries it again.
+  repeated string migrations = 18;
+  // The workers' instructions on this machine, by kind of task (LeadService.Instructions, the Summoning Circle): the
+  // default of every project, which a project's repository, then the developer's own file of it, win over.
+  plan.v1.WorkerInstructions instructions = 19;
 }
 
 // SignInRef names a sign-in of an agent: its own (no account) or one of its accounts.

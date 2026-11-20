@@ -1,0 +1,166 @@
+/* The cascade band of a granted wish (freeing-band.tsx, L28 variant A): segments green when freed, hatched amber when
+   something was kept; the azimas' lines below, and the summary it folds into. One uniform border, rounded. */
+.freeing-band {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-3);
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-panel);
+  background: var(--surface);
+  color: var(--text);
+  font-size: var(--font-size-body);
+}
+
+.freeing-band.folded {
+  padding: 0.375rem 0.625rem;
+}
+
+.freeing-top {
+  display: flex;
+  align-items: baseline;
+  gap: 0.625rem;
+}
+
+.freeing-label {
+  font-weight: 500;
+}
+
+.freeing-count {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.freeing-bytes {
+  margin-left: auto;
+  font-size: 0.9375rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.freeing-fold {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.freeing-fold .freeing-sum {
+  color: var(--muted);
+}
+
+.freeing-segs {
+  display: flex;
+  gap: 0.1875rem;
+  height: 0.625rem;
+}
+
+.freeing-seg {
+  position: relative;
+  flex: 1;
+  overflow: hidden;
+  border-radius: 0.1875rem;
+  background: var(--surface-soft);
+}
+
+.freeing-seg b {
+  position: absolute;
+  inset: 0;
+  transform: scaleX(0);
+  transform-origin: left;
+  background: var(--st-done);
+  transition: transform 0.3s ease-out;
+}
+
+.freeing-seg.now b {
+  transform: scaleX(0.4);
+  opacity: 0.5;
+}
+
+.freeing-seg.on b {
+  transform: scaleX(1);
+  opacity: 1;
+}
+
+.freeing-seg.kept b {
+  background: repeating-linear-gradient(
+    135deg,
+    var(--st-waiting) 0 0.25rem,
+    transparent 0.25rem 0.4375rem
+  );
+}
+
+.freeing-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.freeing-row {
+  padding: 0.25rem 0.5rem;
+  border-radius: var(--radius-control);
+  color: var(--muted-dim);
+  transition:
+    background 0.25s,
+    color 0.25s;
+}
+
+.freeing-line {
+  display: grid;
+  grid-template-columns: 1rem 3.25rem 1fr auto;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.freeing-row.now {
+  background: var(--surface-soft);
+  color: var(--text);
+}
+
+.freeing-row.freed,
+.freeing-row.kept {
+  color: var(--text);
+}
+
+.freeing-row.freed .freeing-amount,
+.freeing-row.freed svg {
+  color: var(--st-done);
+}
+
+.freeing-row.kept .freeing-amount,
+.freeing-row.kept svg,
+.freeing-why {
+  color: var(--st-waiting);
+}
+
+.freeing-code {
+  font-family: var(--mono);
+  font-size: var(--font-size-body);
+}
+
+.freeing-what {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.freeing-amount {
+  font-size: var(--font-size-body);
+  font-variant-numeric: tabular-nums;
+}
+
+.freeing-why {
+  padding-left: 5.25rem;
+  font-size: var(--font-size-body);
+}
+
+.freeing-band > .freeing-sum {
+  color: var(--muted);
+}

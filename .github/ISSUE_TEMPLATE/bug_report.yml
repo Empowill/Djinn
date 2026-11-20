@@ -1,0 +1,69 @@
+name: Report a bug
+description: Djinn did something wrong, or stopped. Never a security flaw here (see SECURITY.md).
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        Thank you for taking the time. A flaw that an attacker could use goes privately, to
+        dev@empowill.com, never in a public issue. Before attaching a file, read it: logs name your projects'
+        folders and branches and your tasks' codes. Remove what you do not want public.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what Djinn did instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The shortest way to see it again, if you found one.
+      placeholder: |
+        1. djinn up
+        2. ...
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: What `djinn version` prints.
+      placeholder: djinn v0.4.0
+    validations:
+      required: true
+  - type: dropdown
+    id: build
+    attributes:
+      label: Build
+      options:
+        - Linux, window (GTK3)
+        - Linux, window (GTK4)
+        - Linux, browser
+        - macOS
+        - Windows
+        - Built from source
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: System
+      description: The distribution or the system's version, and the machine (amd64, arm64).
+      placeholder: Ubuntu 24.04, amd64
+    validations:
+      required: true
+  - type: input
+    id: agents
+    attributes:
+      label: Agents
+      description: The agents involved and their versions, if any (claude --version, codex --version, agy --version).
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: >-
+        From the logs folder of Djinn's data folder (~/.config/djinn/logs on Linux,
+        ~/Library/Application Support/djinn/logs on macOS, %AppData%\djinn\logs on Windows):
+        the lines of djinn.log around the problem. If Djinn froze, run `djinn debug dump` and attach the latest
+        goroutines-*.txt; if it crashed, the latest crash-*.txt and console.log.
+      render: text

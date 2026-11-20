@@ -10,6 +10,7 @@ package main
 import "C"
 
 import (
+	"errors"
 	"runtime/debug"
 
 	"github.com/empowill/djinn/internal/logx"
@@ -37,4 +38,17 @@ func djinnLoadFailed(id C.uintptr_t, uri, message *C.char) {
 		text = C.GoString(message)
 	}
 	loadFailed(uintptr(id), C.GoString(uri), text)
+}
+
+//export djinnEvaluated
+func djinnEvaluated(id C.uintptr_t, json, message *C.char) {
+	defer fromC("window: evaluated")
+	switch {
+	case json != nil:
+		jsEvaluated(uintptr(id), C.GoString(json), nil)
+	case message != nil:
+		jsEvaluated(uintptr(id), "", errors.New(C.GoString(message)))
+	default:
+		jsEvaluated(uintptr(id), "", errors.New("no value"))
+	}
 }

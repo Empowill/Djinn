@@ -60,6 +60,7 @@ func changeSettings(home string, change func(*uiv1.Settings) error) error {
 	if err := change(settings); err != nil {
 		return err
 	}
+	fillCircle(settings)
 	data, err := (protojson.MarshalOptions{Multiline: true}).Marshal(settings)
 	if err != nil {
 		return err
@@ -68,6 +69,38 @@ func changeSettings(home string, change func(*uiv1.Settings) error) error {
 		return err
 	}
 	return fsx.WriteAtomic(filepath.Join(home, settingsFile), data, 0o600)
+}
+
+// sameAsLead says whether the circle row r is set to "Same as lead": a row written with no provider and no model. It is a
+// model choice of its own (Q67): the row is configured, follows the lead, and the project's settings never fill it.
+func sameAsLead(r *planv1.WorkerSeat) bool {
+	return r.GetProvider() == planv1.Provider_PROVIDER_UNSPECIFIED && r.GetModel() == ""
+}
+
+// circleConfigured says whether settings choose the workers' seats themselves, so that ResolveWorkerSeat answers
+// explicit: a lead seat, or any row of the circle, "Same as lead" included.
+func circleConfigured(settings *uiv1.Settings) bool {
+	lead := settings.GetLead()
+	return len(settings.GetCircle()) > 0 ||
+		lead != nil && (lead.GetProvider() != planv1.Provider_PROVIDER_UNSPECIFIED || lead.GetModel() != "")
+}
+
+// fillCircle writes "Same as lead" in each worker row a configured circle does not hold yet (changeSettings calls it on
+// every write): the circle then names every worker's model in settings.json, a row is never a hole the project's
+// settings could fill (Q67). A row absent from a configured circle already resolved to the lead: no worker changes
+// model. The lead row is left as it is: ReadLeadSeat reads settings.Lead first, and a lead without a model runs its
+// agent's own default.
+func fillCircle(settings *uiv1.Settings) {
+	if !circleConfigured(settings) {
+		return
+	}
+	for _, kind := range CircleRowOrder {
+		if kind == planv1.WorkerKind_WORKER_KIND_LEAD ||
+			slices.ContainsFunc(settings.Circle, func(r *planv1.WorkerSeat) bool { return r.GetKind() == kind }) {
+			continue
+		}
+		settings.Circle = append(settings.Circle, &planv1.WorkerSeat{Kind: kind})
+	}
 }
 
 // CircleRowOrder is the order of worker rows in the Summoning Circle (W400): Djinn (lead) first, then each kind of
@@ -221,7 +254,6 @@ func UpdateWorkerDefaults(home string, p planv1.Provider, model string) ([]*plan
 	if home == "" {
 		return seats, nil
 	}
-	MigrateCircle(home)
 	err := changeSettings(home, func(settings *uiv1.Settings) error {
 		for _, seat := range seats {
 			settings.Circle = setCircleRowSlice(settings.Circle, seat)
@@ -234,27 +266,27 @@ func UpdateWorkerDefaults(home string, p planv1.Provider, model string) ([]*plan
 	return seats, nil
 }
 
-// MigrateCircle reads any legacy per-project provider/model settings from projects/*/settings.txtpb in home once,
-// seeds the Summoning Circle in settings.json for rows not yet configured, and drops those fields from the
-// per-project developer files.
-func MigrateCircle(home string) {
-	if home == "" {
-		return
-	}
+// migrateCircle runs migrateDeveloperSettingsFile on each developer's settings file of home (projects/*/settings.txtpb):
+// the migration "circle-from-project-settings" (Migrate). It goes on past a file it cannot migrate, and returns the
+// errors of them all.
+func migrateCircle(home string) error {
 	matches, err := filepath.Glob(filepath.Join(home, "projects", "*", "settings.txtpb"))
 	if err != nil {
-		return
+		return err
 	}
+	var errs []error
 	for _, devFile := range matches {
-		migrateDeveloperSettingsFile(home, devFile)
+		errs = append(errs, migrateDeveloperSettingsFile(home, devFile))
 	}
+	return errors.Join(errs...)
 }
 
-// ReadCircle returns the Summoning Circle rows in CircleRowOrder from settings.json in home after migrating any
-// legacy per-project settings. The lead row always carries a concrete provider and model ID; every other row carries
-// PROVIDER_UNSPECIFIED and "" when set to "Same as lead".
+// ReadCircle returns the Summoning Circle rows in CircleRowOrder from settings.json in home (djinn up moved the
+// legacy per-project settings there at start: Migrate). The lead row always carries a concrete provider and model ID;
+// every other row carries PROVIDER_UNSPECIFIED and "" when set to "Same as lead" (sameAsLead). A circle not configured
+// yet (circleConfigured) holds no row: its rows show "Same as lead" too, though its workers then take the project's
+// settings (ResolveWorkerSeat answers not explicit).
 func ReadCircle(home string) []*planv1.WorkerSeat {
-	MigrateCircle(home)
 	settings := readSettings(home)
 	byKind := make(map[planv1.WorkerKind]*planv1.WorkerSeat, len(settings.GetCircle()))
 	for _, r := range settings.GetCircle() {
@@ -289,7 +321,7 @@ func ReadCircle(home string) []*planv1.WorkerSeat {
 			continue
 		}
 		r := byKind[kind]
-		if r == nil || (r.GetProvider() == planv1.Provider_PROVIDER_UNSPECIFIED && r.GetModel() == "") {
+		if r == nil || sameAsLead(r) {
 			out = append(out, &planv1.WorkerSeat{Kind: kind})
 			continue
 		}
@@ -311,16 +343,16 @@ func ReadCircle(home string) []*planv1.WorkerSeat {
 }
 
 // ResolveWorkerSeat returns the effective provider and canonical model ID for kind from the Summoning Circle in home.
-// When the row is set to "Same as lead", it follows the lead's provider and model ID. explicit is true when the
-// circle or lead seat has been configured in settings.json (or migrated from a per-project developer file).
+// When the row is set to "Same as lead" (sameAsLead), or absent from a configured circle, it follows the lead's provider
+// and model ID. explicit is true when the circle or lead seat has been configured in settings.json (circleConfigured, or
+// seeded from a per-project developer file at start): the project's settings then never choose the worker's seat.
 func ResolveWorkerSeat(home string, kind planv1.WorkerKind) (provider planv1.Provider, model string, explicit bool) {
 	if home == "" {
 		return planv1.Provider_PROVIDER_CLAUDE, "", false
 	}
-	MigrateCircle(home)
 	settings := readSettings(home)
 	for _, r := range settings.GetCircle() {
-		if r.GetKind() == kind && (r.GetProvider() != planv1.Provider_PROVIDER_UNSPECIFIED || r.GetModel() != "") {
+		if r.GetKind() == kind && !sameAsLead(r) {
 			p := r.GetProvider()
 			m := NormalizeCircleModel(r.GetModel())
 			if p == planv1.Provider_PROVIDER_UNSPECIFIED {
@@ -346,7 +378,7 @@ func ResolveWorkerSeat(home string, kind planv1.WorkerKind) (provider planv1.Pro
 		return p, m, true
 	}
 	for _, r := range settings.GetCircle() {
-		if r.GetKind() == planv1.WorkerKind_WORKER_KIND_LEAD && (r.GetProvider() != planv1.Provider_PROVIDER_UNSPECIFIED || r.GetModel() != "") {
+		if r.GetKind() == planv1.WorkerKind_WORKER_KIND_LEAD && !sameAsLead(r) {
 			p := r.GetProvider()
 			m := NormalizeCircleModel(r.GetModel())
 			if p == planv1.Provider_PROVIDER_UNSPECIFIED {
@@ -369,8 +401,8 @@ func ResolveWorkerSeat(home string, kind planv1.WorkerKind) (provider planv1.Pro
 		}
 		return followLead(p, m)
 	}
-	if len(settings.GetCircle()) > 0 {
-		return planv1.Provider_PROVIDER_CLAUDE, DefaultCircleModel(planv1.Provider_PROVIDER_CLAUDE), true
+	if circleConfigured(settings) {
+		return followLead(planv1.Provider_PROVIDER_CLAUDE, DefaultCircleModel(planv1.Provider_PROVIDER_CLAUDE))
 	}
 	return planv1.Provider_PROVIDER_CLAUDE, "", false
 }
@@ -960,9 +992,10 @@ func (s *LeadService) GetCircle(
 ) (*connect.Response[planv1.LeadServiceGetCircleResponse], error) {
 	providers, models := s.circleState(ctx)
 	return connect.NewResponse(&planv1.LeadServiceGetCircleResponse{
-		Rows:      ReadCircle(s.Wishes.home()),
-		Models:    models,
-		Providers: providers,
+		Rows:         ReadCircle(s.Wishes.home()),
+		Models:       models,
+		Providers:    providers,
+		Instructions: ReadMachineInstructions(s.Wishes.home()),
 	}), nil
 }
 
@@ -972,7 +1005,6 @@ func (s *LeadService) SetCircle(
 	ctx context.Context, req *connect.Request[planv1.LeadServiceSetCircleRequest],
 ) (*connect.Response[planv1.LeadServiceSetCircleResponse], error) {
 	home := s.Wishes.home()
-	MigrateCircle(home)
 	kind := req.Msg.GetKind()
 	if !slices.Contains(CircleRowOrder, kind) {
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("unknown worker kind %v", kind))

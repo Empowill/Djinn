@@ -5,8 +5,11 @@ syntax = "proto3";
 package plan.v1;
 
 import "buf/validate/validate.proto";
+import "djinn/v1/agents.proto";
+import "djinn/v1/containers.proto";
 import "djinn/v1/load.proto";
 import "djinn/v1/options.proto";
+import "djinn/v1/project_config.proto";
 import "google/protobuf/any.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
@@ -63,7 +66,7 @@ message ProjectNotice {
   ProjectNoticeKind kind = 1;
   // The part of the configuration it comes from.
   ProjectNoticeTopic topic = 2;
-  // What it names there: a file (.agents/settings.txtpb), a skill, a source (<project>/<skill>), a branch
+  // What it names there: a file (.agents/djinn.yaml), a skill, a source (<project>/<skill>), a branch
   // (origin/main).
   string subject = 3;
   // What it is, and what it changes, in one sentence.
@@ -95,8 +98,7 @@ enum ProjectNoticeKind {
 enum ProjectNoticeTopic {
   // Not set.
   PROJECT_NOTICE_TOPIC_UNSPECIFIED = 0;
-  // A settings file: the team's .agents/settings.txtpb, or your own in Djinn's data folder; or the project's
-  // djinn.yaml.
+  // A settings file: your own in Djinn's data folder; or the project's djinn.yaml, which holds the team's settings.
   PROJECT_NOTICE_TOPIC_SETTINGS = 1;
   // The project's .agents/permissions.txtpb.
   PROJECT_NOTICE_TOPIC_PERMISSIONS = 2;
@@ -148,6 +150,12 @@ message ProjectReference {
   SettingSource source = 4;
   // The branch your copy has checked out; empty when it is detached.
   string checked_out = 5;
+  // The branch your own config_branch names, Djinn reading the project's configuration (djinn.yaml, skills) there
+  // rather than on this one; empty when you name none.
+  string config_branch = 6;
+  // The ref Djinn reads that configuration on, short: origin/djinn/gates. Empty while config_branch is set: the
+  // branch is gone from the remote or not fetched, and Djinn reads the configuration on this reference branch.
+  string config_ref = 7;
 }
 
 // ConfigWatch is how Djinn watches a project's configuration on its reference branch, on this machine: every 5
@@ -291,8 +299,8 @@ message Summon {
 }
 
 // ProjectSettings are the defaults of a project's workers, the few a team shares. The team writes them in the
-// repository, in .agents/settings.txtpb; a developer may write their own in Djinn's data folder, in
-// projects/<project id>/settings.txtpb. Setting by setting, the developer's win over the repository's, and a task's
+// repository, under settings: in its .agents/djinn.yaml (djinn.v1.ProjectConfig), in YAML; a developer may write their
+// own in Djinn's data folder, in text protobuf, in projects/<project id>/settings.txtpb. Setting by setting, the developer's win over the repository's, and a task's
 // own flags win over both. Djinn reads both files each time a task is spawned; djinn project show says where each
 // setting comes from. A file that cannot be read stops the project's tasks from spawning, with why, until it is
 // fixed; Djinn itself still starts. The files hold no secret: a value or a field name that looks like one is
@@ -463,6 +471,86 @@ message ProjectSettings {
       }
     }
   }];
+  // The gates the project declares in its djinn.yaml (djinn.v1.ProjectGate) that the developer turns off on their
+  // machine, by name: one stack per worktree, say. A developer's own choice, read from their own file only (djinn
+  // project gates --off), like serve_commands: a repository declares its gates in its djinn.yaml. Not set: none.
+  repeated string gates_off = 30 [(buf.validate.field).repeated = {
+    max_items: 8
+    unique: true
+    items: {
+      string: {pattern: "^[a-z][a-z0-9-]{0,39}$"}
+    }
+  }];
+  // What the project's workers are told, by kind of task, besides what Djinn says itself (decision Q70 B): one text for
+  // every worker, and one for each kind that wants its own. Three layers, kind by kind: the Summoning Circle's, this
+  // machine's default for every project; the repository's, which wins over it; yours, which wins over both. A kind no
+  // layer sets takes the general text. Not set: none.
+  WorkerInstructions instructions = 31;
+  // The branch Djinn reads the project's configuration on, before it merges into the reference branch: the
+  // djinn.yaml (settings, gates, containers) and the skills, to try them on this machine. The permissions
+  // (.agents/permissions.txtpb) stay read on the reference branch, so that no agent widens its own rights; pull
+  // requests, merge_main and worktrees keep main_branch. A developer's own choice, read from their own file only
+  // (djinn project set-branch --config), like gates_off. Gone from the remote, or not fetched: Djinn reads the
+  // reference branch, and a notice says so. Not set: the reference branch.
+  optional string config_branch = 32 [
+    (buf.validate.field).string.max_len = 200,
+    (buf.validate.field).string.pattern = "^[A-Za-z0-9._/-]*$"
+  ];
+}
+
+// WorkerInstructions are the instructions a project's workers get at their launch, by kind of task (decision Q70 B), in
+// a file of the project or in the Summoning Circle. A text is set once written, even empty: an empty text tells the
+// kind nothing, where an absent one leaves it to the layer below, then to the general text. Nothing by agent: each
+// agent has its own instructions outside Djinn.
+//
+//   instructions:
+//     general: Run the tasks, not the tools.
+//     mockup: Draw each option in both themes.
+message WorkerInstructions {
+  // What every worker of the project is told, when its kind has no text of its own: a work task's, an investigation's,
+  // a mockup's, an ifrit's, and the correction, review and question workers', which have none.
+  optional string general = 1 [(buf.validate.field).string.max_len = 2000];
+  // What a work task's worker is told, the one that changes the code.
+  optional string work = 2 [(buf.validate.field).string.max_len = 2000];
+  // What an investigation's worker is told, the one that reads and reports.
+  optional string investigation = 3 [(buf.validate.field).string.max_len = 2000];
+  // What a mockup's worker is told, the one that draws interface options in a tilasm.
+  optional string mockup = 4 [(buf.validate.field).string.max_len = 2000];
+  // What an ifrit is told, the worker the developer talks to in its room.
+  optional string ifrit = 5 [(buf.validate.field).string.max_len = 2000];
+}
+
+// InstructionKind names a text of WorkerInstructions: the general one, or a kind of task's.
+enum InstructionKind {
+  // Not set.
+  INSTRUCTION_KIND_UNSPECIFIED = 0;
+  // Every worker whose kind has no text of its own.
+  INSTRUCTION_KIND_GENERAL = 1;
+  // A work task's worker.
+  INSTRUCTION_KIND_WORK = 2;
+  // An investigation's worker.
+  INSTRUCTION_KIND_INVESTIGATION = 3;
+  // A mockup's worker.
+  INSTRUCTION_KIND_MOCKUP = 4;
+  // An ifrit.
+  INSTRUCTION_KIND_IFRIT = 5;
+}
+
+// WorkerInstruction is one text of a project's workers' instructions as Djinn retains it, with its value in each layer.
+message WorkerInstruction {
+  // The text's kind.
+  InstructionKind kind = 1;
+  // The text the kind's workers get: the highest layer that sets the kind's own, else the general text retained.
+  string text = 2;
+  // Where text comes from: the Summoning Circle (machine), the repository, your file; Djinn's default when no layer
+  // sets it, and text is empty.
+  SettingSource source = 3;
+  // The kind takes the general text: no layer sets its own.
+  bool general = 4;
+  // Its own value in each layer alone: unset where that layer does not set it.
+  optional string machine = 5;
+  optional string repository = 6;
+  optional string developer = 7;
 }
 
 // MergeMain is when Djinn merges a project's main branch into a wish's integration branch.
@@ -532,12 +620,15 @@ enum SettingSource {
   SETTING_SOURCE_UNSPECIFIED = 0;
   // Djinn's own default: neither file sets it.
   SETTING_SOURCE_DEFAULT = 1;
-  // The repository's .agents/settings.txtpb, shared by the team.
+  // The repository's settings, under settings: in its .agents/djinn.yaml, shared by the team.
   SETTING_SOURCE_REPOSITORY = 2;
   // The developer's own file, in Djinn's data folder.
   SETTING_SOURCE_DEVELOPER = 3;
   // The wish itself, set for this wish specifically.
   SETTING_SOURCE_WISH = 4;
+  // This machine's default for every project, set in the Summoning Circle (settings.json in Djinn's data folder): the
+  // workers' instructions alone have one.
+  SETTING_SOURCE_MACHINE = 5;
 }
 
 // ProjectSetting is one setting of a project, as its workers get it.
@@ -550,6 +641,11 @@ message ProjectSetting {
   string value = 2;
   // Where it comes from.
   SettingSource source = 3;
+  // Its value in the repository's file alone, as text like value; unset when that file does not set it.
+  optional string repository = 4;
+  // Its value in your own file alone, as text like value; unset when your file does not set it. It wins over the
+  // repository's.
+  optional string developer = 5;
 }
 
 // A wish is what you ask Djinn for, and what it works to grant. It may span several projects.
@@ -938,8 +1034,9 @@ enum LeadEventKind {
   // on the network.
   LEAD_EVENT_KIND_NETWORK = 19;
   // The disk is almost full, or space came back (W303): one line each, of no wish. Under the threshold (djinn up
-  // --disk-full-gb), the line names the free space, the detail the biggest folders Djinn knows; the push checks wait
-  // instead of failing, and run once space comes back.
+  // --disk-full-gb), the line names the free space, the detail the biggest sources Djinn knows on the disk (a
+  // project's worktrees and what ended tasks' take of them, the caches, the home's entries, W122); the push checks
+  // wait instead of failing, and run once space comes back.
   LEAD_EVENT_KIND_DISK = 20;
 }
 
@@ -1482,7 +1579,7 @@ message Task {
   string wait_question_id = 77 [(djinn.v1.ref) = "plan.v1.Question"];
   // What holds the planned task that waits (wait_reason), as the scheduler's pass judged it: room on the machine (a
   // slot, its load or memory, a write scope), its integration branch's push checks, a dependency, a usage limit, the
-  // network, or a dependency's blocking question. The window counts a wish's waiting workers by it, never by the
+  // network, an open question that holds it (hold_question_ids), or a dependency's blocking question. The window counts a wish's waiting workers by it, never by the
   // reason's text. Unspecified while the scheduler has not judged it yet, and once it starts.
   TaskHold hold = 78;
   // The path of the task's scratch folder on disk (<data>/scratch/<project>/<task>), exported to its worker as
@@ -1498,6 +1595,38 @@ message Task {
   // How many characters (Unicode code points) the task's first prompt holds, from its PromptSize: computed on a
   // QueryService read, never stored; 0 when unknown or without a prompt.
   int64 prompt_length = 81 [(djinn.v1.query) = QUERY_HIDDEN];
+  // The questions that hold it, by identifier (djinn question ask --holds W12, djinn task spawn --after Q64): work
+  // that cannot start without their answer. While one of them is open, the scheduler starts neither the task nor,
+  // for an azima, any part of it (TASK_HOLD_QUESTION), and the question is blocking. Its answer or its withdrawal
+  // releases it; the worker's first prompt then says the decision, or the withdrawal and its note. Kept once
+  // released, as a record of what it waited for.
+  repeated string hold_question_ids = 82;
+  // When and why Djinn freed the task's worktree and scratch by itself once it was finished (Q75); djinn task continue
+  // then says to fork it. Unset while they are on disk, or when they went another way (merged, cancelled, deleted).
+  Freed freed = 83;
+}
+
+// Freed says when and why Djinn freed a finished task's worktree and scratch by itself (Q75). It never frees a worktree
+// holding changes not committed, nor a branch with commits found neither in the integration branch nor on the remote,
+// and never touches a remote branch.
+message Freed {
+  google.protobuf.Timestamp time = 1;
+  FreeRule rule = 2;
+  // Its local branch went too, every commit of it being in the integration branch or on the remote; kept otherwise.
+  bool branch_deleted = 3;
+}
+
+// FreeRule is the rule of Q75 that freed a task's worktree and scratch.
+enum FreeRule {
+  FREE_RULE_UNSPECIFIED = 0;
+  // Done 30 days ago with its work integrated (Q81): its branch stays. A task cancelled, dropped, failed or stopped
+  // is never freed by its age.
+  FREE_RULE_AGE = 1;
+  // Its azima was validated, its request merged or closed as done by the developer or the lead: its local branch goes
+  // too.
+  FREE_RULE_AZIMA = 2;
+  // Its wish was granted, which validates all its azimas: its local branch goes too.
+  FREE_RULE_GRANT = 3;
 }
 
 // TaskHold is what holds a planned task that waits (Task.hold).
@@ -1515,7 +1644,8 @@ enum TaskHold {
   TASK_HOLD_LIMIT = 4;
   // The network: down, or back and resuming the work it stopped one task per pass.
   TASK_HOLD_NETWORK = 5;
-  // A blocking question that a task it depends on waits on: its answer continues that task.
+  // A blocking question: one that holds it or its azima (Task.hold_question_ids), whose answer releases it, or one
+  // that a task it depends on waits on, whose answer continues that task.
   TASK_HOLD_QUESTION = 6;
   // Its wish is paused or granted.
   TASK_HOLD_WISH = 7;
@@ -2001,19 +2131,24 @@ enum AzimaState {
   AZIMA_STATE_WATCHING = 6;
 }
 
-// AzimaPrState is where a pull request for an azima stands.
+// AzimaPrState is where a pull request for an azima stands. Once open, Djinn reads it on the forge again at each pass
+// of its integration, by its number, whatever the azima's parts do (a watcher that runs for good) and even when its
+// branch is gone (W81).
 enum AzimaPrState {
   AZIMA_PR_STATE_UNSPECIFIED = 0;
   AZIMA_PR_STATE_PROPOSED = 1;
   AZIMA_PR_STATE_OPEN = 2;
   AZIMA_PR_STATE_MERGED = 3;
+  // Closed on the forge without being merged: the lead hears it once, and Djinn closes nothing; reopened, or another
+  // one opened for its branch, it is open again.
+  AZIMA_PR_STATE_CLOSED = 4;
 }
 
 // AzimaPr describes the pull request of an azima branch.
 message AzimaPr {
   // The URL of the pull request.
   string url = 1;
-  // Where the pull request stands: proposed, open, merged.
+  // Where the pull request stands: proposed, open, merged, closed without merging.
   AzimaPrState state = 2;
 }
 
@@ -2126,6 +2261,8 @@ enum TaskEventKind {
 // An event of a task's worker: what it said, the tools it called, what it spent.
 message TaskEvent {
   option (djinn.v1.unique) = {fields: ["task_id", "seq"]};
+  // A task's prompts, which its list reads for many tasks at once (plan.FillPrompts, W123).
+  option (djinn.v1.subset) = {name: "prompt", field: "kind", value: "TASK_EVENT_KIND_PROMPT", by: ["task_id", "seq"]};
 
   // Identifier, a UUIDv7.
   string id = 1 [(buf.validate.field).string.uuid = true];
@@ -2734,6 +2871,12 @@ message QuestionServiceReviseRequest {
     (buf.validate.field).repeated.max_items = 16,
     (buf.validate.field).repeated.items.string.max_len = 2048
   ];
+  // The work it holds now (see djinn question ask --holds), in place of what it held: the tasks it no longer names
+  // are released. The former ones when not given; none when given empty (--holds "").
+  repeated string holds = 14 [
+    (buf.validate.field).repeated.max_items = 100,
+    (buf.validate.field).repeated.items.string.max_len = 1000
+  ];
 }
 
 message QuestionServiceReviseResponse {
@@ -2812,6 +2955,15 @@ message QuestionServiceAskRequest {
   // The command line reads --context-file and sends its text as context (W621).
   reserved 15;
   reserved "context_file";
+  // The work Djinn cannot start without the answer: planned tasks or azimas of the wish that have not started, by
+  // code (W12, T16) or identifier. Repeat it, or separate them with commas: --holds W12,T16. Each waits for the
+  // question as for a dependency, an azima's parts with it, and the question is blocking while one waits; the answer
+  // releases them, a withdrawal too, and each worker starts with the decision, or the withdrawal's note.
+  repeated string holds = 16 [
+    (buf.validate.field).repeated.max_items = 100,
+    (buf.validate.field).repeated.items.string.min_len = 1,
+    (buf.validate.field).repeated.items.string.max_len = 1000
+  ];
 }
 
 message QuestionServiceAskResponse {
@@ -3011,7 +3163,7 @@ service ProjectService {
     option idempotency_level = NO_SIDE_EFFECTS;
   }
   // Show a project, and the defaults its workers get: each setting and where it comes from, the repository's
-  // .agents/settings.txtpb or your own file.
+  // .agents/djinn.yaml or your own file.
   rpc Show(ProjectServiceShowRequest) returns (ProjectServiceShowResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option idempotency_level = NO_SIDE_EFFECTS;
@@ -3026,6 +3178,13 @@ service ProjectService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
+  // Show the instructions the project's workers get, by kind of task, each with its value in the Summoning Circle, the
+  // repository's .agents/djinn.yaml and your own file; or set one text (--kind) in your own file, where it wins over
+  // the other two. --unset removes yours, and the layers below apply again.
+  rpc Instructions(ProjectServiceInstructionsRequest) returns (ProjectServiceInstructionsResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
   // Show or change the push strategy of a project: wish (one branch per wish) or azima (one branch per azima).
   rpc PushStrategy(ProjectServicePushStrategyRequest) returns (ProjectServicePushStrategyResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
@@ -3035,6 +3194,12 @@ service ProjectService {
   // yourself, besides those its .agents/permissions.txtpb lists: kept in your own settings file, never in the
   // repository.
   rpc Allow(ProjectServiceAllowRequest) returns (ProjectServiceAllowResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // Show the gates the project declares in its djinn.yaml, as Djinn applies them on this machine, or turn one off
+  // (--off) or back on (--on) for yourself: kept in your own settings file, never in the repository.
+  rpc Gates(ProjectServiceGatesRequest) returns (ProjectServiceGatesResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
@@ -3059,8 +3224,9 @@ service ProjectService {
   }
   // Choose the project's reference branch for yourself: the branch Djinn keeps the wishes up to date with (merge_main),
   // that pull requests aim at and that tells whether a branch landed. Written as main_branch in your own settings
-  // file, never in the repository: it wins over the team's .agents/settings.txtpb, where a team that follows another
+  // file, never in the repository: it wins over the team's .agents/djinn.yaml, where a team that follows another
   // branch names it for everyone. Refused for a branch the repository does not hold, on its remote when it has one.
+  // With --config, the branch Djinn reads the configuration on instead (config_branch), to try it before it merges.
   rpc SetBranch(ProjectServiceSetBranchRequest) returns (ProjectServiceSetBranchResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
@@ -3109,7 +3275,7 @@ message ProjectServiceShowResponse {
   Project project = 1;
   // The settings its workers get, when a task names none, and where each comes from.
   repeated ProjectSetting settings = 2;
-  // The team's file, in the project's folder; empty for a project without one on this machine.
+  // The team's file, its djinn.yaml in the project's folder; empty for a project without one on this machine.
   string repository_file = 3;
   // Your own file, in Djinn's data folder. It wins over the team's, setting by setting.
   string developer_file = 4;
@@ -3135,6 +3301,20 @@ message ProjectServiceShowResponse {
   repeated string watch_commands = 9;
   // The serve commands you allow in the project for yourself (djinn project allow --serve), from your own file.
   repeated string serve_commands = 10;
+  // The project's .agents/permissions.txtpb, read where Djinn reads its configuration (on the reference branch, see
+  // reference): what its workers may do, translated for each agent. Unset when the project has none, or when it cannot
+  // be read (a notice says why).
+  djinn.v1.Permissions permissions = 15;
+  // The ceilings of the containers its workers start, as the project's djinn.yaml sets them; unset, or a field at 0:
+  // Djinn's default.
+  djinn.v1.Containers containers = 16;
+  // What Djinn adds to the first prompt of each worker that edits the project, from its settings: the checks it runs
+  // and when, the targeted tests, the setup of a fresh worktree; empty for a project that sets no check. The team's
+  // own instructions to workers live in the repository's agent instructions (AGENTS.md), which every agent reads.
+  string workers_brief = 17;
+  // The instructions the project's workers get, by kind (decision Q70 B), as the three layers resolve them: the
+  // general text first, then work, investigation, mockup and ifrit.
+  repeated WorkerInstruction instructions = 18;
 
   // The free-text problems and warnings, which notices replaced.
   reserved 5, 8;
@@ -3183,6 +3363,25 @@ message ProjectServiceSetPushResponse {
   Project project = 1;
 }
 
+message ProjectServiceInstructionsRequest {
+  // The project, by name (case ignored) or identifier.
+  string project = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.max_len = 100
+  ];
+  // The text to set: the general one, or a kind of task's. Unset: show them, change nothing.
+  InstructionKind kind = 2 [(buf.validate.field).enum.defined_only = true];
+  // The text; empty tells the kind nothing, over the layers below.
+  string text = 3 [(buf.validate.field).string.max_len = 2000];
+  // Remove your text instead: the repository's, then the Summoning Circle's, apply again.
+  bool unset = 4;
+}
+
+message ProjectServiceInstructionsResponse {
+  // The instructions as Djinn retains them now, the general text first.
+  repeated WorkerInstruction instructions = 1;
+}
+
 message ProjectServicePushStrategyRequest {
   // The project, by name (case ignored) or identifier.
   string project = 1 [
@@ -3229,6 +3428,49 @@ message ProjectServiceAllowResponse {
   string developer_file = 2;
   // The serve commands you allow in the project, from your own settings file.
   repeated string serve_commands = 3;
+}
+
+message ProjectServiceGatesRequest {
+  // The project, by name (case ignored) or identifier.
+  string project = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.max_len = 100
+  ];
+  // A gate the project declares, to turn off on this machine. Neither this nor --on: show the gates.
+  optional string off = 2 [(buf.validate.field).string.pattern = "^[a-z][a-z0-9-]{0,39}$"];
+  // A gate you turned off, to turn back on; not with --off.
+  optional string on = 3 [(buf.validate.field).string.pattern = "^[a-z][a-z0-9-]{0,39}$"];
+}
+
+message ProjectServiceGatesResponse {
+  // The gates the project declares and Djinn applies on this machine, in the file's order: the valid ones, not turned
+  // off.
+  repeated djinn.v1.ProjectGate gates = 1;
+  // The file that declares them, relative to the project: djinn.yaml or .agents/djinn.yaml; empty when there is none.
+  string file = 2;
+  // The gates you turn off, from your own settings file.
+  repeated string gates_off = 3;
+  // Your settings file, in Djinn's data folder.
+  string developer_file = 4;
+  // What Djinn found wrong in the declaration: a gate left out, and why; a pattern of one word.
+  repeated string warnings = 5;
+  // The gates you turn off that the project declares, as it declares them, in the file's order.
+  repeated djinn.v1.ProjectGate off_gates = 6;
+  // Where Djinn read the file and what it found there, in one line, never empty: "Read .agents/djinn.yaml on
+  // origin/main (4b9212581d).", "No djinn.yaml nor .agents/djinn.yaml on origin/main (4b9212581d): the project
+  // declares no gate.", followed by what your config_branch changes, set or gone. The command line prints it first.
+  string read = 7 [(djinn.v1.headline) = true];
+  // The ref Djinn read the file on, short: origin/main, or origin/<config_branch> while your config_branch is on the
+  // remote; empty when it reads the project's folder (outside Git, without a remote, or its branch not fetched).
+  string ref = 8;
+  // The commit ref pointed at, in full; empty without ref.
+  string commit = 9;
+  // Your config_branch, from your own settings file: the branch Djinn reads the project's configuration on, to try it
+  // before it merges; empty when you name none.
+  string config_branch = 10;
+  // Whether your config_branch is not on the remote (merged and deleted, or not fetched yet): Djinn reads the reference
+  // branch instead, ref.
+  bool config_branch_missing = 11;
 }
 
 message ProjectServiceForgetSyncRequest {
@@ -3312,8 +3554,13 @@ message ProjectServiceSetBranchRequest {
     (buf.validate.field).string.pattern = "^[A-Za-z0-9._/-]*$"
   ];
   // Take your choice back: the team's file names the reference branch again, else Djinn finds it (the remote's
-  // default branch, else main, else master).
+  // default branch, else main, else master). With --config: Djinn reads the configuration on the reference branch
+  // again.
   bool unset = 3;
+  // Name the branch Djinn reads the configuration on (config_branch: djinn.yaml and skills) rather than the reference
+  // branch, to try a change of it before it merges: the permissions, pull requests and merges keep the reference
+  // branch. Take it back with --unset once the branch merges.
+  bool config = 4;
 }
 
 message ProjectServiceAcknowledgeRequest {
@@ -3754,7 +4001,8 @@ service WishService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option idempotency_level = NO_SIDE_EFFECTS;
   }
-  // Everything a wish holds, as an export carries it, and its projects on this machine, for the window.
+  // What a wish holds, as an export carries it but without its tasks' events (most of a wish, read by task), and its
+  // projects on this machine, for the window.
   rpc Snapshot(WishServiceSnapshotRequest) returns (WishServiceSnapshotResponse) {
     option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
   }
@@ -4014,9 +4262,10 @@ message WishServiceSetIntegrationRequest {
   PushMode push_mode = 6 [(buf.validate.field).enum.defined_only = true];
   // Push strategy for the wish: wish or azima. Unset: unchanged.
   optional PushStrategy push_strategy = 7 [(buf.validate.field).enum.defined_only = true];
-  // Make the branch when the project's repository has none of that name: a new branch at the tip of the wish's
-  // current integration branch there. Without it, a branch the repository lacks is recorded, and the work waits for
-  // it.
+  // Make the branch when the project's repository has none of that name, the one the wish records already included:
+  // from the remote's branch of that name, else at the tip of the wish's current integration branch there, else from
+  // the reference branch. Without it, a branch the repository lacks is recorded, and the integration makes it the same
+  // way before it merges work into it.
   bool create_branch = 8;
 }
 
@@ -4363,7 +4612,7 @@ message WishServiceSnapshotRequest {
 }
 
 message WishServiceSnapshotResponse {
-  // Everything the wish holds. Its project references carry the identifiers of this machine.
+  // What the wish holds, its tasks' events left out. Its project references carry the identifiers of this machine.
   WishExport export = 1;
   // The wish's projects on this machine, with their folders.
   repeated Project projects = 2;
@@ -4514,7 +4763,8 @@ service LeadService {
   // queue. The text waits while something is being typed there or a choice is on screen, then goes; texts arrive in
   // the order written. About a wish, it starts with "About wish <title> (<id>):". The lead must run in its terminal:
   // djinn lead resume starts it. While Djinn drives the lead, the text is an event of its queue instead, whole: the
-  // next batch's session reads it, and a text written while a batch runs waits for the next one. A worker cannot
+  // next batch's session reads it, and a text written while a batch runs waits for the next one. With --files, each
+  // file is kept in the wish and the text ends with a line "Files: <path> (<type>, <size>)" for it. A worker cannot
   // call it, and djinn mcp has no tool for it.
   rpc Tell(LeadServiceTellRequest) returns (LeadServiceTellResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
@@ -4642,6 +4892,13 @@ service LeadService {
   // Set one row of the global Summoning Circle (lead, investigation, mockup, ifrit, work, correction, review, or
   // question). For every kind except lead, an empty model means "Same as lead".
   rpc SetCircle(LeadServiceSetCircleRequest) returns (LeadServiceSetCircleResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // Show the workers' instructions on this machine, the Summoning Circle's, by kind of task: the default of every
+  // project, which a project's repository, then your own file of the project, win over, kind by kind; or set one text
+  // (--kind). --unset removes it.
+  rpc Instructions(LeadServiceInstructionsRequest) returns (LeadServiceInstructionsResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
@@ -4781,15 +5038,33 @@ message LeadServiceEventResponse {
 }
 
 message LeadServiceTellRequest {
-  // What to say to the lead. Line breaks stay line breaks for an agent that takes a paste.
+  // What to say to the lead. Line breaks stay line breaks for an agent that takes a paste. Empty only with files.
   string text = 1 [
-    (buf.validate.field).required = true,
+    (djinn.v1.positional) = true,
     (buf.validate.field).string.max_len = 20000
   ];
   // The wish the text is about, if any.
   string wish_id = 2 [
     (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
     (buf.validate.field).string.uuid = true
+  ];
+  // Files handed to the lead with the text, a screenshot or a log, up to 10 of 20 MB each: each is kept in the wish's
+  // folder of Djinn's data folder (wishes/<wish>/files, lead/files without a wish), with a block of kind "file" on the
+  // wish, and the text ends with a line "Files: <path> (<type>, <size>)" for each, which the lead opens with its own
+  // file tool. Give a file's path, repeated for more.
+  repeated LeadFile files = 3 [(buf.validate.field).repeated.max_items = 10];
+}
+
+// A file given to the lead with a message (LeadServiceTellRequest.files).
+message LeadFile {
+  // Its name, as pasted: Djinn keeps it, made safe, after the time it came.
+  string name = 1 [(buf.validate.field).string.max_len = 255];
+  // Its media type, image/png for a screenshot; empty: Djinn tells it from the name or the bytes.
+  string type = 2 [(buf.validate.field).string.max_len = 255];
+  // Its bytes, at most 20 MB.
+  bytes data = 3 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).bytes.max_len = 20971520
   ];
 }
 
@@ -4948,6 +5223,22 @@ message LeadServiceGetCircleResponse {
   repeated CircleModel models = 2;
   // Provider sign-in status and lead capability on this machine.
   repeated CircleProvider providers = 3;
+  // The workers' instructions on this machine, by kind: the default of every project.
+  WorkerInstructions instructions = 4;
+}
+
+message LeadServiceInstructionsRequest {
+  // The text to set: the general one, or a kind of task's. Unset: show them, change nothing.
+  InstructionKind kind = 1 [(buf.validate.field).enum.defined_only = true];
+  // The text; empty tells the kind nothing, over the general text.
+  string text = 2 [(buf.validate.field).string.max_len = 2000];
+  // Remove the text instead.
+  bool unset = 3;
+}
+
+message LeadServiceInstructionsResponse {
+  // The workers' instructions on this machine, after the change if any.
+  WorkerInstructions instructions = 1;
 }
 
 message LeadServiceSetCircleRequest {
@@ -5612,8 +5903,10 @@ message TaskServiceSpawnRequest {
     defined_only: true
     not_in: [6, 7, 8]
   }];
-  // What comes before the task: tasks of the same wish that must be done first, by code (W1, T07) or identifier.
-  // Repeat it, or separate them with commas: --after W1,W2. Give a task what comes before it here, at its spawn.
+  // What comes before the task: tasks of the same wish that must be done first, by code (W1, T07) or identifier, or
+  // open questions of the wish it cannot start without, by code (Q64): the question holds it (see djinn question ask
+  // --holds) and is blocking until answered or withdrawn. Repeat it, or separate them with commas: --after W1,Q64.
+  // Give a task what comes before it here, at its spawn.
   repeated string after = 17 [
     (buf.validate.field).repeated.max_items = 100,
     (buf.validate.field).repeated.items.string.min_len = 1,

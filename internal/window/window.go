@@ -4,17 +4,51 @@
 // rescued step by step, once each: the page loads again, then the window opens again with a new view. The new view
 // draws in software rendering only after a GPU hang, until Djinn restarts: rendering stays on the GPU at every start
 // (decision Q89).
+//
+// A page can also load and then wait, its web process alive and idle, never calling the server (W373, W172): a page
+// that makes no call within Silence of its load finished is silent. It is logged with a probe of the page and the
+// web processes' threads, then loaded again once per djinn up, and told nowhere else: no notification, no line on
+// djinn up's output (decisions Q108, Q111), a false alarm costing only a reload.
 package window
 
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/empowill/djinn/internal/logx"
 )
+
+// Silence is how long a page has, from its load finished, to call the server (decision Q111): a good start calls about
+// 0.2 s after (W172), a stuck one not at all in 85 s.
+const Silence = 3 * time.Second
+
+// ProbeWait is how long the probe of a silent page has to answer: no answer tells a JS thread that does not run.
+const ProbeWait = 2 * time.Second
+
+// ProbeScript is what the probe of a silent page evaluates in it: how far the document went, whether the loader still
+// shows and the interface mounted, and whether boot.js attached the entry module (the page's load finishes before it
+// does, vite.config.ts), with the document's scripts. The resource timing would name the loads still pending, but it
+// lists nothing loaded from wails:// (W181's native run): no field for it.
+const ProbeScript = `(() => {
+  const root = document.getElementById("root");
+  const scripts = [...document.scripts].map((s) => s.getAttribute("src")).filter(Boolean);
+  const entry = document.querySelector('meta[name="djinn-entry-js"]')?.getAttribute("content");
+  return {
+    ready: document.readyState,
+    splash: !!document.getElementById("djinn-splash"),
+    root: root ? root.childElementCount : -1,
+    visibility: document.visibilityState,
+    entry: !entry ? "none" : scripts.includes(entry) ? "attached" : "not attached",
+    scripts,
+    now: Math.round(performance.now()),
+  };
+})()`
 
 // Lookback is how long before djinn up started the kernel's log is read: the hang that kills a web process may come
 // just before a start (17/10: 30 s before an install restarted Djinn).
@@ -49,9 +83,18 @@ type Event struct {
 	Err error
 }
 
-// Watch follows the windows of one djinn up: Opened as each opens, Loaded at each of its page's load events, Ended as
-// its web process ends. It reloads a page once and recreates a window once, per djinn up, never in a loop.
+// Watch follows the windows of one djinn up: Opened as each opens, Loaded at each of its page's load events, Called
+// as its page calls the server, Ended as its web process ends. It reloads a dead page once and recreates a window
+// once, and reloads a silent page once, per djinn up, never in a loop.
 type Watch struct {
+	// After is how long a page has, from its load finished, to call the server: Silence when zero.
+	After time.Duration
+	// Probe evaluates script in the current page and gives its answer as JSON. Nil: a silent page is logged without.
+	Probe func(ctx context.Context, script string) (string, error)
+	// ProbeWait is how long the probe has to answer: ProbeWait when zero.
+	ProbeWait time.Duration
+	// AfterFunc runs f after d unless the returned function stops it first: time.AfterFunc when nil. Tests replace it.
+	AfterFunc func(d time.Duration, f func()) (stop func() bool)
 	// Started is when djinn up started: the kernel's log is read from Lookback before it, the load events are timed
 	// from it.
 	Started time.Time
@@ -70,13 +113,19 @@ type Watch struct {
 	// Tell says what happened outside the window: a line where djinn up runs, a desktop notification. Nil says nothing.
 	Tell func(Event)
 
+	heard atomic.Bool // the current document called the server
+
 	mu        sync.Mutex
-	page      int      // pages loaded: the current one's number
-	loads     []string // the load events since the last rescue, timed from Started
-	reloaded  bool     // a reload was tried
-	recreated bool     // a new view was tried
-	gpuHang   bool     // a GPU hang was found in the kernel's log
-	rescuing  bool     // a rescue runs: another trigger of the same page waits for none
+	page      int         // pages loaded: the current one's number
+	document  int         // documents committed: the current one's number, which a silence names
+	finished  time.Time   // when the current document's load finished
+	stop      func() bool // the current document's silence timer
+	loads     []string    // the load events since the last rescue or silence, timed from Started
+	reloaded  bool        // a reload was tried
+	recreated bool        // a new view was tried
+	quieted   bool        // a silent page was loaded again
+	gpuHang   bool        // a GPU hang was found in the kernel's log
+	rescuing  bool        // a rescue runs: another trigger of the same page waits for none
 }
 
 // Opened tells that a window opened, its page the current one from now on.
@@ -87,7 +136,8 @@ func (w *Watch) Opened() {
 }
 
 // Loaded logs a load event of the current window's page ("started", "committed", "finished", "failed: …"), and keeps
-// it for the log of a dead page.
+// it for the log of a dead or silent page. A document committed is a new one, not heard yet; once its load finished,
+// it has After to call the server.
 func (w *Watch) Loaded(event string) {
 	w.mu.Lock()
 	at := time.Since(w.Started).Round(time.Millisecond)
@@ -96,8 +146,157 @@ func (w *Watch) Loaded(event string) {
 		w.loads = w.loads[len(w.loads)-32:]
 	}
 	page := w.page
+	switch event {
+	case "committed":
+		w.stopLocked()
+		w.document++
+		w.finished = time.Time{}
+		w.heard.Store(false)
+	case "finished":
+		w.finished = time.Now()
+		if !w.heard.Load() && w.stop == nil {
+			w.armLocked(w.document)
+		}
+	}
 	w.mu.Unlock()
 	logx.L().Info("window: load", "event", event, "page", page, "since_start", at)
+}
+
+// stopLocked stops the silence timer of the current document.
+func (w *Watch) stopLocked() {
+	if w.stop != nil {
+		w.stop()
+		w.stop = nil
+	}
+}
+
+// armLocked arms the silence timer of document n, the current one.
+func (w *Watch) armLocked(n int) {
+	after := w.After
+	if after == 0 {
+		after = Silence
+	}
+	afterFunc := w.AfterFunc
+	if afterFunc == nil {
+		afterFunc = func(d time.Duration, f func()) func() bool { return time.AfterFunc(d, f).Stop }
+	}
+	w.stop = afterFunc(after, func() {
+		defer logx.Crash("window: a silent page")
+		w.silent(n, after)
+	})
+}
+
+// Called tells that the current page called the server: it runs. The first call of each document is logged.
+func (w *Watch) Called() {
+	if w.heard.Load() {
+		return
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.heard.Swap(true) {
+		return
+	}
+	w.stopLocked()
+	if !w.finished.IsZero() {
+		logx.L().Info("window: the page calls the server", "page", w.page,
+			"after_load", time.Since(w.finished).Round(time.Millisecond))
+	} else {
+		logx.L().Info("window: the page calls the server", "page", w.page, "before_load_finished", true)
+	}
+}
+
+// Handler marks each call of the window's page to h: a Connect method, not a file of the page, which the web process
+// loads before any script runs.
+func (w *Watch) Handler(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		if isCall(r.URL.Path) {
+			w.Called()
+		}
+		h.ServeHTTP(rw, r)
+	})
+}
+
+// isCall tells that path is a Connect method, /package.v1.SomeService/Method.
+func isCall(path string) bool {
+	service, method, ok := strings.Cut(strings.TrimPrefix(path, "/"), "/")
+	return ok && method != "" && !strings.Contains(method, "/") && strings.HasSuffix(service, "Service") &&
+		strings.Contains(service, ".")
+}
+
+// silent logs document n, silent for after since its load finished, with a probe of the page and the web processes'
+// threads, then loads it again, once per djinn up, unless it called meanwhile or another rescue took it. It tells
+// nothing outside the log.
+func (w *Watch) silent(n int, after time.Duration) {
+	w.mu.Lock()
+	w.stop = nil
+	page := w.page
+	current := n == w.document && !w.heard.Load() && !w.rescuing
+	w.mu.Unlock()
+	if !current {
+		return
+	}
+	probe := w.probe()
+	processes := w.webProcesses()
+	w.mu.Lock()
+	loads := w.loads
+	w.loads = nil
+	// The page called during the probe, or its web process ended and its rescue took it.
+	called := w.heard.Load() || n != w.document || page != w.page || w.rescuing
+	reload := !called && !w.quieted && w.Reload != nil
+	w.quieted = w.quieted || reload
+	if reload {
+		w.page++
+	}
+	next := w.page
+	w.mu.Unlock()
+	logx.L().Warn("window: the page is silent", "page", page, "after", after, "probe", probe, "loads", loads,
+		"web_processes", processes)
+	switch {
+	case called:
+		logx.L().Info("window: the silent page called or was rescued meanwhile, not loaded again", "page", page)
+	case reload:
+		if err := w.Reload(); err != nil {
+			logx.L().Error("window: the silent page could not load again", "err", err)
+		} else {
+			logx.L().Warn("window: the page loads again", "page", next, "silent", true)
+		}
+	default:
+		logx.L().Warn("window: the silent page was loaded again already: quit Djinn and start it again if it stays on its loader", "page", page)
+	}
+}
+
+// probe asks the page what it waits on, ProbeScript, within ProbeWait: its answer, or why there is none.
+func (w *Watch) probe() string {
+	if w.Probe == nil {
+		return "none"
+	}
+	wait := w.ProbeWait
+	if wait == 0 {
+		wait = ProbeWait
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), wait)
+	defer cancel()
+	type answer struct {
+		json string
+		err  error
+	}
+	done := make(chan answer, 1)
+	start := time.Now()
+	go func() {
+		defer logx.Crash("window: probe the page")
+		json, err := w.Probe(ctx, ProbeScript)
+		done <- answer{json, err}
+	}()
+	select {
+	case a := <-done:
+		took := time.Since(start).Round(time.Millisecond)
+		if a.err != nil {
+			return fmt.Sprintf("failed in %s: %v", took, a.err)
+		}
+		return fmt.Sprintf("answered in %s: %s", took, a.json)
+	case <-ctx.Done():
+		return fmt.Sprintf("no answer within %s", wait)
+	}
 }
 
 // Ended tells that the web process of the current page ended, for reason, at its start or any time after: the page is
@@ -105,6 +304,7 @@ func (w *Watch) Loaded(event string) {
 func (w *Watch) Ended(reason string) {
 	w.mu.Lock()
 	n := w.page
+	w.stopLocked()
 	w.mu.Unlock()
 	w.rescue(n, Event{Ended: reason})
 }

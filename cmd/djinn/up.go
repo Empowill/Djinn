@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"net"
 	"net/http"
 	"os"
@@ -34,6 +35,7 @@ import (
 	"github.com/empowill/djinn/internal/gate"
 	"github.com/empowill/djinn/internal/harness"
 	"github.com/empowill/djinn/internal/link"
+	"github.com/empowill/djinn/internal/lockx"
 	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/machine"
 	"github.com/empowill/djinn/internal/plan"
@@ -62,6 +64,7 @@ func runUp(args []string) (restart bool, err error) {
 		browser                                   bool
 		enlightenWorkers                          bool
 		profiles                                  bool
+		updateCheck                               bool
 		paused                                    bool
 		pausedMemory, brakeMemory                 int
 		port, maxWorkers, workerCPU, workerMemory int
@@ -75,6 +78,7 @@ func runUp(args []string) (restart bool, err error) {
 		"worker-memory-guard": &workerMemoryGuard,
 		"enlighten-workers":   &enlightenWorkers,
 		"pprof":               &profiles,
+		"update-check":        &updateCheck,
 		"ifrit-idle":          &ifritIdle,
 		"disk-trim-gb":        &diskTrim,
 		"disk-full-gb":        &diskFull,
@@ -101,6 +105,13 @@ func runUp(args []string) (restart bool, err error) {
 			return false, fmt.Errorf("DJINN_PPROF: %w", err)
 		}
 		profiles = on
+	}
+	if v := os.Getenv("DJINN_UPDATE_CHECK"); v != "" && !flagSet(flags, "update-check") {
+		on, err := onOff(v)
+		if err != nil {
+			return false, fmt.Errorf("DJINN_UPDATE_CHECK: %w", err)
+		}
+		updateCheck = on
 	}
 	if flags.NArg() > 0 {
 		return false, fmt.Errorf("unexpected argument %q", flags.Arg(0))
@@ -176,22 +187,52 @@ func runUp(args []string) (restart bool, err error) {
 	if p, ok := machine.ReadBrake(home); ok && !brakeFixed {
 		brakeMemory = p
 	}
-	// One djinn per data directory: a second djinn up brings the first one's window to the front instead.
+	// A restore a stop cut between its renames left no data folder: it ends before anything creates one, the lock first.
+	var restored []string
+	finish := func() error {
+		did, err := backup.Finish(home)
+		restored = append(restored, did...)
+		if err != nil {
+			return fmt.Errorf("finish the restore a stop cut: %w", err)
+		}
+		return nil
+	}
+	if _, err := os.Stat(home); errors.Is(err, fs.ErrNotExist) {
+		if err := finish(); err != nil {
+			return false, err
+		}
+	}
+	// One djinn per data directory: a second djinn up brings the first one's window to the front instead. The lock
+	// comes before anything writes in the folder: a djinn up the address does not reach (one under wine, in a
+	// container, or one starting) holds it too, whatever its version (W86, tilasm L15).
+	lock, err := holdHome(home)
+	if errors.Is(err, lockx.ErrHeld) {
+		if addr, err := server.ReadAddr(home); err == nil && cli.Alive(addr) {
+			return false, showRunning(addr, flags)
+		}
+		return false, fmt.Errorf("another djinn up holds the data folder %s, and does not answer at its address: it is "+
+			"starting, or runs where this one cannot reach it (under wine, in a container); stop it, or give this one a "+
+			"data folder of its own (DJINN_HOME)", home)
+	}
+	if err != nil {
+		return false, fmt.Errorf("lock the data folder: %w", err)
+	}
+	defer lock.Release() //nolint:errcheck // Closing the file lets the lock go; the process ends it anyway.
 	unclean := false
 	if addr, err := server.ReadAddr(home); err == nil {
+		// A djinn up older than the lock may run on the folder still.
 		if cli.Alive(addr) {
 			return false, showRunning(addr, flags)
 		}
 		fmt.Fprintln(os.Stderr, "djinn: the last djinn up did not stop cleanly; starting again")
 		unclean = true
 	}
-	// A restore a stop cut between its renames left no data folder: it ends before anything creates one.
-	restored, restoreErr := backup.Finish(home)
+	finishErr := finish()
 	for _, line := range restored {
 		fmt.Fprintln(os.Stderr, "djinn:", line)
 	}
-	if restoreErr != nil {
-		return false, fmt.Errorf("finish the restore a stop cut: %w", restoreErr)
+	if finishErr != nil {
+		return false, finishErr
 	}
 	// What djinn up does goes to logs/djinn.log, rolled over (W511); its stop is followed step by step there, and a
 	// stop that hangs dumps its goroutines, then exits.
@@ -214,6 +255,9 @@ func runUp(args []string) (restart bool, err error) {
 	defer logx.Crash("djinn up")
 	down := logx.NewShutdown(logx.Folder(home))
 	defer down.End()
+	// The local settings this build reads in a new shape are migrated now, before any reads them; a migration that
+	// cannot apply is logged and tried again at the next start, never a failed start (docs/migrations.md).
+	plan.Migrate(home)
 	// Each stop names its source, which the log says (decision Q84): a signal, Ctrl+Q, the tray, an install.
 	ctx, stop, release := stopContext(context.Background(), nil)
 	defer release()
@@ -259,6 +303,15 @@ func runUp(args []string) (restart bool, err error) {
 	defer history.Flush(context.WithoutCancel(ctx))
 	// After a stop that was not clean or with the memory near full, or with --paused, no worker resumes (held.go).
 	hold := heldStart(ctx, paused, unclean, pausedMemory, monitor.Total(), history.LastMachine)
+	// The containers a past run of this Djinn left go in the background: its start never waits on docker, which may
+	// take long to answer (Docker Desktop not started, a Windows runner's daemon: W80). The first worker waits for it
+	// before it starts, so that none of its own containers goes with them.
+	leftovers := make(chan struct{})
+	go func() {
+		defer close(leftovers)
+		defer logx.Crash("remove leftover containers")
+		wrap.Remove(ctx, wrap.HomeLabel+"="+home)
+	}()
 	opts := []harness.Option{
 		harness.WithHistory(history),
 		harness.WithCapacity(monitor.Capacity),
@@ -267,7 +320,7 @@ func runUp(args []string) (restart bool, err error) {
 		harness.WithTotal(monitor.Total),
 		// Started from the Finder or a desktop menu, Djinn has a bare PATH (fromLauncher): before each start, its PATH
 		// gains the folders of the agents installed meanwhile.
-		harness.WithBeforeStart(beforeStart()),
+		harness.WithBeforeStart(afterLeftovers(ctx, leftovers, beforeStart())),
 		// While a task waits for its agent's usage limit, an account changed since lifts it (health.go).
 		harness.WithAccount(ui.Account),
 		// An outage Djinn suspects from its workers' and commands' errors is confirmed, and seen to end, by one HEAD
@@ -295,8 +348,7 @@ func runUp(args []string) (restart bool, err error) {
 		opts = append(opts, harness.WithMeasure(5*time.Second, machine.ReadWorker))
 	}
 	// A worker's containers count in its task's series and go once it ends; those a past run of this Djinn left go
-	// now, before any worker starts.
-	wrap.Remove(ctx, wrap.HomeLabel+"="+home)
+	// before any worker starts (leftovers).
 	containers := harness.Containers{Remove: wrap.Remove, Pause: wrap.Pause}
 	if machine.NotMeasured == "" {
 		containers.Read = func(taskID string) (machine.Group, error) {
@@ -354,6 +406,19 @@ func runUp(args []string) (restart bool, err error) {
 	gates.ProjectResolver(func(taskID, dir string) string {
 		_, name, _ := machine.Project(ctx, db, taskID, dir)
 		return name
+	})
+	// The gates a project declares in its djinn.yaml, read on its reference branch at each command (L17).
+	gates.Declare(func(taskID, dir string) gate.Declared {
+		id, name, _ := machine.Project(ctx, db, taskID, dir)
+		if id == "" {
+			return gate.Declared{}
+		}
+		project, err := store.Get[*planv1.Project](ctx, db, id)
+		if err != nil {
+			return gate.Declared{}
+		}
+		read := workers.ProjectGates(project)
+		return gate.Declared{Project: name, File: read.File, Gates: read.Gates}
 	})
 	seriesRec := machine.NewSeriesRecorder(monitor, machine.ReadWorker)
 	seriesRec.Keep(history)
@@ -457,7 +522,7 @@ func runUp(args []string) (restart bool, err error) {
 	} else {
 		leadFailed = resumeLead(ctx, db, home, terminals, uiSvc, os.Stderr)
 	}
-	updates, err := newUpdater(version, uiSvc, terminals, leadNotes, stop)
+	updates, err := newUpdater(version, updateCheck, uiSvc, terminals, leadNotes, stop)
 	if err != nil {
 		return false, err
 	}
@@ -509,6 +574,7 @@ func runUp(args []string) (restart bool, err error) {
 		return ""
 	}
 	workers.Integrate()
+	workers.PaceByPresence() // Away, Djinn fetches slower (fetch_pace.go).
 	workers.WatchConfig()
 	raise := make(chan struct{}, 1)
 	var url string // In browser mode, the page to open, token included.
@@ -599,9 +665,11 @@ func runUp(args []string) (restart bool, err error) {
 		machine.WithNetwork(workers.NetworkDownSince),
 		machine.WithDiskFolders(workers.DiskFolders),
 		machine.WithDiskItems(workers.DiskItems),
+		machine.WithDiskMeasure(workers.DiskState, workers.MeasureDisk),
+		machine.WithDiskFreeing(workers.Freeing),
 	)
 	svc[machinePrefix] = machineHandler
-	gatePrefix, gateHandler := gate.Handler(gates)
+	gatePrefix, gateHandler := gate.Handler(gates, gate.WithPast(gate.StorePast(db)))
 	svc[gatePrefix] = gateHandler
 	costsPrefix, costsHandler := machine.CostsHandler(db)
 	svc[costsPrefix] = costsHandler
@@ -724,14 +792,23 @@ func runUp(args []string) (restart bool, err error) {
 		fmt.Println("djinn: open", url)
 		err = <-served
 	default:
-		cfg := windowConfig{raise: raise, notices: notices, shortcuts: shortcuts, links: openLinks, quit: stop}
+		cfg := windowConfig{raise: raise, notices: notices, shortcuts: shortcuts, links: openLinks, quit: stop, back: workers.Back}
 		if transport == server.Wails {
 			cfg.assets = ui.FromWindow(server.WholeWrites(h))
 			// When the web process of the window's page ends (W353, W366), on Linux, it is logged with WebKit's state
 			// and the kernel's GPU hangs, told here and by a notification, loaded again, then given a new view
-			// (software rendering after a GPU hang only).
+			// (software rendering after a GPU hang only). A page that makes no call window.Silence after its load
+			// finished (W373, W172) is logged with a probe of the page, and loaded again once, told nowhere else
+			// (decisions Q108, Q111): its calls are counted through the window's handler.
 			if runtime.GOOS == "linux" {
 				cfg.watch = &window.Watch{Started: started, Tell: windowTold(os.Stderr, notices, render.SystemLanguage())}
+				// A test build takes another threshold, to see the silent reload (e2e/native relaunch_test.go).
+				if ui.StampedTestBuild() {
+					if after, err := time.ParseDuration(os.Getenv("DJINN_WINDOW_SILENCE")); err == nil {
+						cfg.watch.After = after
+					}
+				}
+				cfg.assets = cfg.watch.Handler(cfg.assets)
 			}
 		} else {
 			cfg.url = url
@@ -879,6 +956,15 @@ func answer(ctx context.Context, addr, questionID string, choice planv1.Choice) 
 		By: planv1.Closer_CLOSER_DEVELOPER,
 	}))
 	return err
+}
+
+// holdHome takes the lock of the data folder home, which it creates when missing: lockx.ErrHeld while another djinn up
+// runs on it.
+func holdHome(home string) (*lockx.Lock, error) {
+	if err := os.MkdirAll(home, 0o700); err != nil {
+		return nil, err
+	}
+	return lockx.Hold(filepath.Join(home, server.LockFile))
 }
 
 // ifritIdleFlag reads djinn up --ifrit-idle: a duration from 5 minutes to 4 hours, in whole minutes; 0 for none given.
@@ -1043,4 +1129,18 @@ func flagNames(flags *flag.FlagSet) []string {
 	var names []string
 	flags.Visit(func(f *flag.Flag) { names = append(names, f.Name) })
 	return names
+}
+
+// afterLeftovers is what runs before a worker starts: it waits until done is closed, the containers a past run left
+// removed, or ctx ends; then runs then, when not nil.
+func afterLeftovers(ctx context.Context, done <-chan struct{}, then func()) func() {
+	return func() {
+		select {
+		case <-done:
+		case <-ctx.Done():
+		}
+		if then != nil {
+			then()
+		}
+	}
 }

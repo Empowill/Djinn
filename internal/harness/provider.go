@@ -91,7 +91,8 @@ type Spec struct {
 	MaxTurns int
 	// WriteDirs are folders the agent may write in even without Permissions.Edit, and ReadDirs folders it may read
 	// outside its own: the driven lead's folder, where it writes plan files and tilasms, and Djinn's data folder; a
-	// worker's scratch folder (workScratchDir) and the version folders of the tilasms it is given (plan.TilasmDirs).
+	// worker's scratch folder (workScratchDir), the version folders of the tilasms it is given and the folders of
+	// the files handed to the lead its prompt names (plan.ReadDirs).
 	// Claude's folder rules; Codex's workspace-write sandbox on them (it reads everywhere already); write_file and
 	// read_file grants of agy's project.
 	WriteDirs, ReadDirs []string
@@ -106,6 +107,9 @@ type Spec struct {
 	// containers are the runaway ceilings of the containers the worker starts, its project's (containerCaps): the
 	// harness tells them to Djinn's docker, first on the worker's path (wrapperEnv). Providers ignore them.
 	containers wrap.Caps
+	// unadmitted: the project's djinn.yaml says gates_options.admit: false (projectAdmits): the worker's commands wait
+	// for no admission, Admit is not set and no wrapper waits on a heavy head.
+	unadmitted bool
 }
 
 // AdmissionGate is the name the admissions of the workers' commands go by among the gates a task holds or waits for

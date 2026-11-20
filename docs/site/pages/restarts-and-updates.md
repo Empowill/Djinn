@@ -88,6 +88,20 @@ die with it. Djinn records each process it starts while it runs; should one surv
 it before it resumes any task, and the Djinn hears how many were stopped. Djinn never touches a process it did not
 start.
 
+### One Djinn per data folder
+
+A Djinn holds a lock on its data folder from its start to its stop, taken before it writes anything there; the
+system lets it go when Djinn ends, cleanly or not. A second djinn up on the same folder finds it held:
+
+- **The first Djinn answers.** The second brings its window to the front and ends.
+- **The first Djinn does not answer.** It is starting, or runs where the second cannot reach it: a Windows Djinn under
+  wine, one in a container. The second ends at once, its address, logs and database untouched, and says so: stop the
+  other one, or give this one a data folder of its own with the DJINN_HOME variable.
+
+The lock holds whatever the version of the second Djinn, and between Linux and a Windows Djinn under wine. Once the
+first Djinn is gone the lock goes with it: an address it left is then a stop that was not clean, as below. A restore
+refuses a held folder the same way, before it touches anything: stop the Djinn that holds it, then restore again.
+
 ## The Djinn and the terminals
 
 By default, Djinn drives the Djinn without a terminal: its journal is kept in Djinn's data folder, and any event waiting
@@ -213,6 +227,11 @@ Nothing downloads nor restarts without your click. The click stops Djinn as a qu
 nothing lost, and starts the newer one, which takes everything back as above. **Dismiss**, the ×, hides an item until
 another version comes.
 
+To look for a release, Djinn asks GitHub at start and then every six hours: it reads a version number, nothing
+more, and it is the only thing Djinn sends on its own besides a network probe after a worker's outage. Start Djinn
+with its update check turned off, a flag or a setting of its environment named in the user guide, and it asks
+nothing: only a newer Djinn installed where it runs from is offered.
+
 When an update fails, the banner says why, with **Try again**.
 
 ### For those who build Djinn
@@ -224,6 +243,44 @@ branches instead.
 
 A build Djinn proposes may also come as a question, **Install and restart**: your yes installs it, and the banner then
 offers to restart on it. See [Question and move](#question-and-move).
+
+### Going back to an older Djinn
+
+Djinn's database, djinn.db in its data folder, carries the number of its schema: the version of its tables, raised by
+each Djinn that adds a column or a table. A Djinn opens a database of its schema or an older one, raising it. A newer
+one, written by a newer Djinn, it opens too, and goes on: it writes a warning in its log, with the schema of the
+database, the release that wrote it and the schema this Djinn knows, and leaves the database's schema as it is.
+
+Djinn saves what it holds in a form made to change without breaking: a field this Djinn does not know is kept and
+ignored, a field it lacks reads empty. So going back to an older Djinn never forces you to reinstall a version. What
+the newer Djinn added may read stale until you install it again; to get the data of before the update back instead,
+restore a backup taken then (djinn backup restore), which loses what was done since. A schema Djinn cannot read or
+record is a warning too, never a stop.
+
+### A migration that fails
+
+At each start Djinn makes the parts of its database it lacks, one step per part: the journal of commands, the
+machine's samples, the gates' intervals, then each kind of thing it keeps (wishes, tasks, questions and the others),
+its table, columns and indexes. A step that fails, on a database hurt by hand or by a disk, is undone alone and
+written as a warning in the log, naming the part and why; Djinn starts all the same.
+
+Only that part is missing then: each use of it fails with an error that says it was not migrated at start, and
+why, while the rest reads and writes as usual. Without the journal, nothing can change, since every change is
+journaled first; the rest still reads. The next start tries the step again, so once its cause is fixed, the part is
+back.
+
+What Djinn does as it starts skips the missing part the same way, each step with a warning: the workers the last
+run left are still marked interrupted, without their event when the task events are missing, but not when the tasks
+or the journal are; the lead is not told of the restart without its events or the journal; the Statistics tab
+answers on the other kinds, and a query of the missing one says it was not migrated.
+
+### The local settings
+
+Djinn's settings outside the database (the window's settings and your own project files) migrate at start too, each
+change once: Djinn notes it in its settings when it applied, and never runs it again. A change that cannot apply leaves
+that file as it was, writes a warning in the log, and is tried again at the next start; Djinn starts all the same. One
+of them drops the provider and model lines an older Djinn left in your project files: the Summoning Circle chooses
+every worker's agent and model now, and those lines only showed a wrong agent in the project's settings.
 
 ## Common mistakes
 

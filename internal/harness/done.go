@@ -130,6 +130,9 @@ func (h *Harness) Done(ctx context.Context, procedure string, req *planv1.TaskSe
 	_ = h.unblockDependencyFailed(ctx, task.GetCode())
 	h.notify()
 	h.wake() // A task waiting on it may start.
+	if plan.IsAzima(task) {
+		h.Free() // An azima closed as done frees its tasks' folders at once (Q75).
+	}
 	return task, nil
 }
 

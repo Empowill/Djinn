@@ -44,13 +44,21 @@ Djinn computes how much each question holds up, from what the Djinn marked and f
 
 | Level | When | What the card shows |
 | --- | --- | --- |
-| Blocking | A worker waits on the answer: one it asked you before it stopped, or whether it may edit. Djinn sees it wait. | **Blocks W12**, in red |
+| Blocking | Without the answer, Djinn cannot start some work: a worker waits on it (one it asked you before it stopped, or whether it may edit), or the question holds work not started yet. Djinn sees it wait. | **Blocks W12**, in red |
 | Your move | A move only you can make, needed before a step the Djinn names. | Its words, "before the merge", in gold |
 | To decide | An answer needed before something, in the Djinn's words. | Its words, in gold |
 | Can wait | Everything else: useful, not urgent. A move with no step named can wait too. | **Can wait**, in grey |
 
 The Djinn sets these marks, and its rules ask it to mark each question right: never inflated to be seen, never a real
 blocker left unmarked. When a question's urgency changes, it revises it.
+
+### Work a question holds
+
+When the Djinn needs a precision before it can start some work, it says so as it asks: the question **holds** that
+work, a planned task or an [azima](#azima) that has not started (W12, T16), or the task it plans after the question.
+The work waits for your answer, as for a [dependency](#dependencies), an azima's parts with it, and the question is
+blocking meanwhile: **Blocks W12, T16**. Your answer releases it, and each worker starts with your decision and note
+after its own prompt. A withdrawal releases it too, its worker told the question was withdrawn and why, from the note.
 
 ### What waits for you
 
@@ -229,8 +237,8 @@ Any other move, asked by the Djinn or a worker, is noted: you make it, and the D
   of the time, rubbing the lamp is the whole of it.
 - **Answering without a note when you have a condition.** A word with your choice ("only for invoices over 10 pages")
   shapes the tasks the answer leads to.
-- **Treating a grey card as urgent.** A blocking question holds a worker; one that can wait can wait for tomorrow. The
-  bar shows you only what holds a wish up.
+- **Treating a grey card as urgent.** A blocking question holds a worker, or work that cannot start; one that can wait
+  can wait for tomorrow. The bar shows you only what holds a wish up.
 - **Putting off a blocking question.** Later moves it down the list; its worker still waits, and so do the tasks
   that come after it.
 - **Putting to sleep what you could answer now.** A question asleep holds nothing up while it sleeps; one a worker

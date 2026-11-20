@@ -9,6 +9,7 @@
 package djinnv1
 
 import (
+	_ "buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go/buf/validate"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
@@ -26,16 +27,49 @@ const (
 // ProjectConfig is what a project tells Djinn, in YAML: djinn.yaml at its root, else .agents/djinn.yaml. Djinn reads
 // it on the reference branch, as the permissions are, so that a worker never changes what bounds it; outside Git,
 // without a remote, or before the reference branch is fetched, in the project's folder. With both files, the root's
-// is read and Djinn warns that the other is not. A field this message does not know refuses the file: Djinn then
-// holds its defaults, and says the file and the field. Without the file, Djinn's defaults.
+// is read and Djinn warns that the other is not. A field this message does not know is ignored, and Djinn says the
+// file and the field: the rest of the file applies (Q21). A file that does not read, or a value out of its bounds,
+// leaves the whole file out, said once: Djinn holds its defaults and goes on. A gate that is not valid is left out on
+// its own, said with its name: the other gates and the containers apply. Without the file, Djinn's defaults.
 //
+// Its settings: section holds the settings the team shares, a plan.v1.ProjectSettings in YAML (docs/team-settings.md),
+// which this message cannot name (plan.v1 imports djinn.v1): Djinn reads it apart, in the same file and the same way.
+// A value out of its bounds there leaves the whole file out too, and the project's tasks wait until it is fixed. Djinn
+// no longer reads .agents/settings.txtpb, where they lived before: one left there is a warning.
+//
+//	version: 1
+//	settings:
+//	  setup: npm ci
+//	  checks:
+//	    - {name: lint, command: task lint, when: commit}
+//	  instructions:
+//	    general: Run the tasks, not the tools.
 //	containers:
 //	  memory_mib: 8192
 //	  pids: 2048
+//	gates:
+//	  - name: stack
+//	    alone:
+//	      - task run-back
+//	      - docker compose * up
+//	    beside:
+//	      - task recette
 type ProjectConfig struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The runaway ceilings of the containers the project's workers start.
-	Containers    *Containers `protobuf:"bytes,1,opt,name=containers,proto3" json:"containers,omitempty"`
+	Containers *Containers `protobuf:"bytes,1,opt,name=containers,proto3" json:"containers,omitempty"`
+	// The gates the project declares, 8 at most: what of its commands waits for what. They only add waits between the
+	// project's own commands; the machine's bounds (its pressure, its memory, the turn of the heavy commands, Djinn's
+	// merges first) hold for every command, declared or not. A developer turns one off on their machine with djinn
+	// project gates --off.
+	Gates []*ProjectGate `protobuf:"bytes,2,rep,name=gates,proto3" json:"gates,omitempty"`
+	// The version of the file's schema, first in the file: 1 when it has none. Djinn reads every version up to the
+	// highest it knows, an older one lifted to it first (plan.ProjectConfigVersion); a higher version, or one that is not
+	// a whole number from 1, leaves the whole file out, said with the file, the version read and the highest known: a
+	// newer Djinn wrote it, and this one does not read it wrong. Read, it holds the highest version Djinn knows.
+	Version uint32 `protobuf:"varint,3,opt,name=version,proto3" json:"version,omitempty"`
+	// How the gates treat the project's commands, beside the gates it declares. Not set: Djinn's defaults.
+	GatesOptions  *GatesOptions `protobuf:"bytes,4,opt,name=gates_options,json=gatesOptions,proto3" json:"gates_options,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -77,15 +111,172 @@ func (x *ProjectConfig) GetContainers() *Containers {
 	return nil
 }
 
+func (x *ProjectConfig) GetGates() []*ProjectGate {
+	if x != nil {
+		return x.Gates
+	}
+	return nil
+}
+
+func (x *ProjectConfig) GetVersion() uint32 {
+	if x != nil {
+		return x.Version
+	}
+	return 0
+}
+
+func (x *ProjectConfig) GetGatesOptions() *GatesOptions {
+	if x != nil {
+		return x.GatesOptions
+	}
+	return nil
+}
+
+// GatesOptions is how the gates treat a project's commands, under gates_options: in its djinn.yaml.
+//
+//	gates_options:
+//	  admit: false
+type GatesOptions struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// false: the commands of the project's workers wait for no admission by the gates, whatever they cost: no Claude
+	// worker runs the gates' hook, no other agent waits on the heavy commands' wrappers. A gate declared in the file is
+	// then taken only by djinn gate run with its name; the checks of the merges and pushes still go through theirs. Not
+	// set, or true: they are admitted (Djinn's default).
+	Admit         *bool `protobuf:"varint,1,opt,name=admit,proto3,oneof" json:"admit,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GatesOptions) Reset() {
+	*x = GatesOptions{}
+	mi := &file_djinn_v1_project_config_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GatesOptions) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GatesOptions) ProtoMessage() {}
+
+func (x *GatesOptions) ProtoReflect() protoreflect.Message {
+	mi := &file_djinn_v1_project_config_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GatesOptions.ProtoReflect.Descriptor instead.
+func (*GatesOptions) Descriptor() ([]byte, []int) {
+	return file_djinn_v1_project_config_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *GatesOptions) GetAdmit() bool {
+	if x != nil && x.Admit != nil {
+		return *x.Admit
+	}
+	return false
+}
+
+// ProjectGate is a gate a project declares in its djinn.yaml: the commands of its workers that rebuild a shared
+// resource (alone) and those that use it (beside). It goes by name@project: the stack of one project is not
+// another's. A worker's command that a pattern names takes the gate before it runs, through the admission hook; djinn
+// gate run with the gate's name, in the project, takes the same gate. Its patterns are words, compared word by word
+// with the start of each part of the command (cut at &&, ||, ;, | and new lines), past the variables it sets and the
+// wrappers env, time, nohup: * stands for zero or more words, and the rest of the command follows freely. No regular
+// expression, no shell, no file: nothing runs. A command two patterns name takes the first gate that names it, alone
+// before beside.
+type ProjectGate struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Name of the gate, in lower case: neither commands, Djinn's name for its admissions, nor the name of one of the
+	// project's checks.
+	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// The commands that hold the gate alone, whatever they cost: one at a time, and with none of those beside it.
+	Alone []string `protobuf:"bytes,2,rep,name=alone,proto3" json:"alone,omitempty"`
+	// The commands that share the gate: together, never while one holds it alone. One that comes after a command that
+	// waits to hold it alone goes behind it.
+	Beside        []string `protobuf:"bytes,3,rep,name=beside,proto3" json:"beside,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProjectGate) Reset() {
+	*x = ProjectGate{}
+	mi := &file_djinn_v1_project_config_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProjectGate) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProjectGate) ProtoMessage() {}
+
+func (x *ProjectGate) ProtoReflect() protoreflect.Message {
+	mi := &file_djinn_v1_project_config_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProjectGate.ProtoReflect.Descriptor instead.
+func (*ProjectGate) Descriptor() ([]byte, []int) {
+	return file_djinn_v1_project_config_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *ProjectGate) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *ProjectGate) GetAlone() []string {
+	if x != nil {
+		return x.Alone
+	}
+	return nil
+}
+
+func (x *ProjectGate) GetBeside() []string {
+	if x != nil {
+		return x.Beside
+	}
+	return nil
+}
+
 var File_djinn_v1_project_config_proto protoreflect.FileDescriptor
 
 const file_djinn_v1_project_config_proto_rawDesc = "" +
 	"\n" +
-	"\x1ddjinn/v1/project_config.proto\x12\bdjinn.v1\x1a\x19djinn/v1/containers.proto\"E\n" +
+	"\x1ddjinn/v1/project_config.proto\x12\bdjinn.v1\x1a\x1bbuf/validate/validate.proto\x1a\x19djinn/v1/containers.proto\"\xd3\x01\n" +
 	"\rProjectConfig\x124\n" +
 	"\n" +
 	"containers\x18\x01 \x01(\v2\x14.djinn.v1.ContainersR\n" +
-	"containersB\x96\x01\n" +
+	"containers\x125\n" +
+	"\x05gates\x18\x02 \x03(\v2\x15.djinn.v1.ProjectGateB\b\xbaH\x05\x92\x01\x02\x10\bR\x05gates\x12\x18\n" +
+	"\aversion\x18\x03 \x01(\rR\aversion\x12;\n" +
+	"\rgates_options\x18\x04 \x01(\v2\x16.djinn.v1.GatesOptionsR\fgatesOptions\"3\n" +
+	"\fGatesOptions\x12\x19\n" +
+	"\x05admit\x18\x01 \x01(\bH\x00R\x05admit\x88\x01\x01B\b\n" +
+	"\x06_admit\"\xc1\x02\n" +
+	"\vProjectGate\x12;\n" +
+	"\x04name\x18\x01 \x01(\tB'\xbaH$r\"2\x16^[a-z][a-z0-9-]{0,39}$Z\bcommandsR\x04name\x125\n" +
+	"\x05alone\x18\x02 \x03(\tB\x1f\xbaH\x1c\x92\x01\x19\"\x17r\x15\x10\x01\x18\xc8\x012\x0e^[^*\\s][^\\n]*$R\x05alone\x127\n" +
+	"\x06beside\x18\x03 \x03(\tB\x1f\xbaH\x1c\x92\x01\x19\"\x17r\x15\x10\x01\x18\xc8\x012\x0e^[^*\\s][^\\n]*$R\x06beside:\x84\x01\xbaH\x80\x01\x1a~\n" +
+	"\x15project_gate.patterns\x129a gate has 32 patterns at most, alone and beside together\x1a*size(this.alone) + size(this.beside) <= 32B\x96\x01\n" +
 	"\fcom.djinn.v1B\x12ProjectConfigProtoP\x01Z1github.com/empowill/djinn/gen/go/djinn/v1;djinnv1\xa2\x02\x03DXX\xaa\x02\bDjinn.V1\xca\x02\bDjinn\\V1\xe2\x02\x14Djinn\\V1\\GPBMetadata\xea\x02\tDjinn::V1b\x06proto3"
 
 var (
@@ -100,18 +291,22 @@ func file_djinn_v1_project_config_proto_rawDescGZIP() []byte {
 	return file_djinn_v1_project_config_proto_rawDescData
 }
 
-var file_djinn_v1_project_config_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
+var file_djinn_v1_project_config_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
 var file_djinn_v1_project_config_proto_goTypes = []any{
 	(*ProjectConfig)(nil), // 0: djinn.v1.ProjectConfig
-	(*Containers)(nil),    // 1: djinn.v1.Containers
+	(*GatesOptions)(nil),  // 1: djinn.v1.GatesOptions
+	(*ProjectGate)(nil),   // 2: djinn.v1.ProjectGate
+	(*Containers)(nil),    // 3: djinn.v1.Containers
 }
 var file_djinn_v1_project_config_proto_depIdxs = []int32{
-	1, // 0: djinn.v1.ProjectConfig.containers:type_name -> djinn.v1.Containers
-	1, // [1:1] is the sub-list for method output_type
-	1, // [1:1] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	3, // 0: djinn.v1.ProjectConfig.containers:type_name -> djinn.v1.Containers
+	2, // 1: djinn.v1.ProjectConfig.gates:type_name -> djinn.v1.ProjectGate
+	1, // 2: djinn.v1.ProjectConfig.gates_options:type_name -> djinn.v1.GatesOptions
+	3, // [3:3] is the sub-list for method output_type
+	3, // [3:3] is the sub-list for method input_type
+	3, // [3:3] is the sub-list for extension type_name
+	3, // [3:3] is the sub-list for extension extendee
+	0, // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_djinn_v1_project_config_proto_init() }
@@ -120,13 +315,14 @@ func file_djinn_v1_project_config_proto_init() {
 		return
 	}
 	file_djinn_v1_containers_proto_init()
+	file_djinn_v1_project_config_proto_msgTypes[1].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_djinn_v1_project_config_proto_rawDesc), len(file_djinn_v1_project_config_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   1,
+			NumMessages:   3,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

@@ -5,6 +5,8 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -22,6 +24,14 @@ type rig struct {
 	recreates []bool // software, by new view
 	told      []Event
 	log       *bytes.Buffer
+	timers    []*timer
+}
+
+// timer is a silence timer the rig armed, fired by hand.
+type timer struct {
+	after   time.Duration
+	fire    func()
+	stopped bool
 }
 
 func newRig(t *testing.T, fail error) *rig {
@@ -42,6 +52,14 @@ func newRig(t *testing.T, fail error) *rig {
 		Reload:   func() error { r.reloads++; return fail },
 		Recreate: func(software bool) error { r.recreates = append(r.recreates, software); return fail },
 		Tell:     func(e Event) { r.told = append(r.told, e) },
+		AfterFunc: func(d time.Duration, f func()) func() bool {
+			tm := &timer{after: d, fire: f}
+			r.timers = append(r.timers, tm)
+			return func() bool { tm.stopped = true; return true }
+		},
+		Probe: func(context.Context, string) (string, error) {
+			return `{"ready":"complete","splash":true,"root":0}`, nil
+		},
 	}
 	return r
 }
@@ -146,5 +164,143 @@ func TestWatchLoaded(t *testing.T) {
 	r.Loaded("failed: wails://localhost/: Load request cancelled")
 	if !strings.Contains(r.log.String(), `msg="window: load" event="failed: wails://localhost/: Load request cancelled" page=1 since_start=2`) {
 		t.Errorf("log:\n%s", r.log)
+	}
+}
+
+// TestWatchSilent covers a page that loads and never calls the server (W373, W172; decision Q111): Silence after its
+// load finished it is logged with a probe of the page and the web processes, then loaded again once per djinn up,
+// and told nowhere else.
+func TestWatchSilent(t *testing.T) {
+	load := func(r *rig) {
+		r.Loaded("started")
+		r.Loaded("committed")
+		r.Loaded("finished")
+	}
+
+	t.Run("silent from its load finished, probed, loaded again once, then only logged", func(t *testing.T) {
+		r := newRig(t, nil)
+		r.Opened()
+		r.Loaded("started")
+		r.Loaded("committed")
+		if len(r.timers) != 0 {
+			t.Fatalf("timers %+v before the load finished", r.timers)
+		}
+		r.Loaded("finished")
+		if len(r.timers) != 1 || r.timers[0].after != Silence || Silence != 3*time.Second {
+			t.Fatalf("timers %+v; want one of %s", r.timers, Silence)
+		}
+		r.timers[0].fire()
+		if r.reloads != 1 || len(r.recreates) != 0 || len(r.told) != 0 {
+			t.Fatalf("reloads %d, new views %v, told %+v", r.reloads, r.recreates, r.told)
+		}
+		for _, want := range []string{`msg="window: the page is silent" page=1 after=3s probe="answered in `,
+			`{\"ready\":\"complete\",\"splash\":true,\"root\":0}`, "loads=\"[started +", "finished +",
+			"pid 4242 WebKitWebProces S rss 155 MB", `msg="window: the page loads again" page=2 silent=true`} {
+			if !strings.Contains(r.log.String(), want) {
+				t.Errorf("log lacks %q:\n%s", want, r.log)
+			}
+		}
+
+		// The page loaded again is silent too: logged, not loaded again.
+		r.log.Reset()
+		r.Loaded("committed")
+		r.Loaded("finished")
+		if len(r.timers) != 2 || r.timers[1].stopped {
+			t.Fatalf("timers %+v", r.timers)
+		}
+		r.timers[1].fire()
+		if r.reloads != 1 || len(r.told) != 0 || !strings.Contains(r.log.String(), `msg="window: the page is silent" page=2`) ||
+			!strings.Contains(r.log.String(), "the silent page was loaded again already") {
+			t.Errorf("reloads %d, told %+v, log:\n%s", r.reloads, r.told, r.log)
+		}
+
+		// A web process that ends still gets its own rescue: the silent reload is not counted against it.
+		r.Ended("crashed")
+		if r.reloads != 2 || len(r.told) != 1 || r.told[0].Did != Reloaded {
+			t.Errorf("after an end: reloads %d, told %+v", r.reloads, r.told)
+		}
+	})
+
+	t.Run("a page that calls arms nothing, or stops its timer", func(t *testing.T) {
+		r := newRig(t, nil)
+		calls := r.Handler(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+		get := func(path string) {
+			calls.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, path, nil))
+		}
+		r.Opened()
+		r.Loaded("committed")
+		get("/assets/index-abc.js") // a file of the page is no call
+		get("/ui.v1.UiService/Get")
+		r.Loaded("finished")
+		if len(r.timers) != 0 {
+			t.Fatalf("timers %+v for a page that called before its load finished", r.timers)
+		}
+		if !strings.Contains(r.log.String(), `msg="window: the page calls the server" page=1 before_load_finished=true`) {
+			t.Errorf("log:\n%s", r.log)
+		}
+
+		r.Loaded("committed") // the developer reloads: a new document, not heard yet
+		r.Loaded("finished")
+		get("/plan.v1.WishService/List")
+		get("/plan.v1.WishService/List")
+		if len(r.timers) != 1 || !r.timers[0].stopped {
+			t.Fatalf("timers %+v; want one stopped", r.timers)
+		}
+		r.timers[0].fire() // fired as it was stopped
+		if r.reloads != 0 || strings.Contains(r.log.String(), "the page is silent") ||
+			strings.Count(r.log.String(), "the page calls the server") != 2 || !strings.Contains(r.log.String(), "after_load=") {
+			t.Errorf("reloads %d, log:\n%s", r.reloads, r.log)
+		}
+	})
+
+	t.Run("a page that calls during the probe is not loaded again", func(t *testing.T) {
+		r := newRig(t, nil)
+		r.Probe = func(context.Context, string) (string, error) {
+			r.Called()
+			return "{}", nil
+		}
+		r.Opened()
+		load(r)
+		r.timers[0].fire()
+		if r.reloads != 0 || !strings.Contains(r.log.String(), "the silent page called or was rescued meanwhile") {
+			t.Errorf("reloads %d, log:\n%s", r.reloads, r.log)
+		}
+	})
+
+	t.Run("a probe with no answer says so", func(t *testing.T) {
+		r := newRig(t, nil)
+		r.ProbeWait = 20 * time.Millisecond
+		r.Probe = func(ctx context.Context, _ string) (string, error) {
+			<-ctx.Done() // the JS thread does not run
+			return "", ctx.Err()
+		}
+		r.Opened()
+		load(r)
+		r.timers[0].fire()
+		if r.reloads != 1 || !strings.Contains(r.log.String(), `probe="no answer within 20ms"`) {
+			t.Errorf("reloads %d, log:\n%s", r.reloads, r.log)
+		}
+	})
+
+	t.Run("a web process that ends stops the timer", func(t *testing.T) {
+		r := newRig(t, nil)
+		r.Opened()
+		load(r)
+		r.Ended("crashed")
+		if len(r.timers) != 1 || !r.timers[0].stopped || r.reloads != 1 {
+			t.Errorf("timers %+v, reloads %d", r.timers, r.reloads)
+		}
+	})
+}
+
+// TestIsCall covers isCall: a Connect method of the server, not a file of the page.
+func TestIsCall(t *testing.T) {
+	for path, want := range map[string]bool{
+		"/ui.v1.UiService/Get": true, "/plan.v1.WishService/List": true, "/": false, "/index.html": false,
+		"/assets/index-abc.js": false, "/ui.v1.UiService/": false, "/UiService/Get": false, "/a.b.UiService/Get/x": false,
+	} {
+		if got := isCall(path); got != want {
+			t.Errorf("isCall(%q) = %v; want %v", path, got, want)
+		}
 	}
 }

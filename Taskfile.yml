@@ -172,14 +172,30 @@ tasks:
       - go run -tags '{{.WINDOW_TAGS}}' ./tools/windowcheck {{.CLI_ARGS}}
 
   lint:
-    desc: "Check everything: protos, Go (golangci-lint: gofmt, vet and the linters of .golangci.yml), TypeScript types, ESLint, formatting"
-    deps: [lint-go, lint-ui]
+    desc: "Check everything: protos (buf lint, and buf breaking against the reference branch), Go (golangci-lint: gofmt, vet and the linters of .golangci.yml), TypeScript types, ESLint, formatting"
+    deps: [lint-proto, lint-go, lint-ui]
+
+  # buf lint, then buf breaking: the protos must still read what the reference branch's protos wrote, on the wire, in
+  # JSON and in the store (its payloads are protos), the rules of buf.yaml. The base is where this branch left the
+  # reference branch (git merge-base), not its tip: a field main added since would read as one this branch deleted.
+  # BREAKING_AGAINST=<ref> names the reference branch (CI: the commit before); left out, origin/HEAD, origin/main, then
+  # main. With none of them (a copy without git), buf breaking says it is skipped.
+  lint-proto:
+    internal: true
+    vars:
+      PROTO_BASE:
+        sh: '{{if .BREAKING_AGAINST}}git merge-base HEAD "{{.BREAKING_AGAINST}}"{{else}}git merge-base HEAD origin/HEAD 2>/dev/null || git merge-base HEAD origin/main 2>/dev/null || git merge-base HEAD main 2>/dev/null || true{{end}}'
+    cmds:
+      - go tool buf lint
+      - cmd: go tool buf breaking --against ".git#ref={{.PROTO_BASE}}"
+        if: '[ -n "{{.PROTO_BASE}}" ]'
+      - cmd: echo "buf breaking skipped, no reference branch to compare with (origin/HEAD, origin/main, main); BREAKING_AGAINST=<ref> names one"
+        if: '[ -z "{{.PROTO_BASE}}" ]'
 
   lint-go:
     internal: true
     deps: [ui]
     cmds:
-      - go tool buf lint
       # fmt reads every Go file, whatever its build tags; run type-checks the headless build (.golangci.yml), then
       # cmd/djinn with the mcp tag too, the build of the native end-to-end tests.
       - "{{.GOLANGCI}} fmt --diff"

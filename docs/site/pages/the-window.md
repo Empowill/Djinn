@@ -22,7 +22,7 @@ From top to bottom:
 - **Flying carpet**, Ctrl+1, while a wish is active or the inbox has news: every active wish together. Its counts say
   how many questions wait for you across them, and how many cards and project lines wait in the inbox.
 - **Wishes**, with how many are active out of three: the wish bar, below.
-- **Projects**, with + to create one. Each project opens its panel, from its name or its gear; its terminal button
+- **Projects**, with + to create one. Each project opens its settings page, in tabs, from its name or its gear; its terminal button
   opens a terminal at its root, and a line shows each of its branches out of step with its remote. The gear turns red
   with a small flame while the project has something for you to fix, and its tooltip counts them; folded to the rail,
   the flame sits on the project's folder.
@@ -30,7 +30,8 @@ From top to bottom:
   **Connections & preferences**. A yellow dot on the Summoning Circle says that no session of the Djinn can start yet:
   no agent that leads is installed and signed in. It goes once one is. The Grimoire is a page of the window, like the Hourglass, never a dialog over it: its
   navigation shows beside its splash page from the first view, each page is read when you open it, and back and forward
-  move between the pages you read.
+  move between the pages you read. Report a bug, at the top of the Grimoire, opens the repository's bug form in your
+  browser.
 
 ### The wish bar
 
@@ -85,7 +86,8 @@ corners, and back. On the rail, never on a background:
 ### The Summoning Circle
 
 The **Summoning Circle**, below the Grimoire in the side panel, is a page of the window, like the Grimoire: who works,
-on which account, with which model. It is the one place where the Djinn's agent, model and account are chosen: the top
+on which account, with which model, in a first tab **Agents and models**; a second tab, **Workers' instructions**, says
+what every worker is told. It is the one place where the Djinn's agent, model and account are chosen: the top
 of a wish or of the flying carpet has no selector of its own. It is also the first step of the onboarding: a window that
 opens with no agent able to lead opens on it, its entry marked with a yellow dot until one is set up. At the top, the agents: each one's version, where it stands, and the button that
 installs it or signs it in, its terminal opening below its line; **Check again** runs their status commands again.
@@ -103,17 +105,31 @@ Antigravity when the lead runs in a terminal, and shows it greyed out with a too
 Changing the lead row moves the driven Djinn there for its next batch. A Djinn in its terminal keeps its recorded
 session: when the lead row names another agent, the row says which session **Talk to the Djinn** resumes, and
 **Start the Djinn on** that agent starts a new session there from the brief, which becomes the Djinn.
-Every row except the lead offers **Same as lead** by default, following the lead's choice when it changes. Below the rows,
+Every row except the lead offers **Same as lead** by default, following the lead's choice when it changes. Same as lead
+is a model choice of its own, written in the circle once you set any row or move the lead: the project's settings never
+choose for a row set so. Below the rows,
 the bulk model switcher (also in each wish's header, and on the command line with the task command update-models)
 previews and switches every open work, investigation, correction, review, and question worker task—plus defaults for
 future spawns—in one gesture, skipping watchers and finished tasks, and changing running tasks at their next start or
 restarting them immediately.
+
+The **Workers' instructions** tab holds this machine's text for each kind of task, the default of every project: a
+**General** text, then **Work**, **Investigation**, **Mockup** and **Ifrit**, each with its field, **Save**, and
+**Remove** once set. A kind left empty takes the general text. A project's djinn.yaml wins over it, then your own
+settings of the project, kind by kind: see [the project's configuration](#project-and-settings).
 
 ### The personal space
 
 The **personal space**, at the bottom of the side panel, keeps your own settings: the language, the theme, the text
 size and the Djinn's eye. Compact and Very compact shrink the whole window, its spacing with its text, to see more at
 once; Large grows it. The documentation opens in the window's theme and text size.
+
+**The version.** Below Personal space, **Local app** names the version of the running Djinn, in grey: v0.1.0 for a
+release, local- and its commit for a Djinn you installed from your checkout, dev for a development build. A long
+version ends in an ellipsis. The tooltip of the personal space gives it whole, with where it comes from: the release's
+tag, the commit of a local install, marked modified when its tree had changes not committed, or a development build.
+The **EARLY ACCESS** tag under the logo says the same under the pointer. With the side panel folded, the avatar's
+tooltip alone says it. Give it in a bug report.
 
 ## The flying carpet
 
@@ -263,12 +279,18 @@ live metrics, as time goes by; **Gates**, what the gates do now and what the com
   worker, its code on hover, stacked in a narrow page) and the running workers grouped by wish, watchers last in each
   group: each worker's project, model, time, turns, cost, gate, and its own CPU and memory graphs. Its eye opens the
   task in its wish; the gate it holds, or held, opens the **Gates** tab on that gate.
-- **Disk.** A bar of the whole disk (Go, Docker, Djinn worktrees, other caches, unmeasured and free space, with the
-  30 GB and 10 GB disk-guard marks), above two tabs: **Djinn and its workers** (worktrees per project, Playwright,
-  tilasms, scratch, logs, and any isolated Go build caches) and **Machine** (Go build cache and module cache, Docker
-  build cache, images and volumes when Docker is present, pnpm, uv, pip, npm, and JetBrains), grouped by risk (**Safe**,
-  **Rebuilds**, **Data loss**) with each item's size, reclaimable space, and cleanup command to copy—plus **All “safe”
-  at once** at the bottom. Djinn never runs those commands itself: it displays them to copy.
+- **Disk.** At its top, in grey, when the disk was last measured (a measure holds 5 minutes), and a button to measure
+  again now. A bar of the whole disk (Go, Docker, Djinn, other caches, home, system, unmeasured and free space, with
+  the 30 GB and 10 GB disk-guard marks), above three tabs: **Djinn and its workers** (worktrees and scratch per
+  project, with what Djinn frees 30 days after their end, the folders of tasks done with their work integrated or
+  nothing to merge, and what it frees once their azima is validated or their wish granted, those of the other finished
+  tasks, both summed above the list,
+  Playwright, tilasms, logs, and any isolated Go build caches),
+  **Machine** (Go build cache, Go module and download caches, golangci-lint, Docker build cache, images and volumes
+  when Docker is present, pnpm, uv, pip, npm, and JetBrains), grouped by risk (**Safe**, **Rebuilds**, **Data loss**)
+  with each item's size, reclaimable space, and cleanup command to copy—plus **All “safe” at once** at the bottom—and
+  **Rest of the disk** (each entry of the home and the system folders, measured every 6 hours). A size that ran out
+  of time to be measured shows as a floor (≥). Djinn never runs those commands itself: it displays them to copy.
 
 A running task's card links to its row, **Live in the Hourglass**, on the Machine tab. The page reads its figures
 only while it shows: leave it, or fold its panel, and the reads stop. See [Machine and load](#machine-and-load).
@@ -280,8 +302,15 @@ only while it shows: leave it, or fold its panel, and the reads stop. See [Machi
 - **Now**, read live while the tab shows: each gate held or waited for, who holds it and since when, what its holder
   uses, who waits, the next one first. A holder's or a waiter's code opens its row on the Machine tab. A free gate says
   its last hold.
-- **The last hour**: the gates held, hatched while a command waits, now on the right. Click a band to open its command
-  below. Djinn keeps these in memory: a restart forgets them.
+- **Gates and workers**, over the last hour, 6 hours or day: on top, the workers that run, stacked by their task's
+  kind, and a gold line of the requests waiting for a gate; under them, one lane per gate, each band a request, hatched
+  while it waits, plain while it holds, in its task's colour: blue for code, correction and review, then the
+  investigations, the mockups, the watchers, the ifrits, and grey outside a task. The named gates show by default;
+  **With admissions** adds the lane of the workers' commands admitted one by one. Point at a moment for who runs, holds
+  and waits then; click a band to open its command below. Djinn keeps this history three months, past a restart.
+- **The flows**: the named gates' requests of the same period, from their task's kind to their gate, then to what they
+  waited: at once, 1 to 5 seconds, longer. A flow's width is its number of requests. The admissions are left out: nine
+  requests in ten, nearly all at once, they would crush the rest.
 - **Commands admitted under a gate**: one line per command of a project, the most total time first (runs times mean
   duration), the top one marked as the one worth making faster, with its gate, peak memory, CPU time and wait. A line
   opens on its recent runs: when, which worker, duration, peak, CPU time, wait and exit code.
@@ -356,6 +385,12 @@ Djinn restarts; the next start draws on the graphics card again. A window whose 
 only told: quit Djinn and start it again. At every start, djinn.log also follows the page's loading, and the page's
 console goes where Djinn's output goes. On macOS and Windows, the window is not watched.
 
+The page can also load and then wait, its loader on screen, with nothing to tell why. On Linux, a page that has made
+no call to Djinn 3 seconds after its load finished is silent: a healthy page calls within half a second. Djinn then
+writes in djinn.log what the page answers when asked how far it went, if it answers at all, and what its drawing
+process waits on, then loads the page again, once per start of Djinn. It says nothing else: no notification, no line
+on the terminal. If the loader stays after that reload, quit Djinn and start it again.
+
 ## Text fields
 
 Every field you write free text in behaves the same: **Write to the Djinn**, a new wish's request, a question's note,
@@ -363,6 +398,17 @@ a comment on a tilasm and the last word of its comments, a comment on a diff, a 
 task done, an instruction to a running worker. A key you type stays in the field: the page around it draws nothing again, so typing stays fluent on a long wish
 and under load. The page changes only when what it shows depends on your text, as the send button that your first
 letter enables. A note keeps up to 8000 characters; its count shows from 6400, and turns warm from 7600.
+
+### Files pasted into Write to the Djinn
+
+Paste a screenshot or a file into **Write to the Djinn** (Ctrl+V, Cmd+V on a Mac): it becomes a chip above your text, a
+thumbnail and the size for an image, the name and size for any other file, and its cross removes it before you send.
+Up to 10 files of 20 MB each go with one message; a larger file, or one past the tenth, is left out and the box says
+so. A file alone is sent too, without a word. Djinn keeps each file in the wish, in the files folder of the wish in its
+data folder (the lead's own files folder for a message about no wish), and puts a block of kind file on the wish that
+names it. The Djinn's message then ends with a line per file, Files: its path, its type and its size; whatever its
+agent, the Djinn opens it with its own file tool, and names the path in a worker's prompt when the worker needs it: the
+worker is given that folder to read. From the command line, djinn lead tell takes the same files, a path each.
 
 ## Keys
 

@@ -81,6 +81,24 @@ puts its temporary files, screenshots, build output or test data folders instead
 stays while the task can be continued, and is removed with the worktree when the task's work is merged, cleaned or
 cancelled.
 
+**Djinn frees finished tasks' folders by itself.** So that worktrees do not fill the disk week after week:
+
+| When | What goes | What stays |
+|---|---|---|
+| A task done 30 days ago, its work merged into the integration branch, or with nothing to merge | Its worktree and scratch | Its branch |
+| Its azima validated: its pull request merged, or marked done by you or the Djinn | At once, its worktree, scratch and local branch | The remote's branch |
+| Its wish granted, which validates all its azimas | The same, at once, for every task of the wish | The remote's branch |
+
+Djinn never loses work: a worktree with changes not committed stays, with its scratch and branch, and so does a local
+branch with commits found neither in the integration branch nor on the remote. Djinn writes why on the task, and on
+its azima a line per task of the cascade: how far it is, what it freed, what it kept and why; a wish just granted shows
+its cascade in a band under its header (see the wish page). A remote branch is never touched.
+
+Only a task done waits out the 30 days: its work merged, or with nothing to merge, such as an investigation, a mockup,
+or a worker that ended done with no commit of its own. A task cancelled, failed or stopped, or done with its work
+dropped or marked done by hand, keeps its worktree and scratch until its azima is validated or its wish granted: what
+it left may still be looked at.
+
 A task of a wish without a project runs outside any project: read only, in an empty folder of its own. That suits
 research.
 
@@ -181,8 +199,9 @@ The window follows tasks; the Djinn makes them. Ask it in words, and it uses the
 - **Spawn** a task, with its title and prompt, its project, its agent and model, its budget, the azima it is part of,
   what it comes after, and the planned tasks it comes before. It may be only planned, to start when it is ready.
 - **Continue** a task no worker runs, done, failed, stopped, cut short, or waiting for a blocking question its worker
-  asked: a new turn of its own session, in its own worktree and branch, with a new prompt. Refused while it runs (send it a message instead), when its worktree is gone,
-  when its session cannot be resumed, or when its wish is granted.
+  asked: a new turn of its own session, in its own worktree and branch, with a new prompt. Refused while it runs (send it a message instead), when its worktree is gone
+  (merged, or freed by Djinn: the refusal says which, and gives the fork to run), when its session cannot be resumed, or
+  when its wish is granted.
 - **Fork** a task: a new task whose worker starts from a copy of that task's conversation, with a session of its own.
   The Djinn may fork its own conversation the same way. Claude and Codex fork; Antigravity cannot. Forking a task that
   failed, stopped or was cut short closes it, continued in the new one.
@@ -252,8 +271,9 @@ never merged.
 - **Send, don't stop, to correct course.** An instruction to a running worker keeps its context.
 - **Continue, don't respawn.** A failed task continued keeps its session and its worktree; a new task starts from
   nothing.
-- **Fork a merged task.** Once a task's work is merged, its worktree is gone and it cannot be continued: fork it into
-  its azima, a new task that starts from its conversation. Djinn's refusal gives the exact command.
+- **Fork a merged or freed task.** Once a task's work is merged, or Djinn freed its folders, its worktree is gone and
+  it cannot be continued: fork it into its azima, a new task that starts from its conversation. Djinn's refusal gives
+  the exact command.
 - **Look at the waiting reason.** A planned task that does not start always says why.
 
 ## Read next

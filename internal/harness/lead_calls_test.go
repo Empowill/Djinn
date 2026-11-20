@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/proto"
@@ -161,6 +162,16 @@ func TestLeadCallsCodes(t *testing.T) {
 	l := newLeadCalls(t)
 	l.passes(t, "task", "spawn", l.dew, "--title", "Accounts by priority", "--project-id", "djinn", "--later")
 	l.passes(t, "task", "spawn", l.other, "--title", "Elsewhere", "--later")
+	// The scheduler starts Dew's W1 at once: its folder is outside Git, so its worker plays one turn read-only, then
+	// the task waits for the answer to its edit question. A done during that turn is refused (stop it first): a few
+	// milliseconds here, longer on a loaded CI runner (W133). The done waits for the wait, however long the turn.
+	settled := time.Now().Add(20 * time.Second)
+	for s := l.task(t, l.dew, "W1").GetStatus(); s != planv1.TaskStatus_TASK_STATUS_WAITING; s = l.task(t, l.dew, "W1").GetStatus() {
+		if time.Now().After(settled) {
+			t.Fatalf("Dew's W1 is still %v after 20 s, want it waiting for its edit question", s)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 
 	// Refused on 06/11: "unknown flag --wish-id", then "<task-id>: must be a valid UUID".
 	l.refused(t, []string{"task", "done", "W1"},
@@ -294,7 +305,7 @@ func TestLeadCallsFilesStayHere(t *testing.T) {
 		return next.RoundTrip(r)
 	})}
 
-	l.passes(t, "task", "spawn", l.dew, "--title", "Light at dusk", "--project-id", "djinn", "--later",
+	l.passes(t, "task", "spawn", l.other, "--title", "Light at dusk", "--project-id", "djinn", "--later",
 		"--prompt-file", files["prompt"])
 	spawns, err := store.Commands(t.Context(), l.db, func(cmd store.Command) bool {
 		return cmd.Method == planv1connect.TaskServiceSpawnProcedure

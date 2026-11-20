@@ -52,6 +52,17 @@ into it. Work already merged stays where it is.
 Djinn refuses the change while a merge into the current branch is under way, naming it; change it once that merge has
 ended.
 
+### A branch named but not made
+
+The Djinn may name a branch without making it, with the command line. The work does not wait on it: when a task's work
+is about to merge and the project's repository lacks the wish's branch, Djinn makes it, from the remote's branch of
+that name when the remote holds one, else from the reference branch, then merges the work into it. The task's events
+say so: **djinn/T17-gate-stack was not in the project's repository: Djinn made it from main**. When Djinn cannot make
+it, the remote not answering for instance, the work waits, saying why, and Djinn tries again at the next merge.
+
+Asking for the branch to be made, on the name the wish already records, makes it the same way; once the branch is
+there, asking again leaves it as it is.
+
 Under the per-azima strategy the chip reads **Each azima lands in main**, and does not open a picker: each azima has its
 branch, shown on its card. See [Push strategy](#push-strategy).
 
@@ -64,20 +75,25 @@ You can also ask the Djinn to change it, in its terminal or with **Write to the 
 ## Main is a branch like any other
 
 The integration branch is the reference branch unless you choose another, main included. In a project that names checks, Djinn
-merges a wish's checked work into main when main is its integration branch, and pushes main by the project's cadence.
+merges a wish's checked work into main when main is its integration branch, but it never pushes main: the reference
+branch reaches the remote only through a merged pull or merge request. The push is refused, whatever the wish, its push
+strategy and the project, and the branch's line says how to give the wish a branch of its own; see
+[A protected branch is never pushed](#push-a-protected-branch-is-never-pushed).
 
 In a project that names no check, Djinn never merges untested work into main: it merges only into a wish's own branch,
 untested. A wish there whose branch is main has its work left out of any branch; its tasks' events say why, and a task
 that comes after such work waits for it to reach the branch.
 
-If your team does not push straight to main, give the wish a branch of its own before its first task ends.
+Give the wish a branch of its own before its first task ends, or choose the per-azima [push strategy](#push-strategy):
+its work then reaches the remote, and main through a pull request.
 
 ## How workers use it
 
 Each worker of the wish starts its worktree from the integration branch's tip, as it is when the worker starts: its
 start event names the branch and the commit, as in **from feat/invoice-pdf at 1a2b3c4d**. When the remote's copy of the
 branch holds commits yours lacks, and nothing of yours, the worker starts from the remote's, **from origin/main at
-1a2b3c4d**; the reference branch is fetched first, at most once a minute. A wish with no integration branch yet starts
+1a2b3c4d**; the branch the worker starts from is fetched first, unless it was within the last minute, even while
+Djinn fetches at its idle pace. A wish with no integration branch yet starts
 its workers from the reference branch, the remote's. Never from your copy: what it has checked out, and its changes not
 committed, stay out of every worktree. Under the per-azima strategy, an azima's work starts from the azima's own branch,
 cut from the remote's reference branch; see [Push strategy](#push-strategy).
@@ -103,8 +119,10 @@ show the work undone, and your next commit would undo it. When the branch moves:
 While the wish works on its branch, others merge into the project's main branch. In a project that names checks, Djinn
 keeps each active wish's branch up with main by itself, with no model:
 
-1. **It looks** at main at most every hour, fetching it from the remote with your own credentials. Your settings may
-   say how often, and which branch is main: by default the remote's default branch, else main, else master.
+1. **It looks** at main at most every hour, every three hours while you are away, fetching it from the remote with
+   your own credentials, unless Djinn fetched it lately for another look. Your settings may say how often, and which
+   branch is main: by default the remote's default branch, else main, else master. See how often Djinn fetches in
+   [Project and settings](#project-and-settings).
 2. **It merges** main in once main holds a **release** the branch lacks, a version tag; your settings may say at each
    commit instead, or never.
 3. **It checks** the merge as it checks a task's work, in its own worktree, and moves the branch when the checks pass.
@@ -123,7 +141,7 @@ their place. A merge needs no model; a model only settles a conflict, when there
 ## When the remote moved on
 
 A teammate may push to the branch too. Before Djinn merges work, or main, into a branch, main included, it fetches the
-remote's copy of that branch, then:
+remote's copy of that branch, the branches of a wish's azimas together in one fetch, then:
 
 - **The branch is behind the remote's**, holding nothing the remote lacks: Djinn brings it up to the remote's, a
   fast-forward, and merges the work on top. Your checkout of the branch follows when it is clean.
@@ -148,10 +166,13 @@ You can bring a branch up to its remote yourself: see [Pulling yourself](#push-p
 
 ## Good to know
 
-- **Check the chip before the first task ends.** A new wish lands its work in the reference branch, main by default.
+- **Check the chip before the first task ends.** A new wish lands its work in the reference branch, main by default,
+  which Djinn never pushes.
 - **Commit or put aside your changes.** A checkout of the integration branch with changes not committed holds every
   merge into it: the tasks show **Merging** and wait.
 - **Name a reference branch.** A wish in a project where Djinn finds none has nowhere to land until you name one.
+- **A branch named is a branch made.** The wish's branch missing from the repository, Djinn makes it from the reference
+  branch before the next merge; it never waits on a branch that is not there.
 - **Changing the branch moves nothing.** Work already merged stays in the old branch; the next work goes to the new one.
 - **Djinn needs a Git identity.** It merges and commits as you; without your name and email set in Git, the work waits,
   saying how to set them.

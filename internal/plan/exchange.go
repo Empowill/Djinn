@@ -122,11 +122,13 @@ func (w *Wishes) ImportData(
 	return connect.NewResponse(res), nil
 }
 
-// Snapshot returns everything the wish holds, with the identifiers and folders of this machine.
+// Snapshot returns what the wish holds but its tasks' events, with the identifiers and folders of this machine. The
+// events are most of a wish (89 of the 91 MB of a wish of 170 tasks), and the window reads none of them from here: a
+// task's page follows its own (W149).
 func (w *Wishes) Snapshot(
 	ctx context.Context, req *connect.Request[planv1.WishServiceSnapshotRequest],
 ) (*connect.Response[planv1.WishServiceSnapshotResponse], error) {
-	exp, projects, err := collect(ctx, w.Store, req.Msg.GetWishId(), allEvents)
+	exp, projects, err := collect(ctx, w.Store, req.Msg.GetWishId(), noEvents)
 	if err != nil {
 		return nil, Status(err)
 	}
@@ -153,7 +155,7 @@ func allEvents(ctx context.Context, r store.Reader, tasks []*planv1.Task) ([]*pl
 	return out, nil
 }
 
-// noEvents is none: the brief shows none, and a wish's events are most of the store.
+// noEvents is none: the brief and the window's snapshot show none, and a wish's events are most of the store.
 func noEvents(context.Context, store.Reader, []*planv1.Task) ([]*planv1.TaskEvent, error) {
 	return nil, nil
 }
@@ -161,6 +163,17 @@ func noEvents(context.Context, store.Reader, []*planv1.Task) ([]*planv1.TaskEven
 // collect gathers what the wish holds, as stored, with the events that events reads: its project references carry
 // the identifiers of this machine.
 func collect(ctx context.Context, r store.Reader, wishID string, events eventsOf) (*planv1.WishExport, []*planv1.Project, error) {
+	return collectOf(ctx, r, wishID, events, "/")
+}
+
+// wishMethods is the prefix of WishService's methods: the commands the brief reads of a wish's history (needsTitle),
+// where an export reads every method of the API, prompts and answers included (W123).
+const wishMethods = "/" + planv1connect.WishServiceName + "/"
+
+// collectOf is collect, its history read from the methods of the API that start with prefix only.
+func collectOf(
+	ctx context.Context, r store.Reader, wishID string, events eventsOf, prefix string,
+) (*planv1.WishExport, []*planv1.Project, error) {
 	wish, err := store.Get[*planv1.Wish](ctx, r, wishID)
 	if err != nil {
 		return nil, nil, err
@@ -201,7 +214,7 @@ func collect(ctx context.Context, r store.Reader, wishID string, events eventsOf
 			Id: p.GetId(), Name: p.GetName(), Remote: cleanRemote(p.GetRemote()), Git: p.GetGit(),
 		})
 	}
-	if exp.Commands, err = commands(ctx, r, exp); err != nil {
+	if exp.Commands, err = commands(ctx, r, exp, prefix); err != nil {
 		return nil, nil, err
 	}
 	if exp.LeadBatches, err = LeadJournal(ctx, r, []string{wishID}, 200); err != nil {
@@ -213,8 +226,8 @@ func collect(ctx context.Context, r store.Reader, wishID string, events eventsOf
 // commands returns the journal entries that changed the wish: those whose request names the wish or one of its
 // entities, the one that made it, and the answers given by code. An entry that imported the wish stands for the
 // commands it carried, and supersedes those before it: the history follows the wish from machine to machine, without
-// nesting.
-func commands(ctx context.Context, r store.Reader, exp *planv1.WishExport) ([]*planv1.Command, error) {
+// nesting. Only the methods of the API that start with prefix are read.
+func commands(ctx context.Context, r store.Reader, exp *planv1.WishExport, prefix string) ([]*planv1.Command, error) {
 	wish := exp.GetWish()
 	ids := map[string]bool{strings.ToLower(wish.GetId()): true}
 	for _, t := range exp.GetTasks() {
@@ -243,7 +256,7 @@ func commands(ctx context.Context, r store.Reader, exp *planv1.WishExport) ([]*p
 	others, _ := store.List[*planv1.Wish](ctx, r, nil)
 	// Only the methods of the API make a wish's history: "/plan.v1.WishService/Make"… The harness's entries, a
 	// worker's events most of all, are not even read.
-	_, err := store.CommandsOf(ctx, r, "/", func(c store.Command) bool {
+	_, err := store.CommandsOf(ctx, r, prefix, func(c store.Command) bool {
 		req, err := request(c)
 		if err != nil || req == nil {
 			// An entry of the harness or of an older Djinn: not a request of the API, left out.

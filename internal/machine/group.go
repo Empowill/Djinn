@@ -22,8 +22,9 @@ type Group struct {
 	Processes int
 	// CPU time, user and system, of the processes running and of the children they waited for.
 	CPU time.Duration
-	// Resident memory, summed over the processes: a page they share counts once per process. Read from a cgroup,
-	// what the kernel charges it (ReadCgroup).
+	// Resident memory, summed over the processes: a page they share counts once per process; on macOS each one's
+	// footprint, its compressed memory in, what it shares out (Footprint). Read from a cgroup, what the kernel
+	// charges it (ReadCgroup).
 	Memory uint64
 	// Peak is the most memory the worker's cgroup held since it started; 0 without a cgroup.
 	Peak uint64

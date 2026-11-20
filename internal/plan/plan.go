@@ -3,6 +3,7 @@
 package plan
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -232,7 +233,9 @@ func Handlers(s *store.Store, opts ...Option) map[string]http.Handler {
 	out[p] = h
 	p, h = planv1connect.NewInboxServiceHandler(&Inbox{Wishes: wishes}, opt)
 	out[p] = h
-	p, h = planv1connect.NewLeadServiceHandler(&LeadService{Wishes: wishes, Usage: o.usage}, opt)
+	// Its request holds the files a message hands the lead (Tell): up to 10 of 20 MB each.
+	p, h = planv1connect.NewLeadServiceHandler(&LeadService{Wishes: wishes, Usage: o.usage}, opt,
+		connect.WithReadMaxBytes(maxTellBytes))
 	out[p] = h
 	tilasms := &Tilasms{Store: s, Home: o.home, Show: o.show, URL: o.url, Marks: marks, Wake: wishes.Queued, Questions: questions,
 		Publisher: o.publisher}
@@ -295,8 +298,24 @@ type Projects struct {
 // fillProject adds to project what is computed on every read, and returns what Djinn finds in its configuration:
 // project.to_fix counts the things to fix, project.first_fix says the first.
 func (p *Projects) fillProject(ctx context.Context, project *planv1.Project, wantRef bool) (Settings, []*planv1.ProjectNotice, *planv1.ProjectReference) {
+	filled := p.fillProjectFiles(ctx, project, wantRef)
+	return filled.settings, filled.notices, filled.ref
+}
+
+// projectFilled is what fillProject reads of a project: its settings, the files they come from, where Djinn reads its
+// configuration, its notices and its reference branch.
+type projectFilled struct {
+	settings  Settings
+	repo, dev *planv1.ProjectSettings
+	config    Config
+	notices   []*planv1.ProjectNotice
+	ref       *planv1.ProjectReference
+}
+
+// fillProjectFiles is fillProject, with the files the settings come from and where Djinn reads the configuration.
+func (p *Projects) fillProjectFiles(ctx context.Context, project *planv1.Project, wantRef bool) projectFilled {
 	if project == nil {
-		return Settings{}, nil, nil
+		return projectFilled{}
 	}
 	cfg := ProjectConfig(p.Home, project)
 	files := readSettingsFilesConfig(p.Home, project, cfg)
@@ -313,7 +332,7 @@ func (p *Projects) fillProject(ctx context.Context, project *planv1.Project, wan
 	notices, ref := p.projectNoticesWith(ctx, project, cfg, files, settings, wantRef)
 	project.ToFix = countToFix(notices)
 	project.FirstFix = firstFix(notices)
-	return settings, notices, ref
+	return projectFilled{settings: settings, repo: repo, dev: dev, config: cfg, notices: notices, ref: ref}
 }
 
 func (p *Projects) wishForProject(ctx context.Context, projectID, wishNameOrID string) (*planv1.Wish, error) {
@@ -443,11 +462,23 @@ func (p *Projects) Show(
 	if err != nil {
 		return nil, Status(err)
 	}
-	settings, notices, ref := p.fillProject(ctx, project, true)
+	filled := p.fillProjectFiles(ctx, project, true)
+	settings := filled.settings
 	out := &planv1.ProjectServiceShowResponse{
-		Project: project, Settings: settings.Rows(), Setup: settings.Setup, Checks: settings.Checks,
-		WatchCommands: settings.WatchCommands, ServeCommands: settings.ServeCommands, Notices: notices,
-		Reference: ref,
+		Project: project, Settings: SettingRows(filled.repo, filled.dev), Setup: settings.Setup, Checks: settings.Checks,
+		WatchCommands: settings.WatchCommands, ServeCommands: settings.ServeCommands, Notices: filled.notices,
+		Reference: filled.ref, WorkersBrief: settings.ChecksBrief(),
+		Instructions: ResolveInstructions(ReadMachineInstructions(p.Home), filled.repo.GetInstructions(),
+			filled.dev.GetInstructions()),
+	}
+	if dir := filled.config.Dir; dir != "" {
+		// What cannot be read here is said by the notices already: the page shows nothing of it.
+		if perms, _, err := ReadPermissions(cmp.Or(filled.config.ReferenceDir, dir)); err == nil {
+			out.Permissions = perms
+		}
+		if read, err := ReadProjectConfig(dir); err == nil {
+			out.Containers = read.Config.GetContainers()
+		}
 	}
 	out.RepositoryFile, out.DeveloperFile = settingsFiles(p.Home, project)
 	if watches, err := store.List[*planv1.ConfigWatch](ctx, p.Store, store.Where{"project_id": project.GetId()}); err == nil && len(watches) > 0 {
@@ -590,6 +621,93 @@ func (p *Projects) Allow(
 	return connect.NewResponse(out), nil
 }
 
+// Gates shows the gates a project declares in its djinn.yaml, as Djinn applies them on this machine, or turns one
+// off or back on for the developer: in their own settings file, never in the repository.
+func (p *Projects) Gates(
+	ctx context.Context, req *connect.Request[planv1.ProjectServiceGatesRequest],
+) (*connect.Response[planv1.ProjectServiceGatesResponse], error) {
+	project, err := ProjectNamed(ctx, p.Store, req.Msg.GetProject())
+	if err != nil {
+		return nil, Status(err)
+	}
+	if req.Msg.Off != nil && req.Msg.On != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("--off or --on: one gate at a time"))
+	}
+	if req.Msg.Off != nil || req.Msg.On != nil {
+		err = write(ctx, p.Store, req.Spec(), req.Msg, func(*store.Tx) error {
+			if req.Msg.Off != nil && !slices.ContainsFunc(declaredGates(p.Home, project), func(g *djinnv1.ProjectGate) bool {
+				return g.GetName() == req.Msg.GetOff()
+			}) {
+				return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("the project declares no gate %s", req.Msg.GetOff()))
+			}
+			if _, err := GatesOff(p.Home, project.GetId(), cmp.Or(req.Msg.GetOff(), req.Msg.GetOn()), req.Msg.On != nil); err != nil {
+				return connect.NewError(connect.CodeFailedPrecondition, err)
+			}
+			return nil
+		})
+		if err != nil {
+			return nil, Status(err)
+		}
+	}
+	config := ProjectConfig(p.Home, project)
+	gates := projectGatesIn(p.Home, project, config.Dir)
+	return connect.NewResponse(&planv1.ProjectServiceGatesResponse{
+		Gates: gates.Gates, File: gates.File, GatesOff: gates.Off, Warnings: gates.Warnings, OffGates: gates.OffGates,
+		DeveloperFile: DeveloperSettingsFile(p.Home, project.GetId()),
+		Read:          gatesReadLine(config, gates.File), Ref: config.Ref, Commit: config.Commit,
+		ConfigBranch: config.ConfigBranch, ConfigBranchMissing: config.ConfigBranchMissing(),
+	}), nil
+}
+
+// gatesReadLine is the line djinn project gates gives first (W191): where Djinn read the project's gates, config, and the
+// file it found there, file, or that it found none; then what the developer's config_branch changes. An empty answer
+// could not tell no config_branch from no file from a branch gone (W189).
+func gatesReadLine(config Config, file string) string {
+	if config.Dir == "" {
+		return "The project has no folder on this machine: Djinn reads no gate."
+	}
+	where := "in the project's folder " + config.Folder
+	if config.FromReference() {
+		where = "on " + config.Ref + " (" + abbrev(config.Commit) + ")"
+	}
+	var b strings.Builder
+	if file == "" {
+		fmt.Fprintf(&b, "No %s nor %s %s: the project declares no gate.", ProjectConfigFiles[0],
+			filepath.ToSlash(ProjectConfigFiles[1]), where)
+	} else {
+		fmt.Fprintf(&b, "Read %s %s.", file, where)
+	}
+	switch {
+	case config.ConfigBranchMissing():
+		fmt.Fprintf(&b, " Your config_branch %s is not on the remote (merged and deleted, or not fetched yet): Djinn "+
+			"reads the reference branch instead.", config.ConfigBranch)
+	case config.ConfigBranch != "":
+		fmt.Fprintf(&b, " It is your config_branch %s, to try it before it merges; the reference branch is %s.",
+			config.ConfigBranch, cmp.Or(config.ReferenceRef, "the project's folder"))
+	default:
+		b.WriteString(" You name no config_branch.")
+	}
+	return b.String()
+}
+
+// abbrev is commit cut to 10 characters, as a line names it.
+func abbrev(commit string) string {
+	if len(commit) > 10 {
+		return commit[:10]
+	}
+	return commit
+}
+
+// declaredGates are the valid gates project declares, those turned off among them.
+func declaredGates(home string, project *planv1.Project) []*djinnv1.ProjectGate {
+	dir := ConfigDir(home, project)
+	if dir == "" {
+		return nil
+	}
+	read, _ := ReadProjectConfig(dir)
+	return read.Config.GetGates()
+}
+
 // ForgetSync forgets the sync of a branch with nothing to push: the project's syncs leave it out until it moves.
 func (p *Projects) ForgetSync(
 	ctx context.Context, req *connect.Request[planv1.ProjectServiceForgetSyncRequest],
@@ -694,7 +812,8 @@ func remoteBranches(ctx context.Context, dir, remote string) ([]string, error) {
 }
 
 // SetBranch writes the reference branch the developer chooses for a project as main_branch in their own settings
-// file, or takes it back with unset: never in the repository. A branch the repository does not hold is refused.
+// file, or takes it back with unset: never in the repository. With config, the branch Djinn reads the configuration
+// on instead, as config_branch. A branch the repository does not hold is refused.
 func (p *Projects) SetBranch(
 	ctx context.Context, req *connect.Request[planv1.ProjectServiceSetBranchRequest],
 ) (*connect.Response[planv1.ProjectServiceSetBranchResponse], error) {
@@ -719,8 +838,12 @@ func (p *Projects) SetBranch(
 			return nil, connect.NewError(connect.CodeFailedPrecondition, err)
 		}
 	}
+	save := SaveDeveloperMainBranch
+	if req.Msg.GetConfig() {
+		save = SaveDeveloperConfigBranch
+	}
 	err = write(ctx, p.Store, req.Spec(), req.Msg, func(*store.Tx) error {
-		if err := SaveDeveloperMainBranch(p.Home, project.GetId(), branch); err != nil {
+		if err := save(p.Home, project.GetId(), branch); err != nil {
 			return connect.NewError(connect.CodeFailedPrecondition, err)
 		}
 		return nil
@@ -1313,7 +1436,10 @@ func (q *Questions) Ask(
 		if linkWarnings, err = linkTilasms(ctx, tx, question); err != nil {
 			return err
 		}
-		return Ask(ctx, tx, question)
+		if err := Ask(ctx, tx, question); err != nil {
+			return err
+		}
+		return setHolds(ctx, tx, question, m.GetHolds())
 	})
 	if err != nil {
 		return nil, err

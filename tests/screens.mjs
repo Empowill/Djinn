@@ -142,13 +142,19 @@ export {
   ConfigChanges,
   NoticeLine,
   ProjectChecks,
-  ProjectPanel,
-  ProjectSettings,
   ReferenceBranch,
   SkillLine,
   ToFixBox,
   WatchCommands,
+  WorkersStart,
 } from "@/src/project-panel.tsx";
+export {
+  PROJECT_PAGE,
+  PROJECT_TABS,
+  ProjectPage,
+  SettingsTable,
+  projectPageOf,
+} from "@/src/project-page.tsx";
 export {
   BrakeSection,
   CIRCLE_ROWS,
@@ -178,6 +184,7 @@ export {
 } from "@/src/wish-head.tsx";
 export { UpdateBannerView, readyKey } from "@/src/update-banner.tsx";
 export { platformShortcut } from "@/src/tooltip.tsx";
+export { localBuild, versionLines, versionOrigin } from "@/src/version.ts";
 export {
   digitKey,
   learnDigitKey,
@@ -233,8 +240,25 @@ export {
 } from "@/src/consumption-panel.tsx";
 export { ResourceChart } from "@/src/resource-chart.tsx";
 export {
+  CascadePace,
+  FreeingBandView,
+  MIN_STEP,
+  MIN_TOTAL,
+  SUMMARY_MS,
+  STALE_MS,
+  cascadeOf,
+  keptText,
+  shownAt,
+  shownTimes,
+  stepOf,
+  summaryText,
+} from "@/src/freeing-band.tsx";
+export {
   CommandService,
+  DiskFreeingPart,
+  DiskFreeingReason,
   DiskRisk,
+  GateMode,
   GateService,
   MachineService,
 } from "@/gen/ts/machine/v1/machine_pb.ts";
@@ -244,7 +268,28 @@ export {
   HourglassLine,
   HourglassSections,
 } from "@/src/hourglass.tsx";
-export { GatesTab, gateWaits } from "@/src/gates-tab.tsx";
+export {
+  GatesTab,
+  PAGE,
+  mergeHistory,
+  mergePage,
+  nowGroups,
+} from "@/src/gates-tab.tsx";
+export {
+  ADMISSIONS,
+  GatesFlow,
+  GatesSankey,
+  gateIn,
+  gateRows,
+  projectSections,
+  holdsOf,
+  inScope,
+  instant,
+  kindGroup,
+  readoutTop,
+  sankeyFlows,
+  workerStrip,
+} from "@/src/gates-flow.tsx";
 export { Docs, GRIMOIRE } from "@/src/docs.tsx";
 export {
   TaskDiffView,
@@ -743,10 +788,17 @@ export function resources(s) {
       gate: "test",
     }),
   ];
-  // A djinn whose machine services count their reads: the series, the commands, the gates, the machine the status bar
-  // reads.
+  // A djinn whose machine services count their reads: the series, the commands, the gates and their history (each
+  // window asked), the machine the status bar reads.
   function hourglassDjinn() {
-    const reads = { series: 0, commands: 0, gates: 0 };
+    const reads = {
+      series: 0,
+      commands: 0,
+      commandAsks: [],
+      gates: 0,
+      history: [],
+      historyAfter: [],
+    };
     const transport = s.createRouterTransport(({ service }) => {
       service(s.MachineService, {
         series: () => {
@@ -768,11 +820,28 @@ export function resources(s) {
           reads.gates++;
           return { gates: [] };
         },
+        history: (req) => {
+          reads.history.push(req.minutes);
+          reads.historyAfter.push(Boolean(req.afterTime));
+          return {
+            startTime: at(t3 - BigInt(req.minutes * 60)),
+            readTime: at(t3),
+            intervals: [lintGate],
+            runs: [],
+          };
+        },
       });
       service(s.CommandService, {
-        list: () => {
+        list: (req) => {
           reads.commands++;
-          return { costs: resourceCommands };
+          reads.commandAsks.push({
+            byTotal: req.byTotal,
+            brief: req.brief,
+            summary: req.summary,
+            pageSize: req.pageSize,
+            pageToken: req.pageToken,
+          });
+          return { costs: resourceCommands, total: resourceCommands.length };
         },
       });
     });

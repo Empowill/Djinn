@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -117,7 +118,7 @@ func sharedCosts(t *testing.T) *costsRig {
 }
 
 // record records a run and returns the command's cost after it.
-func (r *costsRig) record(t *testing.T, req *machinev1.CommandServiceRecordRequest) *machinev1.CommandCost {
+func (r *costsRig) record(t testing.TB, req *machinev1.CommandServiceRecordRequest) *machinev1.CommandCost {
 	t.Helper()
 	res, err := r.client.Record(t.Context(), connect.NewRequest(req))
 	if err != nil {
@@ -302,7 +303,8 @@ func TestCosts_List(t *testing.T) {
 	}
 }
 
-// TestPeaks_Cost: the gates read the highest peak of a command in its project; 0 for one never measured there.
+// TestPeaks_Cost: the gates read the peak of a command in its project, the 95th percentile of its recent runs' (Peak);
+// 0 for one never measured there.
 func TestPeaks_Cost(t *testing.T) {
 	t.Parallel()
 	r := sharedCosts(t)
@@ -312,8 +314,8 @@ func TestPeaks_Cost(t *testing.T) {
 		taskID, dir, command string
 		want                 Cost
 	}{
-		// Its CPU time is the higher of the mean (15 s) and the last run's (20 s).
-		{"by the folder", "", filepath.Join(r.dir, "src"), "Go Test ./...", Cost{Peak: 300 << 20, CPU: 20 * time.Second}},
+		// Its CPU time is the higher of the mean (15 s) and the last run's (20 s); its peak, of 300 and 200 MiB, 295 MiB.
+		{"by the folder", "", filepath.Join(r.dir, "src"), "Go Test ./...", Cost{Peak: 295 << 20, CPU: 20 * time.Second}},
 		{"by the task, another project", r.task.GetId(), os.TempDir(), "go test ./...", Cost{}},
 		{"outside any project", "", os.TempDir(), "go test ./...", Cost{}},
 		{"never run", "", r.dir, "go vet ./...", Cost{}},
@@ -388,19 +390,53 @@ func TestPeaks_Key(t *testing.T) {
 		t.Errorf("counted again: %v", got)
 	}
 
-	// Never measured: the median of its head's, go build's here (1 GiB alone), go test's (500 and 2048 MiB: 1274 MiB).
+	// Never measured: the median of its head's, go build's here (1 GiB alone), go test's (100 and 2048 MiB: 1074 MiB;
+	// the 500 MiB kept before the keys was no run of its recent ones, and the peak is theirs: Peak).
 	peaks.Record(ctx, &machinev1.CommandServiceRecordRequest{
 		Directory: r.dir, Command: "go test ./...", CpuSeconds: 100, PeakMemoryBytes: 2 << 30,
 	})
 	for command, want := range map[string]Cost{
 		"go build ./cmd/other":            {Peak: 1 << 30, CPU: 40 * time.Second, Head: "go build"},
-		"go test -race ./internal/plan":   {Peak: 1274 << 20, CPU: 50 * time.Second, Head: "go test"},
+		"go test -race ./internal/plan":   {Peak: 1074 << 20, CPU: 50 * time.Second, Head: "go test"},
 		"cargo build --release":           {},
-		"GOFLAGS=-race go test ./cmd/...": {Peak: 1274 << 20, CPU: 50 * time.Second, Head: "go test"},
+		"GOFLAGS=-race go test ./cmd/...": {Peak: 1074 << 20, CPU: 50 * time.Second, Head: "go test"},
 	} {
 		if got := peaks.Cost(ctx, "", r.dir, command); got != want {
 			t.Errorf("cost of %q, never measured = %+v, want %+v", command, got, want)
 		}
+	}
+}
+
+// TestPeaks_HereDocuments (W82): the keys cat and python3 - were kept with the peak of every command a here-document
+// ran with, the commands after its body counted in, every inline script under one key: 4 and 6.4 GiB. A short inline
+// script, or a file written by cat before what runs it, no longer finds them: it is costed as itself, or as the
+// others of its head.
+func TestPeaks_HereDocuments(t *testing.T) {
+	t.Parallel()
+	r := newCostsRig(t)
+	ctx := t.Context()
+	peaks := NewPeaks(r.db)
+	for command, peak := range map[string]uint64{
+		"cat": 4 << 30, "python3 -": 6 << 30, "python3 -I a.py": 40 << 20, "python3 -I b.py": 50 << 20,
+	} {
+		peaks.Record(ctx, &machinev1.CommandServiceRecordRequest{Directory: r.dir, Command: command, PeakMemoryBytes: peak, CpuSeconds: 1})
+	}
+	for command, want := range map[string]Cost{
+		// A python3 of 2 s, never measured: the median of the python3s.
+		"python3 - <<'EOF'\nimport json\nprint(json.dumps({}))\nEOF": {Peak: 50 << 20, CPU: time.Second, Head: "python3"},
+		// A script written by cat, then run: the script's cost.
+		"cd " + r.dir + " && cat <<'EOF' > x.py\nprint(1)\nEOF\npython3 -I a.py": {Peak: 40 << 20, CPU: time.Second},
+	} {
+		if got := peaks.Cost(ctx, "", r.dir, command); got != want {
+			t.Errorf("cost of %q = %+v, want %+v", command, got, want)
+		}
+	}
+	// What runs after a here-document is counted under its own key, not cat's.
+	peaks.Record(ctx, &machinev1.CommandServiceRecordRequest{
+		Directory: r.dir, Command: "cat <<'EOF' > n.md\nhi\nEOF\ngo test ./...", PeakMemoryBytes: 3 << 30, CpuSeconds: 1,
+	})
+	if got := peaks.Cost(ctx, "", r.dir, "go test ./..."); got.Peak != 3<<30 {
+		t.Errorf("go test after a here-document costs %+v", got)
 	}
 }
 
@@ -432,5 +468,145 @@ func TestPeaks_Ask(t *testing.T) {
 	if len(got) != len(want) || got["go tool task e2e"] != want["go tool task e2e"] ||
 		got["go tool task lint"] != want["go tool task lint"] {
 		t.Errorf("asked and runs = %v, want %v", got, want)
+	}
+}
+
+// TestPeak (W139, W197): the peak the gates hold a command to is the 95th percentile of its latest PeakRuns measured
+// runs, a lone peak far above the others left out from OutlierRuns runs on: a run measured wrong (Romain's 7270 MiB on
+// python3 -) stops counting once two clean runs were measured, not after PeakRuns; two high runs are no outlier; a cost
+// that kept no run holds its highest peak.
+func TestPeak(t *testing.T) {
+	t.Parallel()
+	runs := func(peaks ...uint64) []*machinev1.CommandRun {
+		var out []*machinev1.CommandRun
+		for _, p := range peaks {
+			out = append(out, &machinev1.CommandRun{PeakMemoryBytes: p})
+		}
+		return out
+	}
+	const wrong, clean = 7270 << 20, 300 << 20
+	poisoned := append(runs(6<<30), runs(slices.Repeat([]uint64{100 << 20}, PeakRuns)...)...)
+	for _, c := range []struct {
+		name string
+		cost *machinev1.CommandCost
+		want uint64
+	}{
+		{"no run kept", &machinev1.CommandCost{PeakMemoryBytes: 3 << 30}, 3 << 30},
+		{"one run", &machinev1.CommandCost{PeakMemoryBytes: 3 << 30, RecentRuns: runs(GiB)}, GiB},
+		{"unmeasured runs left out", &machinev1.CommandCost{RecentRuns: runs(GiB, 0, 0)}, GiB},
+		{"a poisoned run faded", &machinev1.CommandCost{PeakMemoryBytes: 6 << 30, RecentRuns: poisoned}, 100 << 20},
+		{"a poisoned run among the latest", &machinev1.CommandCost{RecentRuns: poisoned[:PeakRuns]}, 100 << 20},
+		// Too few runs to tell which is wrong: 95 % of 7270 MiB, 5 % of 300 MiB.
+		{"an outlier then 1 clean run", &machinev1.CommandCost{RecentRuns: runs(wrong, clean)}, 6921 << 20},
+		{"an outlier then 2 clean runs", &machinev1.CommandCost{RecentRuns: runs(wrong, clean, clean)}, clean},
+		{"an outlier then 3 clean runs", &machinev1.CommandCost{RecentRuns: runs(wrong, clean, clean, clean)}, clean},
+		{"an outlier after clean runs", &machinev1.CommandCost{RecentRuns: runs(clean, clean, wrong)}, clean},
+		// Two high runs: the command may cost that much, both are kept.
+		{"two high runs", &machinev1.CommandCost{RecentRuns: runs(wrong, wrong, clean, clean)}, wrong},
+		{"two high runs among the latest", &machinev1.CommandCost{
+			RecentRuns: append(runs(wrong, wrong), runs(slices.Repeat([]uint64{clean}, PeakRuns-2)...)...),
+		}, wrong},
+		// Under four times the median of the others: a peak that varies, the 95th percentile.
+		{"a peak that varies", &machinev1.CommandCost{RecentRuns: runs(clean, clean, 4*clean)}, 1110 << 20},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			if got := Peak(c.cost); got>>20 != c.want>>20 {
+				t.Errorf("Peak = %d MiB, want %d MiB", got>>20, c.want>>20)
+			}
+		})
+	}
+}
+
+// TestPeaks_PollutedHead (W197): the key python3 - of dolmen, from before W82, kept a 7270 MiB peak among its runs, and
+// no command makes it any more; a new inline script, never measured, borrows the median of its head's runs, each
+// entry's median, not that entry's 95th percentile: it is no heavy command.
+func TestPeaks_PollutedHead(t *testing.T) {
+	t.Parallel()
+	r := newCostsRig(t)
+	ctx := t.Context()
+	peaks := NewPeaks(r.db)
+	for _, peak := range []uint64{7270 << 20, 200 << 20} {
+		peaks.Record(ctx, &machinev1.CommandServiceRecordRequest{Directory: r.dir, Command: "python3 -", PeakMemoryBytes: peak, CpuSeconds: 1})
+	}
+	script := "python3 - <<'EOF'\nimport json\nprint(json.dumps({}))\nEOF"
+	// Its two runs: 3735 MiB, their median, not 6921 MiB.
+	if got := peaks.Cost(ctx, "", r.dir, script); got != (Cost{Peak: 3735 << 20, CPU: time.Second, Head: "python3"}) {
+		t.Errorf("a new script beside two runs of python3 - costs %+v", got)
+	}
+	peaks.Record(ctx, &machinev1.CommandServiceRecordRequest{Directory: r.dir, Command: "python3 -", PeakMemoryBytes: 200 << 20, CpuSeconds: 1})
+	if got := peaks.Cost(ctx, "", r.dir, script); got != (Cost{Peak: 200 << 20, CPU: time.Second, Head: "python3"}) {
+		t.Errorf("a new script beside three runs of python3 - costs %+v", got)
+	}
+}
+
+// TestCosts_Forget (W139): Forget deletes the cost of one key, of the keys that start with some words, or of a whole
+// project, the other project's kept; it says one of the three or is refused; each forgetting is journaled.
+func TestCosts_Forget(t *testing.T) {
+	t.Parallel()
+	r := newCostsRig(t)
+	for _, command := range []string{"go test ./...", "go test ./internal/gate", "go build ./cmd/djinn", "gofmt -l .", "cat <<'EOF' > f\nx\nEOF\ngo vet ./..."} {
+		r.record(t, &machinev1.CommandServiceRecordRequest{Directory: r.dir, Command: command, PeakMemoryBytes: GiB})
+	}
+	r.record(t, &machinev1.CommandServiceRecordRequest{TaskId: r.task.GetId(), Command: "go test ./...", PeakMemoryBytes: GiB})
+	forget := func(req *machinev1.CommandServiceForgetRequest) ([]string, error) {
+		res, err := r.client.Forget(t.Context(), connect.NewRequest(req))
+		if err != nil {
+			return nil, err
+		}
+		return res.Msg.GetCommands(), nil
+	}
+	left := func(project string) []string {
+		var out []string
+		for _, c := range r.list(t, project) {
+			out = append(out, c.GetCommand())
+		}
+		slices.Sort(out)
+		return out
+	}
+	for _, c := range []struct {
+		name string
+		req  *machinev1.CommandServiceForgetRequest
+		want []string
+		left []string
+	}{
+		{"a key, case ignored", &machinev1.CommandServiceForgetRequest{Project: "app", Command: "GO BUILD ./cmd/djinn"},
+			[]string{"go build ./cmd/djinn"}, []string{"go test ./...", "go test ./internal/gate", "go vet ./...", "gofmt -l ."}},
+		{"a command as run", &machinev1.CommandServiceForgetRequest{Project: "app", Command: "cd x && go vet ./... 2>&1 | tail"},
+			[]string{"go vet ./..."}, []string{"go test ./...", "go test ./internal/gate", "gofmt -l ."}},
+		{"a head, whole words", &machinev1.CommandServiceForgetRequest{Project: "app", Head: " go  test "},
+			[]string{"go test ./...", "go test ./internal/gate"}, []string{"gofmt -l ."}},
+		{"nothing matches", &machinev1.CommandServiceForgetRequest{Project: "app", Head: "go"}, nil, []string{"gofmt -l ."}},
+		{"all", &machinev1.CommandServiceForgetRequest{Project: r.app.GetId(), All: true}, []string{"gofmt -l ."}, nil},
+	} {
+		got, err := forget(c.req)
+		if err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		if !slices.Equal(got, c.want) {
+			t.Errorf("%s: forgot %q, want %q", c.name, got, c.want)
+		}
+		if l := left("app"); !slices.Equal(l, c.left) {
+			t.Errorf("%s: left %q, want %q", c.name, l, c.left)
+		}
+	}
+	if l := left("inner"); !slices.Equal(l, []string{"go test ./..."}) {
+		t.Errorf("the other project's left: %q", l)
+	}
+	for _, req := range []*machinev1.CommandServiceForgetRequest{
+		{Project: "app"}, {Project: "app", Head: "go", All: true}, {Command: "go test ./..."},
+	} {
+		if _, err := forget(req); connect.CodeOf(err) != connect.CodeInvalidArgument {
+			t.Errorf("Forget(%v) = %v, want invalid argument", req, err)
+		}
+	}
+	if _, err := forget(&machinev1.CommandServiceForgetRequest{Project: "nowhere", All: true}); connect.CodeOf(err) != connect.CodeNotFound {
+		t.Errorf("an unknown project: %v", err)
+	}
+	journaled, err := store.Commands(t.Context(), r.db, func(c store.Command) bool {
+		return c.Method == machinev1connect.CommandServiceForgetProcedure
+	})
+	if err != nil || len(journaled) != 5 {
+		t.Errorf("journaled %d forgettings, want 5 (%v)", len(journaled), err)
 	}
 }

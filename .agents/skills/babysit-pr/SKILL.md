@@ -42,8 +42,8 @@ You lead a wish made for one pull request, or a wish one of whose tasks opened i
     - `new comment by <login> on <file>:<line>: <link>`: a comment on a line of the diff, a reply in its thread too.
     A review without a body that only carries comments on lines says nothing of its own: its comments speak. A
     review still pending, seen only by its author, says nothing. Each comment is said once, known by its link, even
-    after a restart. The developer's own comments are said too: the watcher cannot tell them from yours, which share
-    the same login.
+    after a restart. The developer's own comments are said too, though they share Djinn's login: only a comment
+    whose body holds the mark `<!-- djinn:reply -->` is taken for Djinn's own answer and says nothing (step 4).
   - `changes requested`: the review decision turned to `CHANGES_REQUESTED`.
   - `mergeable: CONFLICTING`: the pull request is no longer mergeable (`UNKNOWN`, GitHub still computing, says
     nothing). Said once, until it is mergeable again: a conflict left unsettled is never said twice.
@@ -82,7 +82,7 @@ news; handle them all, the conflict first.
    `gh pr view` does not show); `gh pr checks <pr>`, and for a failed check `gh run view <run-id> --log-failed`.
 2. Decide what to do. A failed check, a review comment to address, a conflict with the base branch: each is a task
    for a worker (`djinn task spawn`), with the failing log or the comment in its prompt. Group what touches the same
-   files into one task.
+   files into one task. A task that will answer a thread is told to end its answer with the mark (step 4).
    - `mergeable: CONFLICTING` gets its resolution task in the same pass (decision Q407, lead note `babysit-conflict`):
      `--part-of` the pull request's azima, it merges the base branch (`gh pr view <pr> --json baseRefName`) into the
      branch and resolves; a merge, never a rebase. One at a time per pull request: one already open is the answer.
@@ -96,6 +96,13 @@ news; handle them all, the conflict first.
    `git fetch`) contains it (`git merge-base --is-ancestor <commit> <head>`), answer citing the commit, then resolve
    the thread if it is yours to resolve; never before, or an auto-merge takes the request without the fix. A thread
    answered with no fix may resolve at once.
+   Every comment Djinn posts on the pull request, yours or a worker's, an answer in a thread, a comment of the
+   conversation or a review's body, ends with the mark `<!-- djinn:reply -->` on a line of its own. GitHub shows
+   nothing of it; the watcher, which reads the comments under the developer's login too, says none that holds it.
+   Without it, Djinn's answer wakes you as a new comment by the developer and a task runs for nothing (PR #43,
+   20/11/2026: W199's answer started W200). An answer in a thread, for example:
+   `gh api repos/{owner}/{repo}/pulls/<pr>/comments/<id>/replies -f body="Done in <commit>: ..."`, the body ending
+   with an empty line, then the mark. Never put the mark on a comment the developer wrote: it would never be said.
 5. Nothing to do (`all checks pass` while a review is awaited): wait for the next line. A comment that needs the
    developer is a question in the wish (`djinn question ask`); say nothing in your terminal. Never poll the checks yourself: the watcher speaks when they fail or all pass.
 

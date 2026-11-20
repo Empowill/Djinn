@@ -125,8 +125,9 @@ djinn/T07-the-orchestrator):
   or from the head of the pull request an azima carries, joins that azima instead and lands on its branch.
 - It lands in main through its own pull request, which Djinn opens as a draft at the branch's first push, with no
   question. When it cannot, it asks you once the azima's parts are done and green, as a move, and opens it when you say
-  yes. The card shows **PR proposed**, **PR open** or **PR merged**, with a link to the request. You merge it on the forge; once it is merged,
-  Djinn marks the azima done.
+  yes. The card shows **PR proposed**, **PR open**, **PR merged** or **PR closed**, with a link to the request. You merge it on the forge; once it is merged,
+  Djinn marks the azima done, as soon as no part of it runs any more. Closed without being merged, Djinn tells the Djinn and
+  closes nothing.
 - Djinn pushes the branch by itself under the standard cadence, at the azima's end, after three tasks and an hour, or
   once main is merged into it after its first push;
   on demand, a push button beside the branch pushes it when it is ahead of its remote.
@@ -153,7 +154,8 @@ turns on, and when every azima of the wish carries it, it proposes to you to gra
 > comes back. Every azima of the wish now carries it: the Djinn asks you whether to grant the wish.
 
 Under the per-azima strategy, **no azima waits for another**: each branch holds main and its own work, nothing else.
-Djinn refuses to make one azima come after another, and refuses the switch to per azima while azimas depend on each
+Djinn refuses to make one azima come after another, directly or through work part of them, saying which and what to
+change: a task waits only for tasks of its own azima. It refuses the switch to per azima while azimas depend on each
 other, saying which. Tasks inside one azima still wait for each other as usual.
 
 ## Azimas from the Djinn

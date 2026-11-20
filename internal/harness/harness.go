@@ -132,7 +132,8 @@ type Harness struct {
 	integrateTick    time.Duration // a pass at least this often; 0: a minute
 	integrateKick    chan struct{} // wakes the integration
 	configKick       chan struct{} // wakes the watch of the configuration (WatchConfig)
-	configTick       time.Duration // a look at least this often; 0: plan.ConfigLookEvery
+	configTick       time.Duration // a look at every project this often; 0: plan.ConfigLookEvery
+	pace             fetchPace     // the pace of the fetches (fetch_pace.go)
 	configWatching   sync.Once
 	integrating      sync.Once
 	integrateDone    chan struct{}         // closed when the integration has stopped; nil until Integrate
@@ -152,8 +153,10 @@ type Harness struct {
 	pushWaits        map[string]bool       // by wish/project/branch: a push due waits for merges, said (repair.go); owned by the integration's pass
 	mainNow          atomic.Bool           // a release was found: the next pass looks at main whatever the cadence
 	toldApart        map[string]bool       // by wish and what was told the lead of a branch apart from its remote's (remote_branch.go), guarded by mu
-	referenceFetched map[string]time.Time  // by repository, when its reference branch was last fetched (fetchReference), guarded by mu
 	mergedLooks      map[string]time.Time  // by repository, when Djinn last fetched main to find azimas merged into it (merged.go), guarded by mu
+
+	// By forge repository (host/path), the branches it protects, as last read (push_reference.go): guarded by mu.
+	protectedLooks map[string]protectedLook
 
 	// The workers' health (health.go), judged by the scheduler's pass: guarded by sched.
 	accountOf AccountFunc                // nil: no agent's account is read
@@ -173,6 +176,9 @@ type Harness struct {
 
 	// The disks' free space, as Djinn knows it (disk.go).
 	disk disk
+
+	// The freeing of finished tasks' worktrees and scratch (free.go).
+	free freeing
 
 	// Babysitting what tasks open (babysit.go).
 	babysitting sync.WaitGroup // one per look for what a task opened; Close waits for them
@@ -294,6 +300,7 @@ type run struct {
 	branch         string          // the branch template of the project's settings, for launch; empty: the default
 	from           string          // the wish's integration branch in the project, which its worktree starts from; empty: HEAD
 	checks         string          // what the project's settings say of the checks Djinn runs, for the worker's first prompt
+	instructions   string          // what the project's workers of its kind are told (W114), for its first prompt
 	pushChecks     []string        // commands of the project's push checks, to note when a worker runs them
 	testOne        string          // project's targeted test command template or prefix
 	notedPush      bool            // already noted that worker ran push checks
@@ -352,7 +359,8 @@ func New(s *store.Store, home string, providers map[planv1.Provider]Provider, op
 	h := &Harness{
 		store: s, home: home, providers: providers, ctx: ctx, cancel: cancel, runs: map[string]*run{},
 		tick: 2 * time.Second, kick: make(chan struct{}, 1), changed: make(chan struct{}),
-		integrateKick: make(chan struct{}, 1), configKick: make(chan struct{}, 1), tested: map[string]tested{}, mainTested: map[string]mainTested{}, pushWaits: map[string]bool{}, toldApart: map[string]bool{}, referenceFetched: map[string]time.Time{}, mergedLooks: map[string]time.Time{},
+		free:          freeing{every: freeEvery, kick: make(chan struct{}, 1)},
+		integrateKick: make(chan struct{}, 1), configKick: make(chan struct{}, 1), tested: map[string]tested{}, mainTested: map[string]mainTested{}, pushWaits: map[string]bool{}, toldApart: map[string]bool{}, mergedLooks: map[string]time.Time{}, protectedLooks: map[string]protectedLook{},
 		pushJobs:  map[string]*pushJob{},
 		installed: map[string]string{}, preempted: map[string]string{}, rateHits: map[string]int{}, aliases: map[string]string{},
 		resident: map[string]uint64{},
@@ -363,7 +371,7 @@ func New(s *store.Store, home string, providers map[planv1.Provider]Provider, op
 	for _, o := range opts {
 		o(h)
 	}
-	h.presence = &Presence{now: h.now, touched: h.pokeIfrits}
+	h.presence = &Presence{now: h.now, touched: h.touched}
 	h.batcher = newTellBatcher(h)
 	dumps := ""
 	if home != "" {
@@ -414,6 +422,9 @@ func (h *Harness) Close() {
 	if h.loopDone != nil {
 		<-h.loopDone
 	}
+	if h.free.done != nil {
+		<-h.free.done
+	}
 	h.integrating.Do(func() {}) // Nor any integration.
 	if h.integrateDone != nil {
 		<-h.integrateDone
@@ -449,26 +460,23 @@ func (h *Harness) Recover(ctx context.Context) error {
 	h.sweepTemp(ctx)
 	h.cleanWarmLeftovers(ctx)
 	tasks, err := store.List[*planv1.Task](ctx, h.store, nil)
-	if err != nil {
+	if err := passes("read the tasks", err); err != nil {
 		return err
 	}
-	if err := h.recoverServes(ctx, tasks); err != nil {
-		return err
-	}
-	if err := h.rebuildTaskRunsFromJournal(ctx, tasks); err != nil {
-		return err
-	}
-	if err := h.migrateAzimas(ctx, tasks); err != nil {
-		return err
-	}
-	if err := h.migrateKinds(ctx, tasks); err != nil {
-		return err
-	}
-	if err := h.ungroupOrphans(ctx, tasks); err != nil {
-		return err
-	}
-	if err := h.migratePushes(ctx); err != nil {
-		return err
+	for _, step := range []struct {
+		name string
+		do   func() error
+	}{
+		{"stop the serves", func() error { return h.recoverServes(ctx, tasks) }},
+		{"rebuild the runs", func() error { return h.rebuildTaskRunsFromJournal(ctx, tasks) }},
+		{"mark the azimas", func() error { return h.migrateAzimas(ctx, tasks) }},
+		{"give the tasks their kind", func() error { return h.migrateKinds(ctx, tasks) }},
+		{"ungroup the orphans", func() error { return h.ungroupOrphans(ctx, tasks) }},
+		{"move the pushes", func() error { return h.migratePushes(ctx) }},
+	} {
+		if err := passes(step.name, step.do()); err != nil {
+			return err
+		}
 	}
 	if err := plan.KeepPromptSizes(ctx, h.store, tasks); err != nil {
 		logx.L().Warn("keep the prompt sizes read from the events", "err", err)
@@ -485,7 +493,7 @@ func (h *Harness) Recover(ctx context.Context) error {
 		}
 	}
 	lastStart, err := h.lastStart(ctx)
-	if err != nil {
+	if err := passes("read the last start", err); err != nil {
 		return err
 	}
 	var interrupted, heldWatchers, out []string
@@ -494,7 +502,7 @@ func (h *Harness) Recover(ctx context.Context) error {
 		case planv1.TaskStatus_TASK_STATUS_PENDING, planv1.TaskStatus_TASK_STATUS_RUNNING, planv1.TaskStatus_TASK_STATUS_PAUSED:
 		case planv1.TaskStatus_TASK_STATUS_INTERRUPTED:
 			if dispatch.Ifrit(t) { // Lit as the last djinn up ended: it comes back out, never resumed by itself.
-				if err := h.putOut(ctx, t); err != nil {
+				if err := passes("put out "+t.GetCode(), h.putOut(ctx, t)); err != nil {
 					return err
 				}
 				out = append(out, t.GetCode())
@@ -517,7 +525,7 @@ func (h *Harness) Recover(ctx context.Context) error {
 			continue
 		}
 		if dispatch.Ifrit(t) { // Lit as the last djinn up crashed: it comes back out.
-			if err := h.putOut(ctx, t); err != nil {
+			if err := passes("put out "+t.GetCode(), h.putOut(ctx, t)); err != nil {
 				return err
 			}
 			out = append(out, t.GetCode())
@@ -544,15 +552,18 @@ func (h *Harness) Recover(ctx context.Context) error {
 			if err := tx.Put(t); err != nil {
 				return err
 			}
-			return putEvents(ctx, tx, h.newEvent(t.GetId(), Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "interrupted: " + t.GetError()}))
+			// Without its events, the task is interrupted all the same: no worker runs it.
+			return passes("tell "+t.GetCode()+" interrupted",
+				putEvents(ctx, tx, h.newEvent(t.GetId(), Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "interrupted: " + t.GetError()})))
 		})
-		if err != nil {
+		if err := passes("interrupt "+t.GetCode(), err); err != nil {
 			return fmt.Errorf("recover task %s: %w", t.GetCode(), err)
 		}
 	}
 	var resumed, watchers []string
 	if h.resumeHeld == "" {
-		if resumed, watchers, err = h.queueInterrupted(ctx, tasks); err != nil {
+		resumed, watchers, err = h.queueInterrupted(ctx, tasks)
+		if err := passes("resume the interrupted", err); err != nil {
 			return err
 		}
 	} else {
@@ -566,11 +577,22 @@ func (h *Harness) Recover(ctx context.Context) error {
 	restart := &planv1.LeadEvent{Kind: planv1.LeadEventKind_LEAD_EVENT_KIND_RESTART,
 		Text: restartLine(h.version, h.resumeHeld, interrupted, resumed, watchers, heldWatchers, out, orphans,
 			cutPart(cut, integrating), lockedPart(locked))}
-	if err := plan.QueueLeadEvent(ctx, h.store, restart, h.now()); err != nil {
+	if err := passes("tell the lead", plan.QueueLeadEvent(ctx, h.store, restart, h.now())); err != nil {
 		return fmt.Errorf("tell the lead of the restart: %w", err)
 	}
 	h.recoverOutrun(ctx, tasks)
-	return h.recoverAzimas(ctx, tasks)
+	return passes("reopen the azimas", h.recoverAzimas(ctx, tasks))
+}
+
+// passes is nil for err of a part of the store not migrated at start (store.ErrUnmigrated), written as a warning: that
+// step of Recover passes its turn, the next start does it, and djinn up goes on (Q42). Another err is returned as is.
+func passes(step string, err error) error {
+	if errors.Is(err, store.ErrUnmigrated) {
+		logx.L().Warn("a step of the recovery passes its turn: a part of the database was not migrated", "step", step,
+			"err", err)
+		return nil
+	}
+	return err
 }
 
 // lastSeen is when the worker of t's run, left running by a djinn up that did not stop cleanly, was last seen at work:
@@ -1046,7 +1068,7 @@ func (h *Harness) spawn(
 			return nil, err
 		}
 	}
-	if task.DependsOn, err = resolveDeps(ctx, h.store, wish.GetId(), after(req)); err != nil {
+	if task.DependsOn, task.HoldQuestionIds, err = resolveAfter(ctx, h.store, wish.GetId(), after(req)); err != nil {
 		return nil, plan.Status(err)
 	}
 	if task.PartOf, err = resolveAzima(ctx, h.store, wish.GetId(), req.GetPartOf()); err != nil {
@@ -1295,6 +1317,19 @@ func after(req *planv1.TaskServiceSpawnRequest) []string {
 	return append(slices.Clip(req.GetDependsOn()), req.GetAfter()...)
 }
 
+// resolveAfter resolves what a new task of the wish comes after (--after W1,Q64): the tasks it depends on, and the
+// open questions that hold it (W107), which it starts without once they are answered or withdrawn.
+func resolveAfter(ctx context.Context, r store.Reader, wishID string, names []string) (deps, holds []string, err error) {
+	questions, tasks := plan.SplitQuestions(names)
+	if holds, err = plan.HoldingQuestions(ctx, r, wishID, questions); err != nil {
+		return nil, nil, err
+	}
+	if deps, err = resolveDeps(ctx, r, wishID, tasks); err != nil {
+		return nil, nil, err
+	}
+	return deps, holds, nil
+}
+
 // plan creates a task that waits, with its prompt and why it waits, and the azima made for it, if any (own), closes the
 // parent it continues, if any, and makes the tasks it blocks (--blocks) wait for it; the scheduler starts it.
 func (h *Harness) plan(
@@ -1448,8 +1483,12 @@ const ifritRules = workerHandRule + " " + workerCheckRule + " " + ifritRule + " 
 // a worker that edits a worktree learns which checks its work meets (run.checks), to run the commit checks before it
 // ends, to commit its work (workerCommitRule), to run what it can check itself, and to ask only a decision or a move
 // only the developer can make. An ifrit
-// learns its own rules instead (ifritRule), whatever folder it works in.
+// learns its own rules instead (ifritRule), whatever folder it works in. Every worker but a watcher reads the
+// instructions of its kind first, when the project's settings give some (withInstructions).
 func briefed(r *run, prompt string, readOnly bool) string {
+	if !r.watcher {
+		prompt = withInstructions(prompt, r.instructions)
+	}
 	rules := workerRules
 	if r.ifrit {
 		rules = ifritRules
@@ -1483,6 +1522,19 @@ func briefed(r *run, prompt string, readOnly bool) string {
 		}
 	}
 	return prompt
+}
+
+// instructionsHead opens the instructions of the project's workers in a first prompt (W114).
+const instructionsHead = "The project's instructions to its workers of this kind:"
+
+// withInstructions is prompt followed by the project's instructions to the workers of its kind, under their own head:
+// prompt alone when there are none.
+func withInstructions(prompt, instructions string) string {
+	instructions = strings.TrimSpace(instructions)
+	if instructions == "" {
+		return prompt
+	}
+	return prompt + "\n\n" + instructionsHead + "\n\n" + instructions
 }
 
 // launch starts the worker of the run's task, now written with its access: in its worktree, its project's folder,
@@ -1521,7 +1573,8 @@ func (h *Harness) launch(
 		case f != nil:
 			dir, err = correctionWorktree(ctx, project.GetDirectory(), task.GetWorktree(), task.GetBranch(), f)
 		default:
-			if sha, from, err = h.startPoint(ctx, project, r.from); err == nil {
+			// Never from a stale base, whatever the pace of the fetches (fetch_pace.go).
+			if sha, from, err = h.workerBase(ctx, project, r.from); err == nil {
 				if depWhy := h.dependenciesUnmergedIn(ctx, project.GetDirectory(), task, sha, cmp.Or(r.from, from)); depWhy != "" {
 					logx.L().Info("worktree not created: a dependency is not merged", "task", task.GetCode(), "why", depWhy)
 					_ = os.RemoveAll(skillsDir)
@@ -1561,9 +1614,10 @@ func (h *Harness) launch(
 	spec := Spec{
 		TaskID: task.GetId(), Dir: dir, ReadOnly: readOnly, Permissions: perms, Prompt: prompt, Model: model,
 		MaxBudgetUSD: providerBudget(task), Resume: task.GetForkSession(), Fork: task.GetForkSession() != "",
-		Skills: skills, SkillsDir: skillsDir, Restart: task.GetRestart(), ReadDirs: plan.TilasmDirs(h.home, prompt),
+		Skills: skills, SkillsDir: skillsDir, Restart: task.GetRestart(), ReadDirs: plan.ReadDirs(h.home, prompt),
 	}
 	spec.containers = h.containerCaps(project)
+	spec.unadmitted = !h.projectAdmits(project)
 	var err error
 	if spec.WriteDirs, err = h.questionWriteDirs(task); err != nil {
 		h.finish(r, Result{ExitCode: -1, Err: err})
@@ -1768,7 +1822,7 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 	}, guard...)
 	spec.Env = append(spec.Env, plan.AccountEnv(account)...)
 	// Djinn's docker first on its path bounds its containers; without a hook, its heavy commands wait their turn.
-	wrappers, err := h.wrapperEnv(spec, !r.watcher && agentOf(t) != planv1.Provider_PROVIDER_CLAUDE)
+	wrappers, err := h.wrapperEnv(spec, !r.watcher && !spec.unadmitted && agentOf(t) != planv1.Provider_PROVIDER_CLAUDE)
 	if err != nil {
 		return fmt.Errorf("wrappers: %w", err)
 	}
@@ -1792,7 +1846,7 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 	kind := "worker"
 	if r.watcher {
 		kind = "watcher"
-	} else {
+	} else if !spec.unadmitted {
 		spec.Admit = h.admit
 	}
 	spec.Track = h.trackContainers(t.GetId(), h.children.tracker(t.GetCode(), kind))
@@ -2118,8 +2172,10 @@ func (h *Harness) record(r *run, ev Event) {
 	}
 }
 
-// setChecks records what the project's settings say of checks Djinn runs, and its push checks to watch for.
+// setChecks records what the project's settings say of checks Djinn runs, and its push checks to watch for; and the
+// instructions the workers of the task's kind get (W114).
 func (r *run) setChecks(settings plan.Settings) {
+	r.instructions = settings.InstructionsFor(workerKindOf(nil, r.task))
 	r.checks = settings.ChecksBrief()
 	if r.ifrit {
 		r.checks = settings.IfritChecksBrief()

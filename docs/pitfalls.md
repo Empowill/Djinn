@@ -228,7 +228,8 @@ the code does not say by itself; remove one when a change makes it false.
 - **A time budget measures the machine as much as Djinn.** The cases tagged `@budget` (the Grimoire's scroll, a
   terminal key, a typed note, a diff's chunks) fail when other workers load the machine, whatever the change (W177,
   W181): the push check leaves them out. *Do:* run them on a quiet machine, `go tool task e2e -- --grep @budget`, or
-  with their spec named; a red one that passes alone on a quiet machine was the load.
+  with their spec named; a red one that passes alone on a quiet machine was the load. Such a run holds the gate e2e
+  of `.agents/djinn.yaml` alone: the workers' other end-to-end and test runs wait for it, and it waits for them.
 - **A djinn under pressure starts no worker.** Over the notch's CPU or memory pressure, a djinn holds every new worker
   and gate ("the machine is under pressure" in the task's wait reason): the fake tasks of a spec stayed pending past
   its wait while other workers loaded the machine (W181). The e2e's djinns and `djinn up` in the Go tests read the
@@ -334,6 +335,14 @@ the code does not say by itself; remove one when a change makes it false.
   names the mutex. No holder outside `Lock` means a self-deadlock: a stack where one function appears twice on its
   way to `Lock`. `logx.Lock` logs "lock waited" for the scheduler's lock. *Where:* `cmd/djinn/debug.go`,
   `internal/logx/logx.go`.
+- **A Djinn a worker starts under wine, in a container or over ssh takes the real data folder.** It inherits the
+  worker's `DJINN_HOME`; wine reads `/home/...` as `Z:\home\...`, the person's folder. W80's `wine64 djinn.exe up`
+  could not reach the Unix socket, took the folder for dead, rewrote `server.addr` and ran an unclean start beside the
+  live Djinn (W83). Since W86 `djinn up` holds `djinn.lock` in its data folder (fcntl OFD lock, `LockFileEx` on
+  Windows: wine maps it onto fcntl, never onto flock) and a second one ends before it writes. *Do:* give any Djinn you
+  start a `DJINN_HOME` under `$DJINN_SCRATCH` (`Z:$DJINN_SCRATCH/...` under wine), and `env -u DJINN_HOME -u
+  DJINN_WORKER_TOKEN -u DJINN_TASK_ID` around it. *Sign:* "another djinn up holds the data folder". *Where:*
+  `internal/lockx`, `cmd/djinn/up.go`.
 - **Profile a copy, never the real data.** `djinn up --pprof` (or `DJINN_PPROF=on`) serves `/debug/pprof/`. Copy the
   database with sqlite's backup API, not `cp` (WAL); in the copy, set every project `Git=false` and point its
   `Directory` at a missing folder (Git=false alone still let the push checks make a worktree in the real repository,
@@ -366,6 +375,13 @@ the code does not say by itself; remove one when a change makes it false.
   bound `seq > ?`: a `store.ListAfter` on a task's events walks every event of the task and reads each payload. To
   read a task's first events, `store.Oldest` walks the `task_id` index in rowid order and stops when asked: the prompt
   sizes of 2,673 tasks read in 0.3 s, against 8.8 s by `ListAfter` (W616). *Where:* `internal/store`.
+- **A subset's index needs its own WHERE, word for word.** A `(djinn.v1.subset)` option (TaskEvent's `prompt`) makes a
+  partial index on the bytes that encode a field's value in the payload, `instr(payload, X'2001') > 0`: SQLite uses it
+  only for a query that holds that very text, never a bound parameter, and without `ANALYZE` it may still prefer the
+  `task_id` index. Read a subset with `store.InSubset`, which writes both and drops the rows whose text only holds the
+  bytes; `store.ListAfter` with `Contains` walks every event of each task (W123). Adding a subset builds its index at
+  the next `djinn up`, reading the whole table once: 1 to 2 s for 224 MB of events, logged as `database index built`.
+  *Where:* `internal/store/table.go`.
 - **Read the real database read-only.** No `sqlite3` on the machine: a throwaway Go program with `modernc.org/sqlite`
   and `file:<path>?mode=ro`, decoding payloads with `gen/go/plan/v1`. The `command` table (the journal: seq, actor,
   at, method, request) tells a freeze (calls journaled, follow-ups missing) from a crash (`harness/recover` at the
@@ -421,6 +437,21 @@ the code does not say by itself; remove one when a change makes it false.
   and webkit2gtk-4.1 Wails needs already, a no-op twin elsewhere): Wails exposes neither, and WebKitWebView's
   `settings` property is not readable (use `webkit_web_view_get_settings`). Keep the C callbacks short and their panics
   recovered: a panic cannot unwind through C. *Where:* `internal/window`, `openWindow` in `cmd/djinn/window.go`.
+- **The window stays on its loader.** The page loads (`window: load` finished), then its web process stays alive and
+  idle (~178 MB, 2-3 % CPU) and never calls the server: 85 s at an install restart (W172), the black window of W373
+  before the loader (W395). *Sign:* no `msg=call` from the window in `djinn.log` after "window: load" finished; a
+  command line call still answers. Cause unknown. Since W181, `internal/window` counts the page's Connect calls through
+  the window's handler (`Watch.Handler`): no call `window.Silence` (**3 s**, decision Q111) after the load finished of
+  a committed document logs "window: the page is silent" with `probe` (WebKit's `evaluate_javascript` answered within
+  2 s or not: `ready`, `splash`, `root` children, `entry` attached by boot.js or not, `scripts`), `loads` and
+  `web_processes`, now with each process's threads (main thread and counts by state and wchan), then reloads the page
+  once per djinn up ("window: the page loads again" `silent=true`). No notification, no output line: W354's warning
+  was removed by W416 for its false positives (Q108); a false one now costs a reload. A healthy page calls 0.24-0.43 s
+  after load finished (W181, load 8). *Read the probe:* no answer, the JS thread is stuck; `entry` "not attached",
+  boot.js never ran; attached with `root` 0, the bundle has not run or is stuck before its first call; a main thread
+  R, the web process computes. The resource timing lists nothing loaded from `wails://`: no pending loads in the
+  probe. *Test:* `go tool task e2e-native -- -run TestNativeRelaunch -v` (`DJINN_WINDOW_SILENCE=1ms`, test builds
+  only). *Where:* `internal/window/window.go`, `evaluateJS` in `cmd/djinn/webprocess_gtk3.go`.
 - **Why djinn up stopped.** The "shutdown begins" line names the first source (Q84): Ctrl+Q, the tray, SIGINT,
   SIGTERM, "restart: an install from the window", "restart: a restart on a newer Djinn from the command line (djinn
   update)", or "the window ended" when Wails returned by itself. A new way to stop names itself through

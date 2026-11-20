@@ -351,6 +351,10 @@ func (h *Harness) pushBranch(ctx context.Context, wish *planv1.Wish, project *pl
 		}
 		return nil, fmt.Errorf("repository %s has no remote", repo)
 	}
+	if err := h.refuseProtected(ctx, wish, project, remote, branch, target, committed, run); err != nil {
+		h.clearApproved(ctx, wish.GetId(), project.GetId(), approved)
+		return nil, err
+	}
 	// The remote's branch holds commits this one lacks: brought up to it when behind, as this repository last saw it;
 	// else git would refuse the push, and Djinn never forces one (remote_branch.go).
 	if why := h.catchUp(ctx, wish, repo, branch, false); why != "" {
@@ -544,7 +548,7 @@ func (h *Harness) pushBranch(ctx context.Context, wish *planv1.Wish, project *pl
 		commitsText(count, nil), why))
 	unlock()
 	h.notify()
-	h.kickConfig() // the push may have moved the reference branch
+	h.kickConfig(project.GetId()) // the push may have moved its reference branch
 	if settings, err := plan.LoadSettings(h.home, project); err == nil && settings.Install != "" && h.built != nil {
 		b := h.build(ctx, wish, project, settings.Install, record, committed)
 		b.Auto = h.installsItself(ctx, project, settings, b)
@@ -1169,6 +1173,8 @@ func logPush(err error, args ...any) {
 	case errors.Is(err, errDiskFull):
 		logx.L().Info("push waits for disk space", append(append([]any{"loop", "push"}, args...), "err", err)...)
 		return
+	case errors.Is(err, errProtectedPush):
+		return // Warned once by refuseProtected: the push's line says it on each pass.
 	}
 	logx.L().Warn("push failed", append(append([]any{"loop", "push"}, args...), "err", err)...)
 }

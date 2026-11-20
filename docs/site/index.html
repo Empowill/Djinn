@@ -307,7 +307,9 @@
                   corner, opens the earlier ones below it, to read. <span class="chip ghost">Sleep</span> puts one away
                   until tasks are over, requests merged or a date comes; it then wakes first, checked by the Djinn. A
                   worker's blocking question holds its task, which waits for you: your answer sends it back to work, with
-                  your decision, once a slot is free. An answered question is a decision: who took it, and the tasks it
+                  your decision, once a slot is free. A question the Djinn asks before it can start some work holds that
+                  work too, <code>--holds W12</code>: blocking until you answer, the work starts with your decision. An
+                  answered question is a decision: who took it, and the tasks it
                   led to, stay in the Decisions tab.
                 </p>
               </article>
@@ -325,12 +327,34 @@
                 <p>
                   Workers share one machine. Tests, builds and code generation take a gate, one at a time:
                   <code>djinn gate run test -- go tool task test</code>. Djinn records what each command cost and, next time,
-                  even in another task's folder, waits for the memory it peaked at. A gate is never taken back from a command
+                  even in another task's folder, waits for the memory it usually peaks at, five minutes at most; <code>djinn command forget</code> forgets a cost
+                  learned wrong. A gate is never taken back from a command
                   that still runs: past three times its usual hold, its lead hears of it. Every other command of a Claude worker that neither reads nor edits is
                   admitted first, measured, and, when heavy, takes its turn. Djinn's own checks to merge a task's work or
                   push a branch go before the workers' requests, and on a machine of more than one slot, one stays free for
-                  them: what ends a task never waits behind workers. The Gates tab of the Hourglass shows who holds each gate now,
-                  who waits, and which command takes the most time.
+                  them: what ends a task never waits behind workers. The Gates tab of the Hourglass shows, by project, who holds each gate now,
+                  who waits (each gate a seal: its door open when free, shut while held, a gold flame per waiter, barred when it takes a worker's slot), and which command takes the most time, 25 more commands read each time you scroll to the end of the list, under a summary of them all; over the last hour, 6 hours or day, each project with one lane per gate under
+                  the workers that run, each request coloured by its task's kind, hatched while it waits, plain while it holds, and under the pointer each holder it waited for with how long,
+                  then a Sankey from the projects to their named gates to their waits. A gate a project declares is its own; one of the
+                  machine, as lint, is one turn for every project and shows under each project that holds it or waits for it. Each hold stays three months in Djinn's database, past a restart:
+                  <code>djinn gate history --minutes 360</code> gives the last 6 hours, each hold with its task's kind, beside
+                  the workers' runs.
+                </p>
+                <p>
+                  A project declares its own gates in its <code>.agents/djinn.yaml</code>, read on its reference branch, never
+                  in a task's folder: a gate's <code>alone</code> patterns name the commands that rebuild what the workers
+                  share, its <code>beside</code> patterns those that use it. Each pattern is words that start a part of the
+                  command, <code>*</code> standing for any words: <code>docker compose * up</code>. A worker's command that
+                  one names takes the gate before it runs, under the project's name, <code>stack@dolmen</code>, and so does
+                  <code>djinn gate run stack</code> typed in the project. Held alone, it waits for those that share it too,
+                  and one that comes to share it after it goes behind it; the machine's bounds hold all the same. The
+                  reason a worker reads names the gate, its project and its file. A gate that is not valid is left out on
+                  its own, said in the project's view; <code>djinn project gates</code> says first where it read them (the ref, its
+                  commit, your <code>config_branch</code>) and that it found no <code>djinn.yaml</code> there when it
+                  found none; <code>djinn project gates --off stack</code> turns one off on your machine only. To try a stack before its file merges into a protected branch, point your own Djinn at
+                  the branch that holds it: <code>djinn project set-branch dolmen my-branch --config</code> reads the
+                  <code>djinn.yaml</code> and the skills there, the permissions staying on the reference branch, until
+                  <code>--config --unset</code> or the branch's deletion.
                 </p>
               </article>
               <article class="card word" id="word-machine">
@@ -386,7 +410,8 @@
                   Every write is a transaction with its journal entry, durable through a power cut. A worker stopped by its
                   usage limit moves to another sign-in neither paused nor limited, or waits for the reset, then goes on; a per-minute rate or TPM limit waits
                   a short minute-scale backoff without spending its retry budget, while an error after the final answer and
-                  committed work ends the task done. <code>djinn backup</code> copies it all, even running.
+                  committed work ends the task done. <code>djinn backup</code> copies it all, even running; an older Djinn
+                  refuses a database a newer one wrote, untouched.
                 </p>
               </article>
               <article class="card word" id="word-routing">
@@ -433,7 +458,8 @@
                   providers installed and signed in on this machine are offered as choices (unsigned providers appear greyed
                   out with their sign-in command), models come from the agent itself (<code>agy models</code>) and Djinn's
                   shared price table, and the lead row offers Antigravity when the lead runs in a terminal (or shows a
-                  tooltip when a driven lead cannot). Every row but the lead offers <strong>Same as lead</strong> by default
+                  tooltip when a driven lead cannot). Every row but the lead offers <strong>Same as lead</strong> by default, a
+                  model choice of its own that the project's settings never fill
                   (<code>djinn lead get-circle</code>, <code>djinn lead set-circle</code>), and <code>djinn task update-models</code>
                   (or the bulk switcher in the Summoning Circle, project settings, and wish settings) previews and switches
                   open tasks and defaults in one gesture. Last, the memory brake's percent on this machine

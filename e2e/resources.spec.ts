@@ -14,12 +14,16 @@ import os from "node:os";
 import path from "node:path";
 
 import {
+  CommandServiceListRequestSchema,
   CommandServiceListResponseSchema,
+  GateMode,
+  GateServiceHistoryRequestSchema,
+  GateServiceHistoryResponseSchema,
   GateServiceListResponseSchema,
   MachineServiceSeriesRequestSchema,
   MachineServiceSeriesResponseSchema,
 } from "../gen/ts/machine/v1/machine_pb";
-import { Provider } from "../gen/ts/plan/v1/plan_pb";
+import { Provider, TaskKind } from "../gen/ts/plan/v1/plan_pb";
 import { portable } from "./portable";
 
 portable();
@@ -146,6 +150,81 @@ function since(taskId: string, wishId: string, title: string, at: number) {
   return full;
 }
 
+// The history of the gates over the window asked, ending at now: W1's code held lint twice and holds it still, an
+// investigation and a mockup shared test, a terminal held e2e outside any task, W1's command was admitted after 3 s;
+// W1 and a watcher run, the investigation and the mockup ran.
+function gateHistory(taskId: string, now: number, minutes: number) {
+  const min = 60_000;
+  const ts = (ago: number) => timestampFromMs(now - ago);
+  const hold = (
+    gate: string,
+    code: string,
+    kind: TaskKind,
+    asked: number,
+    grant: number,
+    release: number | null,
+    extra = {},
+  ) => ({
+    gate,
+    command: `go tool task ${gate}`,
+    project: "oil",
+    taskId: code === "W1" ? taskId : code ? `task-${code}` : "",
+    taskCode: code,
+    taskKind: kind,
+    askedTime: ts(asked),
+    grantTime: ts(grant),
+    releaseTime: release === null ? undefined : ts(release),
+    ...extra,
+  });
+  return create(GateServiceHistoryResponseSchema, {
+    startTime: ts(minutes * min),
+    readTime: ts(0),
+    intervals: [
+      hold("e2e", "", TaskKind.UNSPECIFIED, 50 * min, 50 * min, 45 * min, {
+        outside: true,
+      }),
+      hold("lint", "W1", TaskKind.WORK, 40 * min, 38 * min, 30 * min),
+      hold("test", "W3", TaskKind.INVESTIGATION, 25 * min, 25 * min, 12 * min),
+      hold("test", "W4", TaskKind.MOCKUP, 20 * min, 12 * min, 5 * min),
+      hold(
+        "commands",
+        "W1",
+        TaskKind.WORK,
+        10 * min,
+        10 * min - 3_000,
+        9 * min,
+        {
+          mode: GateMode.SHARED,
+        },
+      ),
+      hold("lint", "W1", TaskKind.WORK, 4 * min, 3 * min, null),
+    ],
+    runs: [
+      {
+        taskId: "task-W2",
+        code: "W2",
+        kind: TaskKind.WATCHER,
+        startTime: ts(60 * min),
+      },
+      { taskId, code: "W1", kind: TaskKind.WORK, startTime: ts(55 * min) },
+      {
+        taskId: "task-W3",
+        code: "W3",
+        kind: TaskKind.INVESTIGATION,
+        startTime: ts(30 * min),
+        endTime: ts(10 * min),
+      },
+      {
+        taskId: "task-W4",
+        code: "W4",
+        kind: TaskKind.MOCKUP,
+        startTime: ts(22 * min),
+        endTime: ts(4 * min),
+      },
+    ],
+  });
+}
+
 const cost = (
   projectId: string,
   command: string,
@@ -187,7 +266,7 @@ async function routeResources(
       body: Buffer.from(toBinary(MachineServiceSeriesResponseSchema, message)),
     });
   });
-  // The gates now: W1 holds lint, a holder outside any task waits for it.
+  // The gates now: W1 of oil holds lint, a holder outside any project waits for it.
   await page.route("**/machine.v1.GateService/List", (route) =>
     route.fulfill({
       status: 200,
@@ -203,6 +282,8 @@ async function routeResources(
                 holderTaskId: taskId,
                 since: timestampFromMs(start - 60_000),
                 waiting: ["a holder outside any task: go tool task lint"],
+                project: "oil",
+                waitingProjects: [""],
               },
             ],
           }),
@@ -210,53 +291,117 @@ async function routeResources(
       ),
     }),
   );
-  // The commands of every project, one at rest among them.
-  await page.route("**/machine.v1.CommandService/List", (route) =>
-    route.fulfill({
+  // The history of the gates, over the window the tab asks.
+  await page.route("**/machine.v1.GateService/History", (route) => {
+    const ask = fromBinary(
+      GateServiceHistoryRequestSchema,
+      route.request().postDataBuffer() ?? new Uint8Array(),
+    );
+    return route.fulfill({
+      status: 200,
+      contentType: "application/proto",
+      body: Buffer.from(
+        toBinary(
+          GateServiceHistoryResponseSchema,
+          gateHistory(taskId, Date.now(), ask.minutes || 60),
+        ),
+      ),
+    });
+  });
+  // The commands of every project, one at rest among them, answered as the server does since W124: the most total
+  // time first (runs times mean seconds), one command by id or by text, and the summary of the gates over them all.
+  const costs = [
+    {
+      ...cost(randomUUID(), "go tool task e2e", "e2e", 3, 600, 0),
+      projectName: "a project at rest",
+    },
+    cost(projectId, "go tool task e2e", "e2e", 2, 840, 30),
+    cost(
+      projectId,
+      "go tool task e2e -- e2e/wish-render.spec.ts",
+      "e2e",
+      6,
+      95,
+      12,
+    ),
+    cost(
+      projectId,
+      "go tool task e2e -- e2e/resources.spec.ts",
+      "e2e",
+      3,
+      40,
+      0,
+    ),
+    cost(projectId, "go tool task lint", "lint", 20, 55, 4),
+    cost(
+      projectId,
+      "go test -tags headless ./internal/machine/",
+      "test",
+      9,
+      12,
+      1,
+    ),
+    cost(projectId, "go test ./internal/store/", "test", 4, 3, 0),
+    // Forty light commands under no gate, at the end of the list: its second page.
+    ...Array.from({ length: 40 }, (_, i) =>
+      cost(projectId, `true ${String(i).padStart(2, "0")}`, "", 1, 1, 0),
+    ),
+  ].map((c) => ({ ...c, id: randomUUID() }));
+  const waits = (gate: string) => {
+    const runs = costs
+      .filter((c) => c.gate === gate)
+      .flatMap((c) => c.recentRuns);
+    const seconds = runs.map((r) => r.waitSeconds).sort((a, b) => a - b);
+    return {
+      gate,
+      project: "oil",
+      holds: runs.length,
+      p50Seconds: seconds[Math.ceil(seconds.length / 2) - 1],
+      p90Seconds: seconds[Math.ceil(seconds.length * 0.9) - 1],
+      maxSeconds: seconds[seconds.length - 1],
+      long: seconds.filter((w) => w > 5).length,
+    };
+  };
+  await page.route("**/machine.v1.CommandService/List", (route) => {
+    const ask = fromBinary(
+      CommandServiceListRequestSchema,
+      route.request().postDataBuffer() ?? new Uint8Array(),
+    );
+    const total = (c: (typeof costs)[number]) => c.runs * c.seconds;
+    const found = ask.id
+      ? costs.filter((c) => c.id === ask.id)
+      : ask.command
+        ? costs.filter(
+            (c) => c.command === ask.command && c.projectId === ask.project,
+          )
+        : ask.byTotal
+          ? [...costs].sort(
+              (a, b) =>
+                total(b) - total(a) || a.command.localeCompare(b.command),
+            )
+          : costs;
+    return route.fulfill({
       status: 200,
       contentType: "application/proto",
       body: Buffer.from(
         toBinary(
           CommandServiceListResponseSchema,
           create(CommandServiceListResponseSchema, {
-            costs: [
-              {
-                ...cost(randomUUID(), "go tool task e2e", "e2e", 3, 600, 0),
-                projectName: "a project at rest",
-              },
-              cost(projectId, "go tool task e2e", "e2e", 2, 840, 30),
-              cost(
-                projectId,
-                "go tool task e2e -- e2e/wish-render.spec.ts",
-                "e2e",
-                6,
-                95,
-                12,
-              ),
-              cost(
-                projectId,
-                "go tool task e2e -- e2e/resources.spec.ts",
-                "e2e",
-                3,
-                40,
-                0,
-              ),
-              cost(projectId, "go tool task lint", "lint", 20, 55, 4),
-              cost(
-                projectId,
-                "go test -tags headless ./internal/machine/",
-                "test",
-                9,
-                12,
-                1,
-              ),
-              cost(projectId, "go test ./internal/store/", "test", 4, 3, 0),
-            ],
+            costs: ask.pageSize
+              ? found.slice(
+                  Number(ask.pageToken || 0),
+                  Number(ask.pageToken || 0) + ask.pageSize,
+                )
+              : found,
+            total: found.length,
+            summary: ask.summary
+              ? { gates: [waits("e2e"), waits("test"), waits("lint")] }
+              : undefined,
           }),
         ),
       ),
-    }),
-  );
+    });
+  });
 }
 
 // What each test makes, paused once it ends: the specs after find the place as they left it (e2e/test.ts).
@@ -411,13 +556,71 @@ test("the resources panel: values on hover and keys, live samples, and a worker'
   await expect(gates.locator("#gate-lint")).toContainText(
     "W1: go tool task lint, for",
   );
-  await expect(gates.locator("#gate-lint")).toContainText(
-    "a holder outside any task",
+  // Now, by project: oil holds lint; the holder outside any project waits for the same lock, held by oil's W1.
+  await expect(gates.locator(".gates-project-head h4")).toHaveText([
+    "oil",
+    "Outside any project",
+  ]);
+  const outside = gates.getByRole("region", { name: "Outside any project" });
+  await expect(outside).toContainText("held by W1: go tool task lint (oil)");
+  await expect(outside).toContainText("a holder outside any task");
+  // The lanes of the last hour: oil's title over one lane per named gate, W1's bands on lint in the workers' blue, the
+  // mockup's on test.
+  const flow = gates.locator(".gates-flow");
+  await expect(flow.locator(".gates-flow-name")).toHaveText([
+    "Running",
+    "oil",
+    "e2e",
+    "lint",
+    "test",
+  ]);
+  await expect(flow.locator(".gates-band")).toHaveCount(5);
+  await expect(flow.locator(".gates-band.gk-work")).toHaveCount(2);
+  await expect(flow.locator(".gates-band.gk-mock")).toHaveText("W4");
+  // The admissions of the workers' commands come in their own lane, last, when asked.
+  await flow.getByRole("button", { name: "With admissions" }).click();
+  await expect(flow.locator(".gates-band")).toHaveCount(6);
+  await expect(flow.locator(".gates-flow-name").last()).toHaveText("commands");
+  await flow.getByRole("button", { name: "Named gates" }).click();
+  // Pointed at, the lanes say who runs, holds and waits at that moment. page.mouse does not scroll: the seals of Now
+  // (W194) push the lanes below the fold when the terminal panel takes the bottom of the window, so bring them in.
+  await flow.locator(".gates-flow-tracks").scrollIntoViewIfNeeded();
+  const tracks = (await flow.locator(".gates-flow-tracks").boundingBox())!;
+  await page.mouse.move(tracks.x + tracks.width * 0.75, tracks.y + 30);
+  await expect(flow.locator(".gates-flow-readout")).toContainText(
+    "workers run",
   );
-  // The last hour: W1's band on lint.
-  await expect(gates.locator(".gates-band")).toHaveCount(1);
-  // The commands of every project, the most total time first; the top one marked.
-  await expect(gates.locator(".gates-command-name code")).toHaveText([
+  if (process.env.RESOURCE_SHOTS)
+    await flow.screenshot({
+      path: path.join(shots, "hourglass-gates-lanes-hover-dark.png"),
+    });
+  await page.mouse.move(0, 0);
+  await expect(flow.locator(".gates-flow-readout")).toHaveCount(0);
+  // The Sankey: the project, its named gates only.
+  const sankey = gates.locator(".gates-sankey");
+  await expect(sankey.locator(".gates-sankey-node text")).toContainText([
+    "oil 5",
+    "lint 2",
+  ]);
+  await expect(sankey.locator("svg")).not.toContainText("commands");
+  if (process.env.RESOURCE_SHOTS)
+    await sankey.screenshot({
+      path: path.join(shots, "hourglass-gates-sankey-dark.png"),
+    });
+  // A day: the history is read over 24 hours.
+  const day = page.waitForRequest("**/machine.v1.GateService/History");
+  await flow.getByRole("button", { name: "24 h" }).click();
+  expect(
+    fromBinary(
+      GateServiceHistoryRequestSchema,
+      (await day).postDataBuffer() ?? new Uint8Array(),
+    ).minutes,
+  ).toBe(1440);
+  await flow.getByRole("button", { name: "1 h" }).click();
+  // The commands of every project, the most total time first, 25 at a time; the top one marked.
+  const commands = gates.locator(".gates-command-name code");
+  await expect(commands.nth(24)).toBeAttached();
+  expect((await commands.allTextContents()).slice(0, 8)).toEqual([
     "go tool task e2e",
     "go tool task e2e",
     "go tool task lint",
@@ -425,6 +628,7 @@ test("the resources panel: values on hover and keys, live samples, and a worker'
     "go tool task e2e -- e2e/resources.spec.ts",
     "go test -tags headless ./internal/machine/",
     "go test ./internal/store/",
+    "true 00",
   ]);
   await expect(gates.locator(".gates-command.is-top")).toContainText(
     "a project at rest",
@@ -438,6 +642,13 @@ test("the resources panel: values on hover and keys, live samples, and a worker'
     "test",
     "lint",
   ]);
+  // Scrolled to its end, the list reads the next page (it may have, the end close enough): all 47, the end says so and
+  // asks no more.
+  const end = gates.locator(".gates-list-end");
+  await end.scrollIntoViewIfNeeded();
+  await expect(commands).toHaveCount(47);
+  await expect(end).toHaveText("47 of 47 commands");
+  await gates.locator(".gates-project-head").first().scrollIntoViewIfNeeded();
   if (process.env.RESOURCE_SHOTS)
     for (const width of [1280, 760]) {
       await page.setViewportSize({ width, height: 1400 });
@@ -544,6 +755,9 @@ test("the resources panel: values on hover and keys, live samples, and a worker'
     await page.screenshot({
       path: path.join(shots, "hourglass-gates-tab-light.png"),
       fullPage: true,
+    });
+    await page.locator(".gates-sankey").screenshot({
+      path: path.join(shots, "hourglass-gates-sankey-light.png"),
     });
     await page.locator("#hourglass-tab-machine").click();
     await panel.getByRole("tab", { name: "Resources" }).click();

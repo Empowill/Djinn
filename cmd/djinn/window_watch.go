@@ -22,12 +22,15 @@ type windowConfig struct {
 	raise     <-chan struct{}
 	notices   *ui.Notices
 	shortcuts *ui.Shortcuts
+	// back tells that the window came to the front: Djinn looks at the configuration and at main at once; nil tells
+	// nothing.
+	back func()
 	// links receives the djinn:// links the system gives the app.
 	links func(string)
 	// quit names what quits Djinn from the window (Ctrl+Q, the tray) before it closes: stopContext's stop.
 	quit func(source string)
-	// watch follows the window's page, and rescues it when its web process ends: a reload, then a new view (Linux);
-	// nil watches nothing.
+	// watch follows the window's page, and rescues it when its web process ends: a reload, then a new view; or when it
+	// stays silent after its load: a probe and one reload (Linux). Nil watches nothing.
 	watch *window.Watch
 }
 

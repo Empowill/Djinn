@@ -7,7 +7,9 @@
 #     merging;
 #   - each new comment, one paragraph each, with its author, its link and its first line: a comment of the
 #     conversation, a review (approved, changes requested, or commented with a body), a comment on a line of the diff;
-#     never twice the same, known by its link. Its first look says only the latest one there;
+#     never twice the same, known by its link. Its first look says only the latest one there. A comment whose body
+#     holds the mark <!-- djinn:reply --> is Djinn's own answer, posted under the developer's login too: never said
+#     (PR #43, 20/11/2026: W199's answer in a thread woke the lead as a new comment by nyhu, and W200 ran for nothing);
 #   - a review decision that turns to CHANGES_REQUESTED;
 #   - the pull request no longer mergeable (CONFLICTING; UNKNOWN is GitHub still computing, and says nothing);
 #   - MERGED, then it exits; CLOSED, without a merge, then it exits.
@@ -41,15 +43,16 @@ query='query($owner: String!, $repo: String!, $pr: Int!) {
 	}
 }'
 notes_jq='def who: .author.login // "ghost";
+	def ours: (.body // "") | contains("<!-- djinn:reply -->");
 	def first_line: .body | gsub("\r"; "") | [splits("\n")]
 		| map(select(test("\\S") and (test("^\\s*```") | not))) | (first // "") | .[0:120];
 	.data.repository.pullRequest as $pr
-	| [($pr.comments.nodes[] | {at: .createdAt, url, what: "new comment by \(who)", text: first_line}),
+	| [($pr.comments.nodes[] | select(ours | not) | {at: .createdAt, url, what: "new comment by \(who)", text: first_line}),
 	   ($pr.reviews.nodes[] | select(.state != "PENDING")
-	    | (select(.body != "" or .state == "APPROVED" or .state == "CHANGES_REQUESTED")
+	    | (select(ours | not) | select(.body != "" or .state == "APPROVED" or .state == "CHANGES_REQUESTED")
 	       | {at: .submittedAt, url, text: first_line,
 	          what: "\({APPROVED: "approved", CHANGES_REQUESTED: "changes requested"}[.state] // "review") by \(who)"}),
-	      (.submittedAt as $at | .comments.nodes[]
+	      (.submittedAt as $at | .comments.nodes[] | select(ours | not)
 	       | {at: $at, url, text: first_line,
 	          what: "new comment by \(who) on \(.path)\(.line // .originalLine | if . then ":\(.)" else "" end)"}))]
 	| sort_by(.at)[]

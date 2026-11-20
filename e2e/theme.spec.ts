@@ -253,7 +253,7 @@ for (const theme of ["dark", "light"] as const) {
 test("the settings follow the theme chosen", async ({ page }) => {
   pauseActive();
   await open(page, "light");
-  await page.getByTitle("Connections & preferences").click();
+  await page.getByRole("button", { name: "Connections & preferences" }).click();
   const settings = page.locator(".modal");
   await expect(settings).toBeVisible();
   await expect(page.getByLabel("Theme")).toHaveValue("light");

@@ -1,5 +1,5 @@
-// A project's panel (src/project-panel.tsx): its sources, checks, push cadence, reference branch, watchers,
-// configuration. Run with `go tool task test-ui`.
+// A project's settings page (src/project-page.tsx) and its parts (src/project-panel.tsx): its sources, checks, push
+// cadence, reference branch, watchers, configuration. Run with `go tool task test-ui`.
 import test from "node:test";
 import assert from "node:assert/strict";
 
@@ -7,7 +7,7 @@ import { projectSync, screens } from "./screens.mjs";
 
 const { s, h, live } = await screens();
 
-test("a project's panel lists the sources its skills declare: what each reads, how it stands, and Plug in or Unplug with what it does", async () => {
+test("a project's Skills tab lists the sources its skills declare: what each reads, how it stands, and Plug in or Unplug with what it does", async () => {
   const p1 = { id: "p1", name: "gong", git: true, directory: "/tmp/gong" };
   const sources = [
     {
@@ -51,14 +51,19 @@ test("a project's panel lists the sources its skills declare: what each reads, h
       h(
         s.DjinnProvider,
         { djinn },
-        h(s.ProjectPanel, { project: p1, onClose() {} }),
+        h(s.ProjectPage, {
+          project: p1,
+          initialTab: "skills",
+          initialShown: { project: p1, settings: [], notices: [], changes: [] },
+          initialSkills: [],
+        }),
       ),
     );
   };
   const html = await render(sources);
   assert.match(
     html,
-    /<h3>Inbox sources<span class="config-from">on this machine<\/span><\/h3>/,
+    /<h4 class="settings-sub">Inbox sources<span class="config-from">on this machine<\/span><\/h4>/,
   );
   const rows = html
     .split('<li class="inbox-source-row">')
@@ -162,7 +167,7 @@ test("the project view lists the setup and the checks, when each runs, and how e
   );
 });
 
-test("the project panel displays the push cadence setting, out-of-sync status, and push button", () => {
+test("the project's Integration and push tab displays the push cadence setting, out-of-sync status, and push button", () => {
   const p1 = {
     id: "p1",
     name: "app",
@@ -187,7 +192,11 @@ test("the project panel displays the push cadence setting, out-of-sync status, a
     h(
       s.DjinnProvider,
       { djinn },
-      h(s.ProjectPanel, { project: p1, onClose() {} }),
+      h(s.ProjectPage, {
+        project: p1,
+        initialTab: "integration",
+        initialShown: { project: p1, settings: [] },
+      }),
     ),
   );
   // The same short line as the side panel's: the branch, its counts, a small grey button.
@@ -214,7 +223,11 @@ test("the project panel displays the push cadence setting, out-of-sync status, a
     h(
       s.DjinnProvider,
       { djinn },
-      h(s.ProjectPanel, { project: p2, onClose() {} }),
+      h(s.ProjectPage, {
+        project: p2,
+        initialTab: "integration",
+        initialShown: { project: p2, settings: [] },
+      }),
     ),
   );
   assert.match(htmlOnDemand, /Pushes only when you ask\./);
@@ -225,7 +238,7 @@ test("the project panel displays the push cadence setting, out-of-sync status, a
   );
 });
 
-// The reference branch chosen in the panel (W149): Change reads the remote's branches, the current one first when this
+// The reference branch chosen on the General tab (W149): Change reads the remote's branches, the current one first when this
 // copy lacks it; the choice goes to your own file, and when it is yours it can be taken back. Never an accent button.
 test("a project's reference branch is chosen from the remote's branches, and your choice taken back", async () => {
   const chosen = [];
@@ -320,9 +333,9 @@ test("a project's reference branch is chosen from the remote's branches, and you
   assert.match(unread.html(), /^<button[^>]*>Change<\/button>$/);
 });
 
-// The watcher commands a developer allows in a project, in its panel: each with a button that takes it back, and a
+// The watcher commands a developer allows in a project, on its Permissions tab: each with a button that takes it back, and a
 // field that allows one more, kept in their own settings.
-test("a project's panel lists the watcher commands you allow", () => {
+test("a project's Permissions tab lists the watcher commands you allow", () => {
   const html = s.renderToStaticMarkup(
     h(s.WatchCommands, {
       commands: ["go run ./.agents/skills/babysit-mr-acme/mrwatch"],
@@ -349,7 +362,7 @@ test("a project's panel lists the watcher commands you allow", () => {
   assert.doesNotMatch(none, /Take back/);
 });
 
-// The project's configuration panel (W148): a thing to fix says what it is, the error as read, and what settles it,
+// The project's settings page (W148): a thing to fix says what it is, the error as read, and what settles it,
 // a button never alone and never in the accent colour; the reference branch says its ref, commit and where its name
 // comes from; each skill says its role for Djinn; each setting where it comes from, those at the default folded.
 test("a project's configuration says what to fix, its reference branch, each skill's role and where each setting comes from", () => {
@@ -422,9 +435,9 @@ test("a project's configuration says what to fix, its reference branch, each ski
   const error = {
     ...warning,
     kind: s.ProjectNoticeKind.TO_FIX,
-    subject: "settings.txtpb",
+    subject: ".agents/djinn.yaml",
     text: "Djinn cannot read the project's settings.",
-    file: "/tmp/shop/.agents/settings.txtpb",
+    file: "/tmp/shop/.agents/djinn.yaml",
   };
   const box = (notices) => {
     const toFix = notices.filter((n) => n.kind === s.ProjectNoticeKind.TO_FIX);
@@ -488,7 +501,7 @@ test("a project's configuration says what to fix, its reference branch, each ski
   );
 
   const shown = {
-    repositoryFile: "/tmp/djinn/.agents/settings.txtpb",
+    repositoryFile: "/tmp/djinn/.agents/djinn.yaml",
     developerFile: "/home/you/.config/djinn/projects/p1/settings.txtpb",
   };
   const reference = render(
@@ -619,36 +632,55 @@ test("a project's configuration says what to fix, its reference branch, each ski
   );
   assert.doesNotMatch(summoned, /config-from/);
 
+  // Each setting shows its value in the repository's file, in yours, and the one retained (W111): yours wins, the
+  // repository's it overrides struck; a side that does not set it says absent.
   const settings = render(
-    h(s.ProjectSettings, {
-      shown,
-      settings: [
-        {
-          name: "provider",
-          value: "claude",
-          source: s.SettingSource.DEVELOPER,
-        },
-        { name: "model", value: "", source: s.SettingSource.DEFAULT },
-        {
-          name: "checks",
-          value: "lint: go tool task lint (commit)",
-          source: s.SettingSource.REPOSITORY,
-        },
-        { name: "babysit", value: "true", source: s.SettingSource.DEFAULT },
-        {
-          name: "merge_main",
-          value: "release",
-          source: s.SettingSource.REPOSITORY,
-        },
+    h(s.SettingsTable, {
+      title: "Worker defaults",
+      shown: {
+        ...shown,
+        settings: [
+          {
+            name: "max_budget_usd",
+            value: "15",
+            source: s.SettingSource.DEVELOPER,
+            repository: "10",
+            developer: "15",
+          },
+          { name: "model", value: "", source: s.SettingSource.DEFAULT },
+          {
+            name: "merge_main",
+            value: "release",
+            source: s.SettingSource.REPOSITORY,
+            repository: "release",
+          },
+        ],
+      },
+      rows: [
+        { name: "max_budget_usd" },
+        { name: "model" },
+        { name: "merge_main" },
+        { name: "nope" },
       ],
     }),
   );
-  // The checks have their own part of the panel; the settings a file sets come first, the defaults folded.
-  assert.doesNotMatch(settings, /lint: go tool task lint/);
+  const row = (name) =>
+    settings.match(new RegExp(`<tr data-setting="${name}">.*?</tr>`))?.[0] ??
+    "";
   assert.match(
-    settings,
-    /<div class="config-setting"><code>provider<\/code><span class="">claude<\/span><span class="config-from" title="\/home\/you\/\.config\/djinn\/projects\/p1\/settings\.txtpb">your file<\/span><\/div><div class="config-setting"><code>merge_main<\/code><span class="">release<\/span><span class="config-from" title="\/tmp\/djinn\/\.agents\/settings\.txtpb">the team(?:'|&#x27;)s file<\/span><\/div><details class="config-more"><summary>2 more at Djinn(?:'|&#x27;)s default<\/summary><div class="config-setting"><code>model<\/code><span class="muted-text">not set<\/span>/,
+    row("max_budget_usd"),
+    /Budget per task.*<code class="setting-key">max_budget_usd<\/code>.*<td data-side="repository"><code class="setting-struck">10<\/code><\/td><td data-side="local"><code class="">15<\/code><\/td><td data-side="retained"><span class="setting-retained">15<\/span><span class="config-from" title="\/home\/you\/\.config\/djinn\/projects\/p1\/settings\.txtpb">your file<\/span>/,
   );
+  assert.match(
+    row("model"),
+    /<td data-side="repository"><span class="setting-absent">absent<\/span><\/td><td data-side="local"><span class="setting-absent">absent<\/span><\/td><td data-side="retained"><span class="setting-retained">not set<\/span><span class="config-from"[^>]*>Djinn(?:'|&#x27;)s default</,
+  );
+  assert.match(
+    row("merge_main"),
+    /<td data-side="repository"><code class="">release<\/code>.*the team(?:'|&#x27;)s file/,
+  );
+  // A setting Djinn does not list shows no row.
+  assert.doesNotMatch(settings, /nope/);
 });
 
 // The journal of changes (W151): each commit of the reference branch that changed the configuration, when, which and
@@ -1084,11 +1116,7 @@ test("a slower in-flight ProjectService/Show response does not overwrite a newer
   try {
     await s.act(async () => {
       root.render(
-        h(
-          s.DjinnProvider,
-          { djinn },
-          h(s.ProjectPanel, { project: p1, onClose() {} }),
-        ),
+        h(s.DjinnProvider, { djinn }, h(s.ProjectPage, { project: p1 })),
       );
     });
     await settle();
@@ -1129,4 +1157,213 @@ test("a slower in-flight ProjectService/Show response does not overwrite a newer
     for (const handle of process._getActiveHandles())
       if (handle?.constructor?.name === "MessagePort") handle.unref();
   }
+});
+
+// The project's settings page (W111, L23): its tabs, the life of a worktree with the install optional and on or off
+// (C9), the checks sourced as djinn.yaml (C10), the gates read-only with one turned off here, and where
+// permissions.txtpb applies, agent by agent (C12).
+test("a project's settings page shows its tabs, the install optional, checks from djinn.yaml, gates and where permissions apply", () => {
+  const p1 = {
+    id: "p1",
+    name: "lantern",
+    git: true,
+    directory: "/tmp/lantern",
+  };
+  const base = {
+    project: p1,
+    repositoryFile: "/tmp/lantern/.agents/djinn.yaml",
+    developerFile: "/home/you/.config/djinn/projects/p1/settings.txtpb",
+    notices: [],
+    changes: [],
+    checks: [
+      {
+        name: "lint",
+        command: "go tool task lint",
+        when: [s.CheckWhen.COMMIT],
+      },
+    ],
+    setup: "npm ci",
+    watchCommands: ["gh pr checks"],
+    serveCommands: [],
+    workersBrief:
+      "Djinn checks this project's work before it merges a task's work, with `djinn gate run lint -- go tool task lint`.",
+    // The workers' instructions by kind (W114): the general text from the repository, the mockup's in the three layers,
+    // the ifrit's from the Summoning Circle alone, the work and investigation kinds on the general text.
+    instructions: [
+      {
+        kind: s.InstructionKind.GENERAL,
+        text: "Run the tasks, not the tools.",
+        source: s.SettingSource.REPOSITORY,
+        repository: "Run the tasks, not the tools.",
+      },
+      {
+        kind: s.InstructionKind.WORK,
+        text: "Run the tasks, not the tools.",
+        source: s.SettingSource.REPOSITORY,
+        general: true,
+      },
+      {
+        kind: s.InstructionKind.INVESTIGATION,
+        text: "Run the tasks, not the tools.",
+        source: s.SettingSource.REPOSITORY,
+        general: true,
+      },
+      {
+        kind: s.InstructionKind.MOCKUP,
+        text: "Dark first.",
+        source: s.SettingSource.DEVELOPER,
+        machine: "Light first.",
+        repository: "Both themes.",
+        developer: "Dark first.",
+      },
+      {
+        kind: s.InstructionKind.IFRIT,
+        text: "Say the URL.",
+        source: s.SettingSource.MACHINE,
+        machine: "Say the URL.",
+      },
+    ],
+    permissions: {
+      edit: true,
+      mode: 1,
+      network: false,
+      commands: ["git status"],
+      deniedCommands: ["git push"],
+    },
+    settings: [
+      {
+        name: "setup",
+        value: "npm ci",
+        source: s.SettingSource.REPOSITORY,
+        repository: "npm ci",
+      },
+      { name: "install", value: "", source: s.SettingSource.DEFAULT },
+      {
+        name: "checks",
+        value: "lint: go tool task lint (commit)",
+        source: s.SettingSource.REPOSITORY,
+        repository: "lint: go tool task lint (commit)",
+      },
+    ],
+  };
+  const page = (tab, shown = base) =>
+    s.renderToStaticMarkup(
+      h(
+        s.DjinnProvider,
+        {
+          djinn: s.createDjinn(
+            s.createRouterTransport(() => {}),
+            10,
+          ),
+        },
+        h(s.ProjectPage, {
+          project: p1,
+          initialTab: tab,
+          initialShown: shown,
+          initialSkills: [],
+        }),
+      ),
+    );
+  const general = page("general");
+  assert.deepEqual(
+    [...general.matchAll(/role="tab"[^>]*>([^<]+)/g)].map((m) => m[1]),
+    [
+      "General",
+      "Worker defaults",
+      "Gates and checks",
+      "Integration and push",
+      "Workers' brief",
+      "Skills",
+      "Permissions",
+      "Changes on main",
+    ].map((l) => l.replace("'", "&#x27;")),
+  );
+  // C9: the install after a push is optional, off without a command, and says how to turn it on or off.
+  assert.match(
+    general,
+    /Install after a push<span class="badge muted">optional<\/span><span class="badge muted" data-install="off">off<\/span>/,
+  );
+  assert.match(general, /Off: nothing is proposed after a push/);
+  const on = page("general", {
+    ...base,
+    settings: base.settings.map((x) =>
+      x.name === "install"
+        ? {
+            ...x,
+            value: "go tool task install",
+            source: s.SettingSource.REPOSITORY,
+            repository: "go tool task install",
+          }
+        : x,
+    ),
+  });
+  assert.match(on, /<span class="badge" data-install="on">on<\/span>/);
+  assert.match(general, /Prepare<span class="badge muted">required<\/span>/);
+
+  // C10: the checks come from djinn.yaml; no settings.txtpb is named on the page, whatever its tab.
+  const gates = page("gates");
+  assert.match(
+    gates,
+    /<h3>Checks<span class="config-from">djinn\.yaml<\/span><\/h3>/,
+  );
+  for (const tab of s.PROJECT_TABS ?? ["general", "gates", "permissions"]) {
+    const text = page(tab).replace(/title="[^"]*"/g, "");
+    assert.doesNotMatch(text, /settings\.txtpb/, tab);
+  }
+
+  // C12: where permissions.txtpb applies, for each agent, and for the watchers and serves Djinn runs itself.
+  const perms = page("permissions");
+  assert.match(perms, /\.agents\/permissions\.txtpb/);
+  for (const agent of ["Claude", "Codex", "Antigravity", "Djinn itself"])
+    assert.match(perms, new RegExp(`<th scope="row">${agent}</th>`));
+  assert.match(perms, /Not applied: a question worker/);
+  assert.match(perms, /<code>git push<\/code>/);
+  assert.match(perms, /<code>gh pr checks<\/code>/);
+  assert.match(perms, /Serve commands you allow/);
+
+  // The brief: the instructions by kind in three layers (W114, Q70 B), then what Djinn adds from the settings.
+  const brief = page("brief");
+  assert.match(brief, /djinn gate run lint -- go tool task lint/);
+  assert.doesNotMatch(brief, /AGENTS\.md/);
+  assert.deepEqual(
+    [...brief.matchAll(/data-instruction="([a-z]+)"/g)].map((m) => m[1]),
+    ["general", "work", "investigation", "mockup", "ifrit"],
+  );
+  const kind = (name) => {
+    const start = brief.indexOf(`data-instruction="${name}"`);
+    return brief.slice(start, brief.indexOf("</tbody>", start));
+  };
+  // One kind, three layers: the Circle's and the repository's struck under yours, which is retained.
+  const mockup = kind("mockup");
+  assert.match(
+    mockup,
+    /data-side="machine"><span class="instruction-text setting-struck">Light first\.<\/span>/,
+  );
+  assert.match(
+    mockup,
+    /data-side="repository"><span class="instruction-text setting-struck">Both themes\.<\/span>/,
+  );
+  assert.match(
+    mockup,
+    /data-side="local"><span class="instruction-text">Dark first\.<\/span>/,
+  );
+  assert.match(mockup, />edit mine</);
+  assert.match(
+    mockup,
+    /Dark first\.<\/span><span class="config-from"[^>]*>your file</,
+  );
+  // The Circle's alone is retained from the Circle; a kind no layer sets takes the general text, and says so.
+  assert.match(kind("ifrit"), />the Summoning Circle</);
+  assert.match(kind("ifrit"), />set mine</);
+  const work = kind("work");
+  assert.match(work, /data-side="machine"><span class="setting-absent">absent/);
+  assert.match(
+    work,
+    /Run the tasks, not the tools\.<\/span><span class="config-from" data-general="">the general text</,
+  );
+  // The instructions come before what Djinn adds.
+  assert.ok(
+    brief.indexOf("Instructions by kind of task") <
+      brief.indexOf("What Djinn adds to each worker&#x27;s first prompt"),
+  );
 });

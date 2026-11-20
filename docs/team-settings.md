@@ -1,48 +1,76 @@
 # Team settings
 
 A team that works on one repository shares a few defaults for its workers: which agent runs them, which model,
-how much one may spend, how their branches are named. The repository carries them in one file, next to the permissions:
-`.agents/settings.txtpb`. Each developer may keep their own next to their Djinn's data, and theirs win.
+how much one may spend, how their branches are named. The repository carries them under `settings:` in its Djinn
+configuration, `.agents/djinn.yaml` (or `djinn.yaml` at its root), beside its gates and its containers' ceilings; the
+permissions stay apart, in `.agents/permissions.txtpb`. Each developer may keep their own next to their Djinn's data,
+and theirs win.
 
 ## The file
 
-A `plan.v1.ProjectSettings` in text protobuf ([`api/plan/v1/plan.proto`](../api/plan/v1/plan.proto)), committed
-with the code:
+The `settings:` section of `djinn.yaml` is a `plan.v1.ProjectSettings`
+([`api/plan/v1/plan.proto`](../api/plan/v1/plan.proto)) in YAML, committed with the code:
 
+```yaml
+# .agents/djinn.yaml: what the repository tells Djinn, read on the reference branch.
+version: 1 # the version of the file's schema; 1 when it is missing
+settings:
+  # The team's workers run claude with opus, spend at most 3 dollars each, and work on djinn/<code>-<slug>-<uuid8>.
+  provider: claude
+  model: opus
+  max_budget_usd: 3
+  branch: djinn/{code}-{slug}-{uuid8}
+
+  # Djinn integrates their finished work by itself: npm ci makes a fresh worktree ready, go tool task gen makes gen/**,
+  # the lint runs before each commit and the tests before each push, go tool task install installs the build pushed,
+  # once you say so.
+  generated: [gen/**]
+  generate: go tool task gen
+  setup: npm ci
+  checks:
+    - {name: lint, command: go tool task lint, when: commit}
+    - {name: test, command: go tool task test, when: push}
+  test_one: go tool task test-pkg -- {pkg}
+  install: go tool task install
+
+  # What the workers are told at their launch, by kind of task (see "Workers' instructions" below).
+  instructions:
+    general: Run the tasks, not the tools.
+    mockup: Draw each option in both themes.
 ```
-# proto-file: api/plan/v1/plan.proto
-# proto-message: plan.v1.ProjectSettings
 
-# The team's workers run claude with opus, spend at most 3 dollars each, and work on djinn/<code>-<slug>-<uuid8>.
-provider: PROVIDER_CLAUDE
-model: "opus"
-max_budget_usd: 3
-branch: "djinn/{code}-{slug}-{uuid8}"
+The fields are those of the message, by their proto name (`max_budget_usd`) or their JSON name (`maxBudgetUsd`). YAML
+spares the text protobuf's forms: a choice is written by the last words of its name, in any case (`when: commit` for
+`CHECK_WHEN_COMMIT`, `provider: claude`, `install_questions: never`, `push_strategy: azima`), its full name still
+reads; one value stands for a list of one (`generated: gen/**`, `when: push`); a number where a text is expected is that
+text (`model: 4.5`). A field Djinn does not know is ignored, and a warning names it (`settings.future_setting`): the rest
+of the file applies. A value out of its bounds, two checks of one name, or a file that does not parse is refused whole:
+the project's tasks wait until it is fixed. The file holds no secret (see below).
 
-# Djinn integrates their finished work by itself: npm ci makes a fresh worktree ready, go tool task gen makes gen/**,
-# the lint runs before each commit and the tests before each push, go tool task install installs the build pushed,
-# once you say so.
-generated: "gen/**"
-generate: "go tool task gen"
-setup: "npm ci"
-checks { name: "lint" command: "go tool task lint" when: CHECK_WHEN_COMMIT }
-checks { name: "test" command: "go tool task test" when: CHECK_WHEN_PUSH }
-test_one: "go tool task test-pkg -- {pkg}"
-install: "go tool task install"
-```
+`version:` says the version of the file's schema (`djinn.v1.ProjectConfig`), 1 when it is missing. A Djinn reads every
+version up to the highest it knows, an older one lifted to it first (one upgrade per version, `projectConfigUpgrades`
+in `internal/plan/projectconfig.go`). A higher version, written for a newer Djinn, or a value that is not a whole number
+from 1, refuses the whole file rather than read it wrong: the error names the file, the version read and the highest
+known (`.agents/djinn.yaml: version 2: this Djinn reads djinn.yaml up to version 1; update Djinn to read it`), the
+project declares no gate, and its tasks wait until Djinn is updated or the file fixed.
+
+Djinn no longer reads `.agents/settings.txtpb`, where these settings lived before (Q55): a project that keeps one gets a
+warning in its notices and one line in Djinn's log, naming it, until its settings move under `settings:` and it is
+deleted. Your own file, in Djinn's data folder, stays in text protobuf (below).
 
 ### Where Djinn reads it
 
-In a Git repository with a remote, Djinn reads the team's `.agents/settings.txtpb`, the project's
+In a Git repository with a remote, Djinn reads the project's `djinn.yaml` (the team's settings), its
 `.agents/permissions.txtpb` and its skills (`.agents/skills`, `.claude/skills`) on the
 [reference branch](#keeping-up-with-main), in its tree at the last fetch (`origin/main`), not in your copy: a branch
 checked out in your folder, or a change you have not pushed, does not change the configuration Djinn runs the project
 with. Djinn extracts those folders once per digest of their trees into its data folder (`cache/config/<digest>`), and
 reads them again only when a fetch moves the reference branch. A message about a file it cannot read names it there
-(`origin/main:.agents/settings.txtpb`); you fix it in your copy, and it counts once pushed and fetched. The commands
+(`origin/main:.agents/djinn.yaml`); you fix it in your copy, and it counts once pushed and fetched. The commands
 (the setup, the checks, the sources) still run in the project's folder or the wish's worktree. A project outside Git,
 without a remote, or whose reference branch is not fetched yet, keeps its folder as the source. Your own file is always
-read in Djinn's data folder.
+read in Djinn's data folder. Your own `config_branch` moves the `djinn.yaml` and the skills to another branch, the
+permissions staying on the reference branch: see [trying the configuration on a branch](#trying-the-configuration-on-a-branch).
 
 Djinn watches that branch for you: every 5 minutes, and after each of its pushes, it fetches the reference branch alone
 (no tags), then compares the digest of the `.agents` and `.claude/skills` trees with the one of its last look; nothing
@@ -88,8 +116,15 @@ read from **your own file only**, never from the repository's (which lists its c
 
 | Setting          | What it sets                                                            | Not set |
 | ---------------- | ----------------------------------------------------------------------- | ------- |
-| `watch_commands` | The commands a watcher may run in the project besides those `.agents/permissions.txtpb` lists, each a command or its start on a word boundary, repeated: see [what a watcher may run](wish-templates.md#what-a-watcher-may-run). The project's `denied_commands` still win. `djinn project allow <project> --watch '<command>'` adds one (`--revoke` takes it back), as does the project's panel in the window; `djinn project show` lists them, from `DEVELOPER`. | none |
+| `watch_commands` | The commands a watcher may run in the project besides those `.agents/permissions.txtpb` lists, each a command or its start on a word boundary, repeated: see [what a watcher may run](wish-templates.md#what-a-watcher-may-run). The project's `denied_commands` still win. `djinn project allow <project> --watch '<command>'` adds one (`--revoke` takes it back), as does the Permissions tab of the project's settings in the window ("Watcher commands you allow"); `djinn project show` lists them, from `DEVELOPER`. | none |
 | `serve_commands` | The commands an ifrit's serve may run in the project (`djinn serve run`, its command and its `--stop` command) besides those `.agents/permissions.txtpb` lists, by the same rule as `watch_commands`, read from your own file only. The project's `denied_commands` still win. `djinn project allow <project> --serve '<command>'` adds one (`--revoke` takes it back); `djinn project show` lists them, from `DEVELOPER`. | none |
+
+One more names where Djinn reads the configuration, from **your own file only** (a `config_branch` in the team's
+`djinn.yaml` is ignored, a warning says so: an agent's commit could set it):
+
+| Setting          | What it sets                                                            | Not set |
+| ---------------- | ----------------------------------------------------------------------- | ------- |
+| `config_branch`  | The branch Djinn reads the project's `djinn.yaml` (settings, gates, containers) and skills on, rather than the reference branch, to try a change of them before it merges into a protected branch. `.agents/permissions.txtpb` and `main_branch` stay read on the reference branch, so that no agent widens its own rights; pull requests, `merge_main`, the merged detection and the worktrees keep `main_branch`. `djinn project set-branch <project> <branch> --config` writes it (refused for a branch the repository does not hold: fetch it first), `djinn project set-branch <project> --config --unset` takes it back. The branch gone from the remote, or not fetched: Djinn reads the reference branch, silently for the work, and a `branch` notice says so. See [trying the configuration on a branch](#trying-the-configuration-on-a-branch). | the reference branch |
 
 Four more set the *investigators*, the small tasks Djinn starts by itself on a question of a wish after
 "Enlighten me": `Q03: enlighten` investigates and revises the question (see [agent protocol](agent-protocol.md)).
@@ -137,6 +172,18 @@ never changes after, and stays when `djinn task clean` removes its worktree.
 Your Djinn keeps yours in its data folder: `projects/<project id>/settings.txtpb` (by default under
 `~/.config/djinn`). Same format, never committed. `djinn project show <project>` prints its path.
 
+It sets any setting the team's file does, and wins setting by setting. A project whose reference branch has no
+`djinn.yaml` yet (or only the old `.agents/settings.txtpb`, no longer read) gets Djinn's defaults for everything the
+team's file would have set: no install offered, no check. Setting them in your own file brings them back on this
+machine, whatever that branch holds. For the window to offer installing the builds Djinn pushes:
+
+```
+install: "go tool task install"
+install_questions: INSTALL_QUESTIONS_NEVER
+```
+
+`djinn project show <project>` then lists `install` with `source: developer`.
+
 ## Who wins
 
 Setting by setting, the first that sets it:
@@ -154,6 +201,27 @@ with `max_budget_usd: 0`; a task's flag cannot, as `0` there means "not given".
 Djinn reads both files each time a task is spawned, where [it reads the configuration](#where-djinn-reads-it), not from
 the task's worktree. A task keeps what it got: changing a file changes the next tasks only. No worker starts from what
 your copy has checked out, nor from its changes (W227, see [where a worker starts](#where-a-worker-starts)).
+
+## Workers' instructions
+
+`instructions` (`plan.v1.WorkerInstructions`, W114, decision Q70 B) is what the project's workers are told besides
+what Djinn says itself: a `general` text, and one for each kind of task that wants its own, `work`, `investigation`,
+`mockup` and `ifrit`, 2,000 characters each at most. A worker reads its kind's text right after its prompt, under the
+line "The project's instructions to its workers of this kind:", at its launch and when it starts again; a correction,
+review or question worker gets the general text, a watcher none. Nothing by agent: each agent has its own instructions
+outside Djinn.
+
+Three layers, kind by kind, unlike the other settings:
+
+1. **Your own file**: `instructions { mockup: "Dark first." }`, or `djinn project instructions <project> --kind mockup
+   --text …` (`--unset` takes it back), or the project's Workers' brief tab.
+2. **The repository's file**, under `settings: instructions:` in its `djinn.yaml`.
+3. **The Summoning Circle**: `instructions` in `settings.json` in Djinn's data folder, this machine's default for every
+   project; its Workers' instructions tab, or `djinn lead instructions --kind … --text …`.
+
+A kind no layer sets takes the general text retained; none at all, the workers get nothing more. A text written empty
+counts: it tells its kind nothing, over the layers below. `djinn project show` lists, in `instructions`, each text with
+its value in each layer, the one retained, where it comes from, and whether it is the general one.
 
 ## See where each setting comes from
 
@@ -176,7 +244,7 @@ settings:
     value: 'lint: go tool task lint (commit); test: go tool task test (push)'
     source: repository
   …
-repository_file: /home/me/src/app/.agents/settings.txtpb
+repository_file: /home/me/src/app/.agents/djinn.yaml
 developer_file: /home/me/.config/djinn/projects/01a1…/settings.txtpb
 ```
 
@@ -199,9 +267,9 @@ on every read: the things to fix first, then the information. Each notice has a 
 
 | Topic | To fix | Information |
 | --- | --- | --- |
-| `settings` | A file Djinn cannot read | A field a newer Djinn knows; `watch_commands` or `serve_commands` in the team's file |
+| `settings` | A file Djinn cannot read (your own file, or the project's `djinn.yaml`) | A field a newer Djinn knows (a warning in `djinn.yaml`); `watch_commands` or `serve_commands` in the team's settings; a stale `.agents/settings.txtpb` Djinn no longer reads (a warning) |
 | `permissions` | `.agents/permissions.txtpb` Djinn cannot read: no worker, watcher nor source starts | A field a newer Djinn knows |
-| `branch` | No reference branch found, or the one `main_branch` names is not in the repository | Your copy has another branch checked out (Djinn reads the configuration on the reference branch all the same, and starts no worker from your copy) |
+| `branch` | No reference branch found, or the one `main_branch` names is not in the repository | Your copy has another branch checked out (Djinn reads the configuration on the reference branch all the same, and starts no worker from your copy); your `config_branch`: the configuration read there, not on the reference branch, or (a warning) gone from the remote and read on the reference branch, with the `command` that takes it back |
 | `setup` | The setup's last run failed, with the command it still is | |
 | `skill` | A `SKILL.md` Djinn cannot read; a wish template, inbox source or babysit it cannot use; a summoned skill it no longer finds | |
 | `source` | A source this machine has not decided on: plug it in, or unplug it to say no | A source plugged in that no skill declares any more |
@@ -212,7 +280,9 @@ on every read: the things to fix first, then the information. Each notice has a 
 `djinn project show` also gives the project's `reference`, its reference branch as Djinn finds it: the `branch`, the
 `ref` Djinn merges it from (`origin/main`), the `commit` that ref points at (empty when the repository does not hold
 it yet), the `source` of its name (`SETTING_SOURCE_DEFAULT` for the remote's default branch, else `main`, else `master`;
-otherwise the file whose `main_branch` names it) and the branch your copy has `checked_out`. The project's
+otherwise the file whose `main_branch` names it) and the branch your copy has `checked_out`; with your own
+`config_branch`, that `config_branch` and the `config_ref` Djinn reads the configuration on (`origin/djinn/gates`;
+empty while the branch is gone or not fetched, Djinn reading the reference branch). The project's
 configuration in the window shows the same, with each setting and where it comes from.
 
 It gives the `watch` too, how Djinn last looked at the reference branch: the `ref`, the `commit` and the `digest` of
@@ -230,6 +300,26 @@ Djinn's default does. The project's configuration in the window does the same wi
 branch, which lists the remote's branches as your copy last fetched them (`djinn project branches <project>
 --reference`).
 
+### Trying the configuration on a branch
+
+A change of `djinn.yaml` (a gate, a check, a setup, a container ceiling) or of a skill counts once it reaches the
+reference branch, often a protected branch that waits for a review. To try it before, point Djinn at the branch that
+holds it, on this machine only:
+
+```
+djinn project set-branch dolmen djinn/T17-dolmen-gate-stack --config
+djinn project show dolmen        # reference.config_ref: origin/djinn/T17-dolmen-gate-stack
+djinn project gates dolmen       # read: Read .agents/djinn.yaml on origin/djinn/T17-dolmen-gate-stack (…)
+djinn project set-branch dolmen --config --unset
+```
+
+Djinn reads the configuration on that branch as your copy last fetched it, and its watch fetches it with the
+reference branch at each look, so a push there counts at the next one: the journal of changes follows it, without the
+permissions. `.agents/permissions.txtpb` and
+`main_branch` stay read on the reference branch: an agent that commits to the branch cannot widen its own rights nor
+move the base of the requests. Once the branch merged and was deleted from the remote, the watch's next look drops it from your
+copy (as `git fetch --prune` would), and Djinn reads the reference branch again by itself; the `branch` notice says so ("not on the remote") until you take your choice back.
+
 The **Summoning Circle** in the window (below the Grimoire in the side panel; `djinn lead get-circle` and `djinn lead
 set-circle` on the command line) chooses the model for each kind of worker across all projects: Djinn (lead),
 investigation, mockup, ifrit, work, merge correction, merge review, and question investigator. Only providers installed
@@ -238,9 +328,12 @@ come from the agent itself where it reports them (`agy models`) and from the sha
 never a second hand-written list in the UI. Each dropdown shows each model once by its label (`"Gemini 4 Argon (High)"`)
 while storing and sending its canonical model identifier (`"gemini-4-argon-high"`, passed to `agy` as `"Gemini 4 Argon (High)"`).
 The lead row offers Antigravity when the lead runs in a terminal, and shows a tooltip when a driven lead cannot run it.
-Every row except the lead defaults to **Same as lead**, following the lead's choice when it changes. Any legacy
+Every row except the lead defaults to **Same as lead**, following the lead's choice when it changes. Same as lead is a
+model choice of its own: once the circle is configured (a lead seat or any row), `settings.json` names every worker row,
+a row set to Same as lead holding the kind alone, and the project's `provider` and `model` never fill it. Any legacy
 per-project `provider`, `model` or `question_model` in your developer settings file (`projects/<id>/settings.txtpb`) is
-migrated once into the Summoning Circle and dropped from the per-project file; `djinn task spawn --provider --model`
+dropped from the per-project file at `djinn up`, after seeding the Summoning Circle when it is not configured yet
+(`docs/migrations.md`); `djinn task spawn --provider --model`
 remains the lead's per-task escape hatch.
 
 ## No secret, ever
@@ -575,7 +668,9 @@ project's reference branch when the wish was made (`main_branch`, else the remot
 changes it, or the chip that names it in the wish's head, to a local branch (`djinn project branches <project>` lists
 them, Djinn's task branches left out, with the reference branch) or to a new one made from it (`--create-branch`; from
 the remote's branch of that name when the remote holds one, an open pull request's; from the reference branch, the
-remote's, for a wish that records none). A change is refused while a merge into the
+remote's, for a wish that records none or records that very branch, named before without `--create-branch`). A branch
+named without `--create-branch` and absent from the repository is made all the same, the same way, by the integration
+before it merges work into it, said on the tasks merged (W184). A change is refused while a merge into the
 branch runs (a batch merged and tested, a correction or review worker, main's merge settled), Djinn naming it. Per wish,
 a wish's work lands in that branch; per azima, an azima's work lands in main through its own branch and pull request.
 
@@ -641,10 +736,10 @@ first). Tagging and publishing stay the developer's moves.
 ## Left out, on purpose
 
 Permissions stay in [`.agents/permissions.txtpb`](providers.md#the-agentspermissionstxtpb-format), templates in
-the skills ([wish templates](wish-templates.md)), gates are named where they run (`djinn gate run <name>`). The
+the skills ([wish templates](wish-templates.md)), gates are named where they run (`djinn gate run <name>`) and declared in `djinn.yaml`, beside the settings. The
 lead's agent, CPU limits and the machine's workers stay with each developer's `djinn up`.
 The operating load cursor (minimal, medium, high, max, overclock, auto) is machine-wide and developer-controlled
-(`djinn load get/set/watch`), not a repository setting in `.agents/settings.txtpb`.
+(`djinn load get/set/watch`), not a repository setting in `.agents/djinn.yaml`.
 
 ## Cost estimates and model pricing
 

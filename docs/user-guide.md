@@ -99,27 +99,28 @@ A project is a folder Djinn's workers work in. Git or not: a folder outside Git 
   type the path in the browser) and, optionally, a name.
 - From a terminal: `djinn project add <folder>`.
 
-Click a project to see its configuration, as Djinn reads it on this machine. What waits for you comes first, in red
-("To fix"): each thing in a sentence, the error as read, and what settles it (a file to correct, a source to plug in or
-say no to, a skill to unsummon). Then its reference branch (the ref and commit Djinn merges, and where its name comes
-from): in Git with a remote, Djinn reads the project's settings, permissions and skills on it, at the last fetch, not
-in your copy; **Change** chooses another among the remote's branches, written in your own file, never in the repository
-(`djinn project set-branch <project> dev`, `--unset` takes it back). Djinn watches that branch: every 5 minutes, and
-after each of its pushes, it fetches it alone and compares the digest of `.agents`, `.claude/skills` and `djinn.yaml`
-with its last look; when they moved, the panel's **What changed on origin/main** tells each commit that changed them,
-who and when, in sentences ("New check e2e before a push", "Permissions: 1 more command the workers may run: curl", "New skill
-open-pr, with a wish template"). A change is applied as soon as it is fetched. One that gives the workers more (a
-command allowed, editing, the network, the auto mode), or changes what a skill makes or runs for Djinn (a wish
-template, a babysit, the command of a source you plugged in), is a thing to fix until you mark it **Seen**
-(`djinn project acknowledge <project>`, or `djinn project acknowledge <project> <commit>` for one); a new source asks
-through its own line, until you plug it in or say no. A failed fetch is said there, as git said it. Then its checks, the inbox sources of this machine, its skills with the role each has for Djinn (a wish template, an
-inbox source, a babysit, or know-how for the workers alone), its push cadence, and every other setting with where it
-comes from: Djinn's default, the team's file or yours. In the **Summoning Circle** (below the Grimoire in the side
-panel), you choose one model per kind of worker across all projects (Djinn the lead, investigation, mockup, ifrit, work,
-merge correction, merge review, and question investigator), with **Same as lead** as the default for every row below the
-lead (`djinn lead get-circle`, `djinn lead set-circle`). Skills summoned from another
-project show "from app".
-`djinn skill summon app/babysit-mr --into infra` lets infra's workers use a skill of app without a copy.
+Click a project to see its configuration, as Djinn reads it on this machine: a page of the window, in tabs. What waits
+for you comes first, above the tabs, in red ("To fix"): each thing in a sentence, the error as read, and what settles it
+(a file to correct, a source to plug in or say no to, a skill to unsummon). Then its reference branch (the ref and
+commit Djinn merges, and where its name comes from): in Git with a remote, Djinn reads the project's settings,
+permissions and skills on it, at the last fetch, not in your copy; **Change** chooses another among the remote's
+branches, written in your own file, never in the repository (`djinn project set-branch <project> dev`, `--unset` takes
+it back). Djinn watches that branch: every 5 minutes, and after each of its pushes, it fetches it alone and compares the
+digest of `.agents`, `.claude/skills` and `djinn.yaml` with its last look; when they moved, the **Changes on main** tab
+tells each commit that changed them, who and when, in sentences ("New check e2e before a push", "Permissions: 1 more
+command the workers may run: curl", "New skill open-pr, with a wish template"). A change is applied as soon as it is
+fetched. One that gives the workers more (a command allowed, editing, the network, the auto mode), or changes what a
+skill makes or runs for Djinn (a wish template, a babysit, the command of a source you plugged in), is a thing to fix
+until you mark it **Seen** (`djinn project acknowledge <project>`, or `djinn project acknowledge <project> <commit>` for
+one); a new source asks through its own line, until you plug it in or say no. A failed fetch is said there, as git said
+it. The other tabs hold its checks and gates (**Gates and checks**), its skills with the role each has for Djinn (a wish
+template, an inbox source, a babysit, or know-how for the workers alone) and the inbox sources of this machine
+(**Skills**), its push cadence (**Integration and push**), and every other setting with where it comes from: Djinn's
+default, the team's file or yours. In the **Summoning Circle** (below the Grimoire in the side panel), you choose one
+model per kind of worker across all projects (Djinn the lead, investigation, mockup, ifrit, work, merge correction,
+merge review, and question investigator), with **Same as lead** as the default for every row below the lead (`djinn lead
+get-circle`, `djinn lead set-circle`). Skills summoned from another project show "from app". `djinn skill summon
+app/babysit-mr --into infra` lets infra's workers use a skill of app without a copy.
 
 ## A wish
 
@@ -410,9 +411,10 @@ before, Djinn refuses the switch, which would strand that work, and says how
 
 Under the per-azima strategy no azima waits for another: each branch holds main and its own work, nothing else. Djinn
 refuses an azima after another, directly or through their work (`djinn task spawn --after`, `djinn task depend`,
-`djinn task update`, `djinn task group`, an `after:` line of a plan file at `djinn plan sync`), and refuses switching a
-wish to per azima while its azimas depend on each other: the window says which in a line, and the switch stays on per
-wish. Tasks inside one azima wait for each other as usual. A branch made before, stacked on the branch of the azima it
+`djinn task update`, `djinn task group`, an `after:` line of a plan file at `djinn plan sync`), saying which azima
+would wait for which and what to change: drop from `--after` the tasks part of another azima, or spawn the task part of
+that one (W117). It refuses switching a wish to per azima while its azimas depend on each other: the window says which
+in a line, and the switch stays on per wish. Tasks inside one azima wait for each other as usual. A branch made before, stacked on the branch of the azima it
 depended on, keeps working as it is: Djinn never cuts it again nor rewrites it.
 
 Once every task part of an azima is finished, it is **To validate**: nothing is left for Djinn. Its card says what
@@ -608,12 +610,12 @@ checks. `djinn task stop W12` stops it and keeps its work without integrating it
 
 ## Watchers and wish templates
 
-A *watcher* is a task that runs a command, with no agent and no model: a pipeline, a merge request, a queue. Each
-new paragraph it prints wakes the Djinn. Its card shows the first line of its last paragraph; **Pause the worker**
-holds it, **Resume the worker** lets it go on. Its command runs when the project lists it in
-`.agents/permissions.txtpb`, when a skill of the project declares it (a template's or a babysit's watcher, as Djinn
-builds it), or when you allow it for yourself in the project's panel ("Watcher commands you allow") or with `djinn
-project allow <project> --watch '<command>'`: [what a watcher may run](wish-templates.md#what-a-watcher-may-run).
+A *watcher* is a task that runs a command, with no agent and no model: a pipeline, a merge request, a queue. Each new
+paragraph it prints wakes the Djinn. Its card shows the first line of its last paragraph; **Pause the worker** holds it,
+**Resume the worker** lets it go on. Its command runs when the project lists it in `.agents/permissions.txtpb`, when a
+skill of the project declares it (a template's or a babysit's watcher, as Djinn builds it), or when you allow it for
+yourself on the Permissions tab of the project's settings ("Watcher commands you allow") or with `djinn project allow
+<project> --watch '<command>'`: [what a watcher may run](wish-templates.md#what-a-watcher-may-run).
 
 A *wish template* turns a request that comes back (babysit a pull request, a QA run) into a wish that already knows
 how to work: a skill declares it in its `SKILL.md`. When a routed request matches it, the new wish starts its watcher
@@ -646,29 +648,28 @@ the cards, and the window shows each new item as a system notification. Nothing 
 lamp** takes the recommended choice. Djinn only reads a source: it never comments, reacts or replies. `djinn inbox
 list` lists the items.
 
-The sources live in their project's panel, under "Inbox sources", on this machine: what each reads, how its last run
-went, and **Plug in** or **Unplug**, with what it does written under the button. A source runs only once plugged in, on
-this machine; one this machine has not decided on is one of the project's things to fix, until you plug it in or
-unplug it to say no. One you plugged in that fails gets a card of the kind **Djinn's configuration**: the error, since
-when, how many runs failed in a row. Djinn runs it again on its own, and the first run that goes well takes the card
-away; its other choice unplugs it.
-A skill whose `metadata` Djinn cannot read is not listed as a source: it is one of the project's things to fix, at the
-top of its panel and in `djinn project show`. Until it is fixed, Djinn ignores what it declares. Another line that
-breaks the YAML, like `argument-hint: [a] [b]`, which Claude Code reads anyway, is only an information there, with the
-line at fault: Djinn reads `metadata` apart from it. Details: [the
-inbox](wish-templates.md#the-inbox-what-comes-from-outside).
+The sources live in their project's settings, on the Skills tab, under "Inbox sources", on this machine: what each
+reads, how its last run went, and **Plug in** or **Unplug**, with what it does written under the button. A source runs
+only once plugged in, on this machine; one this machine has not decided on is one of the project's things to fix, until
+you plug it in or unplug it to say no. One you plugged in that fails gets a card of the kind **Djinn's configuration**:
+the error, since when, how many runs failed in a row. Djinn runs it again on its own, and the first run that goes well
+takes the card away; its other choice unplugs it. A skill whose `metadata` Djinn cannot read is not listed as a source:
+it is one of the project's things to fix, at the top of its settings page and in `djinn project show`. Until it is
+fixed, Djinn ignores what it declares. Another line that breaks the YAML, like `argument-hint: [a] [b]`, which Claude
+Code reads anyway, is only an information there, with the line at fault: Djinn reads `metadata` apart from it. Details:
+[the inbox](wish-templates.md#the-inbox-what-comes-from-outside).
 
 A project with things to fix has its gear, beside its name in the side panel, red with a small flame (on its folder when
 the side panel is folded), its tooltip counting them, and one line in the inbox under the cards: **Project** and its
 name, how many things, the first of them in a sentence, and **Open its configuration**. The gear and the line open the
-same panel, as a click on the name does; the detail stays there. Once nothing is left to fix, the gear turns grey and
-the line goes. A change on the reference branch lights the gear only when a decision comes back to you (a permission
-given, a wish template or babysit changed, a source plugged in here that runs another command, a new source); a new
-check, a skill's new instructions or a setting changed are applied and only told in the panel's journal.
+same settings page, as a click on the name does; the detail stays there. Once nothing is left to fix, the gear turns
+grey and the line goes. A change on the reference branch lights the gear only when a decision comes back to you (a
+permission given, a wish template or babysit changed, a source plugged in here that runs another command, a new source);
+a new check, a skill's new instructions or a setting changed are applied and only told on its **Changes on main** tab.
 
 ## Team settings and integration
 
-A repository may share defaults for its workers in `.agents/settings.txtpb`: which agent runs them, which model, how
+A repository may share defaults for its workers under `settings:` in `.agents/djinn.yaml`: which agent runs them, which model, how
 much one may spend. Your own file, in Djinn's data folder, wins over the team's; a task's own flags win over both.
 `djinn project show <project>` says where each setting comes from. Details: [team settings](team-settings.md).
 
@@ -676,16 +677,26 @@ A repository also tells Djinn about itself in `djinn.yaml`, at its root or in `.
 reference branch like the permissions, so that a worker never changes what bounds it. With both files, the root's is
 read and a warning under "To fix" says the other is not; a field Djinn does not know is ignored, the rest of the file
 applies, and a warning under "To fix" names the file and the field, the gear left grey; a file that does not parse, or
-a value of the wrong type or out of range, is a thing to fix, Djinn's defaults then holding. Today it holds the runaway ceilings of the containers the workers start
+a value of the wrong type or out of range, is a thing to fix, Djinn's defaults then holding. Its `version:` (1 when it
+is missing) is the version of its schema: a higher one than this Djinn knows refuses the file the same way, the error
+naming the version read and the highest known, rather than read it wrong. Today it holds the runaway ceilings of the containers the workers start
 (`docker run`, `docker create`): without it, 4 GiB of memory (a quarter of the machine's when that is less) and 1024
 processes per container. Djinn's `docker`, first on each worker's path, brings a higher limit down to them and names
 the file to raise them in.
 
 ```yaml
+version: 1
 containers:
   memory_mib: 8192 # memory of a container, swap included, in MiB (64 at least)
   pids: 2048       # processes and threads of a container (16 at least)
+gates_options:
+  admit: false     # the workers' commands wait for no admission by the gates (W139); true when not set
 ```
+
+`admit: false`, under `gates_options:`, gives the project's Claude workers no `djinn gate hook`, and its other agents
+no wrapper on their heavy heads: their commands run with no admission, whatever they cost. A gate the project declares is then taken only by `djinn gate
+run` with its name; the checks of Djinn's merges and pushes still go through theirs; Djinn's `docker` still bounds the containers. It
+counts from the next worker that starts.
 
 When a project's settings name its checks, Djinn brings finished work into the wish's branch by itself: the tasks
 ended and waiting go as one batch, their branches merged one on top of the other in a worktree of its own (made ready
@@ -744,11 +755,19 @@ djinn gate run test -- go tool task test
 ```
 
 A gate is granted only while the machine is not under pressure; a command measured before waits until the machine
-has the memory it peaked at. What the command cost, not the gate's name, says how it holds it: a command measured heavy
+has the memory it peaked at, with three bounds (W139): a command that no measured command holds a gate or an admission
+beside goes whatever its peak, since waiting would free nothing; a peak counts for half of the machine's memory at
+most; and a command waits for the memory 5 minutes at most, then is admitted all the same, its worker reading
+`admitted after 5m0s waiting for memory, the most a command waits for it: …`. What the command cost, not the gate's name, says how it holds it: a command measured heavy
 (below) holds its gate alone, one holder at a time; a light one, or one never measured, shares it, as many at once as
 the machine holds, and waits only for one that holds the name alone. A lit ifrit holds its gates alone whatever its
 server costs. The status bar shows how many gates are held. `djinn
-command list` shows what each command cost (CPU time, peak memory, duration).
+command list` shows what each command cost (CPU time, peak memory, duration). The peak the gates hold a command to is the
+95th percentile of its last 20 measured runs (`machine.Peak`), not the most it ever used, and a lone peak above four
+times the median of the others is left out once three runs were measured (W197): a run measured wrong stops counting as
+soon as two others ran. A command never measured borrows the median of its head's commands, each read by the median of
+its own runs, so that an old key whose runs hold a peak measured wrong lends no more than its usual run. `djinn command forget <project> --command <key>`, `--head <words>` (every key that starts with
+them: `--head cat`) or `--all` forgets costs learned wrong, journaled; the next run is measured anew.
 
 Who gets a gate first: Djinn's own requests to merge a task's work into its branch (its wish's or its azima's), to
 settle such a merge, or to run a push's checks, the first come first; then the others (a worker's `djinn gate run`, a
@@ -785,8 +804,14 @@ before: the folder it runs in becomes `.`, a worktree of Djinn `$WORKTREE`, a sc
 under `/tmp` `/tmp/*`, any other UUID `$ID`; a variable set for it keeps its name only (`GOFLAGS=*`); `sh -c '…'` is
 the command it runs; what only sets the shell up (`cd`, `export`, `echo`…), wrappers such as `time`, `nohup`, `env` or
 `timeout 600`, redirections and the filters a pipe ends with (`| tail -50`) are left out. Arguments stay: `go test
-./...` and `go test ./internal/gate` are two keys. A command never measured is given the median cost of the others of
-its head in its project (`go test`, `go tool task lint`, `npm run build`, `npx playwright test`), else none. A cost
+./...` and `go test ./internal/gate` are two keys. A here-document is a word of its command, `<<` and a digest of its
+body (`python3 - '<<d287bb7f'`): two inline scripts are two keys; a file `cat` or `tee` writes from one before the
+command that runs it is left out, and the commands after its body stay (W82: they were cut, and the keys `cat` and
+`python3 -` kept the peaks of whatever followed). A command that only reads or edits, `cat <<'EOF' > notes.md`
+among them, needs no admission; a substitution in a here-document whose delimiter is not quoted does. A command never measured is given the median cost of the others of
+its head in its project (`go test`, `go tool task lint`, `npm run build`, `npx playwright test`), else none. A key of
+several commands (`gofmt -l . ; go build`, `mv a b && pnpm build`) or of a light program (`sed -i`, `cat`, `mv`) has no
+head: it neither lends its cost nor borrows one (W139). A cost
 kept under a command from before the keys were normalized is found too, and takes its key once counted again.
 
 A gate or an admission is never taken back from a holder that lives: it goes back when its holder gives it, its
@@ -796,7 +821,7 @@ minutes at least), or an hour when its command was never measured, the lead of i
 go tool task e2e has held gate e2e for 1h0m0s, its command never measured; nothing is taken back: see whether it
 hangs.`), and the task's events say it.
 
-Every gate and admission held is kept in Djinn's database a week as it is released, and survives a restart: when it
+Every gate and admission held is kept in Djinn's database three months as it is released, and survives a restart: when it
 was asked, granted and released, its mode (exclusive for a gate held alone, shared for an admission or a light command under a gate's name), whether its command
 was heavy or had no measured cost of its own, what it waited for last (another holder, the pressure, the memory, a
 merge first, a heavy command) and why, the highest memory its holder used, and whether it took a slot outside a
@@ -892,6 +917,20 @@ over it: Djinn merges main into the wishes' branches instead, and proposes their
 
 `djinn backup` copies the data folder, even while Djinn runs: [backups](backup.md).
 
+## What leaves your machine
+
+Djinn has no telemetry and sends no crash report. On its own, it reaches the network for three things only:
+
+| What | Where | When | Turn it off |
+| ---- | ----- | ---- | ----------- |
+| A newer release | `api.github.com` (the releases of Empowill/Djinn) for a release binary or a build from a checkout; the first proxy of `go env GOPROXY` for one installed with `go install` | At start, then every 6 hours; it reads a version, and downloads only when you click **Update** or run `djinn update` | `djinn up --update-check=false`, or `DJINN_UPDATE_CHECK=off` in its environment: only a newer binary installed at its path is offered then |
+| A network probe | One `HEAD` request to the API host of the agent whose worker failed: `api.anthropic.com`, `api.openai.com` or `generativelanguage.googleapis.com` | Only after a worker's error that looks like a network outage, to tell when it ends | Not needed: no worker error, no probe |
+| A tilasm published on claude.ai | Your own Claude account, through Claude Code | Only when you click **Publish**; the first publish of each tilasm asks you first | Never click it |
+
+Everything else goes through the tools Djinn starts for you, under their own settings and accounts: the agents (Claude
+Code, Codex, Antigravity) talk to their providers, Git fetches and pushes your projects' remotes, and `gh` or `glab`
+open and watch pull requests. Each uses its own sign-in.
+
 ## When Djinn is stuck
 
 Djinn logs what it does in `logs/` of its data folder (`~/.config/djinn/logs` on Linux,
@@ -948,7 +987,9 @@ name your projects' folders and branches and your tasks' codes; nothing else of 
   Hourglass, in the window's theme and text size, its navigation in the window's language and beside its splash page
   from the first view: Introduction, Getting started, a page per concept, and the command line. Each page is read
   when you open it, and back and forward move between the pages you read (also served at `/docs/` while `djinn up`
-  runs).
+  runs). **Report a bug**, at its top, opens the issue forms of the repository in the browser: the bug form asks for
+  `djinn version`, the system, a `djinn debug dump` and the logs; a security flaw goes privately, as
+  [SECURITY.md](../SECURITY.md) says.
 - [Agent protocol](agent-protocol.md) · [Providers](providers.md) · [Adaptable wishes](adaptable-wishes.md) · [Worker memory](worker-memory.md)
 - The language follows the system (English or French); change it, the theme and the text size (Large, Default,
   Compact, Very compact: the whole window scales, its spacing with its text) in **Connections & preferences**.

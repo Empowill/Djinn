@@ -1,8 +1,8 @@
 // The inbox and wish templates, against the real djinn up --browser (see global-setup.ts): a project's skill declares
 // a source and a wish template. Routing a request that matches the template proposes its wish. The source runs nothing
-// until plugged in, from its project's panel: the inbox never lists the sources. Plugged in, it prints a merge request
-// assigned to you, which becomes a card in the flying carpet, saying what it is, what Djinn will do and what each
-// choice changes, proposing the template's wish; a click makes the wish, with its watcher, whose done line asks
+// until plugged in, from its project's settings page: the inbox never lists the sources. Plugged in, it prints a merge
+// request assigned to you, which becomes a card in the flying carpet, saying what it is, what Djinn will do and what
+// each choice changes, proposing the template's wish; a click makes the wish, with its watcher, whose done line asks
 // whether to grant the wish, and rubbing the lamp grants it. A second source fails: its card says why, and unplugs it.
 // The sources and the watcher are fakes: shell scripts.
 import { expect, test } from "./test";
@@ -57,7 +57,7 @@ test.skip(
   "the fake claude, the fake source and the fake watcher are shell scripts",
 );
 
-test("a source runs once plugged in from its project's panel; its assigned merge request becomes a card that makes the template's wish with its watcher, whose done line offers to grant it; a failing source gets its own card", async ({
+test("a source runs once plugged in from its project's Skills tab; its assigned merge request becomes a card that makes the template's wish with its watcher, whose done line offers to grant it; a failing source gets its own card", async ({
   page,
 }) => {
   // Three wishes at a time: the earlier specs' wishes make way, and one stays active for the flying carpet.
@@ -129,8 +129,8 @@ test("a source runs once plugged in from its project's panel; its assigned merge
   let madeId: string | undefined;
   let taskId: string | undefined;
   try {
-    // Declared, the source is not plugged in: it never runs, and the inbox does not list it; its project's panel does,
-    // with "Plug in" and what that does.
+    // Declared, the source is not plugged in: it never runs, and the inbox does not list it; its project's settings
+    // page does, under Skills (W111), with "Plug in" and what that does.
     const sources = JSON.parse(djinn("inbox", "sources", "--json")).sources;
     expect(sources).toContainEqual(
       expect.objectContaining({
@@ -149,7 +149,8 @@ test("a source runs once plugged in from its project's panel; its assigned merge
       .locator(".project-list")
       .getByRole("button", { name: "bell", exact: true })
       .click();
-    const panel = page.getByRole("dialog", { name: "bell" });
+    const panel = page.locator(".project-page");
+    await panel.getByRole("tab", { name: "Skills", exact: false }).click();
     const row = panel
       .locator(".inbox-source-row")
       .filter({ hasText: "babysit-fake-mr" });
@@ -166,7 +167,7 @@ test("a source runs once plugged in from its project's panel; its assigned merge
     // do, and under each choice what it changes.
     await row.getByRole("button", { name: "Plug in" }).click();
     await expect(row.getByRole("button", { name: "Unplug" })).toBeVisible();
-    await page.keyboard.press("Escape");
+    await page.locator(".sidebar .plan-nav").click();
     await expect(panel).toBeHidden();
     const card = page
       .locator(".inbox-card")

@@ -9,7 +9,7 @@ import (
 
 // Interval is a gate held, from its request to its release, kept as its holder saw it (machinev1.GateInterval, in
 // Data). Like a sample, it is an observation, not a change of the plan: kept apart from the journal and the entities,
-// no commit hook hears of it, and it goes after a week (PruneIntervals).
+// no commit hook hears of it, and it goes after three months (PruneIntervals, machine.IntervalRetention).
 type Interval struct {
 	Released time.Time
 	Data     []byte
@@ -30,12 +30,18 @@ func (s *Store) migrateIntervals(ctx context.Context, tx *sql.Tx) error {
 
 // AddInterval writes a gate interval.
 func (s *Store) AddInterval(ctx context.Context, x Interval) error {
+	if err := s.usable(partIntervals); err != nil {
+		return err
+	}
 	_, err := s.db.ExecContext(ctx, `INSERT INTO gate_interval (released, data) VALUES (?, ?)`, x.Released.UnixMilli(), x.Data)
 	return err
 }
 
 // Intervals reads the gate intervals released after from, the first released first.
 func (s *Store) Intervals(ctx context.Context, from time.Time) ([]Interval, error) {
+	if err := s.usable(partIntervals); err != nil {
+		return nil, err
+	}
 	rows, err := s.db.QueryContext(ctx, `SELECT released, data FROM gate_interval WHERE released > ? ORDER BY released`,
 		from.UnixMilli())
 	if err != nil {
@@ -57,6 +63,9 @@ func (s *Store) Intervals(ctx context.Context, from time.Time) ([]Interval, erro
 
 // PruneIntervals removes the gate intervals released before before.
 func (s *Store) PruneIntervals(ctx context.Context, before time.Time) error {
+	if err := s.usable(partIntervals); err != nil {
+		return err
+	}
 	_, err := s.db.ExecContext(ctx, `DELETE FROM gate_interval WHERE released < ?`, before.UnixMilli())
 	return err
 }

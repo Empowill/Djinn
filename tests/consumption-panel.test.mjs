@@ -381,7 +381,7 @@ test("the disk tab: whole-machine bar with guard marks, Machine items grouped by
   assert.match(html, /Docker 38 GB/);
   assert.match(html, /Djinn 16 GB/);
   assert.match(html, /Other caches 17 GB/);
-  assert.match(html, /Unmeasured 384 GB/);
+  assert.match(html, /Not measured yet 384 GB/);
   assert.match(html, /Free 394 GB/);
 
   // Sub-tabs with their totals (Djinn 17 GB folders + 33 GB isolated Go caches = 50 GB; Machine = 165 GB).
@@ -423,6 +423,167 @@ test("the disk tab: whole-machine bar with guard marks, Machine items grouped by
   assert.doesNotMatch(html, /\/home\/dev\/\.npm/);
   assert.match(
     html,
-    /Djinn removes a worktree when its task ends; isolated Go caches come from worker builds that set their own GOCACHE\./,
+    /Djinn frees the worktree and scratch of a task done with its work integrated 30 days after its end/,
   );
+});
+
+test("the disk tab names what fills the disk: worktrees split by what Djinn frees, the slow pass's home and system folders, a small unmeasured share", () => {
+  const gib = 1024n ** 3n;
+  const disk = {
+    availableBytes: 171n * gib,
+    totalBytes: 926n * gib,
+    folders: [
+      {
+        path: "/home/dev/.config/djinn/projects/p1/worktrees",
+        kind: "worktrees",
+        project: "dolmen",
+        sizeBytes: 120n * gib,
+        integratedBytes: 100n * gib,
+        count: 3,
+        integratedCount: 2,
+        cascadeBytes: 15n * gib,
+        cascadeCount: 1,
+      },
+      { path: "/home/dev/.config/djinn", kind: "data", sizeBytes: 125n * gib },
+      { path: "~/.cache/google-chrome", kind: "home", sizeBytes: 300n * gib },
+      { path: "~/empowill", kind: "home", sizeBytes: 40n * gib },
+      { path: "~", kind: "home", sizeBytes: 10n * gib, count: 12 },
+      { path: "/var", kind: "system", sizeBytes: 23n * gib, partial: true },
+    ],
+    items: [
+      {
+        kind: "docker-images",
+        path: "docker images",
+        sizeBytes: 123n * gib,
+        reclaimableBytes: 103n * gib,
+        risk: s.DiskRisk.REBUILD,
+        command: "docker image prune -a -f",
+      },
+      {
+        kind: "go-build",
+        path: "~/.cache/go-build",
+        sizeBytes: 92n * gib,
+        reclaimableBytes: 80n * gib,
+        risk: s.DiskRisk.REBUILD,
+        command: "find ~/.cache/go-build -type f -mmin +360 -delete",
+      },
+    ],
+  };
+  const sec = live(s.DiskSection, { disk });
+  let html = sec.html();
+
+  // 755 GB used: Go 92, Docker 123, Djinn 125 (the worktrees, and the data folder's 5 beside them), home 350,
+  // system 23: 42 GB that no pass reads.
+  assert.match(html, /Djinn 125 GB/);
+  assert.match(html, /Home 350 GB/);
+  assert.match(html, /System 23 GB/);
+  assert.match(html, /Unmeasured 42 GB/);
+  assert.match(html, /title="What no pass reads: folders only root reads/);
+  assert.match(html, /Rest of the disk\s*<b>373 GB<\/b>/);
+
+  // Djinn's tab: the worktrees named by their project, with what the freeing pass frees by age, and on top by cascade.
+  sec.all("resource-disk-subtab")[0].props.onClick();
+  html = sec.html();
+  assert.match(html, /Worktrees · dolmen/);
+  assert.match(
+    html,
+    /100 GB freed 30 days after the end \(2 of 3 folders\) · 15 GB more once validated \(1\)/,
+  );
+
+  // The rest: each entry of the home, the small ones summed, the system folders, a partial walk a floor.
+  sec.all("resource-disk-subtab")[2].props.onClick();
+  html = sec.html();
+  assert.match(html, /~\/\.cache\/google-chrome/);
+  assert.match(html, /~\/empowill/);
+  assert.match(html, /12 other entries of the home/);
+  assert.match(html, /\/var/);
+  assert.match(html, /≥ 23 GB/);
+  assert.match(html, /Measured by a slow pass every 6 hours/);
+});
+
+test("the disk tab says when it measured, measures again on its button, and sums what Djinn frees of the tasks finished", () => {
+  const gib = 1024n ** 3n;
+  const folders = [
+    {
+      path: "/home/dev/.config/djinn/projects/p1/worktrees",
+      kind: "worktrees",
+      project: "dolmen",
+      sizeBytes: 120n * gib,
+      integratedBytes: 100n * gib,
+      count: 3,
+      integratedCount: 2,
+    },
+    {
+      path: "/home/dev/.config/djinn/projects/p2/worktrees",
+      kind: "worktrees",
+      project: "djinn",
+      sizeBytes: 30n * gib,
+      integratedBytes: 20n * gib,
+      count: 5,
+      integratedCount: 4,
+      partial: true,
+    },
+    {
+      path: "/home/dev/.config/djinn/scratch/p1",
+      kind: "scratch",
+      project: "dolmen",
+      sizeBytes: 10n * gib,
+      integratedBytes: 6n * gib,
+      count: 2,
+      integratedCount: 1,
+      cascadeBytes: 3n * gib,
+      cascadeCount: 1,
+    },
+    { path: "/home/dev/.config/djinn/logs", kind: "logs", sizeBytes: 1n * gib },
+  ];
+  const disk = {
+    availableBytes: 100n * gib,
+    totalBytes: 500n * gib,
+    folders,
+    items: [],
+    measureTime: {
+      seconds: BigInt(new Date(2026, 10, 18, 14, 32).getTime() / 1000),
+      nanos: 0,
+    },
+  };
+  let asked = 0;
+  const sec = live(s.DiskSection, { disk, onMeasure: () => asked++ });
+  let html = sec.html();
+
+  // The top says when it measured; the button measures again.
+  assert.match(
+    html,
+    /<div class="resource-disk-measure"><span>Measured [^<]*Nov[^<]*:32[^<]*<\/span>/,
+  );
+  const button = sec.all("icon-button");
+  assert.equal(button.length, 1);
+  assert.equal(button[0].props.label, "Measure again now");
+  assert.equal(button[0].props.disabled, false);
+
+  // Djinn's tab: 7 folders of tasks done and integrated, 126 GB, a floor as one walk ran out of time; on top, the one
+  // its azima or wish frees.
+  assert.match(
+    html,
+    /Freed by Djinn 30 days after their end, tasks done with their work integrated: 7 folders, ≥ 126 GB \(6 worktrees, 1 scratch\)\./,
+  );
+  assert.match(
+    html,
+    /On top, once their azima is validated or their wish granted, the other finished tasks: 1 folder, ≥ 3 GB\./,
+  );
+
+  // The click: the measure goes, the button waits for it.
+  button[0].props.onClick();
+  assert.equal(asked, 1);
+  html = sec.html();
+  assert.match(html, /<span>Measuring now…<\/span>/);
+  assert.equal(sec.all("icon-button")[0].props.disabled, true);
+
+  // Never measured: it says so; without onMeasure, no button; no task folder, no residue line.
+  const bare = live(s.DiskSection, {
+    disk: { ...disk, measureTime: undefined, folders: folders.slice(3) },
+  });
+  html = bare.html();
+  assert.match(html, /No measure yet/);
+  assert.equal(bare.all("icon-button").length, 0);
+  assert.doesNotMatch(html, /Freed by Djinn|On top, once/);
 });

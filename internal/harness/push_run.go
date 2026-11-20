@@ -73,6 +73,17 @@ func (r *pushRun) set(ctx context.Context, stage planv1.PushStage, check, note s
 	r.edit(ctx, func(p *planv1.WishPush) { p.Run = run })
 }
 
+// swap records the run at stage, as set, and returns the run its wish recorded before, read in the same transaction:
+// nil when none, or when it could not be recorded.
+func (r *pushRun) swap(ctx context.Context, stage planv1.PushStage, check, note string) (was *planv1.PushRun) {
+	run := r.ended(stage, note)
+	run.Check = check
+	if !r.edit(ctx, func(p *planv1.WishPush) { was, p.Run = p.GetRun(), run }) {
+		return nil
+	}
+	return was
+}
+
 // clear forgets the run: it neither runs nor ended in a way to show (Djinn stopped during it, or asks first).
 func (r *pushRun) clear(ctx context.Context) {
 	r.edit(ctx, func(p *planv1.WishPush) {
@@ -82,11 +93,13 @@ func (r *pushRun) clear(ctx context.Context) {
 	})
 }
 
-func (r *pushRun) edit(ctx context.Context, edit func(*planv1.WishPush)) {
+// edit edits the push state of the run's wish in the project, and tells whether it is recorded.
+func (r *pushRun) edit(ctx context.Context, edit func(*planv1.WishPush)) bool {
 	err := r.h.store.Tx(ctx, func(tx *store.Tx) error { return editPush(ctx, tx, r.wishID, r.projectID, edit) })
 	if err != nil {
 		logx.L().Error("record the push run", "loop", "push", "wish", r.wishID, "project", r.projectID, "branch", r.branch, "err", err)
 	}
+	return err == nil
 }
 
 // heldNote says why the push checks hold a push: the check that failed and why (held), then the first lines of what

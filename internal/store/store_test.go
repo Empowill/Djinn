@@ -21,7 +21,7 @@ func TestOpen(t *testing.T) {
 		t.Parallel()
 		s := open(t)
 		tables := strs(t, s, `SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name`)
-		if want := []string{"command", "gate_interval", "project", "question", "sample"}; !slices.Equal(tables, want) {
+		if want := []string{"command", "gate_interval", "project", "question", "sample", "store_schema"}; !slices.Equal(tables, want) {
 			t.Errorf("tables = %v, want %v", tables, want)
 		}
 		if cols, want := strs(t, s, `SELECT name FROM pragma_table_info('question')`), []string{"id", "payload", "wish_id", "task_id", "about_task_id", "code"}; !slices.Equal(cols, want) {

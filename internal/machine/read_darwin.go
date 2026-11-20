@@ -10,7 +10,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// Read reads this machine through sysctl and vm_stat: the memory, the load, and the system's memory pressure level.
+// Read reads this machine through sysctl and host_statistics64 (vm_stat when it fails): the memory, the load, and the system's memory pressure level.
 // macOS has no PSI.
 func Read() (Snapshot, error) {
 	s := Snapshot{Cores: runtime.NumCPU()}
@@ -19,7 +19,7 @@ func Read() (Snapshot, error) {
 		return s, err
 	}
 	s.MemoryTotal = total
-	s.MemoryAvailable = darwinAvailable(total, vmStat(), unix.SysctlUint32)
+	s.MemoryAvailable = available(total)
 	if level, err := unix.SysctlUint32("kern.memorystatus_vm_pressure_level"); err == nil {
 		s.MemoryLevel = int(level)
 	}
@@ -42,6 +42,20 @@ func readGPUs() []GPU {
 	chip, _ := unix.Sysctl("machdep.cpu.brand_string")
 	memory, _ := unix.SysctlUint64("hw.memsize")
 	return []GPU{AppleGPU(chip, memory)}
+}
+
+// available gives the bytes available to new programs (Q86 A, Activity Monitor's Memory Used left out): from the
+// counts host_statistics64 gives, as vm_stat reads them, without running it each second; from vm_stat's output when
+// they fail or their page size does not fit (pagesCover).
+func available(total uint64) uint64 {
+	if page, err := unix.SysctlUint32("hw.pagesize"); err == nil {
+		if counts, filed, ok := hostVMCounts(); ok && pagesCover(total, uint64(page), filed) {
+			if a, ok := countsAvailable(total, uint64(page), counts); ok {
+				return a
+			}
+		}
+	}
+	return darwinAvailable(total, vmStat(), unix.SysctlUint32)
 }
 
 // vmStat runs vm_stat, for at most 2 seconds: the wired and compressed pages sysctl does not give. Nil when it fails.

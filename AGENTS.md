@@ -15,7 +15,7 @@ repeat them.
 ## For agents
 - **Run the tasks, not the tools.** `go tool task test`, `go tool task gen`, `go tool task e2e`,
   `go tool task build`: they set the tags and the order.
-- **Run Djinn's commit checks, then commit your work, before you end.** [`.agents/settings.txtpb`](.agents/settings.txtpb)
+- **Run Djinn's commit checks, then commit your work, before you end.** [`.agents/djinn.yaml`](.agents/djinn.yaml)
   names them: the lint before Djinn merges your work (`djinn gate run lint -- go tool task lint`), the tests before it
   pushes. Commit in the repository's style and leave nothing not committed: Djinn commits nothing for you.
 - **A story that touches the window** (interface under the UI folder, the stream it reads, the server calls it makes)
@@ -24,12 +24,18 @@ repeat them.
   command, a behaviour. Rewrite its chapter or card in the documentation site (`docs/site/index.html`); a new concept
   gets its card. The Command line tab reads the command tree: keep a proto comment or a `cli.Builtins` entry true.
 - **Read [`docs/pitfalls.md`](docs/pitfalls.md) before you chase a failure**: the code's known traps, how to spot them.
+- **Any Djinn you start gets its own `DJINN_HOME` in `$DJINN_SCRATCH`**, under wine, in a container or over ssh too,
+  set on its command line (`Z:` before the path under wine): it inherits yours otherwise, the person's real data folder
+  (W80; see the pitfall on a Djinn started under wine in [`docs/pitfalls.md`](docs/pitfalls.md)).
 - **Write tests by the rules in [`CONTRIBUTING.md`](CONTRIBUTING.md#writing-tests).** Never call a paid model in a
   test: record a stream instead (`docs/providers.md`).
 - **A license check comes before any reuse** of third-party code: see the license section of
   `CONTRIBUTING.md`, and name every new dependency in your change description.
 - **What you add to a wish's plan is smoke** unless the code computes on it: write a block, do
   not add a field.
+- **A migration of the local settings is the last resort**, after proto versioning, and only for a measured cost: it
+  runs at `djinn up`, is recorded in `settings.json`, is idempotent, and never fails the start. Read
+  [`docs/migrations.md`](docs/migrations.md) before you add one.
 - **Locate symbols and lines with `rg -n` or `grep -n` before reading a file.** Never page through a file with
   `view_file` 800 lines at a time: pass `StartLine` and `EndLine` (`<= 200` lines) around the match so the context
   stays below compaction.

@@ -139,6 +139,14 @@ func TestSpawn_Azima(t *testing.T) {
 		if connect.CodeOf(err) != connect.CodeInvalidArgument {
 			t.Errorf("an azima with a prompt: %v", err)
 		}
+		// W117: the lead's azima of 18/11/2026 came with --tilasm L95; the refusal names that flag alone.
+		_, err = e.tasks.Spawn(ctx, connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+			WishId: wishID, Title: "Odd", Kind: planv1.TaskKind_TASK_KIND_AZIMA, Tilasm: []string{"L95"},
+		}))
+		if want := "an azima has no worker: run it again without --tilasm; a worker's flags go to the tasks part of the azima"; err == nil ||
+			!strings.Contains(err.Error(), want) {
+			t.Errorf("an azima with a tilasm: %v, want %q", err, want)
+		}
 		if _, err := e.spawnReq(t, wishID, "Odd", "text odd", &planv1.TaskServiceSpawnRequest{PartOf: part.GetCode()}); connect.CodeOf(err) != connect.CodeInvalidArgument ||
 			!strings.Contains(err.Error(), "not an azima") {
 			t.Errorf("part of work: %v", err)

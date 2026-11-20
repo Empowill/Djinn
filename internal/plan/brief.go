@@ -150,7 +150,11 @@ func leadRules(projects []*planv1.Project, home string, driven bool) string {
 		"acknowledgement, never a discussion (at most 160 characters on one line); what is longer goes in a question " +
 		"or a block. Tell a decision you took alone that the developer would want to know with " +
 		"`djinn lead say <wish> \"<text>\" --decided` instead of a question that asks nothing; never say that a " +
-		"worker or a task started.\n"
+		"worker or a task started.\n" +
+		"- **Open every file a message names.** A message from the window may end with lines \"Files: <path> (<type>, " +
+		"<size>)\": files the developer pasted, kept in the wish's folder (a block of kind file names each). Open each " +
+		"with your own file tool before you act (an image is a screenshot to look at), and name its path in a task's " +
+		"prompt when a worker needs it: the worker gets its folder to read.\n"
 	startRule := "- **Start from the brief.** Djinn computes where the active wishes stand: `djinn brief`. " +
 		"Run it when you start and whenever you lose track, then continue from what it says. `djinn wish brief <wish>` gives one wish's detail. Another agent may " +
 		"have led before you: the plan carries over, its session does not.\n"
@@ -179,7 +183,11 @@ func leadRules(projects []*planv1.Project, home string, driven bool) string {
 			"never a discussion (at most 160 characters on one line); what is longer goes in a question or a block. " +
 			"Tell a decision you took alone that the developer would want to know with " +
 			"`djinn lead say <wish> \"<text>\" --decided` instead of a question that asks nothing, and never say " +
-			"that a worker or a task started. A decision the developer's message states gets a block of kind decision.\n"
+			"that a worker or a task started. A decision the developer's message states gets a block of kind decision.\n" +
+			"- **Open every file a message names.** A message from the window may end with lines \"Files: <path> (<type>, " +
+			"<size>)\": files the developer pasted, kept in the wish's folder (a block of kind file names each). Open each " +
+			"with your own file tool before you act (an image is a screenshot to look at), and name its path in a task's " +
+			"prompt when a worker needs it: the worker gets its folder to read.\n"
 		startRule = ""
 		watchRule = ""
 		toneTail = ""
@@ -209,7 +217,11 @@ func leadRules(projects []*planv1.Project, home string, driven bool) string {
 		"merge or open a pull request, create a release, try something on a machine Djinn does not have, " +
 		installMoveRule(projects, home) +
 		") is asked as a question (`djinn question ask --move`, with what exactly to run or click, and why now), " +
-		"the moment it becomes due; never left in a note. An answered question " +
+		"the moment it becomes due; never left in a note. A question is blocking when, without its answer, Djinn " +
+		"cannot start some work: name that work as you ask (`--holds W12,T16`, planned tasks or azimas not started), " +
+		"or plan the task after it (`djinn task spawn --after Q64`); the work waits for the answer, the question is " +
+		"blocking meanwhile, and the answer or a withdrawal releases it. Otherwise it waits on `--before` or " +
+		"`--move`, or it can wait. An answered question " +
 		"is a decision, resolved: do not bring it back to the developer; ask again, a new question, only on a real " +
 		"doubt: not understanding the answer is one. A block of kind decision is a decision too. A task that follows from one names it: `--decision Q03`, or " +
 		"the block's id.\n" +
@@ -274,7 +286,7 @@ func leadRules(projects []*planv1.Project, home string, driven bool) string {
 		"nothing in between: no continue, no repair, no question; a failure or a red check during an outage is the " +
 		"network's, never the code's.\n" +
 		"- **A `disk` event is Djinn's disk guard (W303).** Almost full: Djinn trims the Go build cache entries unused " +
-		"for a day and holds the push checks; its detail names the biggest folders. Tell the developer what fills the " +
+		"for a day and holds the push checks; its detail names the biggest sources on the disk. Tell the developer what fills the " +
 		"disk; never delete anything yourself, nor have a worker do it. Back: the push checks run again by themselves.\n" +
 		"- **Review comments on a diff**: `djinn task comment <task> \"…\" --file <path> --line <n> [--end-line <n>]` " +
 		"goes to the task's running worker; once it has ended, `djinn task turn-comments <task>` continues it or " +
@@ -330,7 +342,7 @@ func leadRules(projects []*planv1.Project, home string, driven bool) string {
 		"  - Example, 17/10: W160 (the Djinn's eye) and W174 (a click brings back a wish's first tab) ran side by " +
 		"side on `src/question-column.tsx`, which W154 also changed; both merges conflicted there, and W237 and W238 " +
 		"repaired them. W174 `--after W160`, W160 after W154, would have merged clean.\n" +
-		"  - When `djinn task spawn`, `djinn question launch` or `djinn plan launch` answers `W7 may overlap with: …`, " +
+		"  - When `djinn task spawn` or `djinn question launch` answers `W7 may overlap with: …`, " +
 		"read each reason (its branch diff, `--write-scopes`, or the paths, packages and specs named in both prompts) " +
 		"and place or fold the task at once (`djinn task depend <task> --after <other>` to put it after, or fold it " +
 		"into `<other>` and drop the duplicate; 17/10: W339 and W305 both edited `internal/plan/brief.go` and " +
@@ -467,6 +479,8 @@ func leadCommandsBrief(driven bool) string {
 		"a grey mark until you choose.\n" +
 		"- `djinn question ask \"🔐 <question>\" <wish> --options \"…\" --options \"…\" --recommendation \"…\" --icon 🔐` " +
 		"(the emoji its title starts with); `--context-file <file>` for its context, written with your Write tool; " +
+		"`--holds W12,T16` names the work that cannot start without the answer: it waits, and the question is " +
+		"blocking (`djinn question revise --holds` changes it, `--holds \"\"` releases it); " +
 		"`--before \"before the merge\"` says what the answer is needed before, without it the " +
 		"question can wait (a question a waiting task needs is blocking anyway); `--move` marks a move only the " +
 		"developer can make, with `--before` when it cannot wait. The bar \"N things wait for you\" is for what " +
@@ -603,7 +617,7 @@ func (w *Wishes) ifritWaits() map[string][]string {
 
 // buildBrief is BuildBrief, saying who waits for the gates of each lit ifrit as waits does.
 func buildBrief(ctx context.Context, r store.Reader, home, wishID string, waits map[string][]string) (Brief, error) {
-	exp, projects, err := collect(ctx, r, wishID, noEvents)
+	exp, projects, err := collectOf(ctx, r, wishID, noEvents, wishMethods)
 	if err != nil {
 		return Brief{}, err
 	}
@@ -989,6 +1003,8 @@ func azimaBranchText(t *planv1.Task) string {
 		text += ", pull request open"
 	case planv1.AzimaPrState_AZIMA_PR_STATE_MERGED:
 		text += ", pull request merged"
+	case planv1.AzimaPrState_AZIMA_PR_STATE_CLOSED:
+		text += ", pull request closed without merging"
 	}
 	if url := t.GetAzima().GetPr().GetUrl(); url != "" {
 		text += ": " + url
@@ -1454,7 +1470,7 @@ func globalBrief(ctx context.Context, r store.Reader, home string, wishesOnly bo
 		b.WriteString("No active wishes.\n\n")
 	} else {
 		for i, wish := range actives {
-			exp, _, err := collect(ctx, r, wish.GetId(), noEvents)
+			exp, _, err := collectOf(ctx, r, wish.GetId(), noEvents, wishMethods)
 			if err != nil {
 				return "", err
 			}
@@ -1693,7 +1709,10 @@ func questionsBrief(b *strings.Builder, exp *planv1.WishExport) {
 			level := "can wait"
 			switch render.UrgencyOf(q, blocked) {
 			case render.Blocking:
-				level = "blocking: " + strings.Join(blocked[q.GetId()], ", ") + " waits"
+				level = "blocking: " + strings.Join(blocked[q.GetId()], ", ") + " wait"
+				if len(blocked[q.GetId()]) == 1 {
+					level += "s"
+				}
 			case render.Move:
 				level = "your move"
 			case render.Before:

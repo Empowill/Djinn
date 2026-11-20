@@ -739,6 +739,8 @@ test("every class of the stylesheets is used by a component", () => {
     /^work-/, // wish-task.tsx: work-${work.tone}, where a task's work stands
     /^wish-duo-[slem]$/, // wish-icon.tsx: wish-duo-${duo}, the colours of a wish icon of the bank
     /^lucide$/, // lucide-react's icons carry it (styles.css sizes them in rem)
+    /^gk-(?:work|inv|mock|watch|ifrit|other|out)$/, // gates-flow.tsx: gk-${group}, a task kind's colour
+    /^go-(?:now|short|long)$/, // gates-flow.tsx: go-${outcome}, what a gate's request waited
   ];
   const components = fs
     .readdirSync(root, { recursive: true })
@@ -1171,4 +1173,30 @@ test("the wish header lets its dropdowns open above the content below", () => {
   const picker = block(wishCss, ".branch-picker");
   assert.match(picker, /position:\s*absolute;/);
   assert.match(picker, /z-index:\s*60;/);
+});
+
+// W194 (L42 C): the gates' seals loop (the orbits while a gate is held, the waiters' flames) by transform alone, each
+// on an element of its own, and pause with the window at rest.
+test("the gates' seals loop by transform alone and pause at rest", () => {
+  const css = fs
+    .readFileSync(path.join(root, "gates-tab.css"), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "");
+  const styles = fs.readFileSync(path.join(root, "styles.css"), "utf8");
+  const loops = [...css.matchAll(/([^{}]+)\{[^}]*animation:[^;}]*infinite/g)];
+  assert.deepEqual(
+    loops.map(([, selector]) => selector.trim()),
+    [
+      '.gates-gate:not([data-state="free"]) .gates-seal-orbit',
+      ".gates-seal-flame",
+    ],
+  );
+  for (const sel of [".gates-seal-orbit", ".gates-seal-flame"])
+    assert.ok(styles.includes(`html[data-still] ${sel},`), `${sel} rests`);
+  for (const name of ["gates-orbit", "gates-flick"]) {
+    const body = css.match(
+      new RegExp(`@keyframes ${name}\\s*\\{([\\s\\S]*?\\})\\s*\\}`),
+    )[1];
+    for (const [, property] of body.matchAll(/([a-z-]+)\s*:/g))
+      assert.equal(property, "transform", name);
+  }
 });

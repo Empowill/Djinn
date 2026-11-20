@@ -81,7 +81,7 @@ func TestProjectConfigInFolder(t *testing.T) {
 
 	local := resolvedTempDir(t)
 	gitIn(t, local, "init", "-q")
-	writeFileAt(t, filepath.Join(local, SettingsFile), "setup: \"echo team\"\n")
+	writeFileAt(t, filepath.Join(local, ProjectConfigFiles[1]), teamYAML("setup: \"echo team\"\n"))
 	commitAs(t, local)
 	p := &planv1.Project{Id: store.NewID(), Directory: local, Git: true}
 	if c := ProjectConfig(home, p); c.Dir != local || c.FromReference() {
@@ -110,9 +110,8 @@ func TestProjectConfigReadsReference(t *testing.T) {
 	home := t.TempDir()
 	skill := "---\nname: ship\ndescription: Ships it.\nmetadata:\n  djinn:\n    babysit:\n      watch: sh watch.sh {pr}\n---\n"
 	p := configProject(t, map[string]string{
-		".agents/settings.txtpb":        "setup: \"echo team\"\n",
 		".agents/permissions.txtpb":     "commands: \"make\"\n",
-		"djinn.yaml":                    "containers: {pids: 64}\n",
+		"djinn.yaml":                    "containers: {pids: 64}\n" + teamYAML("setup: \"echo team\"\n"),
 		".agents/skills/ship/SKILL.md":  skill,
 		".agents/skills/ship/watch.sh":  "echo watch\n",
 		".claude/skills/other/SKILL.md": "---\nname: other\ndescription: Another.\n---\n",
@@ -125,9 +124,8 @@ func TestProjectConfigReadsReference(t *testing.T) {
 	commitAs(t, dir, "refs/remotes/origin/main")
 	// The folder moves on: another branch out, files changed and added, none of it on origin/main.
 	gitIn(t, dir, "checkout", "-q", "-b", "feature")
-	writeFileAt(t, filepath.Join(dir, SettingsFile), "setup: \"echo copy\"\n")
 	writeFileAt(t, filepath.Join(dir, PermissionsFile), "commands: \"rm\"\n")
-	writeFileAt(t, filepath.Join(dir, "djinn.yaml"), "containers: {pids: 4096}\n")
+	writeFileAt(t, filepath.Join(dir, "djinn.yaml"), "containers: {pids: 4096}\n"+teamYAML("setup: \"echo copy\"\n"))
 	writeFileAt(t, filepath.Join(dir, ".agents/skills/local/SKILL.md"), "---\nname: local\ndescription: Local.\n---\n")
 
 	c := ProjectConfig(home, p)
@@ -172,15 +170,15 @@ func TestProjectConfigReadsReference(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(c.Dir, "app")); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("the cache holds the rest of the tree: %v", err)
 	}
-	if got := c.Named(filepath.Join(c.Dir, SettingsFile)); got != "origin/main:.agents/settings.txtpb" {
+	if got := c.Named(filepath.Join(c.Dir, PermissionsFile)); got != "origin/main:.agents/permissions.txtpb" {
 		t.Errorf("named %q", got)
 	}
 
 	// A file Djinn cannot read on the branch: its message names it there.
 	gitIn(t, dir, "checkout", "-q", "main")
-	writeFileAt(t, filepath.Join(dir, SettingsFile), "nope: 1\nsetup: [\n")
+	writeFileAt(t, filepath.Join(dir, "djinn.yaml"), teamYAML("nope: 1\nsetup: [\n"))
 	commitAs(t, dir, "refs/remotes/origin/main")
-	if _, err := LoadSettings(home, p); err == nil || !strings.Contains(err.Error(), "origin/main:.agents/settings.txtpb") {
+	if _, err := LoadSettings(home, p); err == nil || !strings.Contains(err.Error(), "origin/main:djinn.yaml") {
 		t.Errorf("unreadable on origin/main: %v", err)
 	}
 }
@@ -190,7 +188,7 @@ func TestProjectConfigReadsReference(t *testing.T) {
 func TestProjectConfigFollowsFetch(t *testing.T) {
 	t.Parallel()
 	home := t.TempDir()
-	p := configProject(t, map[string]string{".agents/settings.txtpb": "setup: \"echo one\"\n"})
+	p := configProject(t, map[string]string{".agents/djinn.yaml": teamYAML("setup: \"echo one\"\n")})
 	dir := p.GetDirectory()
 	first := ProjectConfig(home, p)
 	writeFileAt(t, filepath.Join(dir, "README.md"), "# Other\n")
@@ -198,13 +196,29 @@ func TestProjectConfigFollowsFetch(t *testing.T) {
 	if again := ProjectConfig(home, p); again.Dir != first.Dir || again.Commit == first.Commit {
 		t.Errorf("same configuration, another commit: %+v then %+v; want the same folder", first, again)
 	}
-	writeFileAt(t, filepath.Join(dir, SettingsFile), "setup: \"echo two\"\n")
+	writeFileAt(t, filepath.Join(dir, ProjectConfigFiles[1]), teamYAML("setup: \"echo two\"\n"))
 	commitAs(t, dir, "refs/remotes/origin/main")
 	if s, _ := LoadSettings(home, p); s.Setup != "echo two" {
 		t.Errorf("after a fetch: setup %q, want echo two", s.Setup)
 	}
 	if ProjectConfig(home, p).Dir == first.Dir {
 		t.Error("another configuration, the same folder")
+	}
+	// A gate declared on origin/main, then taken out of it (W100 found no test): the fetch that moves the branch
+	// changes the gates Djinn applies, beside the settings of the same file.
+	writeFileAt(t, filepath.Join(dir, ProjectConfigFiles[1]), teamYAML("setup: \"echo two\"\n")+
+		"gates:\n  - name: stack\n    alone: [task run-back]\n")
+	commitAs(t, dir, "refs/remotes/origin/main")
+	if g := LoadProjectGates(home, p); len(g.Gates) != 1 || g.Gates[0].GetName() != "stack" {
+		t.Errorf("a gate on origin/main: %v %v, want stack", g.Gates, g.Warnings)
+	}
+	writeFileAt(t, filepath.Join(dir, ProjectConfigFiles[1]), teamYAML("setup: \"echo two\"\n")+"gates: []\n")
+	commitAs(t, dir, "refs/remotes/origin/main")
+	if g := LoadProjectGates(home, p); len(g.Gates) != 0 || len(g.Warnings) != 0 {
+		t.Errorf("gates: [] on origin/main: %v %v, want none", g.Gates, g.Warnings)
+	}
+	if s, _ := LoadSettings(home, p); s.Setup != "echo two" {
+		t.Errorf("with the gates: setup %q, want echo two", s.Setup)
 	}
 }
 
@@ -213,7 +227,7 @@ func TestProjectConfigFollowsFetch(t *testing.T) {
 func TestProjectConfigMemo(t *testing.T) {
 	t.Parallel()
 	home := t.TempDir()
-	p := configProject(t, map[string]string{".agents/settings.txtpb": "setup: \"echo one\"\n"})
+	p := configProject(t, map[string]string{".agents/djinn.yaml": teamYAML("setup: \"echo one\"\n")})
 	dir := p.GetDirectory()
 	old := time.Now().Add(-time.Hour)
 	age := func() {
@@ -235,7 +249,7 @@ func TestProjectConfigMemo(t *testing.T) {
 	age()
 	kept := ProjectConfig(home, p)
 	// The ref moved, but its files look as they did: the memo answers, no git runs.
-	writeFileAt(t, filepath.Join(dir, SettingsFile), "setup: \"echo two\"\n")
+	writeFileAt(t, filepath.Join(dir, ProjectConfigFiles[1]), teamYAML("setup: \"echo two\"\n"))
 	commitAs(t, dir, "refs/remotes/origin/main")
 	age()
 	if got := ProjectConfig(home, p); got != kept {
@@ -260,12 +274,12 @@ func TestProjectConfigMemo(t *testing.T) {
 func TestProjectConfigBranch(t *testing.T) {
 	t.Parallel()
 	home := t.TempDir()
-	p := configProject(t, map[string]string{".agents/settings.txtpb": "main_branch: \"dev\"\nsetup: \"echo main\"\n"})
+	p := configProject(t, map[string]string{".agents/djinn.yaml": teamYAML("main_branch: \"dev\"\nsetup: \"echo main\"\n")})
 	dir := p.GetDirectory()
 	if c := ProjectConfig(home, p); c.FromReference() {
 		t.Errorf("origin/dev not fetched: %+v, want the folder", c)
 	}
-	writeFileAt(t, filepath.Join(dir, SettingsFile), "setup: \"echo dev\"\n")
+	writeFileAt(t, filepath.Join(dir, ProjectConfigFiles[1]), teamYAML("setup: \"echo dev\"\n"))
 	commitAs(t, dir, "refs/remotes/origin/dev")
 	s, err := LoadSettings(home, p)
 	if c := ProjectConfig(home, p); c.Ref != "origin/dev" || c.TeamBranch != "dev" {
@@ -283,16 +297,179 @@ func TestProjectConfigBranch(t *testing.T) {
 	}
 }
 
+// TestProjectConfigConfigBranch (W178, L37 A): the developer's own config_branch makes Djinn read the djinn.yaml and
+// the skills on that branch, to try them before they merge; the permissions and main_branch stay those of the
+// reference branch, so that no agent's commit widens its own rights nor moves the base of the requests. The branch
+// gone from the remote, Djinn reads the reference branch again (Q110). The team's file cannot name it.
+func TestProjectConfigConfigBranch(t *testing.T) {
+	t.Parallel()
+	home := t.TempDir()
+	p := configProject(t, map[string]string{
+		".agents/djinn.yaml":            teamYAML("setup: \"echo main\"\n"),
+		".agents/permissions.txtpb":     "commands: \"make\"\n",
+		".agents/skills/kept/SKILL.md":  "---\nname: kept\ndescription: Kept.\n---\n",
+		".agents/skills/older/SKILL.md": "---\nname: older\ndescription: Older.\n---\n",
+	})
+	dir := p.GetDirectory()
+	gitIn(t, dir, "checkout", "-q", "-b", "djinn/gates")
+	writeFileAt(t, filepath.Join(dir, ProjectConfigFiles[1]), teamYAML("setup: \"echo gates\"\nmain_branch: \"elsewhere\"\n"))
+	writeFileAt(t, filepath.Join(dir, PermissionsFile), "commands: \"rm\"\n")
+	writeFileAt(t, filepath.Join(dir, ".agents", "skills", "tried", SkillFile), "---\nname: tried\ndescription: Tried.\n---\n")
+	if err := os.RemoveAll(filepath.Join(dir, ".agents", "skills", "older")); err != nil {
+		t.Fatal(err)
+	}
+	commitAs(t, dir, "refs/remotes/origin/djinn/gates")
+	gitIn(t, dir, "checkout", "-q", "main")
+	if err := SaveDeveloperConfigBranch(home, p.GetId(), "djinn/gates"); err != nil {
+		t.Fatal(err)
+	}
+
+	c := ProjectConfig(home, p)
+	if c.Ref != "origin/djinn/gates" || c.ReferenceRef != "origin/main" || c.ConfigBranchMissing() {
+		t.Errorf("config_branch djinn/gates: %+v", c)
+	}
+	s, err := LoadSettings(home, p)
+	if err != nil || s.Setup != "echo gates" || s.MainBranch != "" || s.ConfigBranch != "djinn/gates" ||
+		s.ConfigBranchFrom != planv1.SettingSource_SETTING_SOURCE_DEVELOPER {
+		t.Errorf("settings: setup %q, main_branch %q, config_branch %q, %v; want the branch's setup, main's main_branch",
+			s.Setup, s.MainBranch, s.ConfigBranch, err)
+	}
+	var skills []string
+	for _, sk := range ProjectSkills(c.Dir) {
+		skills = append(skills, sk.Name)
+	}
+	if !slices.Equal(skills, []string{"kept", "tried"}) {
+		t.Errorf("skills %v, want the branch's", skills)
+	}
+	perms, _, err := ReadPermissions(PermissionsDir(home, p))
+	if err != nil || !slices.Equal(perms.GetCommands(), []string{"make"}) {
+		t.Errorf("permissions %v, %v; want main's", perms.GetCommands(), err)
+	}
+	if ref, err := ConfigReference(t.Context(), home, p); err != nil || ref != "refs/remotes/origin/main" {
+		t.Errorf("the watch's reference %q, %v", ref, err)
+	}
+
+	// The branch merged and deleted: back on main, silently for the work.
+	gitIn(t, dir, "update-ref", "-d", "refs/remotes/origin/djinn/gates")
+	c = ProjectConfig(home, p)
+	if c.Ref != "origin/main" || !c.ConfigBranchMissing() || c.ConfigBranch != "djinn/gates" {
+		t.Errorf("branch gone: %+v, want origin/main", c)
+	}
+	if s, err := LoadSettings(home, p); err != nil || s.Setup != "echo main" {
+		t.Errorf("branch gone: setup %q, %v", s.Setup, err)
+	}
+
+	// Taken back.
+	if err := SaveDeveloperConfigBranch(home, p.GetId(), ""); err != nil {
+		t.Fatal(err)
+	}
+	if c := ProjectConfig(home, p); c.ConfigBranch != "" || c.Ref != "origin/main" {
+		t.Errorf("unset: %+v", c)
+	}
+}
+
+// TestProjectConfigTeamConfigBranch (W178): a config_branch in the team's djinn.yaml is ignored, a warning says so:
+// only the developer's own file names it.
+func TestProjectConfigTeamConfigBranch(t *testing.T) {
+	t.Parallel()
+	home := t.TempDir()
+	p := configProject(t, map[string]string{".agents/djinn.yaml": teamYAML("config_branch: \"djinn/gates\"\nsetup: \"echo main\"\n")})
+	dir := p.GetDirectory()
+	gitIn(t, dir, "checkout", "-q", "-b", "djinn/gates")
+	writeFileAt(t, filepath.Join(dir, ProjectConfigFiles[1]), teamYAML("setup: \"echo gates\"\n"))
+	commitAs(t, dir, "refs/remotes/origin/djinn/gates")
+	s, err := LoadSettings(home, p)
+	if c := ProjectConfig(home, p); c.Ref != "origin/main" || c.ConfigBranch != "" {
+		t.Errorf("team names a config_branch: %+v", c)
+	}
+	if err != nil || s.Setup != "echo main" || s.ConfigBranch != "" ||
+		!slices.ContainsFunc(s.Warnings, func(w string) bool { return strings.Contains(w, "config_branch is ignored") }) {
+		t.Errorf("settings %q %q %v, %v", s.Setup, s.ConfigBranch, s.Warnings, err)
+	}
+}
+
+// TestProjectConfigBranchNotice (W178, Q110): djinn project set-branch --config names the configuration branch in the
+// developer's own file; djinn project show and the window's notice say the configuration is read there, not on the
+// reference branch, with the command that takes it back; the branch gone, a warning says Djinn reads main again.
+func TestProjectConfigBranchNotice(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	home := t.TempDir()
+	c := serve(t, WithHome(home), WithPusher(&refPusher{}))
+	p := configProject(t, map[string]string{".agents/djinn.yaml": teamYAML("setup: \"echo main\"\n")})
+	dir := p.GetDirectory()
+	gitIn(t, dir, "checkout", "-q", "-b", "djinn/gates")
+	writeFileAt(t, filepath.Join(dir, ProjectConfigFiles[1]), teamYAML("setup: \"echo gates\"\n"))
+	commitAs(t, dir, "refs/remotes/origin/djinn/gates")
+	gitIn(t, dir, "checkout", "-q", "main")
+	c.put(t, p)
+	set := func(branch string, unset bool) {
+		t.Helper()
+		if _, err := c.projects.SetBranch(ctx, connect.NewRequest(&planv1.ProjectServiceSetBranchRequest{
+			Project: "repo", Branch: branch, Unset: unset, Config: true,
+		})); err != nil {
+			t.Fatal(err)
+		}
+	}
+	show := func() (*planv1.ProjectServiceShowResponse, *planv1.ProjectNotice) {
+		t.Helper()
+		res, err := c.projects.Show(ctx, connect.NewRequest(&planv1.ProjectServiceShowRequest{Project: "repo"}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, n := range res.Msg.GetNotices() {
+			if n.GetTopic() == topicBranch && n.GetSubject() == "djinn/gates" {
+				return res.Msg, n
+			}
+		}
+		return res.Msg, nil
+	}
+	set("djinn/gates", false)
+	if dev, err := ReadSettings(DeveloperSettingsFile(home, p.GetId())); err != nil || dev.GetConfigBranch() != "djinn/gates" ||
+		dev.GetMainBranch() != "" {
+		t.Errorf("your file: %v, %v", dev, err)
+	}
+	res, n := show()
+	if ref := res.GetReference(); ref.GetBranch() != "main" || ref.GetConfigBranch() != "djinn/gates" ||
+		ref.GetConfigRef() != "origin/djinn/gates" {
+		t.Errorf("reference %v", ref)
+	}
+	if n.GetKind() != information || !strings.HasPrefix(n.GetText(), "Configuration read from origin/djinn/gates, not origin/main") ||
+		n.GetCommand() != "djinn project set-branch repo --config --unset" {
+		t.Errorf("notice %v", n)
+	}
+	if !slices.ContainsFunc(res.GetSettings(), func(s *planv1.ProjectSetting) bool {
+		return s.GetName() == "config_branch" && s.GetValue() == "djinn/gates" && s.GetDeveloper() == "djinn/gates"
+	}) {
+		t.Errorf("no config_branch row: %v", res.GetSettings())
+	}
+
+	gitIn(t, dir, "update-ref", "-d", "refs/remotes/origin/djinn/gates")
+	res, n = show()
+	if ref := res.GetReference(); ref.GetConfigBranch() != "djinn/gates" || ref.GetConfigRef() != "" {
+		t.Errorf("branch gone: reference %v", ref)
+	}
+	if n.GetKind() != warning || !strings.HasPrefix(n.GetText(), "config_branch djinn/gates is not on the remote") ||
+		!strings.Contains(n.GetText(), "reads the configuration on origin/main") {
+		t.Errorf("branch gone: notice %v", n)
+	}
+
+	set("", true)
+	if res, n := show(); n != nil || res.GetReference().GetConfigBranch() != "" {
+		t.Errorf("unset: notice %v, reference %v", n, res.GetReference())
+	}
+}
+
 // TestProjectConfigSubfolder (W150): a project in a folder of its repository reads that folder of the tree.
 func TestProjectConfigSubfolder(t *testing.T) {
 	t.Parallel()
 	home := t.TempDir()
 	root := configProject(t, map[string]string{
-		".agents/settings.txtpb":     "setup: \"echo root\"\n",
-		"app/.agents/settings.txtpb": "setup: \"echo app\"\n",
+		".agents/djinn.yaml":     teamYAML("setup: \"echo root\"\n"),
+		"app/.agents/djinn.yaml": teamYAML("setup: \"echo app\"\n"),
 	})
 	p := &planv1.Project{Id: store.NewID(), Directory: filepath.Join(root.GetDirectory(), "app"), Git: true}
-	writeFileAt(t, filepath.Join(p.GetDirectory(), SettingsFile), "setup: \"echo copy\"\n")
+	writeFileAt(t, filepath.Join(p.GetDirectory(), ProjectConfigFiles[1]), teamYAML("setup: \"echo copy\"\n"))
 	if s, _ := LoadSettings(home, p); s.Setup != "echo app" || !ProjectConfig(home, p).FromReference() {
 		t.Errorf("setup %q, want app's on origin/main", s.Setup)
 	}
@@ -371,7 +548,7 @@ func TestExtractConfig(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
 	home := t.TempDir()
-	p := configProject(t, map[string]string{".agents/settings.txtpb": "setup: \"echo team\"\n"})
+	p := configProject(t, map[string]string{".agents/djinn.yaml": teamYAML("setup: \"echo team\"\n")})
 	dir := p.GetDirectory()
 	if got, err := extractConfig(ctx, home, dir, ""); err == nil || got != "" {
 		t.Errorf("empty sha: got (%q, %v), want an error", got, err)
@@ -394,7 +571,7 @@ func TestExtractConfig(t *testing.T) {
 func TestProjectConfigMemoUnsettled(t *testing.T) {
 	t.Parallel()
 	home := t.TempDir()
-	p := configProject(t, map[string]string{".agents/settings.txtpb": "setup: \"echo one\"\n"})
+	p := configProject(t, map[string]string{".agents/djinn.yaml": teamYAML("setup: \"echo one\"\n")})
 	dir := p.GetDirectory()
 	kept := ProjectConfig(home, p)
 	key := home + "\x00" + dir
@@ -404,7 +581,7 @@ func TestProjectConfigMemoUnsettled(t *testing.T) {
 	if !found {
 		t.Fatal("ProjectConfig did not keep its memo while files are fresh")
 	}
-	writeFileAt(t, filepath.Join(dir, SettingsFile), "setup: \"echo two\"\n")
+	writeFileAt(t, filepath.Join(dir, ProjectConfigFiles[1]), teamYAML("setup: \"echo two\"\n"))
 	commitAs(t, dir, "refs/remotes/origin/main")
 	if got := ProjectConfig(home, p); got.Commit == kept.Commit {
 		t.Errorf("after ref update in same settle window: Commit=%q unchanged", got.Commit)

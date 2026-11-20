@@ -3,6 +3,7 @@ package plan
 import (
 	"bufio"
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"buf.build/go/protovalidate"
@@ -22,12 +24,29 @@ import (
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	uiv1 "github.com/empowill/djinn/gen/go/ui/v1"
 	"github.com/empowill/djinn/internal/fsx"
+	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/store"
 )
 
-// SettingsFile is where a project's repository keeps the settings its team shares: a plan.v1.ProjectSettings in
-// text protobuf, next to the permissions in .agents.
-var SettingsFile = filepath.Join(".agents", "settings.txtpb")
+// StaleSettingsFile is where a project's repository kept the settings its team shares, in text protobuf, before they
+// moved under settings: in its djinn.yaml (TeamSettingsFile, Q55): Djinn no longer reads it, and says so when it finds
+// one where it reads the project's configuration.
+var StaleSettingsFile = filepath.Join(".agents", "settings.txtpb")
+
+// staleSettingsWarned holds the folders whose stale settings file is logged: once each, not on every read.
+var staleSettingsWarned sync.Map
+
+// TeamSettingsFile is the file of the project laid out in dir that holds the settings its team shares, under
+// settings: (plan.v1.ProjectSettings), beside the rest of Djinn's configuration (ProjectConfigFiles): the first of
+// them dir holds, else .agents/djinn.yaml, where a project writes it.
+func TeamSettingsFile(dir string) string {
+	for _, f := range ProjectConfigFiles {
+		if exists(filepath.Join(dir, f)) {
+			return filepath.Join(dir, f)
+		}
+	}
+	return filepath.Join(dir, ProjectConfigFiles[1])
+}
 
 // DeveloperSettingsFile is where the developer keeps their own settings of a project, in Djinn's data folder home.
 func DeveloperSettingsFile(home, projectID string) string {
@@ -86,15 +105,23 @@ func readSettingsNamed(path, name string) (*planv1.ProjectSettings, []string, er
 	if err := protovalidate.Validate(s); err != nil {
 		return nil, nil, fmt.Errorf("%s: %w", name, err)
 	}
+	if err := uniqueCheckNames(s); err != nil {
+		return nil, nil, fmt.Errorf("%s: %w", name, err)
+	}
+	return s, warnings, nil
+}
+
+// uniqueCheckNames refuses settings s with two checks of one name: names ignore case.
+func uniqueCheckNames(s *planv1.ProjectSettings) error {
 	seen := map[string]bool{}
 	for _, c := range s.GetChecks() {
 		lower := strings.ToLower(c.GetName())
 		if seen[lower] {
-			return nil, nil, fmt.Errorf("%s: two checks are named %s: names ignore case", name, c.GetName())
+			return fmt.Errorf("two checks are named %s: names ignore case", c.GetName())
 		}
 		seen[lower] = true
 	}
-	return s, warnings, nil
+	return nil
 }
 
 var (
@@ -210,9 +237,18 @@ type Settings struct {
 	// ServeCommands are the commands, or their starts, the developer lets an ifrit's serve run in the project besides
 	// those its .agents/permissions.txtpb lists: from their own file only.
 	ServeCommands []string
+	// GatesOff are the gates the project declares in its djinn.yaml that the developer turns off on their machine:
+	// from their own file only.
+	GatesOff []string
+	// ConfigBranch is the branch the developer reads the project's configuration on, to try it before it merges
+	// (config_branch): from their own file only. Where Djinn reads it in the end is ProjectConfig's.
+	ConfigBranch string
 	// InstallBuilds says whether a build of the running Djinn's line, once pushed, installs by itself (W554).
 	InstallBuilds bool
-	Warnings      []string
+	// Instructions are what the project's workers are told, by kind (W114, Q70 B), one row per text: from the
+	// repository's file and the developer's in ResolveSettings, with the Summoning Circle's below them in LoadSettings.
+	Instructions []*planv1.WorkerInstruction
+	Warnings     []string
 
 	ProviderFrom, ModelFrom, BudgetFrom, BranchFrom, GeneratedFrom, GenerateFrom, SetupFrom            planv1.SettingSource
 	ChecksFrom, AttemptsFrom, InstallFrom, TestOneFrom                                                 planv1.SettingSource
@@ -220,7 +256,7 @@ type Settings struct {
 	QuestionProviderFrom, QuestionModelFrom, QuestionBudgetFrom                                        planv1.SettingSource
 	MainBranchFrom, MergeMainFrom, MergeMainEveryFrom, InstallReleasesFrom, PushFrom, PushStrategyFrom planv1.SettingSource
 	InstallQuestionsFrom, BabysitFrom, WatchCommandsFrom, InstallBuildsFrom                            planv1.SettingSource
-	ServeCommandsFrom                                                                                  planv1.SettingSource
+	ServeCommandsFrom, GatesOffFrom, ConfigBranchFrom                                                  planv1.SettingSource
 }
 
 // CanReadOnly tells whether a provider can run a question worker (read-only).
@@ -281,7 +317,8 @@ func ResolveSettings(repo, dev *planv1.ProjectSettings) Settings {
 		PushStrategy:     planv1.PushStrategy_PUSH_STRATEGY_WISH,
 		InstallQuestions: DefaultInstallQuestions,
 		MainBranchFrom:   def, MergeMainFrom: def, MergeMainEveryFrom: def, InstallReleasesFrom: def, PushFrom: def, PushStrategyFrom: def,
-		InstallQuestionsFrom: def, Babysit: true, BabysitFrom: def, WatchCommandsFrom: def, ServeCommandsFrom: def, InstallBuilds: true, InstallBuildsFrom: def,
+		InstallQuestionsFrom: def, Babysit: true, BabysitFrom: def, WatchCommandsFrom: def, ServeCommandsFrom: def, GatesOffFrom: def, InstallBuilds: true, InstallBuildsFrom: def,
+		ConfigBranchFrom: def,
 	}
 	questionModel := false // a file set it
 	for _, f := range []struct {
@@ -373,7 +410,16 @@ func ResolveSettings(repo, dev *planv1.ProjectSettings) Settings {
 		if len(f.settings.GetServeCommands()) > 0 && f.from == planv1.SettingSource_SETTING_SOURCE_DEVELOPER {
 			s.ServeCommands, s.ServeCommandsFrom = f.settings.GetServeCommands(), f.from
 		}
+		// A repository declares its gates in its djinn.yaml: it never turns them off.
+		if len(f.settings.GetGatesOff()) > 0 && f.from == planv1.SettingSource_SETTING_SOURCE_DEVELOPER {
+			s.GatesOff, s.GatesOffFrom = f.settings.GetGatesOff(), f.from
+		}
+		// A repository never points Djinn at another branch for its own configuration: an agent's commit could.
+		if f.settings.GetConfigBranch() != "" && f.from == planv1.SettingSource_SETTING_SOURCE_DEVELOPER {
+			s.ConfigBranch, s.ConfigBranchFrom = f.settings.GetConfigBranch(), f.from
+		}
 	}
+	s.Instructions = ResolveInstructions(nil, repo.GetInstructions(), dev.GetInstructions())
 	effective := s.QuestionProvider
 	if effective == planv1.Provider_PROVIDER_UNSPECIFIED {
 		if CanReadOnly(s.Provider) {
@@ -396,7 +442,7 @@ func ResolveSettings(repo, dev *planv1.ProjectSettings) Settings {
 // and the developer's in home, empty without home.
 func settingsFiles(home string, project *planv1.Project) (repo, dev string) {
 	if project.GetDirectory() != "" {
-		repo = filepath.Join(project.GetDirectory(), SettingsFile)
+		repo = TeamSettingsFile(project.GetDirectory())
 	}
 	if home != "" && project.GetId() != "" {
 		dev = DeveloperSettingsFile(home, project.GetId())
@@ -405,10 +451,12 @@ func settingsFiles(home string, project *planv1.Project) (repo, dev string) {
 }
 
 // LoadSettings reads the settings of project (nil outside any project): its repository's, then the developer's in
-// Djinn's data folder home. A file that cannot be read is an error that names it.
+// Djinn's data folder home; the workers' instructions take the Summoning Circle's, in home, below both. A file that
+// cannot be read is an error that names it.
 func LoadSettings(home string, project *planv1.Project) (Settings, error) {
 	repo, dev, warnings, problems := loadSettings(home, project)
 	s := ResolveSettings(repo, dev)
+	s.Instructions = ResolveInstructions(ReadMachineInstructions(home), repo.GetInstructions(), dev.GetInstructions())
 	s.Warnings = warnings
 	return s, errors.Join(problems...)
 }
@@ -443,6 +491,8 @@ type settingsRead struct {
 	// path is the file; team tells the repository's from the developer's.
 	path string
 	team bool
+	// file is the team's file, relative to the project, with slashes: .agents/djinn.yaml or djinn.yaml.
+	file string
 	// settings are what it holds; nil without the file, or when it cannot be read: err says why.
 	settings *planv1.ProjectSettings
 	err      error
@@ -451,10 +501,52 @@ type settingsRead struct {
 }
 
 // settingsWarning is a thing a settings file holds that Djinn ignores; ignored says a line to remove, not a field a
-// newer Djinn knows.
+// newer Djinn knows; stale says the team's settings file Djinn no longer reads (StaleSettingsFile); elsewhere says a
+// field of djinn.yaml, which the notices of djinn.yaml already say (projectConfigNotices); file is the stale file, in
+// the project's folder.
 type settingsWarning struct {
-	text    string
-	ignored bool
+	text      string
+	ignored   bool
+	stale     bool
+	elsewhere bool
+	file      string
+}
+
+// readTeamSettings reads the settings project's team shares, where Djinn reads its configuration (config): the
+// settings: section of its djinn.yaml (ReadProjectConfig). A djinn.yaml Djinn cannot read is an error that names it,
+// with the reference branch it was read on; a field of the section it does not know is a warning. A settings.txtpb
+// left in .agents is not read: a warning says where its settings go, and the log says it once.
+func readTeamSettings(project *planv1.Project, config Config) settingsRead {
+	f := settingsRead{team: true}
+	read, err := ReadProjectConfig(config.Dir)
+	f.file = cmp.Or(read.File, filepath.ToSlash(ProjectConfigFiles[1]))
+	f.path = filepath.Join(project.GetDirectory(), filepath.FromSlash(f.file))
+	name := config.Named(filepath.Join(config.Dir, filepath.FromSlash(f.file)))
+	if err != nil {
+		if config.FromReference() {
+			err = fmt.Errorf("%s:%w", config.Ref, err) // the error names the file: origin/main:.agents/djinn.yaml: ...
+		}
+		f.err = err
+	} else {
+		f.settings = read.Settings
+		for _, u := range read.Unknown {
+			if field, ok := strings.CutPrefix(u, settingsSection+"."); ok {
+				f.warnings = append(f.warnings, settingsWarning{text: WarnUnknownField(name, field), elsewhere: true})
+			}
+		}
+	}
+	if stale := filepath.Join(config.Dir, StaleSettingsFile); exists(stale) {
+		staleName := config.Named(stale)
+		if _, seen := staleSettingsWarned.LoadOrStore(stale, true); !seen {
+			logx.L().Warn("stale team settings file: Djinn no longer reads it, its settings go under settings: in "+
+				filepath.ToSlash(ProjectConfigFiles[1]), "file", staleName)
+		}
+		f.warnings = append(f.warnings, settingsWarning{
+			stale: true, file: filepath.Join(project.GetDirectory(), StaleSettingsFile),
+			text: staleName + ": Djinn no longer reads this file: the team's settings go under settings: in " + f.file,
+		})
+	}
+	return f
 }
 
 // readSettingsFiles reads the files of project: the repository's, then the developer's; a file project has no path
@@ -476,19 +568,29 @@ func readSettingsFilesConfig(home string, project *planv1.Project, config Config
 		if f.path == "" {
 			continue
 		}
-		if !f.team {
-			migrateDeveloperSettingsFile(home, f.path)
-		}
-		read, name := f.path, f.path
 		if f.team {
-			// The team's file is read where Djinn reads the project's configuration: the reference branch's tree.
-			read = filepath.Join(config.Dir, SettingsFile)
-			name = config.Named(read)
+			f = readTeamSettings(project, config)
+		} else {
+			var w []string
+			f.settings, w, f.err = readSettingsNamed(f.path, f.path)
+			for _, text := range w {
+				f.warnings = append(f.warnings, settingsWarning{text: text})
+			}
 		}
-		var w []string
-		f.settings, w, f.err = readSettingsNamed(read, name)
-		for _, text := range w {
-			f.warnings = append(f.warnings, settingsWarning{text: text})
+		name := f.path
+		if f.team {
+			name = config.Named(filepath.Join(config.Dir, filepath.FromSlash(f.file)))
+		}
+		if f.err == nil && f.team && config.ReferenceDir != "" {
+			// The configuration branch's file never moves the reference branch: main_branch stays the reference's.
+			reference, _ := ReadProjectConfig(config.ReferenceDir)
+			if f.settings.GetMainBranch() != reference.Settings.GetMainBranch() {
+				if f.settings == nil {
+					f.settings = &planv1.ProjectSettings{}
+				}
+				f.settings = proto.CloneOf(f.settings)
+				f.settings.MainBranch = reference.Settings.MainBranch
+			}
 		}
 		if f.err == nil && f.team && config.TeamBranch != "" && f.settings.GetMainBranch() == "" {
 			// The default branch's tree named the reference branch, whose own tree does not: it stays the reference.
@@ -508,6 +610,16 @@ func readSettingsFilesConfig(home string, project *planv1.Project, config Config
 				f.warnings = append(f.warnings, settingsWarning{ignored: true, text: name + ": serve_commands is " +
 					"ignored: a developer allows a serve command in their own file (djinn project allow --serve), the " +
 					"repository lists its commands in .agents/permissions.txtpb"})
+			}
+			if len(f.settings.GetGatesOff()) > 0 {
+				f.warnings = append(f.warnings, settingsWarning{ignored: true, text: name + ": gates_off is " +
+					"ignored: a developer turns a gate off in their own file (djinn project gates --off), the " +
+					"repository declares its gates in its djinn.yaml"})
+			}
+			if f.settings.GetConfigBranch() != "" {
+				f.warnings = append(f.warnings, settingsWarning{ignored: true, text: name + ": config_branch is " +
+					"ignored: a developer names the branch Djinn reads the configuration on in their own file (djinn " +
+					"project set-branch --config), to try it before it merges"})
 			}
 		}
 		out = append(out, f)
@@ -550,7 +662,34 @@ func (s Settings) Rows() []*planv1.ProjectSetting {
 		{Name: "babysit", Value: strconv.FormatBool(s.Babysit), Source: s.BabysitFrom},
 		{Name: "watch_commands", Value: strings.Join(s.WatchCommands, "; "), Source: s.WatchCommandsFrom},
 		{Name: "serve_commands", Value: strings.Join(s.ServeCommands, "; "), Source: s.ServeCommandsFrom},
+		{Name: "gates_off", Value: strings.Join(s.GatesOff, ", "), Source: s.GatesOffFrom},
+		{Name: "config_branch", Value: s.ConfigBranch, Source: s.ConfigBranchFrom},
 	}
+}
+
+// SettingRows are the settings Djinn retains from the repository's file repo and the developer's dev, either nil when
+// there is none, each with its value in each file alone: unset where that file does not set it.
+func SettingRows(repo, dev *planv1.ProjectSettings) []*planv1.ProjectSetting {
+	rows := ResolveSettings(repo, dev).Rows()
+	byName := make(map[string]*planv1.ProjectSetting, len(rows))
+	for _, r := range rows {
+		byName[r.GetName()] = r
+	}
+	if repo != nil {
+		for _, r := range ResolveSettings(repo, nil).Rows() {
+			if r.GetSource() == planv1.SettingSource_SETTING_SOURCE_REPOSITORY {
+				byName[r.GetName()].Repository = proto.String(r.GetValue())
+			}
+		}
+	}
+	if dev != nil {
+		for _, r := range ResolveSettings(nil, dev).Rows() {
+			if r.GetSource() == planv1.SettingSource_SETTING_SOURCE_DEVELOPER {
+				byName[r.GetName()].Developer = proto.String(r.GetValue())
+			}
+		}
+	}
+	return rows
 }
 
 // questionProviderName is the name of the question provider, as the settings write it: "" when not set.
@@ -685,6 +824,24 @@ func AllowServe(home, projectID, command string, revoke bool) ([]string, error) 
 	return s.GetServeCommands(), err
 }
 
+// GatesOff turns the gate name off for the developer in the project, in their settings file in home, or back on
+// with on: the gates turned off then.
+func GatesOff(home, projectID, name string, on bool) ([]string, error) {
+	s, err := saveDeveloper(home, projectID, func(s *planv1.ProjectSettings) error {
+		at := slices.Index(s.GatesOff, name)
+		switch {
+		case on && at < 0:
+			return fmt.Errorf("you did not turn the gate %s off", name)
+		case on:
+			s.GatesOff = slices.Delete(s.GatesOff, at, at+1)
+		case at < 0:
+			s.GatesOff = append(s.GatesOff, name)
+		}
+		return nil
+	})
+	return s.GetGatesOff(), err
+}
+
 // allowIn adds command, its words joined by single spaces, to the commands of what (watcher, serve), or takes it
 // back with revoke.
 func allowIn(commands *[]string, what, command string, revoke bool) error {
@@ -729,6 +886,19 @@ func SaveDeveloperMainBranch(home, projectID, branch string) error {
 		s.MainBranch = nil
 		if branch != "" {
 			s.MainBranch = &branch
+		}
+		return nil
+	})
+	return err
+}
+
+// SaveDeveloperConfigBranch writes branch as the config_branch setting of the developer's settings file in home, or
+// removes it when branch is empty: Djinn reads the configuration on the reference branch again.
+func SaveDeveloperConfigBranch(home, projectID, branch string) error {
+	_, err := saveDeveloper(home, projectID, func(s *planv1.ProjectSettings) error {
+		s.ConfigBranch = nil
+		if branch != "" {
+			s.ConfigBranch = &branch
 		}
 		return nil
 	})
@@ -874,21 +1044,31 @@ func ValidateQuestionModel(workerProvider, questionProvider planv1.Provider, mod
 
 var devModelLine = regexp.MustCompile(`(?m)^[ \t]*(provider|model|question_provider|question_model)[ \t]*:.*(?:\r?\n|$)`)
 
-// migrateDeveloperSettingsFile reads any legacy per-project provider/model choices from devFile once as the starting
-// value of the Summoning Circle in home, normalizing labels to canonical model IDs, then drops them from devFile.
-func migrateDeveloperSettingsFile(home, devFile string) {
-	if home == "" || devFile == "" {
-		return
-	}
+// migrateDeveloperSettingsFile moves the per-project provider/model choices of devFile, a developer's settings file,
+// to the Summoning Circle in home when it is not configured yet, normalizing labels to canonical model IDs; then it
+// drops those lines from devFile. A value that cannot move (a provider or model this build refuses, or a question model
+// whose provider cannot run read-only) is dropped all the same, and so is every line once the circle is configured (a
+// lead seat or a row in settings.json, a row set to "Same as lead" included: Q67): the circle chooses the workers'
+// seats then, and the stale line only showed a wrong provider in the project's settings (L20, Q56 A). The rows the
+// lines do not fill are written "Same as lead" (fillCircle). No worker changes model. It returns an error, devFile left as it is,
+// when devFile cannot be read as settings (a secret, a removed key, a line protobuf refuses) or the circle cannot be
+// written. A file without those lines is not written: running it twice changes nothing.
+func migrateDeveloperSettingsFile(home, devFile string) error {
 	b, err := os.ReadFile(devFile)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
 	if err != nil {
-		return
+		return err
+	}
+	if !devModelLine.Match(b) {
+		return nil
 	}
 	if line, _ := secretIn(b); line > 0 {
-		return
+		return fmt.Errorf("%s: line %d looks like a secret", devFile, line)
 	}
-	if line, _ := removedKeyIn(b); line > 0 {
-		return
+	if line, key := removedKeyIn(b); line > 0 {
+		return fmt.Errorf("%s: line %d holds the removed key %s", devFile, line, key)
 	}
 	s := &planv1.ProjectSettings{}
 	normalized := normalizeInstallQuestions.ReplaceAllFunc(b, func(match []byte) []byte {
@@ -902,12 +1082,15 @@ func migrateDeveloperSettingsFile(home, devFile string) {
 	})
 	opts := prototext.UnmarshalOptions{DiscardUnknown: true}
 	if err := opts.Unmarshal(normalized, s); err != nil {
-		return
+		return fmt.Errorf("%s: %w", devFile, err)
 	}
 	hasWorker := s.Provider != nil || s.Model != nil
 	hasQuestion := s.QuestionProvider != nil || s.QuestionModel != nil
-	if !hasWorker && !hasQuestion {
-		return
+	if circleConfigured(readSettings(home)) {
+		// The circle chooses every worker's seat already (ResolveWorkerSeat): the lines are dropped, and no worker
+		// changes model.
+		logx.L().Info("the stale seats of a project's settings are dropped: the circle is configured", "file", devFile)
+		hasWorker, hasQuestion = false, false
 	}
 
 	var workerProvider planv1.Provider
@@ -922,7 +1105,9 @@ func migrateDeveloperSettingsFile(home, devFile string) {
 			workerModel = DefaultCircleModel(workerProvider)
 		}
 		if !ValidWorkerProvider(workerProvider) || ValidateProviderModel(workerProvider, workerModel) != nil {
-			return
+			logx.L().Info("a stale worker seat of a project's settings is dropped, not moved to the circle",
+				"file", devFile, "provider", s.GetProvider().String(), "model", s.GetModel())
+			hasWorker = false
 		}
 	}
 
@@ -945,46 +1130,51 @@ func migrateDeveloperSettingsFile(home, devFile string) {
 			qModel = DefaultCircleModel(qProvider)
 		}
 		if !CanReadOnly(qProvider) || ValidateProviderModel(qProvider, qModel) != nil {
-			return
+			logx.L().Info("a stale question seat of a project's settings is dropped, not moved to the circle",
+				"file", devFile, "question_provider", s.GetQuestionProvider().String(), "question_model", s.GetQuestionModel())
+			hasQuestion = false
 		}
 	}
 
-	_ = changeSettings(home, func(settings *uiv1.Settings) error {
-		setIfMissing := func(kind planv1.WorkerKind, p planv1.Provider, m string) {
-			for _, row := range settings.Circle {
-				if row.GetKind() == kind && (row.GetProvider() != planv1.Provider_PROVIDER_UNSPECIFIED || row.GetModel() != "") {
+	if hasWorker || hasQuestion {
+		err := changeSettings(home, func(settings *uiv1.Settings) error {
+			setIfMissing := func(kind planv1.WorkerKind, p planv1.Provider, m string) {
+				// A written row is configured, "Same as lead" included: the project's value never fills it (Q67).
+				if slices.ContainsFunc(settings.Circle, func(r *planv1.WorkerSeat) bool { return r.GetKind() == kind }) {
 					return
 				}
+				settings.Circle = setCircleRowSlice(settings.Circle, &planv1.WorkerSeat{
+					Kind:     kind,
+					Provider: p,
+					Model:    m,
+				})
 			}
-			settings.Circle = setCircleRowSlice(settings.Circle, &planv1.WorkerSeat{
-				Kind:     kind,
-				Provider: p,
-				Model:    m,
-			})
-		}
-		if hasWorker {
-			for _, kind := range []planv1.WorkerKind{
-				planv1.WorkerKind_WORKER_KIND_INVESTIGATION,
-				planv1.WorkerKind_WORKER_KIND_MOCKUP,
-				planv1.WorkerKind_WORKER_KIND_IFRIT,
-				planv1.WorkerKind_WORKER_KIND_WORK,
-				planv1.WorkerKind_WORKER_KIND_CORRECTION,
-				planv1.WorkerKind_WORKER_KIND_REVIEW,
-			} {
-				if kind == planv1.WorkerKind_WORKER_KIND_IFRIT && !CanIfrit(workerProvider) {
-					continue
+			if hasWorker {
+				for _, kind := range []planv1.WorkerKind{
+					planv1.WorkerKind_WORKER_KIND_INVESTIGATION,
+					planv1.WorkerKind_WORKER_KIND_MOCKUP,
+					planv1.WorkerKind_WORKER_KIND_IFRIT,
+					planv1.WorkerKind_WORKER_KIND_WORK,
+					planv1.WorkerKind_WORKER_KIND_CORRECTION,
+					planv1.WorkerKind_WORKER_KIND_REVIEW,
+				} {
+					if kind == planv1.WorkerKind_WORKER_KIND_IFRIT && !CanIfrit(workerProvider) {
+						continue
+					}
+					setIfMissing(kind, workerProvider, workerModel)
 				}
-				setIfMissing(kind, workerProvider, workerModel)
 			}
+			if hasQuestion {
+				setIfMissing(planv1.WorkerKind_WORKER_KIND_QUESTION, qProvider, qModel)
+			}
+			return nil
+		})
+		if err != nil {
+			// The lines stay: the circle did not take them, and the next start tries again.
+			return fmt.Errorf("write the circle: %w", err)
 		}
-		if hasQuestion {
-			setIfMissing(planv1.WorkerKind_WORKER_KIND_QUESTION, qProvider, qModel)
-		}
-		return nil
-	})
-
-	stripped := devModelLine.ReplaceAll(b, nil)
-	_ = fsx.WriteAtomic(devFile, stripped, 0o600)
+	}
+	return fsx.WriteAtomic(devFile, devModelLine.ReplaceAll(b, nil), 0o600)
 }
 
 // ResolveWishPushStrategy resolves the push strategy and its source for a wish, falling back to the project settings.
