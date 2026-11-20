@@ -409,9 +409,26 @@ func TestLookAtConfigBranchChange(t *testing.T) {
 		t.Errorf("watch %v", shown.GetWatch())
 	}
 	if got := lineTexts(shown.GetChanges()[0].GetLines()); !slices.Equal(got, []string{
-		"The reference branch is now origin/dev, not origin/main: Djinn reads the configuration there.",
+		"Djinn now reads the configuration on origin/dev, not origin/main.",
 		"The setup is now make.",
 	}) {
 		t.Errorf("a branch change: %q", got)
+	}
+}
+
+// TestWithoutPermissions (W178): on the developer's configuration branch, the journal tells no change of the
+// permissions, which Djinn reads on the reference branch: a change that told only them is left out.
+func TestWithoutPermissions(t *testing.T) {
+	t.Parallel()
+	perm := line(topicPermissions, ".agents/permissions.txtpb", true, "A command is allowed.")
+	setup := line(topicSettings, ".agents/djinn.yaml", false, "The setup changes.")
+	got := withoutPermissions([]*planv1.ConfigChange{
+		{Commit: "a", Lines: []*planv1.ConfigChangeLine{perm}},
+		{Commit: "b", Lines: []*planv1.ConfigChangeLine{perm, setup}},
+		{Commit: "c"},
+	})
+	if len(got) != 2 || got[0].GetCommit() != "b" || len(got[0].GetLines()) != 1 || got[0].GetLines()[0] != setup ||
+		got[1].GetCommit() != "c" {
+		t.Errorf("withoutPermissions = %v", got)
 	}
 }

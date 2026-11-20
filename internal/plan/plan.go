@@ -473,7 +473,7 @@ func (p *Projects) Show(
 	}
 	if dir := filled.config.Dir; dir != "" {
 		// What cannot be read here is said by the notices already: the page shows nothing of it.
-		if perms, _, err := ReadPermissions(dir); err == nil {
+		if perms, _, err := ReadPermissions(cmp.Or(filled.config.ReferenceDir, dir)); err == nil {
 			out.Permissions = perms
 		}
 		if read, err := ReadProjectConfig(dir); err == nil {
@@ -770,7 +770,8 @@ func remoteBranches(ctx context.Context, dir, remote string) ([]string, error) {
 }
 
 // SetBranch writes the reference branch the developer chooses for a project as main_branch in their own settings
-// file, or takes it back with unset: never in the repository. A branch the repository does not hold is refused.
+// file, or takes it back with unset: never in the repository. With config, the branch Djinn reads the configuration
+// on instead, as config_branch. A branch the repository does not hold is refused.
 func (p *Projects) SetBranch(
 	ctx context.Context, req *connect.Request[planv1.ProjectServiceSetBranchRequest],
 ) (*connect.Response[planv1.ProjectServiceSetBranchResponse], error) {
@@ -795,8 +796,12 @@ func (p *Projects) SetBranch(
 			return nil, connect.NewError(connect.CodeFailedPrecondition, err)
 		}
 	}
+	save := SaveDeveloperMainBranch
+	if req.Msg.GetConfig() {
+		save = SaveDeveloperConfigBranch
+	}
 	err = write(ctx, p.Store, req.Spec(), req.Msg, func(*store.Tx) error {
-		if err := SaveDeveloperMainBranch(p.Home, project.GetId(), branch); err != nil {
+		if err := save(p.Home, project.GetId(), branch); err != nil {
 			return connect.NewError(connect.CodeFailedPrecondition, err)
 		}
 		return nil

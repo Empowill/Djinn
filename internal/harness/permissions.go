@@ -197,7 +197,7 @@ func decideAccess(
 	if project == nil {
 		return planv1.TaskAccess_TASK_ACCESS_READ_ONLY, nil, nil
 	}
-	p, err := LoadPermissions(plan.ConfigDir(home, project))
+	p, err := LoadPermissions(plan.PermissionsDir(home, project))
 	switch {
 	case err != nil:
 		return planv1.TaskAccess_TASK_ACCESS_UNSPECIFIED, nil, err

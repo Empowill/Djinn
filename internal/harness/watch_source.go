@@ -185,7 +185,7 @@ func (h *Harness) readSources() (map[string]wantedSource, error) {
 		// The skill, not its folder: a folder of the cache changes with any change of the project's configuration.
 		key := fmt.Sprintf("%s\x00%s\x00%s\x00%s\x00%s", s.HolderID, s.Skill, s.ProjectID, s.Watch, s.Every)
 		p := byID[s.ProjectID]
-		out[key] = wantedSource{src: s, dir: p.GetDirectory(), config: plan.ConfigDir(h.home, p)}
+		out[key] = wantedSource{src: s, dir: p.GetDirectory(), config: plan.PermissionsDir(h.home, p)}
 	}
 	return out, nil
 }

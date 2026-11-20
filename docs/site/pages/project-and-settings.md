@@ -216,6 +216,15 @@ runs the project with; a fix counts once pushed and fetched, and a message about
 branch it read it on. The commands still run in the project's folder. A project outside Git, without a remote, or whose
 reference branch is not fetched yet, is read in its folder.
 
+To try a change of the configuration before it merges into a protected branch (a gate, a check, a container ceiling,
+a skill), name the branch that holds it as your configuration branch, with the project command set-branch and its
+config flag: it goes to your own file only, never the repository's. Djinn then reads the djinn.yaml and the skills on
+that branch, as your copy last fetched it. The permissions stay read on the reference branch, so that no agent's
+commit widens its own rights; pull requests, the merges of main and the worktrees keep the reference branch too. The
+project's configuration in the window, and its details on the command line, say "configuration read from" that
+branch, "not" the reference branch, with the command that takes it back. Once the branch merged and was deleted,
+Djinn reads the reference branch again by itself, and the notice says so until you take your choice back.
+
 ### The watch on the reference branch
 
 Every fifteen minutes, Djinn fetches the reference branch of each project, with its tags, and after each of its pushes

@@ -69,7 +69,8 @@ reads them again only when a fetch moves the reference branch. A message about a
 (`origin/main:.agents/djinn.yaml`); you fix it in your copy, and it counts once pushed and fetched. The commands
 (the setup, the checks, the sources) still run in the project's folder or the wish's worktree. A project outside Git,
 without a remote, or whose reference branch is not fetched yet, keeps its folder as the source. Your own file is always
-read in Djinn's data folder.
+read in Djinn's data folder. Your own `config_branch` moves the `djinn.yaml` and the skills to another branch, the
+permissions staying on the reference branch: see [trying the configuration on a branch](#trying-the-configuration-on-a-branch).
 
 Djinn watches that branch for you: every 5 minutes, and after each of its pushes, it fetches the reference branch alone
 (no tags), then compares the digest of the `.agents` and `.claude/skills` trees with the one of its last look; nothing
@@ -117,6 +118,13 @@ read from **your own file only**, never from the repository's (which lists its c
 | ---------------- | ----------------------------------------------------------------------- | ------- |
 | `watch_commands` | The commands a watcher may run in the project besides those `.agents/permissions.txtpb` lists, each a command or its start on a word boundary, repeated: see [what a watcher may run](wish-templates.md#what-a-watcher-may-run). The project's `denied_commands` still win. `djinn project allow <project> --watch '<command>'` adds one (`--revoke` takes it back), as does the Permissions tab of the project's settings in the window ("Watcher commands you allow"); `djinn project show` lists them, from `DEVELOPER`. | none |
 | `serve_commands` | The commands an ifrit's serve may run in the project (`djinn serve run`, its command and its `--stop` command) besides those `.agents/permissions.txtpb` lists, by the same rule as `watch_commands`, read from your own file only. The project's `denied_commands` still win. `djinn project allow <project> --serve '<command>'` adds one (`--revoke` takes it back); `djinn project show` lists them, from `DEVELOPER`. | none |
+
+One more names where Djinn reads the configuration, from **your own file only** (a `config_branch` in the team's
+`djinn.yaml` is ignored, a warning says so: an agent's commit could set it):
+
+| Setting          | What it sets                                                            | Not set |
+| ---------------- | ----------------------------------------------------------------------- | ------- |
+| `config_branch`  | The branch Djinn reads the project's `djinn.yaml` (settings, gates, containers) and skills on, rather than the reference branch, to try a change of them before it merges into a protected branch. `.agents/permissions.txtpb` and `main_branch` stay read on the reference branch, so that no agent widens its own rights; pull requests, `merge_main`, the merged detection and the worktrees keep `main_branch`. `djinn project set-branch <project> <branch> --config` writes it (refused for a branch the repository does not hold: fetch it first), `djinn project set-branch <project> --config --unset` takes it back. The branch gone from the remote, or not fetched: Djinn reads the reference branch, silently for the work, and a `branch` notice says so. See [trying the configuration on a branch](#trying-the-configuration-on-a-branch). | the reference branch |
 
 Four more set the *investigators*, the small tasks Djinn starts by itself on a question of a wish after
 "Enlighten me": `Q03: enlighten` investigates and revises the question (see [agent protocol](agent-protocol.md)).
@@ -261,7 +269,7 @@ on every read: the things to fix first, then the information. Each notice has a 
 | --- | --- | --- |
 | `settings` | A file Djinn cannot read (your own file, or the project's `djinn.yaml`) | A field a newer Djinn knows (a warning in `djinn.yaml`); `watch_commands` or `serve_commands` in the team's settings; a stale `.agents/settings.txtpb` Djinn no longer reads (a warning) |
 | `permissions` | `.agents/permissions.txtpb` Djinn cannot read: no worker, watcher nor source starts | A field a newer Djinn knows |
-| `branch` | No reference branch found, or the one `main_branch` names is not in the repository | Your copy has another branch checked out (Djinn reads the configuration on the reference branch all the same, and starts no worker from your copy) |
+| `branch` | No reference branch found, or the one `main_branch` names is not in the repository | Your copy has another branch checked out (Djinn reads the configuration on the reference branch all the same, and starts no worker from your copy); your `config_branch`: the configuration read there, not on the reference branch, or (a warning) gone from the remote and read on the reference branch, with the `command` that takes it back |
 | `setup` | The setup's last run failed, with the command it still is | |
 | `skill` | A `SKILL.md` Djinn cannot read; a wish template, inbox source or babysit it cannot use; a summoned skill it no longer finds | |
 | `source` | A source this machine has not decided on: plug it in, or unplug it to say no | A source plugged in that no skill declares any more |
@@ -272,7 +280,9 @@ on every read: the things to fix first, then the information. Each notice has a 
 `djinn project show` also gives the project's `reference`, its reference branch as Djinn finds it: the `branch`, the
 `ref` Djinn merges it from (`origin/main`), the `commit` that ref points at (empty when the repository does not hold
 it yet), the `source` of its name (`SETTING_SOURCE_DEFAULT` for the remote's default branch, else `main`, else `master`;
-otherwise the file whose `main_branch` names it) and the branch your copy has `checked_out`. The project's
+otherwise the file whose `main_branch` names it) and the branch your copy has `checked_out`; with your own
+`config_branch`, that `config_branch` and the `config_ref` Djinn reads the configuration on (`origin/djinn/gates`;
+empty while the branch is gone or not fetched, Djinn reading the reference branch). The project's
 configuration in the window shows the same, with each setting and where it comes from.
 
 It gives the `watch` too, how Djinn last looked at the reference branch: the `ref`, the `commit` and the `digest` of
@@ -289,6 +299,24 @@ branch the repository does not hold, on its remote when it has one (fetch it fir
 Djinn's default does. The project's configuration in the window does the same with **Change** under its reference
 branch, which lists the remote's branches as your copy last fetched them (`djinn project branches <project>
 --reference`).
+
+### Trying the configuration on a branch
+
+A change of `djinn.yaml` (a gate, a check, a setup, a container ceiling) or of a skill counts once it reaches the
+reference branch, often a protected branch that waits for a review. To try it before, point Djinn at the branch that
+holds it, on this machine only:
+
+```
+djinn project set-branch dolmen djinn/T17-dolmen-gate-stack --config
+djinn project show dolmen        # reference.config_ref: origin/djinn/T17-dolmen-gate-stack
+djinn project set-branch dolmen --config --unset
+```
+
+Djinn reads the configuration on that branch as your copy last fetched it, and its watch fetches it with the
+reference branch: the journal of changes follows it, without the permissions. `.agents/permissions.txtpb` and
+`main_branch` stay read on the reference branch: an agent that commits to the branch cannot widen its own rights nor
+move the base of the requests. Once the branch merged and was deleted, Djinn reads the reference branch again by
+itself; the `branch` notice says so ("not on the remote") until you take your choice back.
 
 The **Summoning Circle** in the window (below the Grimoire in the side panel; `djinn lead get-circle` and `djinn lead
 set-circle` on the command line) chooses the model for each kind of worker across all projects: Djinn (lead),

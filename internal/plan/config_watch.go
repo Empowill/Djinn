@@ -69,6 +69,13 @@ func LookAtConfig(ctx context.Context, st *store.Store, home string, project *pl
 		}
 		config = ProjectConfig(home, project)
 	}
+	if config.ConfigBranchMissing() && config.ConfigBranchRef != "" && fetch != nil {
+		// The developer's configuration branch, not fetched yet, or gone: then the reference branch holds (Q110), and
+		// its notice says so, not the watch.
+		if fetch(ctx, folder, config.ConfigBranchRef) == nil {
+			config = ProjectConfig(home, project)
+		}
+	}
 	watches, err := store.List[*planv1.ConfigWatch](ctx, st, store.Where{"project_id": project.GetId()})
 	if err != nil {
 		return err
@@ -95,6 +102,9 @@ func LookAtConfig(ctx context.Context, st *store.Store, home string, project *pl
 			changes = firstChanges(ctx, home, project, config, now)
 		case last.GetDigest() != digest:
 			changes = changesSince(ctx, st, home, project, last, config, now)
+		}
+		if config.ReferenceDir != "" {
+			changes = withoutPermissions(changes)
 		}
 	}
 	if last != nil && proto.Equal(last, next) {
@@ -250,6 +260,22 @@ func linesOrFiles(before, after string, plugged func(string) bool) []*planv1.Con
 		strings.Join(files, ", ") + "."}}
 }
 
+// withoutPermissions are changes without their lines on the permissions, those that tell nothing else left out: on the
+// developer's configuration branch, the permissions Djinn applies stay those of the reference branch.
+func withoutPermissions(changes []*planv1.ConfigChange) []*planv1.ConfigChange {
+	out := changes[:0]
+	for _, c := range changes {
+		had := len(c.GetLines())
+		c.Lines = slices.DeleteFunc(c.GetLines(), func(l *planv1.ConfigChangeLine) bool {
+			return l.GetTopic() == topicPermissions
+		})
+		if had == 0 || len(c.GetLines()) > 0 {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
 // firstChanges are the entries of the first look at project's reference branch: its last commits that changed the
 // configuration, told as history.
 func firstChanges(ctx context.Context, home string, project *planv1.Project, config Config, now time.Time) []*planv1.ConfigChange {
@@ -376,7 +402,7 @@ func wholeChange(ctx context.Context, home string, project *planv1.Project, last
 	}
 	if last.GetRef() != config.Ref {
 		change.Lines = append(change.Lines, line(topicBranch, config.Ref, false,
-			"The reference branch is now %s, not %s: Djinn reads the configuration there.", config.Ref, last.GetRef()))
+			"Djinn now reads the configuration on %s, not %s.", config.Ref, last.GetRef()))
 	}
 	change.Lines = append(change.Lines, linesOrFiles(before, config.Dir, plugged)...)
 	return change, nil

@@ -350,7 +350,10 @@
                   and one that comes to share it after it goes behind it; the machine's bounds hold all the same. The
                   reason a worker reads names the gate, its project and its file. A gate that is not valid is left out on
                   its own, said in the project's view; <code>djinn project gates --off stack</code> turns one off on your
-                  machine only.
+                  machine only. To try a stack before its file merges into a protected branch, point your own Djinn at
+                  the branch that holds it: <code>djinn project set-branch dolmen my-branch --config</code> reads the
+                  <code>djinn.yaml</code> and the skills there, the permissions staying on the reference branch, until
+                  <code>--config --unset</code> or the branch's deletion.
                 </p>
               </article>
               <article class="card word" id="word-machine">
