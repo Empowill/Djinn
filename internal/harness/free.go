@@ -549,13 +549,15 @@ func (h *Harness) freeTask(ctx context.Context, j freeJob) freed {
 		got.kept = append(got.kept, kept{part: machinev1.DiskFreeingPart_DISK_FREEING_PART_WORKTREE,
 			why: keepWhy{reason: machinev1.DiskFreeingReason_DISK_FREEING_REASON_NO_PROJECT, detail: dir}})
 	}
-	safe := func() []string { return h.safeTips(ctx, dir, t, !branchCut) }
+	safe := h.safeTips(ctx, t, !branchCut)
 	treeKept := len(got.kept) > 0
+	var saved []string // The heads of the worktrees removed, none of their commits unsaved.
 	for _, wt := range trees {
 		if treeKept {
 			break
 		}
-		if why := holdsWork(ctx, dir, wt, safe()); !why.none() {
+		why, head := holdsWork(ctx, dir, wt, safe)
+		if !why.none() {
 			got.kept, treeKept = append(got.kept, kept{part: machinev1.DiskFreeingPart_DISK_FREEING_PART_WORKTREE, why: why}), true
 			break
 		}
@@ -565,6 +567,7 @@ func (h *Harness) freeTask(ctx context.Context, j freeJob) freed {
 			break
 		}
 		got.worktree, got.bytes = true, got.bytes+sizes[wt]
+		saved = append(saved, head)
 	}
 	if treeKept {
 		return got // Its scratch and its branch stay with it.
@@ -587,9 +590,12 @@ func (h *Harness) freeTask(ctx context.Context, j freeJob) freed {
 	branch := func(why keepWhy) kept {
 		return kept{part: machinev1.DiskFreeingPart_DISK_FREEING_PART_BRANCH, why: why, branch: t.GetBranch()}
 	}
-	if why := unsaved(ctx, dir, tip, safe()); !why.none() {
-		got.kept = append(got.kept, branch(why))
-		return got
+	// Its worktree's head was counted against the same safe tips a moment ago: no need to count it again.
+	if !slices.Contains(saved, tip) {
+		if why := unsaved(ctx, dir, tip, safe); !why.none() {
+			got.kept = append(got.kept, branch(why))
+			return got
+		}
 	}
 	if _, err := git(ctx, dir, "branch", "-D", t.GetBranch()); err != nil {
 		got.kept = append(got.kept, branch(keepErr("", err)))
@@ -599,10 +605,10 @@ func (h *Harness) freeTask(ctx context.Context, j freeJob) freed {
 	return got
 }
 
-// safeTips are the commits whose history holds work safely, in the repository of dir: the integration branch t merged
-// into, the branches of its azimas, the project's current commit, and t's own branch when it stays. Each is named for a
-// log line as name=sha.
-func (h *Harness) safeTips(ctx context.Context, dir string, t *planv1.Task, keepBranch bool) []string {
+// safeTips are the commits whose history holds work safely: the integration branch t merged into, the branches of its
+// azimas, the project's current commit, and t's own branch when it stays. Each is name=revision, the revision left for
+// unsaved to resolve in the command that counts: a git process per tip and per look cost Windows 0.1 s each (W201).
+func (h *Harness) safeTips(ctx context.Context, t *planv1.Task, keepBranch bool) []string {
 	names := []string{t.GetIntegration().GetBranch()}
 	if keepBranch {
 		names = append(names, t.GetBranch())
@@ -617,51 +623,46 @@ func (h *Harness) safeTips(ctx context.Context, dir string, t *planv1.Task, keep
 		names = append(names, a.GetAzima().GetBranch())
 		id = a.GetPartOf()
 	}
-	var tips []string
-	if head, err := git(ctx, dir, "rev-parse", "--verify", "--quiet", "HEAD^{commit}"); err == nil && head != "" {
-		tips = append(tips, "HEAD="+head)
-	}
+	tips := []string{"HEAD=HEAD^{commit}"}
 	for _, n := range names {
-		if n == "" {
-			continue
-		}
-		if sha, err := git(ctx, dir, "rev-parse", "--verify", "--quiet", "refs/heads/"+n+"^{commit}"); err == nil && sha != "" {
-			tips = append(tips, n+"="+sha)
+		if n != "" && !slices.Contains(tips, n+"=refs/heads/"+n+"^{commit}") {
+			tips = append(tips, n+"=refs/heads/"+n+"^{commit}")
 		}
 	}
 	return tips
 }
 
 // holdsWork says why the worktree wt holds work, none when it holds none: changes not committed, or a HEAD with
-// commits found neither in the safe tips (safeTips) nor on the remote.
-func holdsWork(ctx context.Context, dir, wt string, safe []string) keepWhy {
+// commits found neither in the safe tips (safeTips) nor on the remote; and its head, "" for none.
+func holdsWork(ctx context.Context, dir, wt string, safe []string) (keepWhy, string) {
 	status, err := gitRaw(ctx, wt, "status", "--porcelain")
 	if err != nil {
-		return keepErr("its status could not be read: ", err)
+		return keepErr("its status could not be read: ", err), ""
 	}
 	if strings.TrimSpace(status) != "" {
-		return keepWhy{reason: machinev1.DiskFreeingReason_DISK_FREEING_REASON_UNCOMMITTED, detail: wt}
+		return keepWhy{reason: machinev1.DiskFreeingReason_DISK_FREEING_REASON_UNCOMMITTED, detail: wt}, ""
 	}
 	head, err := git(ctx, wt, "rev-parse", "--verify", "--quiet", "HEAD^{commit}")
 	if err != nil || head == "" {
-		return keepWhy{} // A worktree without a commit holds none.
+		return keepWhy{}, "" // A worktree without a commit holds none.
 	}
-	return unsaved(ctx, dir, head, safe)
+	return unsaved(ctx, dir, head, safe), head
 }
 
 // unsaved says how many commits of tip are found neither in the safe tips nor on any remote of the repository of dir,
-// none for none.
+// none for none. A safe tip that is not there (a branch never made, or deleted) is left out by --ignore-missing: it
+// saves nothing, so the count only grows. The flag comes after tip, which it would leave out too, counting 0.
 func unsaved(ctx context.Context, dir, tip string, safe []string) keepWhy {
-	args := []string{"rev-list", "--count", tip, "--not", "--remotes"}
+	args := []string{"rev-list", "--count", tip, "--ignore-missing", "--not", "--remotes"}
 	var names []string
 	for _, s := range safe {
-		name, sha, _ := strings.Cut(s, "=")
-		args = append(args, sha)
+		name, rev, _ := strings.Cut(s, "=")
+		args = append(args, rev)
 		if name != "HEAD" {
 			names = append(names, name)
 		}
 	}
-	out, err := git(ctx, dir, args...)
+	out, err := git(ctx, dir, append(args, "--")...)
 	if err != nil {
 		return keepErr("its commits could not be counted: ", err)
 	}
