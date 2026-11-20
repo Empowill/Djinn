@@ -59,6 +59,38 @@ func shows(t *testing.T, d *djinn) {
 	})
 }
 
+// TestNativeRelaunch: a page silent past the watch's threshold after its load finished, here 1 ms (DJINN_WINDOW_SILENCE,
+// test builds only), is logged with a probe of the page and the web processes' threads, then loads again once, told
+// nowhere else (decisions Q108, Q111); the page loaded again is silent too, only logged, and shows the interface.
+func TestNativeRelaunch(t *testing.T) {
+	d, log := watched(t, "DJINN_WINDOW_SILENCE=1ms")
+	logs(t, log, `msg="window: load" event=finished`, `msg="window: the page is silent" page=1 after=1ms probe="answered in `,
+		`\"ready\":\"complete\"`, "web_processes=", "WebKitWebProces", ", main ", ", threads ",
+		`msg="window: the page loads again" page=2 silent=true`, `msg="window: the page calls the server" page=2`)
+	shows(t, d)
+	if strings.Contains(d.out.String(), "djinn: Djinn's window") {
+		t.Errorf("a silent page is told on the output:\n%s", d.out.String())
+	}
+	if n := strings.Count(log(), `silent=true`); n != 1 {
+		t.Errorf("%d silent reloads; want one per djinn up:\n%s", n, log())
+	}
+	if web := webProcesses(t, d.cmd.Process.Pid); len(web) != 1 {
+		t.Errorf("web processes %v; want the same one, a reload keeps it", web)
+	}
+	t.Logf("probe: %s", lineOf(log(), "the page is silent"))
+	t.Logf("first call: %s", lineOf(log(), "the page calls the server"))
+}
+
+// lineOf is the first line of log that holds text.
+func lineOf(log, text string) string {
+	for _, line := range strings.Split(log, "\n") {
+		if strings.Contains(line, text) {
+			return line
+		}
+	}
+	return ""
+}
+
 // TestNativeWebProcessEnds: the web process of a window that runs dies mid-session, with no GPU hang (W366): its end
 // is logged with its reason, the page loads again with a new web process, and the page's console reaches djinn up's
 // output. Every stop names its source (decision Q84).

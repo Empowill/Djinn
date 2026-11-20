@@ -48,3 +48,40 @@ func TestWebKitProcesses(t *testing.T) {
 		t.Errorf("Describe without a first read = %q", d)
 	}
 }
+
+// TestThreads covers what a WebKit process's threads wait on: its main thread first, then each state and wchan by
+// count, in the process's description.
+func TestThreads(t *testing.T) {
+	root := t.TempDir()
+	t.Cleanup(func(old string) func() { return func() { ProcRoot = old } }(ProcRoot))
+	ProcRoot = root
+	write := func(path, text string) {
+		path = filepath.Join(root, path)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("4242/stat", "4242 (WebKitWebProces) S 100 1 1 0 -1 4194560 100 0 0 0 70 50 0 0 20 0 30 0 1000 600000000 10 18446744073709551615\n")
+	for tid, state := range map[int]string{4242: "S", 4243: "S", 4244: "S", 4245: "R"} {
+		write(fmt.Sprintf("4242/task/%d/stat", tid), fmt.Sprintf("%d (JS thread) %s 100 1 1\n", tid, state))
+	}
+	write("4242/task/4242/wchan", "do_epoll_wait")
+	write("4242/task/4243/wchan", "futex_wait_queue")
+	write("4242/task/4244/wchan", "futex_wait_queue")
+	write("4242/task/4245/wchan", "0")
+
+	got := WebKitProcesses(100)
+	if len(got) != 1 {
+		t.Fatalf("processes = %+v", got)
+	}
+	want := "main S do_epoll_wait, threads 4 (2 S futex_wait_queue, 1 R 0, 1 S do_epoll_wait)"
+	if got[0].Threads != want {
+		t.Errorf("Threads = %q; want %q", got[0].Threads, want)
+	}
+	if d := got[0].Describe(nil, 0); d != "pid 4242 WebKitWebProces S rss 0 MB cpu 1.2 s, "+want {
+		t.Errorf("Describe = %q", d)
+	}
+}

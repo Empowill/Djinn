@@ -385,6 +385,12 @@ Djinn restarts; the next start draws on the graphics card again. A window whose 
 only told: quit Djinn and start it again. At every start, djinn.log also follows the page's loading, and the page's
 console goes where Djinn's output goes. On macOS and Windows, the window is not watched.
 
+The page can also load and then wait, its loader on screen, with nothing to tell why. On Linux, a page that has made
+no call to Djinn 3 seconds after its load finished is silent: a healthy page calls within half a second. Djinn then
+writes in djinn.log what the page answers when asked how far it went, if it answers at all, and what its drawing
+process waits on, then loads the page again, once per start of Djinn. It says nothing else: no notification, no line
+on the terminal. If the loader stays after that reload, quit Djinn and start it again.
+
 ## Text fields
 
 Every field you write free text in behaves the same: **Write to the Djinn**, a new wish's request, a question's note,

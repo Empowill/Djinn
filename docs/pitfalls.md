@@ -436,6 +436,21 @@ the code does not say by itself; remove one when a change makes it false.
   and webkit2gtk-4.1 Wails needs already, a no-op twin elsewhere): Wails exposes neither, and WebKitWebView's
   `settings` property is not readable (use `webkit_web_view_get_settings`). Keep the C callbacks short and their panics
   recovered: a panic cannot unwind through C. *Where:* `internal/window`, `openWindow` in `cmd/djinn/window.go`.
+- **The window stays on its loader.** The page loads (`window: load` finished), then its web process stays alive and
+  idle (~178 MB, 2-3 % CPU) and never calls the server: 85 s at an install restart (W172), the black window of W373
+  before the loader (W395). *Sign:* no `msg=call` from the window in `djinn.log` after "window: load" finished; a
+  command line call still answers. Cause unknown. Since W181, `internal/window` counts the page's Connect calls through
+  the window's handler (`Watch.Handler`): no call `window.Silence` (**3 s**, decision Q111) after the load finished of
+  a committed document logs "window: the page is silent" with `probe` (WebKit's `evaluate_javascript` answered within
+  2 s or not: `ready`, `splash`, `root` children, `entry` attached by boot.js or not, `scripts`), `loads` and
+  `web_processes`, now with each process's threads (main thread and counts by state and wchan), then reloads the page
+  once per djinn up ("window: the page loads again" `silent=true`). No notification, no output line: W354's warning
+  was removed by W416 for its false positives (Q108); a false one now costs a reload. A healthy page calls 0.24-0.43 s
+  after load finished (W181, load 8). *Read the probe:* no answer, the JS thread is stuck; `entry` "not attached",
+  boot.js never ran; attached with `root` 0, the bundle has not run or is stuck before its first call; a main thread
+  R, the web process computes. The resource timing lists nothing loaded from `wails://`: no pending loads in the
+  probe. *Test:* `go tool task e2e-native -- -run TestNativeRelaunch -v` (`DJINN_WINDOW_SILENCE=1ms`, test builds
+  only). *Where:* `internal/window/window.go`, `evaluateJS` in `cmd/djinn/webprocess_gtk3.go`.
 - **Why djinn up stopped.** The "shutdown begins" line names the first source (Q84): Ctrl+Q, the tray, SIGINT,
   SIGTERM, "restart: an install from the window", "restart: a restart on a newer Djinn from the command line (djinn
   update)", or "the window ended" when Wails returned by itself. A new way to stop names itself through

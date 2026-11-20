@@ -5,11 +5,13 @@ package main
 /*
 #cgo linux pkg-config: gtk+-3.0 webkit2gtk-4.1
 #include <stdint.h>
+#include <stdlib.h>
 #include <gtk/gtk.h>
 #include <webkit2/webkit2.h>
 
 extern void djinnWebProcessEnded(uintptr_t id, int reason);
 extern void djinnLoadFailed(uintptr_t id, char *uri, char *message);
+extern void djinnEvaluated(uintptr_t id, char *json, char *message);
 
 static void djinn_web_process_terminated(WebKitWebView *view, WebKitWebProcessTerminationReason reason, gpointer id) {
 	djinnWebProcessEnded((uintptr_t)id, (int)reason);
@@ -50,12 +52,40 @@ static int djinn_watch_view(void *window, uintptr_t id) {
 	webkit_settings_set_enable_write_console_messages_to_stdout(webkit_web_view_get_settings(view), TRUE);
 	return 1;
 }
+
+static void djinn_evaluated(GObject *view, GAsyncResult *result, gpointer id) {
+	GError *error = NULL;
+	JSCValue *value = webkit_web_view_evaluate_javascript_finish(WEBKIT_WEB_VIEW(view), result, &error);
+	if (value == NULL) {
+		djinnEvaluated((uintptr_t)id, NULL, error != NULL ? error->message : NULL);
+		g_clear_error(&error);
+		return;
+	}
+	char *json = jsc_value_to_json(value, 0);
+	djinnEvaluated((uintptr_t)id, json, NULL);
+	g_free(json);
+	g_object_unref(value);
+}
+
+// djinn_evaluate evaluates script in the view of window, its answer to djinnEvaluated with id; 0 without a view.
+static int djinn_evaluate(void *window, const char *script, uintptr_t id) {
+	GtkWidget *widget = djinn_find_webview(GTK_WIDGET(window));
+	if (widget == NULL) {
+		return 0;
+	}
+	webkit_web_view_evaluate_javascript(WEBKIT_WEB_VIEW(widget), script, -1, NULL, NULL, NULL, djinn_evaluated, (gpointer)id);
+	return 1;
+}
 */
 import "C"
 
 import (
+	"context"
+	"errors"
 	"sync"
 	"unsafe"
+
+	"github.com/wailsapp/wails/v3/pkg/application"
 
 	"github.com/empowill/djinn/internal/logx"
 )
@@ -117,5 +147,71 @@ func webProcessEnded(id uintptr, reason int) {
 func loadFailed(id uintptr, uri, message string) {
 	if failed := viewOf(id).failed; failed != nil {
 		failed(uri + ": " + message)
+	}
+}
+
+// evaluated is one answer of the page to evaluateJS: its JSON, or the error.
+type evaluated struct {
+	json string
+	err  error
+}
+
+// evaluations holds the evaluations waiting for their answer, by the number given to their callback.
+var evaluations struct {
+	sync.Mutex
+	last    uintptr
+	pending map[uintptr]chan evaluated
+}
+
+// evaluateJS evaluates script in the page of window, on the main thread, and gives its value as JSON once WebKit
+// answers, or ctx's error: a page whose JS thread does not run never answers. Unlike Wails's ExecJS, it gets the
+// value back (W181's probe of a silent page).
+func evaluateJS(ctx context.Context, window *application.WebviewWindow, script string) (string, error) {
+	answer := make(chan evaluated, 1)
+	evaluations.Lock()
+	evaluations.last++
+	id := evaluations.last
+	if evaluations.pending == nil {
+		evaluations.pending = map[uintptr]chan evaluated{}
+	}
+	evaluations.pending[id] = answer
+	evaluations.Unlock()
+	defer func() {
+		evaluations.Lock()
+		delete(evaluations.pending, id)
+		evaluations.Unlock()
+	}()
+	application.InvokeAsync(func() {
+		native := window.NativeWindow()
+		if native == nil {
+			answer <- evaluated{err: errors.New("no native window")}
+			return
+		}
+		text := C.CString(script)
+		defer C.free(unsafe.Pointer(text))
+		if C.djinn_evaluate(native, text, C.uintptr_t(id)) == 0 {
+			answer <- evaluated{err: errors.New("no web view")}
+		}
+	})
+	select {
+	case a := <-answer:
+		return a.json, a.err
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
+}
+
+// jsEvaluated is the answer of webkit_web_view_evaluate_javascript, for the evaluation numbered id: dropped when it
+// comes after its wait.
+func jsEvaluated(id uintptr, json string, err error) {
+	evaluations.Lock()
+	answer := evaluations.pending[id]
+	evaluations.Unlock()
+	if answer == nil {
+		return
+	}
+	select {
+	case answer <- evaluated{json: json, err: err}:
+	default:
 	}
 }

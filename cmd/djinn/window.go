@@ -38,7 +38,8 @@ const hasWindow = true
 // does not run; Linux and Windows run djinn open instead.
 //
 // With a watch, the window's page is watched from the start, its load events logged: when its web process ends, it
-// loads again once, then the window opens again once with a new view, the server and the workers going on. The new
+// loads again once, then the window opens again once with a new view, the server and the workers going on. A page
+// that makes no call window.Silence after its load finished is probed, logged, and loaded again once, silently. The new
 // view draws in software rendering (WebKit's hardware acceleration policy NEVER) only after a GPU hang: the
 // environment cannot do it here, WebKitGTK reads WEBKIT_DISABLE_DMABUF_RENDERER once per process, at its first view
 // (W354's probe), and the next start of Djinn renders on the GPU again (decision Q89).
@@ -193,6 +194,13 @@ func openWindow(ctx context.Context, cfg windowConfig) error {
 			defer mu.Unlock()
 			shown.window.SetURL(url)
 			return nil
+		}
+		// The probe of a silent page asks the current view's page, and gets its answer back.
+		cfg.watch.Probe = func(ctx context.Context, script string) (string, error) {
+			mu.Lock()
+			window := shown.window
+			mu.Unlock()
+			return evaluateJS(ctx, window, script)
 		}
 		cfg.watch.Recreate = func(software bool) error {
 			mu.Lock()
