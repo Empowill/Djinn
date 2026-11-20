@@ -797,9 +797,18 @@ func runUp(args []string) (restart bool, err error) {
 			cfg.assets = ui.FromWindow(server.WholeWrites(h))
 			// When the web process of the window's page ends (W353, W366), on Linux, it is logged with WebKit's state
 			// and the kernel's GPU hangs, told here and by a notification, loaded again, then given a new view
-			// (software rendering after a GPU hang only).
+			// (software rendering after a GPU hang only). A page that makes no call window.Silence after its load
+			// finished (W373, W172) is logged with a probe of the page, and loaded again once, told nowhere else
+			// (decisions Q108, Q111): its calls are counted through the window's handler.
 			if runtime.GOOS == "linux" {
 				cfg.watch = &window.Watch{Started: started, Tell: windowTold(os.Stderr, notices, render.SystemLanguage())}
+				// A test build takes another threshold, to see the silent reload (e2e/native relaunch_test.go).
+				if ui.StampedTestBuild() {
+					if after, err := time.ParseDuration(os.Getenv("DJINN_WINDOW_SILENCE")); err == nil {
+						cfg.watch.After = after
+					}
+				}
+				cfg.assets = cfg.watch.Handler(cfg.assets)
 			}
 		} else {
 			cfg.url = url
