@@ -171,7 +171,7 @@ func TestWrapperEnv(t *testing.T) {
 }
 
 // TestProjectAdmits (W139): a project's workers' commands wait for their admission unless its djinn.yaml says
-// admit: false; a file that does not read admits them.
+// admit: false under gates_options; a file that does not read admits them.
 func TestProjectAdmits(t *testing.T) {
 	t.Parallel()
 	for _, c := range []struct {
@@ -180,9 +180,10 @@ func TestProjectAdmits(t *testing.T) {
 	}{
 		{"no file", "", true},
 		{"not said", "version: 1\n", true},
-		{"true", "admit: true\n", true},
-		{"false", "admit: false\n", false},
-		{"unreadable", "admit: [\n", true},
+		{"empty options", "gates_options: {}\n", true},
+		{"true", "gates_options:\n  admit: true\n", true},
+		{"false", "gates_options:\n  admit: false\n", false},
+		{"unreadable", "gates_options:\n  admit: [\n", true},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()

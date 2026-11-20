@@ -43,8 +43,8 @@ func (h *Harness) projectContainers(project *planv1.Project) (*djinnv1.Container
 }
 
 // projectAdmits says whether the commands of project's workers wait for their admission by the gates: unless its
-// djinn.yaml, read on the reference branch, says admit: false (W139). A file that does not read admits them, Djinn's
-// default; projectContainers warns of it.
+// djinn.yaml, read on the reference branch, says admit: false under gates_options (W139). A file that does not read
+// admits them, Djinn's default; projectContainers warns of it.
 func (h *Harness) projectAdmits(project *planv1.Project) bool {
 	if project == nil {
 		return true
@@ -54,7 +54,10 @@ func (h *Harness) projectAdmits(project *planv1.Project) bool {
 		return true
 	}
 	read, err := plan.ReadProjectConfig(dir)
-	if err != nil || read.Config == nil || read.Config.Admit == nil || read.Config.GetAdmit() {
+	if err != nil {
+		return true
+	}
+	if options := read.Config.GetGatesOptions(); options == nil || options.Admit == nil || options.GetAdmit() {
 		return true
 	}
 	warnProjectConfig(project, project.GetId()+"\x00admit", "the project's workers' commands wait for no admission by the gates",
