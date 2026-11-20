@@ -110,6 +110,14 @@ func Uncut(ctx context.Context) (kept context.Context, done context.CancelFunc) 
 	}
 }
 
+// ErrRemoteBranchGone is what the error of a fetch wraps when the remote answered without the branch asked: deleted
+// there (merged), or never pushed.
+var ErrRemoteBranchGone = errors.New("the remote has no such branch")
+
+// RemoteBranchGone tells whether out, what a fetch of a branch printed in the C locale, says the remote has no such
+// branch.
+func RemoteBranchGone(out string) bool { return strings.Contains(out, "couldn't find remote ref") }
+
 // FetchBranch fetches branch from remote into its remote-tracking ref, refs/remotes/<remote>/<branch>, with the
 // person's own credentials: what the remote holds of it now. It returns that commit; "" when the remote has no such
 // branch, its remote-tracking ref then deleted, as git fetch --prune would: a branch the remote deleted, a merged
@@ -121,7 +129,7 @@ func FetchBranch(ctx context.Context, dir, remote, branch string) (string, error
 	out, err := cmd.CombinedOutput()
 	cancel()
 	if err != nil {
-		if strings.Contains(string(out), "couldn't find remote ref") {
+		if RemoteBranchGone(string(out)) {
 			prune, cancel := Command(ctx, dir, "update-ref", "-d", ref)
 			out, err := prune.CombinedOutput()
 			cancel()
