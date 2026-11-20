@@ -38,7 +38,7 @@ export const PERIOD_EVERY: Record<Period, number> = {
 // machine's, counted under the project that asked for it (project).
 export function gateIn(
   gate: string,
-  project: string,
+  project?: string,
 ): { name: string; project: string; declared: boolean } {
   const at = gate.lastIndexOf("@");
   if (at > 0)
@@ -47,7 +47,7 @@ export function gateIn(
       project: gate.slice(at + 1),
       declared: true,
     };
-  return { name: gate, project, declared: false };
+  return { name: gate, project: project ?? "", declared: false };
 }
 
 // byProject orders projects by name, the requests outside any project last.
