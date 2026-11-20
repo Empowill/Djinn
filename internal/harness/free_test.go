@@ -475,6 +475,33 @@ func TestFreeGrantCascade(t *testing.T) {
 	}
 }
 
+// TestUnsavedMissingTips (W201): a safe tip that is not there saves nothing, and the count goes on without it; a tip
+// to count that is not there is an error, never a count of 0 that would free its branch.
+func TestUnsavedMissingTips(t *testing.T) {
+	t.Parallel()
+	repo := gitRepo(t)
+	head, err := git(t.Context(), repo, "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	work, err := git(t.Context(), repo, "commit-tree", "HEAD^{tree}", "-p", "HEAD", "-m", "work") // On no branch.
+	if err != nil {
+		t.Fatal(err)
+	}
+	safe := []string{"HEAD=HEAD^{commit}", "djinn/gone=refs/heads/djinn/gone^{commit}"}
+	if why := unsaved(t.Context(), repo, work, safe); why.reason != machinev1.DiskFreeingReason_DISK_FREEING_REASON_UNPUSHED ||
+		why.commits != 1 || why.detail != "djinn/gone" {
+		t.Errorf("a commit on no branch = %+v, want 1 commit not found in djinn/gone", why)
+	}
+	if why := unsaved(t.Context(), repo, head, safe); !why.none() {
+		t.Errorf("HEAD = %+v, want saved", why)
+	}
+	gone := strings.Repeat("1", len(head))
+	if why := unsaved(t.Context(), repo, gone, safe); why.reason != machinev1.DiskFreeingReason_DISK_FREEING_REASON_ERROR {
+		t.Errorf("a tip not there = %+v, want an error", why)
+	}
+}
+
 // TestFreedContinueSaysFork (Q75): continuing a task Djinn freed is refused with the reason and the fork to run.
 func TestFreedContinueSaysFork(t *testing.T) {
 	t.Parallel()
