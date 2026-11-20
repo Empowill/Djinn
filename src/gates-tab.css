@@ -425,6 +425,14 @@ code.gates-flow-name {
   margin-top: 0.25rem;
 }
 
+/* What a hold waited for, each holder in turn with its time (GateInterval.wait_reason). */
+.gates-readout-why {
+  margin-top: 0.25rem;
+  color: var(--st-waiting);
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
 .gates-readout-queue {
   margin-top: 0.25rem;
   color: var(--st-waiting);

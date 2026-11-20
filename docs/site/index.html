@@ -334,7 +334,7 @@
                   push a branch go before the workers' requests, and on a machine of more than one slot, one stays free for
                   them: what ends a task never waits behind workers. The Gates tab of the Hourglass shows, by project, who holds each gate now,
                   who waits, and which command takes the most time, 25 more commands read each time you scroll to the end of the list, under a summary of them all; over the last hour, 6 hours or day, each project with one lane per gate under
-                  the workers that run, each request coloured by its task's kind, hatched while it waits, plain while it holds,
+                  the workers that run, each request coloured by its task's kind, hatched while it waits, plain while it holds, and under the pointer each holder it waited for with how long,
                   then a Sankey from the projects to their named gates to their waits. A gate a project declares is its own; one of the
                   machine, as lint, is one turn for every project and shows under each project that holds it or waits for it. Each hold stays three months in Djinn's database, past a restart:
                   <code>djinn gate history --minutes 360</code> gives the last 6 hours, each hold with its task's kind, beside

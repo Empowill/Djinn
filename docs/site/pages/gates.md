@@ -226,7 +226,8 @@ shared.
 - **A task's events** say each gate it asked for, waited for and why, took, and gave back.
 - **The Hourglass**, on its **Gates** tab, shows by project who holds each gate now and who waits; draws, over the
   last hour, 6 hours or day, under the workers that run, each project with one lane per gate its workers asked for,
-  each request in its task's colour, hatched while it waits for its gate; follows the named gates' requests from their
+  each request in its task's colour, hatched while it waits for its gate, and, under the pointer, what it waited for,
+  each holder in turn with how long it waited for it, as its worker read it; follows the named gates' requests from their
   project to its gates to their wait, each flow in its task's colour; and lists each command admitted under a gate, the
   most total time first, with what it cost and how long it waited. A gate a project declares is that project's alone; a
   gate of the machine (lint, e2e) is one turn for every project, and shows under each project whose workers hold it or
@@ -256,8 +257,8 @@ is lost, and the queue starts again from the commands that ask anew.
 
 Their history does not go: each gate and each admission held is kept in Djinn's database as it goes back, **for
 three months**, and the Hourglass reads it again after a restart. It keeps when the holder asked, got and gave back the gate,
-whether it was a named gate or an admission, whether its command was heavy or never measured, what it waited for last
-and why, the most memory its holder used, and whether it took a slot outside a worker.
+whether it was a named gate or an admission, whether its command was heavy or never measured, what it waited for last,
+each reason it waited for in turn with how long, the most memory its holder used, and whether it took a slot outside a worker.
 
 The history of the gates reads it back over the window you ask, an hour by default, 6 hours or a day: each hold with
 the kind and code of its task, beside the runs of the workers over the same window. A run left open counts only while

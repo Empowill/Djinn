@@ -1233,7 +1233,8 @@ export type GateInterval = Message<"machine.v1.GateInterval"> & {
   waitCause: GateWaitCause;
 
   /**
-   * Why it waited last, as the holder was told.
+   * What it waited for, each reason in turn with how long it waited for it, its gate's label first (as djinn gate hook
+   * reads it once admitted); empty when it did not wait.
    *
    * @generated from field: string wait_reason = 11;
    */

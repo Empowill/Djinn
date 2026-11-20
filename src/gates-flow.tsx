@@ -892,6 +892,7 @@ function HoldReadout({ hold }: { hold: Hold }) {
         })}
       </div>
       {g.command && <code className="gates-readout-command">{g.command}</code>}
+      {g.waitReason && <div className="gates-readout-why">{g.waitReason}</div>}
     </>
   );
 }
