@@ -664,7 +664,7 @@ func rawText(m proto.Message) (string, bool) {
 }
 
 func writeFields(w io.Writer, m protoreflect.Message, indent string) {
-	for _, fd := range byNumber(m.Descriptor()) {
+	for _, fd := range headlineFirst(byNumber(m.Descriptor())) {
 		if !m.Has(fd) || fd.IsMap() || jsonOnly(fd) {
 			continue
 		}
@@ -689,6 +689,25 @@ func writeFields(w io.Writer, m protoreflect.Message, indent string) {
 			fmt.Fprintf(w, "%s%s: %s\n", indent, fd.Name(), text(fd, v))
 		}
 	}
+}
+
+// headlineFirst is fields with the ones marked (djinn.v1.headline) moved first, the others in their order: a line
+// added to a response after its other fields still opens its text.
+func headlineFirst(fields []protoreflect.FieldDescriptor) []protoreflect.FieldDescriptor {
+	slices.SortStableFunc(fields, func(a, b protoreflect.FieldDescriptor) int {
+		switch {
+		case headline(a) && !headline(b):
+			return -1
+		case headline(b) && !headline(a):
+			return 1
+		}
+		return 0
+	})
+	return fields
+}
+
+func headline(fd protoreflect.FieldDescriptor) bool {
+	return proto.GetExtension(fd.Options(), djinnv1.E_Headline) == true
 }
 
 func writeList(w io.Writer, fd protoreflect.FieldDescriptor, list protoreflect.List, indent string) {
