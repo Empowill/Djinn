@@ -675,8 +675,9 @@ var reTagClash = regexp.MustCompile(`!\s+\[rejected\]\s+(\S+)\s+->\s+(\S+)\s+\(w
 
 // fetchMain fetches ref, the project's main branch as mainRef gives it, and the tags, in one command, from its remote
 // into the repository holding repo, with the person's own credentials and without ever prompting for them; a local
-// branch fetches nothing. Clashing tags are reported once on the wish wishID, without stopping the merge of main: git
-// then fails, main fetched all the same.
+// branch fetches nothing. A branch the remote does not hold gives an error wrapping gitx.ErrRemoteBranchGone. Clashing
+// tags are reported once on the wish wishID, without stopping the merge of main: git then fails, main fetched all the
+// same.
 func (h *Harness) fetchMain(ctx context.Context, wishID, repo, ref string) error {
 	remoteBranch, ok := strings.CutPrefix(ref, "refs/remotes/")
 	if !ok {
@@ -695,6 +696,9 @@ func (h *Harness) fetchMain(ctx context.Context, wishID, repo, ref string) error
 	if err != nil {
 		if len(clashes) == 0 || !onlyTagClashes(out.String()) {
 			h.netSign(planv1.Provider_PROVIDER_UNSPECIFIED, out.String(), false)
+			if gitx.RemoteBranchGone(out.String()) {
+				return fmt.Errorf("fetch %s from %s: %w", target, remote, gitx.ErrRemoteBranchGone)
+			}
 			return fmt.Errorf("fetch %s from %s: %s", target, remote, cmp.Or(strings.TrimSpace(out.String()), err.Error()))
 		}
 	}

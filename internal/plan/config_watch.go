@@ -3,6 +3,7 @@ package plan
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -15,6 +16,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/gitx"
 	"github.com/empowill/djinn/internal/store"
 )
 
@@ -62,19 +64,25 @@ func LookAtConfig(ctx context.Context, st *store.Store, home string, project *pl
 		}
 	}
 	config := ProjectConfig(home, project)
-	if config.FromReference() && "refs/remotes/"+config.Ref != ref && fetch != nil {
-		// The team's file, on the default branch just fetched, names another branch.
-		if err := fetch(ctx, folder, "refs/remotes/"+config.Ref); err != nil {
+	if _, reference := config.PermissionsDir(); reference != "" && "refs/remotes/"+reference != ref && fetch != nil {
+		// The team's file, on the default branch just fetched, names another branch. The reference branch, where the
+		// permissions stay read: not the developer's configuration branch.
+		if err := fetch(ctx, folder, "refs/remotes/"+reference); err != nil {
 			fetchError = err.Error()
 		}
 		config = ProjectConfig(home, project)
 	}
-	if config.ConfigBranchMissing() && config.ConfigBranchRef != "" && fetch != nil {
-		// The developer's configuration branch, not fetched yet, or gone: then the reference branch holds (Q110), and
-		// its notice says so, not the watch.
-		if fetch(ctx, folder, config.ConfigBranchRef) == nil {
-			config = ProjectConfig(home, project)
+	if config.ConfigBranchRef != "" && config.ConfigBranchRef != ref && fetch != nil {
+		// The developer's configuration branch, at each look: read once pushed, followed, and dropped once the remote
+		// deleted it (merged), as git fetch --prune would. Not there, the reference branch holds (Q110), and its notice
+		// says so, not the watch.
+		err := fetch(ctx, folder, config.ConfigBranchRef)
+		if errors.Is(err, gitx.ErrRemoteBranchGone) && !config.ConfigBranchMissing() {
+			if _, err := gitRawOut(ctx, folder, "update-ref", "-d", config.ConfigBranchRef); err != nil {
+				warnOnce(folder, "drop "+shortRef(config.ConfigBranchRef)+", gone from the remote", err)
+			}
 		}
+		config = ProjectConfig(home, project)
 	}
 	watches, err := store.List[*planv1.ConfigWatch](ctx, st, store.Where{"project_id": project.GetId()})
 	if err != nil {

@@ -313,10 +313,11 @@ djinn project set-branch dolmen --config --unset
 ```
 
 Djinn reads the configuration on that branch as your copy last fetched it, and its watch fetches it with the
-reference branch: the journal of changes follows it, without the permissions. `.agents/permissions.txtpb` and
+reference branch at each look, so a push there counts at the next one: the journal of changes follows it, without the
+permissions. `.agents/permissions.txtpb` and
 `main_branch` stay read on the reference branch: an agent that commits to the branch cannot widen its own rights nor
-move the base of the requests. Once the branch merged and was deleted, Djinn reads the reference branch again by
-itself; the `branch` notice says so ("not on the remote") until you take your choice back.
+move the base of the requests. Once the branch merged and was deleted from the remote, the watch's next look drops it from your
+copy (as `git fetch --prune` would), and Djinn reads the reference branch again by itself; the `branch` notice says so ("not on the remote") until you take your choice back.
 
 The **Summoning Circle** in the window (below the Grimoire in the side panel; `djinn lead get-circle` and `djinn lead
 set-circle` on the command line) chooses the model for each kind of worker across all projects: Djinn (lead),
