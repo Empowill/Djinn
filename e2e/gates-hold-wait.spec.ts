@@ -1,10 +1,11 @@
 // What a hold waited for, in the Gates tab of the Hourglass (W175, W176): pointed at, a band of the frieze names its
 // request, its command, and under the command each holder it waited for in turn with how long it waited for it
 // (GateInterval.wait_reason, joined by Hold.Waited, W174), never a holder's time frozen when the cause changed
-// ("held by W2 …, for 0s"). The history replays W173's trial on dolmen's stack: W1 shares it for its recette, W2 waits
-// to hold it alone for its build, W3 waits behind both to share it. It is a fixture; the djinn is the real djinn up
-// --browser (see global-setup.ts). With GATES_SHOTS set, screenshots, dark and light, go to
-// test-results/e2e/gates-hold-wait-*.png.
+// ("held by W2 …, for 0s"). The band sits at the bottom of what shows above the open terminal panel, in a window of
+// the usual height: the bubble goes over the pointer, whole on screen, never under the panel (W177). The history
+// replays W173's trial on dolmen's stack: W1 shares it for its recette, W2 waits to hold it alone for its build, W3
+// waits behind both to share it. It is a fixture; the djinn is the real djinn up --browser (see global-setup.ts). With
+// GATES_SHOTS set, screenshots, dark and light, go to test-results/e2e/gates-hold-wait-*.png.
 // Run alone with: go tool task e2e -- e2e/gates-hold-wait.spec.ts
 import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 import { timestampFromMs } from "@bufbuild/protobuf/wkt";
@@ -107,7 +108,6 @@ for (const theme of ["dark", "light"])
     const errors: string[] = [];
     page.on("pageerror", (err) => errors.push(err.message));
     await route(page);
-    await page.setViewportSize({ width: 1280, height: 1400 });
     await page.goto(process.env.DJINN_URL!);
     await expect(
       page.locator(".app-statusbar").getByText("Live"),
@@ -122,10 +122,27 @@ for (const theme of ["dark", "light"])
     await expect(flow.locator(".gates-band")).toHaveText(["W1", "W2", "W3"]);
     const readout = flow.locator(".gates-flow-readout");
 
-    // W3, behind both: its command, and under it each holder in turn, each with its own time. The band in the middle of
-    // the screen, so the bubble below it shows whole above the terminal panel.
+    // W3, behind both: its command, and under it each holder in turn, each with its own time. The band at the bottom of
+    // the page that scrolls above the open terminal panel: no room below it for the bubble.
+    const terminal = page.locator(".lead-terminal:not(.collapsed)");
+    await expect(terminal).toBeVisible();
     const w3 = flow.locator(".gates-band").filter({ hasText: "W3" });
-    await w3.evaluate((el) => el.scrollIntoView({ block: "center" }));
+    const pane = await w3.evaluate((el) => {
+      let p = el.parentElement;
+      while (p && !/auto|scroll/.test(getComputedStyle(p).overflowY))
+        p = p.parentElement;
+      // The band's bottom a few pixels above the pane's.
+      if (p) {
+        const gap = p.getBoundingClientRect().bottom - 4;
+        p.scrollTop += el.getBoundingClientRect().bottom - gap;
+      }
+      const r = (p ?? document.documentElement).getBoundingClientRect();
+      return { top: r.top, bottom: Math.min(r.bottom, window.innerHeight) };
+    });
+    const band = (await w3.boundingBox())!;
+    const panel = (await terminal.boundingBox())!;
+    expect(pane.bottom).toBeLessThanOrEqual(panel.y + 0.5);
+    expect(band.y + band.height).toBeGreaterThan(pane.bottom - 40);
     await w3.hover();
     await expect(readout).toContainText("dolmen · stack · W3");
     const command = readout.locator(".gates-readout-command");
@@ -142,6 +159,11 @@ for (const theme of ["dark", "light"])
     expect(w.x + w.width).toBeLessThanOrEqual(r.x + r.width + 0.5);
     expect(w.y + w.height).toBeLessThanOrEqual(r.y + r.height + 0.5);
     await expect(readout).toBeInViewport({ ratio: 1 });
+    // Over the band, whole in the page above the terminal panel: nothing of it under the panel.
+    expect(r.y + r.height).toBeLessThanOrEqual(band.y + 0.5);
+    expect(r.y).toBeGreaterThanOrEqual(pane.top - 0.5);
+    expect(r.y + r.height).toBeLessThanOrEqual(pane.bottom + 0.5);
+    expect(r.y + r.height).toBeLessThanOrEqual(panel.y + 0.5);
     if (process.env.GATES_SHOTS)
       await page.screenshot({
         path: path.join(shots, `gates-hold-wait-${theme}.png`),
