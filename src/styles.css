@@ -1774,6 +1774,8 @@ html[data-still] .djinn-eye-flame,
 html[data-still] .djinn-eye-lid,
 html[data-still] .lead-side-log-line,
 html[data-still] .motes i,
+html[data-still] .gates-seal-orbit,
+html[data-still] .gates-seal-flame,
 html[data-still] #djinn-splash * {
   animation-play-state: paused !important;
 }

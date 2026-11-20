@@ -894,3 +894,54 @@ test("the frieze's readout goes over the pointer when what shows has no room bel
   // Room neither below nor above: its top in view, as low as it goes.
   assert.equal(s.readoutTop(100, 100, 500, area), 40 + 4 - 100);
 });
+
+// W194 (L42 C): each gate of Now is a seal, the door in the loader's octagon; its state reads from the gate.
+test("now, each gate a seal: free open, held shut, waited for with a flame per waiter, heavy barred", () => {
+  const gate = (name, extra) => ({
+    ...live[0],
+    name,
+    waiting: [],
+    waitingTaskIds: [],
+    waitingProjects: [],
+    ...extra,
+  });
+  const html = s.renderToStaticMarkup(
+    h(s.GatesTab, {
+      tasks,
+      initialGates: [
+        gate("held"),
+        gate("waited", {
+          waiting: ["W2 (Test): go tool task lint", "W2 (Test): again"],
+          waitingTaskIds: ["task-w2", "task-w2"],
+          waitingProjects: ["djinn", "djinn"],
+        }),
+        gate("heavy", { takesSlot: true }),
+        gate("crowded", {
+          waiting: Array(7).fill("a holder outside any task"),
+          waitingProjects: Array(7).fill("djinn"),
+        }),
+      ],
+      initialSummary: summary,
+    }),
+  );
+  const cards = Object.fromEntries(
+    [
+      ...html.matchAll(
+        /<li id="gate-([\w-]+)" class="gates-gate[^"]*" data-state="(\w+)"><div class="gates-seal" aria-hidden="true">([\s\S]*?)<\/div><div class="gates-gate-head">/g,
+      ),
+    ].map(([, name, state, seal]) => [
+      name,
+      `${state} ${seal.match(/class="gates-seal-flame"/g)?.length ?? 0}`,
+    ]),
+  );
+  // Five flames at most: the queue's count says the rest.
+  assert.deepEqual(cards, {
+    held: "held 0",
+    waited: "wait 2",
+    heavy: "heavy 0",
+    crowded: "wait 5",
+    lint: "free 0",
+    test: "free 0",
+  });
+  assert.match(html, /takes a worker&#x27;s slot/);
+});
