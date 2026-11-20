@@ -15,7 +15,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file djinn/v1/project_config.proto.
  */
 export const file_djinn_v1_project_config: GenFile = /*@__PURE__*/
-  fileDesc("Ch1kamlubi92MS9wcm9qZWN0X2NvbmZpZy5wcm90bxIIZGppbm4udjEimAEKDVByb2plY3RDb25maWcSKAoKY29udGFpbmVycxgBIAEoCzIULmRqaW5uLnYxLkNvbnRhaW5lcnMSLgoFZ2F0ZXMYAiADKAsyFS5kamlubi52MS5Qcm9qZWN0R2F0ZUIIukgFkgECEAgSDwoHdmVyc2lvbhgDIAEoDRISCgVhZG1pdBgEIAEoCEgAiAEBQggKBl9hZG1pdCKsAgoLUHJvamVjdEdhdGUSNQoEbmFtZRgBIAEoCUInukgkciIyFl5bYS16XVthLXowLTktXXswLDM5fSRaCGNvbW1hbmRzEi4KBWFsb25lGAIgAygJQh+6SBySARkiF3IVEAEYyAEyDl5bXipcc11bXlxuXSokEi8KBmJlc2lkZRgDIAMoCUIfukgckgEZIhdyFRABGMgBMg5eW14qXHNdW15cbl0qJDqEAbpIgAEafgoVcHJvamVjdF9nYXRlLnBhdHRlcm5zEjlhIGdhdGUgaGFzIDMyIHBhdHRlcm5zIGF0IG1vc3QsIGFsb25lIGFuZCBiZXNpZGUgdG9nZXRoZXIaKnNpemUodGhpcy5hbG9uZSkgKyBzaXplKHRoaXMuYmVzaWRlKSA8PSAzMkKWAQoMY29tLmRqaW5uLnYxQhJQcm9qZWN0Q29uZmlnUHJvdG9QAVoxZ2l0aHViLmNvbS9lbXBvd2lsbC9kamlubi9nZW4vZ28vZGppbm4vdjE7ZGppbm52MaICA0RYWKoCCERqaW5uLlYxygIIRGppbm5cVjHiAhREamlublxWMVxHUEJNZXRhZGF0YeoCCURqaW5uOjpWMWIGcHJvdG8z", [file_buf_validate_validate, file_djinn_v1_containers]);
+  fileDesc("Ch1kamlubi92MS9wcm9qZWN0X2NvbmZpZy5wcm90bxIIZGppbm4udjEiqQEKDVByb2plY3RDb25maWcSKAoKY29udGFpbmVycxgBIAEoCzIULmRqaW5uLnYxLkNvbnRhaW5lcnMSLgoFZ2F0ZXMYAiADKAsyFS5kamlubi52MS5Qcm9qZWN0R2F0ZUIIukgFkgECEAgSDwoHdmVyc2lvbhgDIAEoDRItCg1nYXRlc19vcHRpb25zGAQgASgLMhYuZGppbm4udjEuR2F0ZXNPcHRpb25zIiwKDEdhdGVzT3B0aW9ucxISCgVhZG1pdBgBIAEoCEgAiAEBQggKBl9hZG1pdCKsAgoLUHJvamVjdEdhdGUSNQoEbmFtZRgBIAEoCUInukgkciIyFl5bYS16XVthLXowLTktXXswLDM5fSRaCGNvbW1hbmRzEi4KBWFsb25lGAIgAygJQh+6SBySARkiF3IVEAEYyAEyDl5bXipcc11bXlxuXSokEi8KBmJlc2lkZRgDIAMoCUIfukgckgEZIhdyFRABGMgBMg5eW14qXHNdW15cbl0qJDqEAbpIgAEafgoVcHJvamVjdF9nYXRlLnBhdHRlcm5zEjlhIGdhdGUgaGFzIDMyIHBhdHRlcm5zIGF0IG1vc3QsIGFsb25lIGFuZCBiZXNpZGUgdG9nZXRoZXIaKnNpemUodGhpcy5hbG9uZSkgKyBzaXplKHRoaXMuYmVzaWRlKSA8PSAzMkKWAQoMY29tLmRqaW5uLnYxQhJQcm9qZWN0Q29uZmlnUHJvdG9QAVoxZ2l0aHViLmNvbS9lbXBvd2lsbC9kamlubi9nZW4vZ28vZGppbm4vdjE7ZGppbm52MaICA0RYWKoCCERqaW5uLlYxygIIRGppbm5cVjHiAhREamlublxWMVxHUEJNZXRhZGF0YeoCCURqaW5uOjpWMWIGcHJvdG8z", [file_buf_validate_validate, file_djinn_v1_containers]);
 
 /**
  * ProjectConfig is what a project tells Djinn, in YAML: djinn.yaml at its root, else .agents/djinn.yaml. Djinn reads
@@ -80,14 +80,11 @@ export type ProjectConfig = Message<"djinn.v1.ProjectConfig"> & {
   version: number;
 
   /**
-   * false: the commands of the project's workers wait for no admission by the gates, whatever they cost: no Claude
-   * worker runs the gates' hook, no other agent waits on the heavy commands' wrappers. A gate declared here is then
-   * taken only by djinn gate run with its name; the checks of the merges and pushes still go through theirs. Not set,
-   * or true: they are admitted (Djinn's default).
+   * How the gates treat the project's commands, beside the gates it declares. Not set: Djinn's defaults.
    *
-   * @generated from field: optional bool admit = 4;
+   * @generated from field: djinn.v1.GatesOptions gates_options = 4;
    */
-  admit?: boolean | undefined;
+  gatesOptions?: GatesOptions | undefined;
 };
 
 /**
@@ -96,6 +93,33 @@ export type ProjectConfig = Message<"djinn.v1.ProjectConfig"> & {
  */
 export const ProjectConfigSchema: GenMessage<ProjectConfig> = /*@__PURE__*/
   messageDesc(file_djinn_v1_project_config, 0);
+
+/**
+ * GatesOptions is how the gates treat a project's commands, under gates_options: in its djinn.yaml.
+ *
+ *   gates_options:
+ *     admit: false
+ *
+ * @generated from message djinn.v1.GatesOptions
+ */
+export type GatesOptions = Message<"djinn.v1.GatesOptions"> & {
+  /**
+   * false: the commands of the project's workers wait for no admission by the gates, whatever they cost: no Claude
+   * worker runs the gates' hook, no other agent waits on the heavy commands' wrappers. A gate declared in the file is
+   * then taken only by djinn gate run with its name; the checks of the merges and pushes still go through theirs. Not
+   * set, or true: they are admitted (Djinn's default).
+   *
+   * @generated from field: optional bool admit = 1;
+   */
+  admit?: boolean | undefined;
+};
+
+/**
+ * Describes the message djinn.v1.GatesOptions.
+ * Use `create(GatesOptionsSchema)` to create a new message.
+ */
+export const GatesOptionsSchema: GenMessage<GatesOptions> = /*@__PURE__*/
+  messageDesc(file_djinn_v1_project_config, 1);
 
 /**
  * ProjectGate is a gate a project declares in its djinn.yaml: the commands of its workers that rebuild a shared
@@ -139,5 +163,5 @@ export type ProjectGate = Message<"djinn.v1.ProjectGate"> & {
  * Use `create(ProjectGateSchema)` to create a new message.
  */
 export const ProjectGateSchema: GenMessage<ProjectGate> = /*@__PURE__*/
-  messageDesc(file_djinn_v1_project_config, 1);
+  messageDesc(file_djinn_v1_project_config, 2);
 

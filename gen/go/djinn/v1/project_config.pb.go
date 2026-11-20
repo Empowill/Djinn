@@ -68,11 +68,8 @@ type ProjectConfig struct {
 	// a whole number from 1, leaves the whole file out, said with the file, the version read and the highest known: a
 	// newer Djinn wrote it, and this one does not read it wrong. Read, it holds the highest version Djinn knows.
 	Version uint32 `protobuf:"varint,3,opt,name=version,proto3" json:"version,omitempty"`
-	// false: the commands of the project's workers wait for no admission by the gates, whatever they cost: no Claude
-	// worker runs the gates' hook, no other agent waits on the heavy commands' wrappers. A gate declared here is then
-	// taken only by djinn gate run with its name; the checks of the merges and pushes still go through theirs. Not set,
-	// or true: they are admitted (Djinn's default).
-	Admit         *bool `protobuf:"varint,4,opt,name=admit,proto3,oneof" json:"admit,omitempty"`
+	// How the gates treat the project's commands, beside the gates it declares. Not set: Djinn's defaults.
+	GatesOptions  *GatesOptions `protobuf:"bytes,4,opt,name=gates_options,json=gatesOptions,proto3" json:"gates_options,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -128,7 +125,59 @@ func (x *ProjectConfig) GetVersion() uint32 {
 	return 0
 }
 
-func (x *ProjectConfig) GetAdmit() bool {
+func (x *ProjectConfig) GetGatesOptions() *GatesOptions {
+	if x != nil {
+		return x.GatesOptions
+	}
+	return nil
+}
+
+// GatesOptions is how the gates treat a project's commands, under gates_options: in its djinn.yaml.
+//
+//	gates_options:
+//	  admit: false
+type GatesOptions struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// false: the commands of the project's workers wait for no admission by the gates, whatever they cost: no Claude
+	// worker runs the gates' hook, no other agent waits on the heavy commands' wrappers. A gate declared in the file is
+	// then taken only by djinn gate run with its name; the checks of the merges and pushes still go through theirs. Not
+	// set, or true: they are admitted (Djinn's default).
+	Admit         *bool `protobuf:"varint,1,opt,name=admit,proto3,oneof" json:"admit,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GatesOptions) Reset() {
+	*x = GatesOptions{}
+	mi := &file_djinn_v1_project_config_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GatesOptions) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GatesOptions) ProtoMessage() {}
+
+func (x *GatesOptions) ProtoReflect() protoreflect.Message {
+	mi := &file_djinn_v1_project_config_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GatesOptions.ProtoReflect.Descriptor instead.
+func (*GatesOptions) Descriptor() ([]byte, []int) {
+	return file_djinn_v1_project_config_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *GatesOptions) GetAdmit() bool {
 	if x != nil && x.Admit != nil {
 		return *x.Admit
 	}
@@ -159,7 +208,7 @@ type ProjectGate struct {
 
 func (x *ProjectGate) Reset() {
 	*x = ProjectGate{}
-	mi := &file_djinn_v1_project_config_proto_msgTypes[1]
+	mi := &file_djinn_v1_project_config_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -171,7 +220,7 @@ func (x *ProjectGate) String() string {
 func (*ProjectGate) ProtoMessage() {}
 
 func (x *ProjectGate) ProtoReflect() protoreflect.Message {
-	mi := &file_djinn_v1_project_config_proto_msgTypes[1]
+	mi := &file_djinn_v1_project_config_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -184,7 +233,7 @@ func (x *ProjectGate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProjectGate.ProtoReflect.Descriptor instead.
 func (*ProjectGate) Descriptor() ([]byte, []int) {
-	return file_djinn_v1_project_config_proto_rawDescGZIP(), []int{1}
+	return file_djinn_v1_project_config_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *ProjectGate) GetName() string {
@@ -212,14 +261,16 @@ var File_djinn_v1_project_config_proto protoreflect.FileDescriptor
 
 const file_djinn_v1_project_config_proto_rawDesc = "" +
 	"\n" +
-	"\x1ddjinn/v1/project_config.proto\x12\bdjinn.v1\x1a\x1bbuf/validate/validate.proto\x1a\x19djinn/v1/containers.proto\"\xbb\x01\n" +
+	"\x1ddjinn/v1/project_config.proto\x12\bdjinn.v1\x1a\x1bbuf/validate/validate.proto\x1a\x19djinn/v1/containers.proto\"\xd3\x01\n" +
 	"\rProjectConfig\x124\n" +
 	"\n" +
 	"containers\x18\x01 \x01(\v2\x14.djinn.v1.ContainersR\n" +
 	"containers\x125\n" +
 	"\x05gates\x18\x02 \x03(\v2\x15.djinn.v1.ProjectGateB\b\xbaH\x05\x92\x01\x02\x10\bR\x05gates\x12\x18\n" +
-	"\aversion\x18\x03 \x01(\rR\aversion\x12\x19\n" +
-	"\x05admit\x18\x04 \x01(\bH\x00R\x05admit\x88\x01\x01B\b\n" +
+	"\aversion\x18\x03 \x01(\rR\aversion\x12;\n" +
+	"\rgates_options\x18\x04 \x01(\v2\x16.djinn.v1.GatesOptionsR\fgatesOptions\"3\n" +
+	"\fGatesOptions\x12\x19\n" +
+	"\x05admit\x18\x01 \x01(\bH\x00R\x05admit\x88\x01\x01B\b\n" +
 	"\x06_admit\"\xc1\x02\n" +
 	"\vProjectGate\x12;\n" +
 	"\x04name\x18\x01 \x01(\tB'\xbaH$r\"2\x16^[a-z][a-z0-9-]{0,39}$Z\bcommandsR\x04name\x125\n" +
@@ -240,20 +291,22 @@ func file_djinn_v1_project_config_proto_rawDescGZIP() []byte {
 	return file_djinn_v1_project_config_proto_rawDescData
 }
 
-var file_djinn_v1_project_config_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_djinn_v1_project_config_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
 var file_djinn_v1_project_config_proto_goTypes = []any{
 	(*ProjectConfig)(nil), // 0: djinn.v1.ProjectConfig
-	(*ProjectGate)(nil),   // 1: djinn.v1.ProjectGate
-	(*Containers)(nil),    // 2: djinn.v1.Containers
+	(*GatesOptions)(nil),  // 1: djinn.v1.GatesOptions
+	(*ProjectGate)(nil),   // 2: djinn.v1.ProjectGate
+	(*Containers)(nil),    // 3: djinn.v1.Containers
 }
 var file_djinn_v1_project_config_proto_depIdxs = []int32{
-	2, // 0: djinn.v1.ProjectConfig.containers:type_name -> djinn.v1.Containers
-	1, // 1: djinn.v1.ProjectConfig.gates:type_name -> djinn.v1.ProjectGate
-	2, // [2:2] is the sub-list for method output_type
-	2, // [2:2] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	3, // 0: djinn.v1.ProjectConfig.containers:type_name -> djinn.v1.Containers
+	2, // 1: djinn.v1.ProjectConfig.gates:type_name -> djinn.v1.ProjectGate
+	1, // 2: djinn.v1.ProjectConfig.gates_options:type_name -> djinn.v1.GatesOptions
+	3, // [3:3] is the sub-list for method output_type
+	3, // [3:3] is the sub-list for method input_type
+	3, // [3:3] is the sub-list for extension type_name
+	3, // [3:3] is the sub-list for extension extendee
+	0, // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_djinn_v1_project_config_proto_init() }
@@ -262,14 +315,14 @@ func file_djinn_v1_project_config_proto_init() {
 		return
 	}
 	file_djinn_v1_containers_proto_init()
-	file_djinn_v1_project_config_proto_msgTypes[0].OneofWrappers = []any{}
+	file_djinn_v1_project_config_proto_msgTypes[1].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_djinn_v1_project_config_proto_rawDesc), len(file_djinn_v1_project_config_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   2,
+			NumMessages:   3,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

@@ -689,11 +689,12 @@ version: 1
 containers:
   memory_mib: 8192 # memory of a container, swap included, in MiB (64 at least)
   pids: 2048       # processes and threads of a container (16 at least)
-admit: false       # the workers' commands wait for no admission by the gates (W139); true when not set
+gates_options:
+  admit: false     # the workers' commands wait for no admission by the gates (W139); true when not set
 ```
 
-`admit: false` gives the project's Claude workers no `djinn gate hook`, and its other agents no wrapper on their heavy
-heads: their commands run with no admission, whatever they cost. A gate the project declares is then taken only by `djinn gate
+`admit: false`, under `gates_options:`, gives the project's Claude workers no `djinn gate hook`, and its other agents
+no wrapper on their heavy heads: their commands run with no admission, whatever they cost. A gate the project declares is then taken only by `djinn gate
 run` with its name; the checks of Djinn's merges and pushes still go through theirs; Djinn's `docker` still bounds the containers. It
 counts from the next worker that starts.
 

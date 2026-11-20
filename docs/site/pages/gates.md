@@ -204,9 +204,9 @@ docker compose star up. No regular expression and no shell: nothing runs. 32 pat
 - **A mistake costs one gate.** A gate that is not valid is left out on its own, and the project's view says which and
   why; the other gates and the containers apply. A field Djinn does not know is ignored and said. A pattern of one word
   is kept, and said: it takes every command of that program.
-- **The admissions can be turned off.** admit: false, at the top of the file, has the project's workers' commands wait
-  for no admission: no Claude worker runs the gates' hook, no other agent's heavy command waits on Djinn's wrappers.
-  A gate the file declares is then taken only by a command run through it by name; the checks of Djinn's merges and
+- **The admissions can be turned off.** admit: false, under gates_options in the file, has the project's workers'
+  commands wait for no admission: no Claude worker runs the gates' hook, no other agent's heavy command waits on
+  Djinn's wrappers. A gate the file declares is then taken only by a command run through it by name; the checks of Djinn's merges and
   pushes still go through theirs. It counts from the next worker that starts.
 - **You can turn one off on your machine.** djinn project gates shows the gates as Djinn applies them; djinn project
   gates with off and the gate's name turns it off in your own settings file, never the repository's; on turns it back.

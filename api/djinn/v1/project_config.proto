@@ -49,11 +49,20 @@ message ProjectConfig {
   // a whole number from 1, leaves the whole file out, said with the file, the version read and the highest known: a
   // newer Djinn wrote it, and this one does not read it wrong. Read, it holds the highest version Djinn knows.
   uint32 version = 3;
+  // How the gates treat the project's commands, beside the gates it declares. Not set: Djinn's defaults.
+  GatesOptions gates_options = 4;
+}
+
+// GatesOptions is how the gates treat a project's commands, under gates_options: in its djinn.yaml.
+//
+//   gates_options:
+//     admit: false
+message GatesOptions {
   // false: the commands of the project's workers wait for no admission by the gates, whatever they cost: no Claude
-  // worker runs the gates' hook, no other agent waits on the heavy commands' wrappers. A gate declared here is then
-  // taken only by djinn gate run with its name; the checks of the merges and pushes still go through theirs. Not set,
-  // or true: they are admitted (Djinn's default).
-  optional bool admit = 4;
+  // worker runs the gates' hook, no other agent waits on the heavy commands' wrappers. A gate declared in the file is
+  // then taken only by djinn gate run with its name; the checks of the merges and pushes still go through theirs. Not
+  // set, or true: they are admitted (Djinn's default).
+  optional bool admit = 1;
 }
 
 // ProjectGate is a gate a project declares in its djinn.yaml: the commands of its workers that rebuild a shared
