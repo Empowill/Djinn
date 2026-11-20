@@ -51,6 +51,7 @@ func (p *Projects) projectNoticesWith(
 	if project.GetDirectory() != "" {
 		out = append(out, permissionNotices(config)...)
 		out = append(out, projectConfigNotices(config)...)
+		out = append(out, configBranchNotices(project, config)...)
 		if project.GetGit() && p.Pusher != nil {
 			var branch []*planv1.ProjectNotice
 			branch, ref = p.branchNoticesAndRef(
@@ -148,11 +149,12 @@ func settingsNotices(files []settingsRead) []*planv1.ProjectNotice {
 // permissionNotices are what Djinn finds in the permissions of a project, where it reads its configuration (config).
 func permissionNotices(config Config) []*planv1.ProjectNotice {
 	subject, file := filepath.ToSlash(PermissionsFile), filepath.Join(config.Folder, PermissionsFile)
-	_, unknowns, err := ReadPermissions(config.Dir)
+	dir, ref := config.PermissionsDir()
+	_, unknowns, err := ReadPermissions(dir)
 	if err != nil {
 		detail := err.Error()
-		if config.FromReference() {
-			detail = config.Ref + ":" + detail // the error names the file: origin/main:.agents/permissions.txtpb
+		if ref != "" {
+			detail = ref + ":" + detail // the error names the file: origin/main:.agents/permissions.txtpb
 		}
 		return []*planv1.ProjectNotice{{
 			Kind: toFix, Topic: topicPermissions, Subject: subject, Action: fixFile, File: file, Detail: detail,
@@ -232,7 +234,11 @@ func (p *Projects) branchNoticesAndRef(
 	}
 	var projRef *planv1.ProjectReference
 	if wantRef && branch != "" {
-		projRef = &planv1.ProjectReference{Branch: branch, Ref: shortRef(ref), Source: from, CheckedOut: head}
+		projRef = &planv1.ProjectReference{Branch: branch, Ref: shortRef(ref), Source: from, CheckedOut: head,
+			ConfigBranch: config.ConfigBranch}
+		if config.ReferenceDir != "" {
+			projRef.ConfigRef = config.Ref
+		}
 		if err == nil {
 			if config.FromReference() && shortRef(ref) == config.Ref && config.Commit != "" {
 				projRef.Commit = config.Commit
@@ -265,6 +271,33 @@ func (p *Projects) branchNoticesAndRef(
 			"project's configuration on %s, and no worker starts from your copy.", head, shortRef(ref), config.Ref)
 	}
 	return []*planv1.ProjectNotice{{Kind: information, Topic: topicBranch, Subject: head, Text: text}}, projRef
+}
+
+// configBranchNotices say where Djinn reads project's configuration while the developer's own file names a
+// configuration branch (config_branch, config): on that branch, the permissions staying on the reference branch; or,
+// the branch gone or not fetched, on the reference branch (Q110). Nothing when they name none.
+func configBranchNotices(project *planv1.Project, config Config) []*planv1.ProjectNotice {
+	if config.ConfigBranch == "" {
+		return nil
+	}
+	reference := cmp.Or(config.ReferenceRef, "the project's folder")
+	if config.ConfigBranchMissing() {
+		reference = cmp.Or(config.Ref, "the project's folder")
+	}
+	unset := "djinn project set-branch " + project.GetName() + " --config --unset"
+	if config.ConfigBranchMissing() {
+		return []*planv1.ProjectNotice{{
+			Kind: warning, Topic: topicBranch, Subject: config.ConfigBranch, Command: unset,
+			Text: fmt.Sprintf("config_branch %s is not on the remote (merged and deleted, or not fetched yet): Djinn "+
+				"reads the configuration on %s. Take it back once it merged.", config.ConfigBranch, reference),
+		}}
+	}
+	return []*planv1.ProjectNotice{{
+		Kind: information, Topic: topicBranch, Subject: config.ConfigBranch, Command: unset,
+		Text: fmt.Sprintf("Configuration read from %s, not %s: your config_branch, to try its djinn.yaml and skills "+
+			"before it merges. The permissions, pull requests and merges stay on %s. Take it back once it merged.",
+			config.Ref, reference, reference),
+	}}
 }
 
 // projectReference is project's reference branch, from name, its main_branch setting that from sets: the branch,

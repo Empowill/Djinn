@@ -93,7 +93,7 @@ func watchRefusal(home string, project *planv1.Project, command string, perms *d
 			name, file, command)
 	}
 	var b strings.Builder
-	if declared, _ := LoadPermissions(plan.ConfigDir(home, project)); declared != nil {
+	if declared, _ := LoadPermissions(plan.PermissionsDir(home, project)); declared != nil {
 		fmt.Fprintf(&b, "%s's %s does not list %q among the commands its workers run without review", name, file, command)
 	} else {
 		fmt.Fprintf(&b, "%s lists no command its workers run without review (it has no %s, and a wish's allowance adds "+

@@ -3485,7 +3485,13 @@ type ProjectReference struct {
 	// main_branch setting of the team's file or of yours.
 	Source SettingSource `protobuf:"varint,4,opt,name=source,proto3,enum=plan.v1.SettingSource" json:"source,omitempty"`
 	// The branch your copy has checked out; empty when it is detached.
-	CheckedOut    string `protobuf:"bytes,5,opt,name=checked_out,json=checkedOut,proto3" json:"checked_out,omitempty"`
+	CheckedOut string `protobuf:"bytes,5,opt,name=checked_out,json=checkedOut,proto3" json:"checked_out,omitempty"`
+	// The branch your own config_branch names, Djinn reading the project's configuration (djinn.yaml, skills) there
+	// rather than on this one; empty when you name none.
+	ConfigBranch string `protobuf:"bytes,6,opt,name=config_branch,json=configBranch,proto3" json:"config_branch,omitempty"`
+	// The ref Djinn reads that configuration on, short: origin/djinn/gates. Empty while config_branch is set: the
+	// branch is gone from the remote or not fetched, and Djinn reads the configuration on this reference branch.
+	ConfigRef     string `protobuf:"bytes,7,opt,name=config_ref,json=configRef,proto3" json:"config_ref,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3551,6 +3557,20 @@ func (x *ProjectReference) GetSource() SettingSource {
 func (x *ProjectReference) GetCheckedOut() string {
 	if x != nil {
 		return x.CheckedOut
+	}
+	return ""
+}
+
+func (x *ProjectReference) GetConfigBranch() string {
+	if x != nil {
+		return x.ConfigBranch
+	}
+	return ""
+}
+
+func (x *ProjectReference) GetConfigRef() string {
+	if x != nil {
+		return x.ConfigRef
 	}
 	return ""
 }
@@ -4381,7 +4401,14 @@ type ProjectSettings struct {
 	// every worker, and one for each kind that wants its own. Three layers, kind by kind: the Summoning Circle's, this
 	// machine's default for every project; the repository's, which wins over it; yours, which wins over both. A kind no
 	// layer sets takes the general text. Not set: none.
-	Instructions  *WorkerInstructions `protobuf:"bytes,31,opt,name=instructions,proto3" json:"instructions,omitempty"`
+	Instructions *WorkerInstructions `protobuf:"bytes,31,opt,name=instructions,proto3" json:"instructions,omitempty"`
+	// The branch Djinn reads the project's configuration on, before it merges into the reference branch: the
+	// djinn.yaml (settings, gates, containers) and the skills, to try them on this machine. The permissions
+	// (.agents/permissions.txtpb) stay read on the reference branch, so that no agent widens its own rights; pull
+	// requests, merge_main and worktrees keep main_branch. A developer's own choice, read from their own file only
+	// (djinn project set-branch --config), like gates_off. Gone from the remote, or not fetched: Djinn reads the
+	// reference branch, and a notice says so. Not set: the reference branch.
+	ConfigBranch  *string `protobuf:"bytes,32,opt,name=config_branch,json=configBranch,proto3,oneof" json:"config_branch,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4617,6 +4644,13 @@ func (x *ProjectSettings) GetInstructions() *WorkerInstructions {
 		return x.Instructions
 	}
 	return nil
+}
+
+func (x *ProjectSettings) GetConfigBranch() string {
+	if x != nil && x.ConfigBranch != nil {
+		return *x.ConfigBranch
+	}
+	return ""
 }
 
 // WorkerInstructions are the instructions a project's workers get at their launch, by kind of task (decision Q70 B), in
@@ -14860,8 +14894,13 @@ type ProjectServiceSetBranchRequest struct {
 	// The branch, without the remote's name: dev. Not with --unset.
 	Branch string `protobuf:"bytes,2,opt,name=branch,proto3" json:"branch,omitempty"`
 	// Take your choice back: the team's file names the reference branch again, else Djinn finds it (the remote's
-	// default branch, else main, else master).
-	Unset         bool `protobuf:"varint,3,opt,name=unset,proto3" json:"unset,omitempty"`
+	// default branch, else main, else master). With --config: Djinn reads the configuration on the reference branch
+	// again.
+	Unset bool `protobuf:"varint,3,opt,name=unset,proto3" json:"unset,omitempty"`
+	// Name the branch Djinn reads the configuration on (config_branch: djinn.yaml and skills) rather than the reference
+	// branch, to try a change of it before it merges: the permissions, pull requests and merges keep the reference
+	// branch. Take it back with --unset once the branch merges.
+	Config        bool `protobuf:"varint,4,opt,name=config,proto3" json:"config,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -14913,6 +14952,13 @@ func (x *ProjectServiceSetBranchRequest) GetBranch() string {
 func (x *ProjectServiceSetBranchRequest) GetUnset() bool {
 	if x != nil {
 		return x.Unset
+	}
+	return false
+}
+
+func (x *ProjectServiceSetBranchRequest) GetConfig() bool {
+	if x != nil {
+		return x.Config
 	}
 	return false
 }
@@ -28954,14 +29000,17 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x06detail\x18\x05 \x01(\tR\x06detail\x124\n" +
 	"\x06action\x18\x06 \x01(\x0e2\x1c.plan.v1.ProjectNoticeActionR\x06action\x12\x12\n" +
 	"\x04file\x18\a \x01(\tR\x04file\x12\x18\n" +
-	"\acommand\x18\b \x01(\tR\acommand\"\xa5\x01\n" +
+	"\acommand\x18\b \x01(\tR\acommand\"\xe9\x01\n" +
 	"\x10ProjectReference\x12\x16\n" +
 	"\x06branch\x18\x01 \x01(\tR\x06branch\x12\x10\n" +
 	"\x03ref\x18\x02 \x01(\tR\x03ref\x12\x16\n" +
 	"\x06commit\x18\x03 \x01(\tR\x06commit\x12.\n" +
 	"\x06source\x18\x04 \x01(\x0e2\x16.plan.v1.SettingSourceR\x06source\x12\x1f\n" +
 	"\vchecked_out\x18\x05 \x01(\tR\n" +
-	"checkedOut\"\xf4\x01\n" +
+	"checkedOut\x12#\n" +
+	"\rconfig_branch\x18\x06 \x01(\tR\fconfigBranch\x12\x1d\n" +
+	"\n" +
+	"config_ref\x18\a \x01(\tR\tconfigRef\"\xf4\x01\n" +
 	"\vConfigWatch\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\x12\x1d\n" +
 	"\n" +
@@ -29040,7 +29089,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x14\n" +
 	"\x05skill\x18\x02 \x01(\tR\x05skill\x12;\n" +
 	"\vcreate_time\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"createTime\"\xb3\x11\n" +
+	"createTime\"\x8d\x12\n" +
 	"\x0fProjectSettings\x12@\n" +
 	"\bprovider\x18\x01 \x01(\x0e2\x11.plan.v1.ProviderB\f\xbaH\t\x82\x01\x06\x10\x01 \x00 \x05H\x00R\bprovider\x88\x01\x01\x12=\n" +
 	"\x05model\x18\x02 \x01(\tB\"\xbaH\x1fr\x1d\x18\xc8\x012\x18^[A-Za-z0-9._:@/\\[\\]-]*$H\x01R\x05model\x88\x01\x01\x12B\n" +
@@ -29079,7 +29128,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x0einstall_builds\x18\x1c \x01(\bH\x16R\rinstallBuilds\x88\x01\x01\x128\n" +
 	"\x0eserve_commands\x18\x1d \x03(\tB\x11\xbaH\x0e\x92\x01\v\x102\"\ar\x05\x10\x01\x18\xf4\x03R\rserveCommands\x12C\n" +
 	"\tgates_off\x18\x1e \x03(\tB&\xbaH#\x92\x01 \x10\b\x18\x01\"\x1ar\x182\x16^[a-z][a-z0-9-]{0,39}$R\bgatesOff\x12?\n" +
-	"\finstructions\x18\x1f \x01(\v2\x1b.plan.v1.WorkerInstructionsR\finstructionsB\v\n" +
+	"\finstructions\x18\x1f \x01(\v2\x1b.plan.v1.WorkerInstructionsR\finstructions\x12F\n" +
+	"\rconfig_branch\x18  \x01(\tB\x1c\xbaH\x19r\x17\x18\xc8\x012\x12^[A-Za-z0-9._/-]*$H\x17R\fconfigBranch\x88\x01\x01B\v\n" +
 	"\t_providerB\b\n" +
 	"\x06_modelB\x11\n" +
 	"\x0f_max_budget_usdB\t\n" +
@@ -29104,7 +29154,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x12_install_questionsB\n" +
 	"\n" +
 	"\b_babysitB\x11\n" +
-	"\x0f_install_buildsJ\x04\b\n" +
+	"\x0f_install_buildsB\x10\n" +
+	"\x0e_config_branchJ\x04\b\n" +
 	"\x10\vJ\x04\b\x15\x10\x16R\x10question_workersR\x0eanswer_workers\"\x9d\x02\n" +
 	"\x12WorkerInstructions\x12'\n" +
 	"\ageneral\x18\x01 \x01(\tB\b\xbaH\x05r\x03\x18\xd0\x0fH\x00R\ageneral\x88\x01\x01\x12!\n" +
@@ -30043,12 +30094,13 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\bbranches\x18\x01 \x03(\tR\bbranches\x12\x1f\n" +
 	"\vchecked_out\x18\x02 \x01(\tR\n" +
 	"checkedOut\x12\x1c\n" +
-	"\treference\x18\x03 \x01(\tR\treference\"\x96\x01\n" +
+	"\treference\x18\x03 \x01(\tR\treference\"\xae\x01\n" +
 	"\x1eProjectServiceSetBranchRequest\x12$\n" +
 	"\aproject\x18\x01 \x01(\tB\n" +
 	"\xbaH\a\xc8\x01\x01r\x02\x18dR\aproject\x128\n" +
 	"\x06branch\x18\x02 \x01(\tB \xbaH\x19r\x17\x18\xc8\x012\x12^[A-Za-z0-9._/-]*$\x88\xf4\x18\x01R\x06branch\x12\x14\n" +
-	"\x05unset\x18\x03 \x01(\bR\x05unset\"~\n" +
+	"\x05unset\x18\x03 \x01(\bR\x05unset\x12\x16\n" +
+	"\x06config\x18\x04 \x01(\bR\x06config\"~\n" +
 	" ProjectServiceAcknowledgeRequest\x12$\n" +
 	"\aproject\x18\x01 \x01(\tB\n" +
 	"\xbaH\a\xc8\x01\x01r\x02\x18dR\aproject\x124\n" +

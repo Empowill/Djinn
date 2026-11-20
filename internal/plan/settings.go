@@ -240,6 +240,9 @@ type Settings struct {
 	// GatesOff are the gates the project declares in its djinn.yaml that the developer turns off on their machine:
 	// from their own file only.
 	GatesOff []string
+	// ConfigBranch is the branch the developer reads the project's configuration on, to try it before it merges
+	// (config_branch): from their own file only. Where Djinn reads it in the end is ProjectConfig's.
+	ConfigBranch string
 	// InstallBuilds says whether a build of the running Djinn's line, once pushed, installs by itself (W554).
 	InstallBuilds bool
 	// Instructions are what the project's workers are told, by kind (W114, Q70 B), one row per text: from the
@@ -253,7 +256,7 @@ type Settings struct {
 	QuestionProviderFrom, QuestionModelFrom, QuestionBudgetFrom                                        planv1.SettingSource
 	MainBranchFrom, MergeMainFrom, MergeMainEveryFrom, InstallReleasesFrom, PushFrom, PushStrategyFrom planv1.SettingSource
 	InstallQuestionsFrom, BabysitFrom, WatchCommandsFrom, InstallBuildsFrom                            planv1.SettingSource
-	ServeCommandsFrom, GatesOffFrom                                                                    planv1.SettingSource
+	ServeCommandsFrom, GatesOffFrom, ConfigBranchFrom                                                  planv1.SettingSource
 }
 
 // CanReadOnly tells whether a provider can run a question worker (read-only).
@@ -315,6 +318,7 @@ func ResolveSettings(repo, dev *planv1.ProjectSettings) Settings {
 		InstallQuestions: DefaultInstallQuestions,
 		MainBranchFrom:   def, MergeMainFrom: def, MergeMainEveryFrom: def, InstallReleasesFrom: def, PushFrom: def, PushStrategyFrom: def,
 		InstallQuestionsFrom: def, Babysit: true, BabysitFrom: def, WatchCommandsFrom: def, ServeCommandsFrom: def, GatesOffFrom: def, InstallBuilds: true, InstallBuildsFrom: def,
+		ConfigBranchFrom: def,
 	}
 	questionModel := false // a file set it
 	for _, f := range []struct {
@@ -409,6 +413,10 @@ func ResolveSettings(repo, dev *planv1.ProjectSettings) Settings {
 		// A repository declares its gates in its djinn.yaml: it never turns them off.
 		if len(f.settings.GetGatesOff()) > 0 && f.from == planv1.SettingSource_SETTING_SOURCE_DEVELOPER {
 			s.GatesOff, s.GatesOffFrom = f.settings.GetGatesOff(), f.from
+		}
+		// A repository never points Djinn at another branch for its own configuration: an agent's commit could.
+		if f.settings.GetConfigBranch() != "" && f.from == planv1.SettingSource_SETTING_SOURCE_DEVELOPER {
+			s.ConfigBranch, s.ConfigBranchFrom = f.settings.GetConfigBranch(), f.from
 		}
 	}
 	s.Instructions = ResolveInstructions(nil, repo.GetInstructions(), dev.GetInstructions())
@@ -573,6 +581,17 @@ func readSettingsFilesConfig(home string, project *planv1.Project, config Config
 		if f.team {
 			name = config.Named(filepath.Join(config.Dir, filepath.FromSlash(f.file)))
 		}
+		if f.err == nil && f.team && config.ReferenceDir != "" {
+			// The configuration branch's file never moves the reference branch: main_branch stays the reference's.
+			reference, _ := ReadProjectConfig(config.ReferenceDir)
+			if f.settings.GetMainBranch() != reference.Settings.GetMainBranch() {
+				if f.settings == nil {
+					f.settings = &planv1.ProjectSettings{}
+				}
+				f.settings = proto.CloneOf(f.settings)
+				f.settings.MainBranch = reference.Settings.MainBranch
+			}
+		}
 		if f.err == nil && f.team && config.TeamBranch != "" && f.settings.GetMainBranch() == "" {
 			// The default branch's tree named the reference branch, whose own tree does not: it stays the reference.
 			if f.settings == nil {
@@ -596,6 +615,11 @@ func readSettingsFilesConfig(home string, project *planv1.Project, config Config
 				f.warnings = append(f.warnings, settingsWarning{ignored: true, text: name + ": gates_off is " +
 					"ignored: a developer turns a gate off in their own file (djinn project gates --off), the " +
 					"repository declares its gates in its djinn.yaml"})
+			}
+			if f.settings.GetConfigBranch() != "" {
+				f.warnings = append(f.warnings, settingsWarning{ignored: true, text: name + ": config_branch is " +
+					"ignored: a developer names the branch Djinn reads the configuration on in their own file (djinn " +
+					"project set-branch --config), to try it before it merges"})
 			}
 		}
 		out = append(out, f)
@@ -639,6 +663,7 @@ func (s Settings) Rows() []*planv1.ProjectSetting {
 		{Name: "watch_commands", Value: strings.Join(s.WatchCommands, "; "), Source: s.WatchCommandsFrom},
 		{Name: "serve_commands", Value: strings.Join(s.ServeCommands, "; "), Source: s.ServeCommandsFrom},
 		{Name: "gates_off", Value: strings.Join(s.GatesOff, ", "), Source: s.GatesOffFrom},
+		{Name: "config_branch", Value: s.ConfigBranch, Source: s.ConfigBranchFrom},
 	}
 }
 
@@ -861,6 +886,19 @@ func SaveDeveloperMainBranch(home, projectID, branch string) error {
 		s.MainBranch = nil
 		if branch != "" {
 			s.MainBranch = &branch
+		}
+		return nil
+	})
+	return err
+}
+
+// SaveDeveloperConfigBranch writes branch as the config_branch setting of the developer's settings file in home, or
+// removes it when branch is empty: Djinn reads the configuration on the reference branch again.
+func SaveDeveloperConfigBranch(home, projectID, branch string) error {
+	_, err := saveDeveloper(home, projectID, func(s *planv1.ProjectSettings) error {
+		s.ConfigBranch = nil
+		if branch != "" {
+			s.ConfigBranch = &branch
 		}
 		return nil
 	})

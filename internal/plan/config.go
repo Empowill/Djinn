@@ -46,6 +46,29 @@ type Config struct {
 	// TeamBranch is the branch the team's file names in the default branch's tree, when Djinn took it as the
 	// reference branch; empty otherwise.
 	TeamBranch string
+	// ConfigBranch is the branch the developer's own config_branch names, to try the configuration before it merges;
+	// empty when they name none. ConfigBranchRef is its remote ref, refs/remotes/origin/djinn/gates, whether the
+	// repository holds it or not.
+	ConfigBranch, ConfigBranchRef string
+	// ReferenceDir is where Djinn reads what stays on the reference branch while Dir is the configuration branch's
+	// tree: the permissions (.agents/permissions.txtpb) and main_branch, so that no agent's commit widens its own
+	// rights nor moves the base of the requests; the reference branch's tree, or the project's folder when it is not
+	// fetched. ReferenceRef is the reference branch's ref, short, empty when ReferenceDir is the folder. Both empty
+	// when Dir is the reference branch's tree or the folder (ConfigBranch not set, or gone: ConfigBranchMissing).
+	ReferenceDir, ReferenceRef string
+}
+
+// ConfigBranchMissing tells whether the developer names a configuration branch the repository does not hold (gone
+// from the remote, or not fetched): Djinn reads the configuration on the reference branch instead.
+func (c Config) ConfigBranchMissing() bool { return c.ConfigBranch != "" && c.ReferenceDir == "" }
+
+// PermissionsDir is where Djinn reads the project's permissions, and Djinn's ref for them, short, as Ref: on the
+// reference branch, even while the configuration is read on the developer's configuration branch.
+func (c Config) PermissionsDir() (dir, ref string) {
+	if c.ReferenceDir != "" {
+		return c.ReferenceDir, c.ReferenceRef
+	}
+	return c.Dir, c.Ref
 }
 
 // FromReference tells whether Djinn reads the configuration in the reference branch's tree, not in the project's
@@ -79,6 +102,13 @@ func (c Config) Named(path string) string {
 // ConfigDir is the folder Djinn reads project's configuration in (ProjectConfig): empty when it has no folder here.
 func ConfigDir(home string, project *planv1.Project) string {
 	return ProjectConfig(home, project).Dir
+}
+
+// PermissionsDir is the folder Djinn reads project's permissions in: on its reference branch, even while the
+// developer reads the rest of its configuration on a configuration branch (Config.PermissionsDir).
+func PermissionsDir(home string, project *planv1.Project) string {
+	dir, _ := ProjectConfig(home, project).PermissionsDir()
+	return dir
 }
 
 // ConfigCache is where Djinn keeps the configuration it extracts from reference branches, in its data folder home: a
@@ -393,15 +423,36 @@ func readConfig(ctx context.Context, home, folder, common, devFile string) (Conf
 	if err != nil || ref == "" {
 		return c, err // no remote: the project's folder
 	}
-	sha := repo.refs[ref]
-	if sha == "" {
-		return c, nil // not fetched: the project's folder, and the branch's notice says so
+	if sha := repo.refs[ref]; sha != "" {
+		dir, err := extractConfig(ctx, home, folder, sha)
+		if err != nil {
+			return c, err
+		}
+		c = Config{Dir: dir, Folder: folder, Ref: shortRef(ref), Commit: sha, TeamBranch: team}
+	} // else not fetched: the project's folder, and the branch's notice says so
+	dev, _ := ReadSettings(devFile)
+	name := dev.GetConfigBranch()
+	if name == "" {
+		return c, nil
+	}
+	c.ConfigBranch, c.ConfigBranchRef = name, repo.reference(name)
+	sha := repo.refs[c.ConfigBranchRef]
+	switch {
+	case c.ConfigBranchRef == "" || sha == "":
+		return c, nil // gone or not fetched: the reference branch, and a notice says so (Q110)
+	case c.ConfigBranchRef == ref:
+		c.ReferenceDir, c.ReferenceRef = c.Dir, c.Ref // the reference branch itself
+		return c, nil
 	}
 	dir, err := extractConfig(ctx, home, folder, sha)
 	if err != nil {
-		return c, err
+		warnOnce(folder, "read the configuration on "+shortRef(c.ConfigBranchRef), err)
+		c.ConfigBranchRef = ""
+		return c, nil // the reference branch, as when the branch is gone
 	}
-	return Config{Dir: dir, Folder: folder, Ref: shortRef(ref), Commit: sha, TeamBranch: team}, nil
+	c.ReferenceDir, c.ReferenceRef = c.Dir, c.Ref
+	c.Dir, c.Ref, c.Commit = dir, shortRef(c.ConfigBranchRef), sha
+	return c, nil
 }
 
 // resolveReference is the remote ref of the reference branch of the project in folder, as repo holds its refs, devFile
@@ -427,11 +478,15 @@ func resolveReference(ctx context.Context, home, folder, devFile string, repo gi
 	return ref, "", nil
 }
 
-// ConfigReference is the remote ref Djinn reads project's configuration from once it is fetched
-// (refs/remotes/origin/main), as ProjectConfig finds it, home its data folder: empty outside Git, without a remote or
-// without a branch to take.
+// ConfigReference is the remote ref of the reference branch Djinn reads project's configuration from once it is
+// fetched (refs/remotes/origin/main), as ProjectConfig finds it, home its data folder: empty outside Git, without a
+// remote or without a branch to take. The developer's configuration branch is not it: ProjectConfig's Ref then.
 func ConfigReference(ctx context.Context, home string, project *planv1.Project) (string, error) {
-	if c := ProjectConfig(home, project); c.FromReference() {
+	c := ProjectConfig(home, project)
+	if c.ReferenceRef != "" {
+		return "refs/remotes/" + c.ReferenceRef, nil
+	}
+	if c.FromReference() && c.ReferenceDir == "" {
 		return "refs/remotes/" + c.Ref, nil
 	}
 	folder := project.GetDirectory()

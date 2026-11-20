@@ -730,6 +730,7 @@ type ProjectServiceClient interface {
 	// that pull requests aim at and that tells whether a branch landed. Written as main_branch in your own settings
 	// file, never in the repository: it wins over the team's .agents/djinn.yaml, where a team that follows another
 	// branch names it for everyone. Refused for a branch the repository does not hold, on its remote when it has one.
+	// With --config, the branch Djinn reads the configuration on instead (config_branch), to try it before it merges.
 	SetBranch(context.Context, *connect.Request[v1.ProjectServiceSetBranchRequest]) (*connect.Response[v1.ProjectServiceSetBranchResponse], error)
 	// Mark seen the changes of the project's configuration on its reference branch that ask for your look (a
 	// permission, a wish template, a babysit, the command of a source plugged in here): its gear no longer lights for
@@ -966,6 +967,7 @@ type ProjectServiceHandler interface {
 	// that pull requests aim at and that tells whether a branch landed. Written as main_branch in your own settings
 	// file, never in the repository: it wins over the team's .agents/djinn.yaml, where a team that follows another
 	// branch names it for everyone. Refused for a branch the repository does not hold, on its remote when it has one.
+	// With --config, the branch Djinn reads the configuration on instead (config_branch), to try it before it merges.
 	SetBranch(context.Context, *connect.Request[v1.ProjectServiceSetBranchRequest]) (*connect.Response[v1.ProjectServiceSetBranchResponse], error)
 	// Mark seen the changes of the project's configuration on its reference branch that ask for your look (a
 	// permission, a wish template, a babysit, the command of a source plugged in here): its gear no longer lights for

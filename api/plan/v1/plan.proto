@@ -150,6 +150,12 @@ message ProjectReference {
   SettingSource source = 4;
   // The branch your copy has checked out; empty when it is detached.
   string checked_out = 5;
+  // The branch your own config_branch names, Djinn reading the project's configuration (djinn.yaml, skills) there
+  // rather than on this one; empty when you name none.
+  string config_branch = 6;
+  // The ref Djinn reads that configuration on, short: origin/djinn/gates. Empty while config_branch is set: the
+  // branch is gone from the remote or not fetched, and Djinn reads the configuration on this reference branch.
+  string config_ref = 7;
 }
 
 // ConfigWatch is how Djinn watches a project's configuration on its reference branch, on this machine: every 5
@@ -480,6 +486,16 @@ message ProjectSettings {
   // machine's default for every project; the repository's, which wins over it; yours, which wins over both. A kind no
   // layer sets takes the general text. Not set: none.
   WorkerInstructions instructions = 31;
+  // The branch Djinn reads the project's configuration on, before it merges into the reference branch: the
+  // djinn.yaml (settings, gates, containers) and the skills, to try them on this machine. The permissions
+  // (.agents/permissions.txtpb) stay read on the reference branch, so that no agent widens its own rights; pull
+  // requests, merge_main and worktrees keep main_branch. A developer's own choice, read from their own file only
+  // (djinn project set-branch --config), like gates_off. Gone from the remote, or not fetched: Djinn reads the
+  // reference branch, and a notice says so. Not set: the reference branch.
+  optional string config_branch = 32 [
+    (buf.validate.field).string.max_len = 200,
+    (buf.validate.field).string.pattern = "^[A-Za-z0-9._/-]*$"
+  ];
 }
 
 // WorkerInstructions are the instructions a project's workers get at their launch, by kind of task (decision Q70 B), in
@@ -3210,6 +3226,7 @@ service ProjectService {
   // that pull requests aim at and that tells whether a branch landed. Written as main_branch in your own settings
   // file, never in the repository: it wins over the team's .agents/djinn.yaml, where a team that follows another
   // branch names it for everyone. Refused for a branch the repository does not hold, on its remote when it has one.
+  // With --config, the branch Djinn reads the configuration on instead (config_branch), to try it before it merges.
   rpc SetBranch(ProjectServiceSetBranchRequest) returns (ProjectServiceSetBranchResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
@@ -3522,8 +3539,13 @@ message ProjectServiceSetBranchRequest {
     (buf.validate.field).string.pattern = "^[A-Za-z0-9._/-]*$"
   ];
   // Take your choice back: the team's file names the reference branch again, else Djinn finds it (the remote's
-  // default branch, else main, else master).
+  // default branch, else main, else master). With --config: Djinn reads the configuration on the reference branch
+  // again.
   bool unset = 3;
+  // Name the branch Djinn reads the configuration on (config_branch: djinn.yaml and skills) rather than the reference
+  // branch, to try a change of it before it merges: the permissions, pull requests and merges keep the reference
+  // branch. Take it back with --unset once the branch merges.
+  bool config = 4;
 }
 
 message ProjectServiceAcknowledgeRequest {
