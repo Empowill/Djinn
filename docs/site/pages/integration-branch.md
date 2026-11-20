@@ -52,6 +52,17 @@ into it. Work already merged stays where it is.
 Djinn refuses the change while a merge into the current branch is under way, naming it; change it once that merge has
 ended.
 
+### A branch named but not made
+
+The Djinn may name a branch without making it, with the command line. The work does not wait on it: when a task's work
+is about to merge and the project's repository lacks the wish's branch, Djinn makes it, from the remote's branch of
+that name when the remote holds one, else from the reference branch, then merges the work into it. The task's events
+say so: **djinn/T17-gate-stack was not in the project's repository: Djinn made it from main**. When Djinn cannot make
+it, the remote not answering for instance, the work waits, saying why, and Djinn tries again at the next merge.
+
+Asking for the branch to be made, on the name the wish already records, makes it the same way; once the branch is
+there, asking again leaves it as it is.
+
 Under the per-azima strategy the chip reads **Each azima lands in main**, and does not open a picker: each azima has its
 branch, shown on its card. See [Push strategy](#push-strategy).
 
@@ -160,6 +171,8 @@ You can bring a branch up to its remote yourself: see [Pulling yourself](#push-p
 - **Commit or put aside your changes.** A checkout of the integration branch with changes not committed holds every
   merge into it: the tasks show **Merging** and wait.
 - **Name a reference branch.** A wish in a project where Djinn finds none has nowhere to land until you name one.
+- **A branch named is a branch made.** The wish's branch missing from the repository, Djinn makes it from the reference
+  branch before the next merge; it never waits on a branch that is not there.
 - **Changing the branch moves nothing.** Work already merged stays in the old branch; the next work goes to the new one.
 - **Djinn needs a Git identity.** It merges and commits as you; without your name and email set in Git, the work waits,
   saying how to set them.

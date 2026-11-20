@@ -8575,9 +8575,10 @@ export type WishServiceSetIntegrationRequest = Message<"plan.v1.WishServiceSetIn
   pushStrategy?: PushStrategy | undefined;
 
   /**
-   * Make the branch when the project's repository has none of that name: a new branch at the tip of the wish's
-   * current integration branch there. Without it, a branch the repository lacks is recorded, and the work waits for
-   * it.
+   * Make the branch when the project's repository has none of that name, the one the wish records already included:
+   * from the remote's branch of that name, else at the tip of the wish's current integration branch there, else from
+   * the reference branch. Without it, a branch the repository lacks is recorded, and the integration makes it the same
+   * way before it merges work into it.
    *
    * @generated from field: bool create_branch = 8;
    */

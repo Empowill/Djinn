@@ -346,21 +346,28 @@ func AzimaMergeRunning(azima *planv1.Task, tasks []*planv1.Task, branch string) 
 	return ""
 }
 
-// createIntegrationBranch makes branch in the repository of the project projectID: from the remote's branch of that
-// name when the remote holds one, else at the tip of wish's integration branch there (the project's reference branch,
-// for a wish that records none); a branch of that name already there is left as it is. home holds the developer's own
-// settings.
+// createIntegrationBranch makes branch in the repository of the project projectID (MakeIntegrationBranch).
 func createIntegrationBranch(ctx context.Context, tx store.Reader, home string, wish *planv1.Wish, projectID, branch string) error {
 	project, err := store.Get[*planv1.Project](ctx, tx, projectID)
 	if err != nil {
 		return err
 	}
+	_, err = MakeIntegrationBranch(ctx, home, wish, project, branch)
+	return err
+}
+
+// MakeIntegrationBranch makes branch in project's repository: from the remote's branch of that name when the remote
+// holds one, else at the tip of wish's integration branch there, else the project's reference branch: for a wish that
+// records none, or records branch itself, absent (W184: W109 waited two days on a branch named without being made). A
+// branch of that name already there is left as it is. It returns what the branch was made from, "" when it was there;
+// home holds the developer's own settings. It runs git, and the remote: never in a transaction (W504).
+func MakeIntegrationBranch(ctx context.Context, home string, wish *planv1.Wish, project *planv1.Project, branch string) (string, error) {
 	dir := project.GetDirectory()
 	if !project.GetGit() || dir == "" {
-		return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("project %s is not in Git: no branch to make", project.GetName()))
+		return "", connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("project %s is not in Git: no branch to make", project.GetName()))
 	}
 	if _, err := gitOut(ctx, dir, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch); err == nil {
-		return nil
+		return "", nil
 	}
 	// A branch the remote holds, an open pull request's, is made from the remote's: work merged into one made from
 	// main could never be pushed there (wish Dew, 13/10/2026). Its upstream is left unset: the push goes to the remote's
@@ -368,31 +375,31 @@ func createIntegrationBranch(ctx context.Context, tx store.Reader, home string, 
 	if remote := pushRemote(ctx, dir); remote != "" {
 		sha, err := gitx.FetchBranch(ctx, dir, remote, branch)
 		if err != nil {
-			return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
+			return "", connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
 				"cannot tell whether %s holds %s: %w; make it again once the remote answers", remote, branch, err))
 		}
 		if sha != "" {
 			if _, err := gitOut(ctx, dir, "branch", "--no-track", branch, sha); err != nil {
-				return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("make %s from %s/%s: %w", branch, remote, branch, err))
+				return "", connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("make %s from %s/%s: %w", branch, remote, branch, err))
 			}
-			return nil
+			return remote + "/" + branch, nil
 		}
 	}
-	from := IntegrationBranchOf(wish, projectID)
+	from := IntegrationBranchOf(wish, project.GetId())
 	var ref string
-	if from != "" {
+	if from != "" && !strings.EqualFold(from, branch) {
 		ref = "refs/heads/" + from
 	} else {
 		from, ref = ReferenceName(ctx, home, project)
 	}
 	if from == "" {
-		return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
+		return "", connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
 			"project %s has no integration branch to make %s from: name an existing branch", project.GetName(), branch))
 	}
 	if _, err := gitOut(ctx, dir, "branch", "--no-track", branch, ref); err != nil {
-		return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("make %s from %s: %w", branch, from, err))
+		return "", connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("make %s from %s: %w", branch, from, err))
 	}
-	return nil
+	return strings.TrimPrefix(strings.TrimPrefix(ref, "refs/heads/"), "refs/remotes/"), nil
 }
 
 // pushRemote is the remote Djinn pushes a branch with no upstream to, from the repository holding dir: origin, else
@@ -474,14 +481,14 @@ func (w *Wishes) SetIntegration(
 		if err != nil {
 			return nil, Status(err)
 		}
-		projectID, change, err := integrationChange(ctx, w.Store, wish, req.Msg)
+		projectID, _, err := integrationChange(ctx, w.Store, wish, req.Msg)
 		if err != nil {
 			return nil, Status(err)
 		}
-		if change {
-			if err := createIntegrationBranch(ctx, w.Store, w.Home, wish, projectID, branch); err != nil {
-				return nil, Status(err)
-			}
+		// The branch the wish records already is made all the same: one named without --create-branch is absent, and
+		// the command run again must make it, not answer ok (W184).
+		if err := createIntegrationBranch(ctx, w.Store, w.Home, wish, projectID, branch); err != nil {
+			return nil, Status(err)
 		}
 	}
 	var wish *planv1.Wish

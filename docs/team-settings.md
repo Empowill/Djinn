@@ -667,7 +667,9 @@ project's reference branch when the wish was made (`main_branch`, else the remot
 changes it, or the chip that names it in the wish's head, to a local branch (`djinn project branches <project>` lists
 them, Djinn's task branches left out, with the reference branch) or to a new one made from it (`--create-branch`; from
 the remote's branch of that name when the remote holds one, an open pull request's; from the reference branch, the
-remote's, for a wish that records none). A change is refused while a merge into the
+remote's, for a wish that records none or records that very branch, named before without `--create-branch`). A branch
+named without `--create-branch` and absent from the repository is made all the same, the same way, by the integration
+before it merges work into it, said on the tasks merged (W184). A change is refused while a merge into the
 branch runs (a batch merged and tested, a correction or review worker, main's merge settled), Djinn naming it. Per wish,
 a wish's work lands in that branch; per azima, an azima's work lands in main through its own branch and pull request.
 
