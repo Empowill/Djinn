@@ -229,7 +229,10 @@ shared.
 - **The status bar** counts the gates held: **2 gates held**.
 - **A task's card** counts the time its worker spent **waiting gate**.
 - **A task's events** say each gate it asked for, waited for and why, took, and gave back.
-- **The Hourglass**, on its **Gates** tab, shows by project who holds each gate now and who waits; draws, over the
+- **The Hourglass**, on its **Gates** tab, shows by project who holds each gate now and who waits, each gate a seal: a
+  door in an octagon, open in green when the gate is free, shut with a blue keyhole while it is held, a gold flame on
+  its orbit for each worker waiting, barred when its command takes a worker's slot, its orbits turning while it is
+  held; draws, over the
   last hour, 6 hours or day, under the workers that run, each project with one lane per gate its workers asked for,
   each request in its task's colour, hatched while it waits for its gate, and, under the pointer, what it waited for,
   each holder in turn with how long it waited for it, as its worker read it; follows the named gates' requests from their

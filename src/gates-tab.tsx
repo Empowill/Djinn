@@ -623,8 +623,20 @@ function LiveGate({
 }) {
   const { gate: g, name, declared, holds, waiting } = entry;
   const held = g.holder && holds;
+  const state = !g.holder
+    ? "free"
+    : held && g.takesSlot
+      ? "heavy"
+      : waiting.length > 0
+        ? "wait"
+        : "held";
   return (
-    <li id={id} className={`gates-gate ${held ? "is-held" : "is-waited"}`}>
+    <li
+      id={id}
+      className={`gates-gate ${held ? "is-held" : "is-waited"}`}
+      data-state={state}
+    >
+      <Seal waiters={waiting.length} />
       <div className="gates-gate-head">
         <code className="gates-gate-name">{name}</code>
         <span className="gates-gate-state">
@@ -693,6 +705,88 @@ function LiveGate({
   );
 }
 
+// The seal of a gate (L42 C): the door in the loader's octagon, its edge in the gate's state (data-state on the card:
+// free, held, wait, heavy, gates-tab.css). Free, the door stands open in emerald light; held, it is shut, the keyhole
+// in the holder's blue; waited for, a gold flame per waiter sits on the orbit; heavy (it takes a worker's slot), a bar
+// crosses it. The orbits turn while the gate is held. Each loop is an element of its own moved by transform alone: WebKit
+// repaints a whole SVG for any of its parts (W513), so the octagon and the door, which only change with the state,
+// never repaint for a frame of the loops.
+const SEAL_FLAMES = 5;
+const ARCH = "M9 46V20.5C9 13 14 8.5 20 6C26 8.5 31 13 31 20.5V46Z";
+const FLAME =
+  "M12 2s7 7.5 7 14a7 7 0 0 1-14 0c0-5 4-9 4-9s-.6 4.3 2.4 6C10.6 8.6 12 2 12 2z";
+
+const Seal = memo(function Seal({ waiters }: { waiters: number }) {
+  const flames = Array.from(
+    { length: Math.min(waiters, SEAL_FLAMES) },
+    (_, i) => {
+      // On the orbit's upper left, the next one first, each 28 degrees further: its centre, in the seal's 76 units.
+      const a = ((-120 + i * 28) * Math.PI) / 180;
+      return {
+        left: `${((38 + 35 * Math.cos(a)) / 76) * 100}%`,
+        top: `${((38 + 35 * Math.sin(a)) / 76) * 100}%`,
+      };
+    },
+  );
+  return (
+    <div className="gates-seal" aria-hidden="true">
+      <svg className="gates-seal-orbit" viewBox="0 0 76 76">
+        <path className="gates-seal-arc" d="M38 3C55 3 70 15 73 31" />
+        <path className="gates-seal-arc is-mint" d="M38 73C21 73 6 61 3 45" />
+      </svg>
+      <svg className="gates-seal-frame" viewBox="0 0 76 76">
+        <polygon
+          className="gates-seal-oct"
+          points="38,11 46,19 57,19 57,30 65,38 57,46 57,57 46,57 38,65 30,57 19,57 19,46 11,38 19,30 19,19 30,19"
+        />
+      </svg>
+      <svg className="gates-door" viewBox="0 0 40 48">
+        <path className="gates-door-light" d={ARCH} />
+        <path
+          className="gates-door-spark"
+          d="M20 18.5l1.1 2.9 2.9 1.1-2.9 1.1L20 26.5l-1.1-2.9-2.9-1.1 2.9-1.1z"
+        />
+        <g className="gates-door-leaf is-left">
+          <path d="M9 46V20.5C9 13 14 8.5 20 6V46Z" />
+          <path
+            className="gates-door-fili"
+            d="M12.5 43V22C12.5 17.5 15 13.8 17.5 12"
+          />
+          <path className="gates-door-fili" d="M16.5 43V20" />
+        </g>
+        <g className="gates-door-leaf is-right">
+          <path d="M31 46V20.5C31 13 26 8.5 20 6V46Z" />
+          <path
+            className="gates-door-fili"
+            d="M27.5 43V22C27.5 17.5 25 13.8 22.5 12"
+          />
+          <path className="gates-door-fili" d="M23.5 43V20" />
+        </g>
+        <path
+          className="gates-door-key"
+          d="M20 27.2a1.5 1.5 0 0 1 .7 2.8l.5 2.6h-2.4l.5-2.6a1.5 1.5 0 0 1 .7-2.8z"
+        />
+        <path className="gates-door-bolt" d="M7 31.5H33" />
+        <path
+          className="gates-door-frame"
+          d="M6 46V20C6 11 13 5 20 2C27 5 34 11 34 20V46"
+        />
+        <path className="gates-door-sill" d="M4 46.6H36" />
+      </svg>
+      {flames.map((at, i) => (
+        <svg
+          key={i}
+          className="gates-seal-flame"
+          viewBox="0 0 24 30"
+          style={{ ...at, animationDelay: `${-0.8 * i}s` }}
+        >
+          <path d={FLAME} />
+        </svg>
+      ))}
+    </div>
+  );
+});
+
 // How a waiter outside any task is named (gate.Take).
 const OUTSIDE = "a holder outside any task";
 
@@ -719,7 +813,8 @@ function FreeGate({
   const code = last ? tasks?.get(last.taskId)?.code : undefined;
   const { name, declared } = gateIn(waits.gate, waits.project);
   return (
-    <li id={id} className="gates-gate">
+    <li id={id} className="gates-gate" data-state="free">
+      <Seal waiters={0} />
       <div className="gates-gate-head">
         <code className="gates-gate-name">{name}</code>
         <span className="gates-gate-state">{t("gates.free")}</span>

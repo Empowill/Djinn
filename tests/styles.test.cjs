@@ -1174,3 +1174,29 @@ test("the wish header lets its dropdowns open above the content below", () => {
   assert.match(picker, /position:\s*absolute;/);
   assert.match(picker, /z-index:\s*60;/);
 });
+
+// W194 (L42 C): the gates' seals loop (the orbits while a gate is held, the waiters' flames) by transform alone, each
+// on an element of its own, and pause with the window at rest.
+test("the gates' seals loop by transform alone and pause at rest", () => {
+  const css = fs
+    .readFileSync(path.join(root, "gates-tab.css"), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "");
+  const styles = fs.readFileSync(path.join(root, "styles.css"), "utf8");
+  const loops = [...css.matchAll(/([^{}]+)\{[^}]*animation:[^;}]*infinite/g)];
+  assert.deepEqual(
+    loops.map(([, selector]) => selector.trim()),
+    [
+      '.gates-gate:not([data-state="free"]) .gates-seal-orbit',
+      ".gates-seal-flame",
+    ],
+  );
+  for (const sel of [".gates-seal-orbit", ".gates-seal-flame"])
+    assert.ok(styles.includes(`html[data-still] ${sel},`), `${sel} rests`);
+  for (const name of ["gates-orbit", "gates-flick"]) {
+    const body = css.match(
+      new RegExp(`@keyframes ${name}\\s*\\{([\\s\\S]*?\\})\\s*\\}`),
+    )[1];
+    for (const [, property] of body.matchAll(/([a-z-]+)\s*:/g))
+      assert.equal(property, "transform", name);
+  }
+});
