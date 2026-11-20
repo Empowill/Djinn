@@ -413,3 +413,68 @@ func TestProjectGates(t *testing.T) {
 		t.Errorf("the repository's gates_off is not said ignored: %v", err)
 	}
 }
+
+// TestProjectGatesRead (W191, Q110): djinn project gates says where Djinn read the gates, the ref and its commit, and
+// what the developer's config_branch changes: none named, origin/main without a djinn.yaml is said in a line, not left
+// an answer of one field (W189); named, the gates of its branch; the branch gone, main again, said.
+func TestProjectGatesRead(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	home := t.TempDir()
+	c := serve(t, WithHome(home))
+	p := configProject(t, map[string]string{"README": "repo\n"})
+	dir := p.GetDirectory()
+	main := gitIn(t, dir, "rev-parse", "refs/remotes/origin/main")
+	gitIn(t, dir, "checkout", "-q", "-b", "djinn/gates")
+	writeFileAt(t, filepath.Join(dir, ProjectConfigFiles[1]), "gates:\n  - name: stack\n    alone: [task run-back]\n")
+	branch := commitAs(t, dir, "refs/remotes/origin/djinn/gates")
+	gitIn(t, dir, "checkout", "-q", "main")
+	c.put(t, p)
+	gates := func() *planv1.ProjectServiceGatesResponse {
+		t.Helper()
+		res, err := c.projects.Gates(ctx, connect.NewRequest(&planv1.ProjectServiceGatesRequest{Project: "repo"}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res.Msg
+	}
+
+	// No config_branch, no djinn.yaml on origin/main.
+	res := gates()
+	if res.GetRef() != "origin/main" || res.GetCommit() != main || res.GetFile() != "" || len(res.GetGates()) != 0 ||
+		res.GetConfigBranch() != "" || res.GetConfigBranchMissing() {
+		t.Errorf("none named: %v", res)
+	}
+	if want := "No djinn.yaml nor .agents/djinn.yaml on origin/main (" + main[:10] + "): the project declares no gate. " +
+		"You name no config_branch."; res.GetRead() != want {
+		t.Errorf("none named: read %q, want %q", res.GetRead(), want)
+	}
+
+	// Named: its branch's gates.
+	if err := SaveDeveloperConfigBranch(home, p.GetId(), "djinn/gates"); err != nil {
+		t.Fatal(err)
+	}
+	res = gates()
+	if res.GetRef() != "origin/djinn/gates" || res.GetCommit() != branch || res.GetFile() != ".agents/djinn.yaml" ||
+		len(res.GetGates()) != 1 || res.GetGates()[0].GetName() != "stack" || res.GetConfigBranch() != "djinn/gates" ||
+		res.GetConfigBranchMissing() {
+		t.Errorf("named: %v", res)
+	}
+	if want := "Read .agents/djinn.yaml on origin/djinn/gates (" + branch[:10] + "). It is your config_branch djinn/gates, " +
+		"to try it before it merges; the reference branch is origin/main."; res.GetRead() != want {
+		t.Errorf("named: read %q, want %q", res.GetRead(), want)
+	}
+
+	// The branch merged and deleted: main again, said.
+	gitIn(t, dir, "update-ref", "-d", "refs/remotes/origin/djinn/gates")
+	res = gates()
+	if res.GetRef() != "origin/main" || res.GetCommit() != main || res.GetFile() != "" || len(res.GetGates()) != 0 ||
+		res.GetConfigBranch() != "djinn/gates" || !res.GetConfigBranchMissing() {
+		t.Errorf("branch gone: %v", res)
+	}
+	if want := "No djinn.yaml nor .agents/djinn.yaml on origin/main (" + main[:10] + "): the project declares no gate. " +
+		"Your config_branch djinn/gates is not on the remote (merged and deleted, or not fetched yet): Djinn reads the " +
+		"reference branch instead."; res.GetRead() != want {
+		t.Errorf("branch gone: read %q, want %q", res.GetRead(), want)
+	}
+}

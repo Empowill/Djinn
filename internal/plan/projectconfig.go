@@ -462,8 +462,13 @@ type ProjectGates struct {
 // invalid one is (ReadProjectConfig); one the developer turns off (gates_off) is not applied. A file Djinn cannot read
 // declares no gate.
 func LoadProjectGates(home string, project *planv1.Project) ProjectGates {
+	return projectGatesIn(home, project, ConfigDir(home, project))
+}
+
+// projectGatesIn are the gates project declares in its djinn.yaml under dir, where Djinn reads its configuration
+// (LoadProjectGates); none when dir is empty.
+func projectGatesIn(home string, project *planv1.Project, dir string) ProjectGates {
 	var out ProjectGates
-	dir := ConfigDir(home, project)
 	if dir == "" {
 		return out
 	}

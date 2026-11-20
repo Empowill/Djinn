@@ -14417,9 +14417,24 @@ type ProjectServiceGatesResponse struct {
 	// What Djinn found wrong in the declaration: a gate left out, and why; a pattern of one word.
 	Warnings []string `protobuf:"bytes,5,rep,name=warnings,proto3" json:"warnings,omitempty"`
 	// The gates you turn off that the project declares, as it declares them, in the file's order.
-	OffGates      []*v1.ProjectGate `protobuf:"bytes,6,rep,name=off_gates,json=offGates,proto3" json:"off_gates,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	OffGates []*v1.ProjectGate `protobuf:"bytes,6,rep,name=off_gates,json=offGates,proto3" json:"off_gates,omitempty"`
+	// Where Djinn read the file and what it found there, in one line, never empty: "Read .agents/djinn.yaml on
+	// origin/main (4b9212581d).", "No djinn.yaml nor .agents/djinn.yaml on origin/main (4b9212581d): the project
+	// declares no gate.", followed by what your config_branch changes, set or gone.
+	Read string `protobuf:"bytes,7,opt,name=read,proto3" json:"read,omitempty"`
+	// The ref Djinn read the file on, short: origin/main, or origin/<config_branch> while your config_branch is on the
+	// remote; empty when it reads the project's folder (outside Git, without a remote, or its branch not fetched).
+	Ref string `protobuf:"bytes,8,opt,name=ref,proto3" json:"ref,omitempty"`
+	// The commit ref pointed at, in full; empty without ref.
+	Commit string `protobuf:"bytes,9,opt,name=commit,proto3" json:"commit,omitempty"`
+	// Your config_branch, from your own settings file: the branch Djinn reads the project's configuration on, to try it
+	// before it merges; empty when you name none.
+	ConfigBranch string `protobuf:"bytes,10,opt,name=config_branch,json=configBranch,proto3" json:"config_branch,omitempty"`
+	// Whether your config_branch is not on the remote (merged and deleted, or not fetched yet): Djinn reads the reference
+	// branch instead, ref.
+	ConfigBranchMissing bool `protobuf:"varint,11,opt,name=config_branch_missing,json=configBranchMissing,proto3" json:"config_branch_missing,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *ProjectServiceGatesResponse) Reset() {
@@ -14492,6 +14507,41 @@ func (x *ProjectServiceGatesResponse) GetOffGates() []*v1.ProjectGate {
 		return x.OffGates
 	}
 	return nil
+}
+
+func (x *ProjectServiceGatesResponse) GetRead() string {
+	if x != nil {
+		return x.Read
+	}
+	return ""
+}
+
+func (x *ProjectServiceGatesResponse) GetRef() string {
+	if x != nil {
+		return x.Ref
+	}
+	return ""
+}
+
+func (x *ProjectServiceGatesResponse) GetCommit() string {
+	if x != nil {
+		return x.Commit
+	}
+	return ""
+}
+
+func (x *ProjectServiceGatesResponse) GetConfigBranch() string {
+	if x != nil {
+		return x.ConfigBranch
+	}
+	return ""
+}
+
+func (x *ProjectServiceGatesResponse) GetConfigBranchMissing() bool {
+	if x != nil {
+		return x.ConfigBranchMissing
+	}
+	return false
 }
 
 type ProjectServiceForgetSyncRequest struct {
@@ -30060,14 +30110,20 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x03off\x18\x02 \x01(\tB\x1d\xbaH\x1ar\x182\x16^[a-z][a-z0-9-]{0,39}$H\x00R\x03off\x88\x01\x01\x122\n" +
 	"\x02on\x18\x03 \x01(\tB\x1d\xbaH\x1ar\x182\x16^[a-z][a-z0-9-]{0,39}$H\x01R\x02on\x88\x01\x01B\x06\n" +
 	"\x04_offB\x05\n" +
-	"\x03_on\"\xf2\x01\n" +
+	"\x03_on\"\x89\x03\n" +
 	"\x1bProjectServiceGatesResponse\x12+\n" +
 	"\x05gates\x18\x01 \x03(\v2\x15.djinn.v1.ProjectGateR\x05gates\x12\x12\n" +
 	"\x04file\x18\x02 \x01(\tR\x04file\x12\x1b\n" +
 	"\tgates_off\x18\x03 \x03(\tR\bgatesOff\x12%\n" +
 	"\x0edeveloper_file\x18\x04 \x01(\tR\rdeveloperFile\x12\x1a\n" +
 	"\bwarnings\x18\x05 \x03(\tR\bwarnings\x122\n" +
-	"\toff_gates\x18\x06 \x03(\v2\x15.djinn.v1.ProjectGateR\boffGates\"l\n" +
+	"\toff_gates\x18\x06 \x03(\v2\x15.djinn.v1.ProjectGateR\boffGates\x12\x12\n" +
+	"\x04read\x18\a \x01(\tR\x04read\x12\x10\n" +
+	"\x03ref\x18\b \x01(\tR\x03ref\x12\x16\n" +
+	"\x06commit\x18\t \x01(\tR\x06commit\x12#\n" +
+	"\rconfig_branch\x18\n" +
+	" \x01(\tR\fconfigBranch\x122\n" +
+	"\x15config_branch_missing\x18\v \x01(\bR\x13configBranchMissing\"l\n" +
 	"\x1fProjectServiceForgetSyncRequest\x12$\n" +
 	"\aproject\x18\x01 \x01(\tB\n" +
 	"\xbaH\a\xc8\x01\x01r\x02\x18dR\aproject\x12#\n" +

@@ -206,6 +206,11 @@ docker compose star up. No regular expression and no shell: nothing runs. 32 pat
   pushes still go through theirs. It counts from the next worker that starts.
 - **You can turn one off on your machine.** djinn project gates shows the gates as Djinn applies them; djinn project
   gates with off and the gate's name turns it off in your own settings file, never the repository's; on turns it back.
+- **It says where it read them.** Its read line names the file and the ref it was read on, with its commit: Read
+  .agents/djinn.yaml on origin/main (4b9212581d). With no djinn.yaml there, it says so rather than staying silent: No
+  djinn.yaml nor .agents/djinn.yaml on origin/main: the project declares no gate. It then names your config_branch, or
+  says you name none; the branch gone from the remote, it says Djinn reads the reference branch instead. The answer
+  also gives the ref, the commit, the config_branch and whether it is missing, each in a field of its own.
 
 ## Slots and gates
 
