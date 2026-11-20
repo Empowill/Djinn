@@ -150,6 +150,10 @@ func admitCommand(what, dir, match string, agent int) (string, error) {
 			if why == "" {
 				return "", nil
 			}
+			// Djinn says what it waited for, each reason with its time; a Djinn before W174 says only "admitted".
+			if all := msg.GetReason(); all != "" && all != "admitted" {
+				why = all
+			}
 			return fmt.Sprintf("djinn: this command waited %s for its admission by the gates: %s",
 				time.Since(asked).Round(time.Second), why), nil
 		}

@@ -907,3 +907,53 @@ func TestIntervals(t *testing.T) {
 	again.Keep(machine.NewIntervals(db))
 	check(again, "after a restart")
 }
+
+// TestWaited: what a holder waited for names each reason in turn with its own time, its gate's label first; the
+// pressure and the memory, whose figures change as it waits, are one reason with their last figures; one admitted past
+// the memory wait says so in place of its memory; past five reasons, the first two, the last two, and how many between.
+func TestWaited(t *testing.T) {
+	t.Parallel()
+	const (
+		held     = machinev1.GateWaitCause_GATE_WAIT_CAUSE_HELD
+		pressure = machinev1.GateWaitCause_GATE_WAIT_CAUSE_PRESSURE
+		memory   = machinev1.GateWaitCause_GATE_WAIT_CAUSE_MEMORY
+	)
+	at := time.Date(2026, 11, 20, 10, 0, 0, 0, time.UTC)
+	stints := func(texts ...string) []stint {
+		out := make([]stint, len(texts))
+		for i, text := range texts {
+			out[i] = stint{text: text, kind: held, from: at.Add(time.Duration(i) * 10 * time.Second)}
+		}
+		return out
+	}
+	for _, c := range []struct {
+		name string
+		w    waiter
+		want string
+	}{
+		{"none", waiter{}, ""},
+		{"one, labelled", waiter{label: "stack (dolmen, .agents/djinn.yaml)", stints: stints("held by W2"), since: at.Add(11 * time.Second)},
+			"stack (dolmen, .agents/djinn.yaml): held by W2 (11s)"},
+		{"in turn", waiter{stints: stints("shared by W1", "held by W2"), since: at.Add(21 * time.Second)},
+			"shared by W1 (10s), then held by W2 (11s)"},
+		{"forced past the memory", waiter{
+			stints: []stint{{text: "held by W2", kind: held, from: at}, {text: "short of memory", kind: memory, from: at.Add(5 * time.Second)}},
+			since:  at.Add(65 * time.Second), forced: "admitted after 1m0s waiting for memory, the most a command waits for it: short of memory",
+		}, "held by W2 (5s), then admitted after 1m0s waiting for memory, the most a command waits for it: short of memory"},
+		{"many", waiter{stints: stints("a", "b", "c", "d", "e", "f"), since: at.Add(60 * time.Second)},
+			"a (10s), then b (10s), then 2 more, then e (10s), then f (10s)"},
+	} {
+		if got := c.w.waited(); got != c.want {
+			t.Errorf("%s: %q, want %q", c.name, got, c.want)
+		}
+	}
+
+	var w waiter
+	w.wait("the machine is under pressure: cpu 91%", pressure)
+	w.wait("the machine is under pressure: cpu 93%", pressure)
+	w.wait("held by W2", held)
+	w.wait("held by W2", held)
+	if len(w.stints) != 2 || w.stints[0].text != "the machine is under pressure: cpu 93%" || w.stints[1].text != "held by W2" {
+		t.Errorf("stints = %+v", w.stints)
+	}
+}

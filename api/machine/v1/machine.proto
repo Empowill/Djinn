@@ -563,7 +563,8 @@ message GateServiceAdmitRequest {
 message GateServiceAdmitResponse {
   // Where the command stands: waiting, or held once admitted.
   GateState state = 1;
-  // Why it waits.
+  // Why it waits; once held, what it waited for, each reason in turn with how long it waited for it, or "admitted"
+  // when it did not wait.
   string reason = 2;
 }
 

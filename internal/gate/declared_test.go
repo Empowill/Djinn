@@ -79,7 +79,7 @@ func TestDeclared(t *testing.T) {
 		t.Errorf("the run-back waits because %q", why)
 	}
 	qa, qaWaits := admit(t, g, "W3", "task qa", pid)
-	if why := await(t, qaWaits, "the qa waits"); why != label+"behind W2: cd back && task run-back, which waits to hold it alone" {
+	if why := await(t, qaWaits, "the qa waits"); why != label+"behind W2: cd back && task run-back, which waits to hold it alone, shared by W1: task recette" {
 		t.Errorf("the qa waits because %q", why)
 	}
 	notGranted(t, qa, "a beside command behind an alone one that waits")

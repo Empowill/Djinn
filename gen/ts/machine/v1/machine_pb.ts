@@ -1425,7 +1425,8 @@ export type GateServiceAdmitResponse = Message<"machine.v1.GateServiceAdmitRespo
   state: GateState;
 
   /**
-   * Why it waits.
+   * Why it waits; once held, what it waited for, each reason in turn with how long it waited for it, or "admitted"
+   * when it did not wait.
    *
    * @generated from field: string reason = 2;
    */

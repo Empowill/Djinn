@@ -2642,7 +2642,8 @@ type GateServiceAdmitResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Where the command stands: waiting, or held once admitted.
 	State GateState `protobuf:"varint,1,opt,name=state,proto3,enum=machine.v1.GateState" json:"state,omitempty"`
-	// Why it waits.
+	// Why it waits; once held, what it waited for, each reason in turn with how long it waited for it, or "admitted"
+	// when it did not wait.
 	Reason        string `protobuf:"bytes,2,opt,name=reason,proto3" json:"reason,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
