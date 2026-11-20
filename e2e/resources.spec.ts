@@ -582,7 +582,9 @@ test("the resources panel: values on hover and keys, live samples, and a worker'
   await expect(flow.locator(".gates-band")).toHaveCount(6);
   await expect(flow.locator(".gates-flow-name").last()).toHaveText("commands");
   await flow.getByRole("button", { name: "Named gates" }).click();
-  // Pointed at, the lanes say who runs, holds and waits at that moment.
+  // Pointed at, the lanes say who runs, holds and waits at that moment. page.mouse does not scroll: the seals of Now
+  // (W194) push the lanes below the fold when the terminal panel takes the bottom of the window, so bring them in.
+  await flow.locator(".gates-flow-tracks").scrollIntoViewIfNeeded();
   const tracks = (await flow.locator(".gates-flow-tracks").boundingBox())!;
   await page.mouse.move(tracks.x + tracks.width * 0.75, tracks.y + 30);
   await expect(flow.locator(".gates-flow-readout")).toContainText(
