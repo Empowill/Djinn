@@ -471,8 +471,10 @@ func TestPeaks_Ask(t *testing.T) {
 	}
 }
 
-// TestPeak (W139): the peak the gates hold a command to is the 95th percentile of its latest PeakRuns measured runs: a
-// run measured wrong fades once PeakRuns others ran; a cost that kept no run holds its highest peak.
+// TestPeak (W139, W197): the peak the gates hold a command to is the 95th percentile of its latest PeakRuns measured
+// runs, a lone peak far above the others left out from OutlierRuns runs on: a run measured wrong (Romain's 7270 MiB on
+// python3 -) stops counting once two clean runs were measured, not after PeakRuns; two high runs are no outlier; a cost
+// that kept no run holds its highest peak.
 func TestPeak(t *testing.T) {
 	t.Parallel()
 	runs := func(peaks ...uint64) []*machinev1.CommandRun {
@@ -482,6 +484,7 @@ func TestPeak(t *testing.T) {
 		}
 		return out
 	}
+	const wrong, clean = 7270 << 20, 300 << 20
 	poisoned := append(runs(6<<30), runs(slices.Repeat([]uint64{100 << 20}, PeakRuns)...)...)
 	for _, c := range []struct {
 		name string
@@ -492,7 +495,19 @@ func TestPeak(t *testing.T) {
 		{"one run", &machinev1.CommandCost{PeakMemoryBytes: 3 << 30, RecentRuns: runs(GiB)}, GiB},
 		{"unmeasured runs left out", &machinev1.CommandCost{RecentRuns: runs(GiB, 0, 0)}, GiB},
 		{"a poisoned run faded", &machinev1.CommandCost{PeakMemoryBytes: 6 << 30, RecentRuns: poisoned}, 100 << 20},
-		{"a poisoned run among the latest", &machinev1.CommandCost{RecentRuns: poisoned[:PeakRuns]}, 402 << 20}, // 95 % of 100 MiB, 5 % of 6 GiB,
+		{"a poisoned run among the latest", &machinev1.CommandCost{RecentRuns: poisoned[:PeakRuns]}, 100 << 20},
+		// Too few runs to tell which is wrong: 95 % of 7270 MiB, 5 % of 300 MiB.
+		{"an outlier then 1 clean run", &machinev1.CommandCost{RecentRuns: runs(wrong, clean)}, 6921 << 20},
+		{"an outlier then 2 clean runs", &machinev1.CommandCost{RecentRuns: runs(wrong, clean, clean)}, clean},
+		{"an outlier then 3 clean runs", &machinev1.CommandCost{RecentRuns: runs(wrong, clean, clean, clean)}, clean},
+		{"an outlier after clean runs", &machinev1.CommandCost{RecentRuns: runs(clean, clean, wrong)}, clean},
+		// Two high runs: the command may cost that much, both are kept.
+		{"two high runs", &machinev1.CommandCost{RecentRuns: runs(wrong, wrong, clean, clean)}, wrong},
+		{"two high runs among the latest", &machinev1.CommandCost{
+			RecentRuns: append(runs(wrong, wrong), runs(slices.Repeat([]uint64{clean}, PeakRuns-2)...)...),
+		}, wrong},
+		// Under four times the median of the others: a peak that varies, the 95th percentile.
+		{"a peak that varies", &machinev1.CommandCost{RecentRuns: runs(clean, clean, 4*clean)}, 1110 << 20},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
@@ -500,6 +515,28 @@ func TestPeak(t *testing.T) {
 				t.Errorf("Peak = %d MiB, want %d MiB", got>>20, c.want>>20)
 			}
 		})
+	}
+}
+
+// TestPeaks_PollutedHead (W197): the key python3 - of dolmen, from before W82, kept a 7270 MiB peak among its runs, and
+// no command makes it any more; a new inline script, never measured, borrows the median of its head's runs, each
+// entry's median, not that entry's 95th percentile: it is no heavy command.
+func TestPeaks_PollutedHead(t *testing.T) {
+	t.Parallel()
+	r := newCostsRig(t)
+	ctx := t.Context()
+	peaks := NewPeaks(r.db)
+	for _, peak := range []uint64{7270 << 20, 200 << 20} {
+		peaks.Record(ctx, &machinev1.CommandServiceRecordRequest{Directory: r.dir, Command: "python3 -", PeakMemoryBytes: peak, CpuSeconds: 1})
+	}
+	script := "python3 - <<'EOF'\nimport json\nprint(json.dumps({}))\nEOF"
+	// Its two runs: 3735 MiB, their median, not 6921 MiB.
+	if got := peaks.Cost(ctx, "", r.dir, script); got != (Cost{Peak: 3735 << 20, CPU: time.Second, Head: "python3"}) {
+		t.Errorf("a new script beside two runs of python3 - costs %+v", got)
+	}
+	peaks.Record(ctx, &machinev1.CommandServiceRecordRequest{Directory: r.dir, Command: "python3 -", PeakMemoryBytes: 200 << 20, CpuSeconds: 1})
+	if got := peaks.Cost(ctx, "", r.dir, script); got != (Cost{Peak: 200 << 20, CPU: time.Second, Head: "python3"}) {
+		t.Errorf("a new script beside three runs of python3 - costs %+v", got)
 	}
 }
 

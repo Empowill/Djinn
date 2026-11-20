@@ -135,10 +135,15 @@ func forgets(in *machinev1.CommandServiceForgetRequest, command string) bool {
 // PeakRuns is how many of a command's latest measured runs give the peak the gates hold it to (Peak).
 const PeakRuns = 20
 
-// Peak is the peak memory the gates hold the command c to: the 95th percentile of the peaks of its latest PeakRuns
-// measured runs, so that a run measured wrong, a tree gone astray, fades after a few runs (W139); its highest peak
-// when it kept no run.
-func Peak(c *machinev1.CommandCost) uint64 {
+// OutlierRuns and OutlierFactor say when a peak measured wrong is left out of a command's cost (Peak): from
+// OutlierRuns measured runs on, the one peak above OutlierFactor times the median of the others (W197).
+const (
+	OutlierRuns   = 3
+	OutlierFactor = 4
+)
+
+// recentPeaks is the peaks of the latest PeakRuns measured runs of c, the last first; none when it kept no run.
+func recentPeaks(c *machinev1.CommandCost) []float64 {
 	var peaks []float64
 	for _, r := range slices.Backward(c.GetRecentRuns()) {
 		if r.GetPeakMemoryBytes() > 0 {
@@ -148,10 +153,46 @@ func Peak(c *machinev1.CommandCost) uint64 {
 			break
 		}
 	}
+	return peaks
+}
+
+// withoutOutlier is peaks without a lone peak far above the others: from OutlierRuns peaks on, the highest when it
+// is above OutlierFactor times the median of the others and the second highest is not. Two such peaks are no
+// outlier: the command may cost that much.
+func withoutOutlier(peaks []float64) []float64 {
+	if len(peaks) < OutlierRuns {
+		return peaks
+	}
+	sorted := slices.Sorted(slices.Values(peaks))
+	rest := sorted[:len(sorted)-1]
+	limit := OutlierFactor * percentile(rest, 0.5)
+	if sorted[len(sorted)-1] > limit && rest[len(rest)-1] <= limit {
+		return rest
+	}
+	return peaks
+}
+
+// Peak is the peak memory the gates hold the command c to: the 95th percentile of the peaks of its latest PeakRuns
+// measured runs, a lone peak far above the others left out (withoutOutlier), so that a run measured wrong, a tree gone
+// astray, stops counting once two other runs were measured, not after PeakRuns (W139, W197); its highest peak when it
+// kept no run.
+func Peak(c *machinev1.CommandCost) uint64 {
+	peaks := recentPeaks(c)
 	if len(peaks) == 0 {
 		return c.GetPeakMemoryBytes()
 	}
-	return uint64(percentile(peaks, 0.95))
+	return uint64(percentile(withoutOutlier(peaks), 0.95))
+}
+
+// medianPeak is the median of the peaks of the latest PeakRuns measured runs of c, what it lends to the others of its
+// head (byHead): one high peak cannot lend itself, even when no run comes to dilute it (W197); its highest peak when
+// it kept no run.
+func medianPeak(c *machinev1.CommandCost) uint64 {
+	peaks := recentPeaks(c)
+	if len(peaks) == 0 {
+		return c.GetPeakMemoryBytes()
+	}
+	return uint64(percentile(peaks, 0.5))
 }
 
 // find is the cost of the command whose key is key among all, case ignored: the one kept under key, else one kept
@@ -167,8 +208,9 @@ func find(all []*machinev1.CommandCost, key string) *machinev1.CommandCost {
 	return nil
 }
 
-// byHead is what the commands of all with the head of key cost, key's own left out: the median of their peaks (Peak),
-// and of their CPU times, with how many they are; zero when there is none.
+// byHead is what the commands of all with the head of key cost, key's own left out: the median of their peaks, each
+// its runs' median (medianPeak), and of their CPU times, with how many they are; zero when there is none. A key no
+// command makes any more, its runs polluted, lends no more than its usual run (W197).
 func byHead(all []*machinev1.CommandCost, key string) (Cost, int) {
 	head := Head(key)
 	if head == "" {
@@ -182,7 +224,7 @@ func byHead(all []*machinev1.CommandCost, key string) (Cost, int) {
 		if h := Head(Key(o.GetCommand())); !strings.EqualFold(h, head) {
 			continue
 		}
-		peaks = append(peaks, float64(Peak(o)))
+		peaks = append(peaks, float64(medianPeak(o)))
 		cpus = append(cpus, max(o.GetCpuSeconds(), o.GetLastCpuSeconds()))
 	}
 	if len(peaks) == 0 {
