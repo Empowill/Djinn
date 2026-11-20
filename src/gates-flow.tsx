@@ -12,6 +12,7 @@ import {
   type RefObject,
   memo,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -827,6 +828,16 @@ function FlowHover({
     width: number;
     hold?: Hold;
   } | null>(null);
+  const readout = useRef<HTMLDivElement>(null);
+  // Below the pointer, or above it when the visible area has no room below (the terminal panel takes the lower half of
+  // the window, and the page that scrolls above it cuts what passes its bottom): set before the paint, so it never
+  // shows cut first.
+  useLayoutEffect(() => {
+    const el = readout.current;
+    const box = tracks.current?.getBoundingClientRect();
+    if (!el || !box || !point) return;
+    el.style.top = `${readoutTop(point.y, box.top, el.offsetHeight, visibleArea(el))}px`;
+  });
   useEffect(() => {
     const el = tracks.current;
     if (!el) return;
@@ -862,8 +873,9 @@ function FlowHover({
     <>
       <span className="gates-flow-cursor" style={{ left: point.x }} />
       <div
+        ref={readout}
         className="gates-flow-readout"
-        style={{ left, top: point.y + 14 }}
+        style={{ left }}
         role="status"
       >
         {point.hold ? (
@@ -874,6 +886,42 @@ function FlowHover({
       </div>
     </>
   );
+}
+
+// The gap between the pointer and the readout, and between the readout and the edge of what shows (px).
+const READOUT_GAP = 14;
+const READOUT_EDGE = 4;
+
+// readoutTop places the readout, in the tracks' coordinates, below the pointer when it fits whole above the bottom of
+// what shows, over it when it fits there, else as low as it can go with its top in view.
+export function readoutTop(
+  y: number,
+  tracksTop: number,
+  height: number,
+  area: { top: number; bottom: number },
+): number {
+  const below = y + READOUT_GAP;
+  if (tracksTop + below + height <= area.bottom - READOUT_EDGE) return below;
+  const above = y - READOUT_GAP - height;
+  if (tracksTop + above >= area.top + READOUT_EDGE) return above;
+  return (
+    Math.max(area.top + READOUT_EDGE, area.bottom - READOUT_EDGE - height) -
+    tracksTop
+  );
+}
+
+// visibleArea is the part of the window el can show in: the window, cut by every box above it that clips what passes
+// its edges (the page that scrolls above the terminal panel).
+function visibleArea(el: HTMLElement): { top: number; bottom: number } {
+  let top = 0;
+  let bottom = window.innerHeight;
+  for (let p = el.parentElement; p; p = p.parentElement) {
+    if (getComputedStyle(p).overflowY === "visible") continue;
+    const r = p.getBoundingClientRect();
+    top = Math.max(top, r.top);
+    bottom = Math.min(bottom, r.bottom);
+  }
+  return { top, bottom };
 }
 
 function HoldReadout({ hold }: { hold: Hold }) {

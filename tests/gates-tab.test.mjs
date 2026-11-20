@@ -883,3 +883,14 @@ test("the Sankey keeps a line between two nodes' labels, however thin the nodes"
         );
     }
 });
+
+test("the frieze's readout goes over the pointer when what shows has no room below it", () => {
+  // The tracks start at 100 px; what shows runs from 40 px to 500 px (the terminal panel below).
+  const area = { top: 40, bottom: 500 };
+  // Room below: 14 px under the pointer.
+  assert.equal(s.readoutTop(100, 100, 120, area), 114);
+  // A band at the bottom of what shows: the readout over the pointer, whole above it.
+  assert.equal(s.readoutTop(380, 100, 120, area), 380 - 14 - 120);
+  // Room neither below nor above: its top in view, as low as it goes.
+  assert.equal(s.readoutTop(100, 100, 500, area), 40 + 4 - 100);
+});
