@@ -190,6 +190,7 @@ type waiter struct {
 	changed                 chan struct{}           // the cause to wait changed
 	done                    chan struct{}           // closed when the gate is given or taken back
 	why, cause              string                  // guarded by Gates.mu
+	stints                  []stint                 // each reason it waited for, in turn (Waited); guarded by Gates.mu
 	waitCause               machinev1.GateWaitCause // what it waited for last; guarded by Gates.mu
 	unmeasured              bool                    // its command had no measured cost of its own when it asked
 	memory                  time.Time               // when it first waited for the memory; guarded by Gates.mu
@@ -295,6 +296,14 @@ type Request struct {
 	Find func(skip func(pid int) bool) int
 }
 
+// stint is a reason a waiter waited for, from when: the reason without the time its holder had held, which a
+// waiter told once goes stale as it waits on (W174).
+type stint struct {
+	text string
+	kind machinev1.GateWaitCause
+	from time.Time
+}
+
 // Hold is a gate held.
 type Hold struct {
 	g    *Gates
@@ -307,6 +316,47 @@ func (h *Hold) Give() { h.once.Do(func() { h.g.give(h.w, "") }) }
 
 // Done is closed once the gate is no longer held: given back, or taken back (TakenBack says why).
 func (h *Hold) Done() <-chan struct{} { return h.w.done }
+
+// Waited says what the holder waited for before the gate was granted, each reason in turn with how long it waited
+// for it, its gate's label first: "stack (dolmen, .agents/djinn.yaml): behind W2: docker build ., which waits to hold
+// it alone, shared by W1: task recette (10s), then held by W2: docker build . (11s)". "" when it did not wait.
+func (h *Hold) Waited() string {
+	h.g.mu.Lock()
+	defer h.g.mu.Unlock()
+	return h.w.waited()
+}
+
+// waited is Hold.Waited. The caller holds g.mu.
+func (w *waiter) waited() string {
+	if len(w.stints) == 0 && w.forced == "" {
+		return ""
+	}
+	parts := make([]string, 0, len(w.stints))
+	for i, s := range w.stints {
+		end := w.since
+		if i+1 < len(w.stints) {
+			end = w.stints[i+1].from
+		}
+		if i == len(w.stints)-1 && w.forced != "" && s.kind == machinev1.GateWaitCause_GATE_WAIT_CAUSE_MEMORY {
+			break // forced says how long it waited for the memory, and why.
+		}
+		parts = append(parts, fmt.Sprintf("%s (%s)", s.text, max(end.Sub(s.from), 0).Round(time.Second)))
+	}
+	if w.forced != "" {
+		parts = append(parts, w.forced)
+	}
+	if n := len(parts); n > maxStints {
+		parts = slices.Concat(parts[:2], []string{fmt.Sprintf("%d more", n-4)}, parts[n-2:])
+	}
+	text := strings.Join(parts, ", then ")
+	if w.label != "" {
+		text = w.label + ": " + text
+	}
+	return text
+}
+
+// maxStints is how many reasons Waited names at most: past them, the first two and the last two, and how many between.
+const maxStints = 5
 
 // TakenBack says why Djinn took the gate back before its holder gave it: its process ended, it held it past its
 // timeout, or its ifrit went out or ended; "" when it did not.
@@ -837,7 +887,7 @@ func (g *Gates) pass(ctx context.Context) {
 	// The merges and pushes that wait for each gate in this pass, and why the first of them waits; heavyTurn stands
 	// for the turn of the heavy commands.
 	const heavyTurn = "\x00heavy"
-	merges, mergeWhy, mergeCause := map[string]int{}, map[string]string{}, map[string]string{}
+	merges, mergeWhy, mergeBase, mergeCause := map[string]int{}, map[string]string{}, map[string]string{}, map[string]string{}
 	// The first come of those that wait to hold a declared gate alone, by name: who comes after it to share it goes
 	// behind it.
 	aloneNext := map[string]*waiter{}
@@ -847,7 +897,8 @@ func (g *Gates) pass(ctx context.Context) {
 		}
 	}
 	for _, w := range queue {
-		var why, cause string
+		// why is told the waiter now; base is the same without the time its holder has held, kept for Waited.
+		var why, base, cause string
 		var kind machinev1.GateWaitCause
 		h := g.held[w.name]
 		if w.name == Commands {
@@ -863,7 +914,8 @@ func (g *Gates) pass(ctx context.Context) {
 		heavy := g.heavyHolder(w)
 		switch {
 		case h != nil:
-			why, cause = fmt.Sprintf("held by %s, for %s", h.who, time.Since(h.since).Round(time.Second)), "held by "+h.who
+			base, cause = "held by "+h.who, "held by "+h.who
+			why = fmt.Sprintf("%s, for %s", base, time.Since(h.since).Round(time.Second))
 			kind = machinev1.GateWaitCause_GATE_WAIT_CAUSE_HELD
 			if h.ifrit {
 				// Its out time moves with each action of the developer: the waiter is told the one known as the cause changed.
@@ -871,32 +923,40 @@ func (g *Gates) pass(ctx context.Context) {
 				if !h.until.IsZero() {
 					why += ", at " + harness.ClockText(h.until, time.Now()) + " at the latest"
 				}
+				base = why
 			}
 			if n := merges[w.name]; !w.first && n > 0 {
 				then := fmt.Sprintf(", then %d merges or pushes go first", n)
 				if n == 1 {
 					then = ", then 1 merge or push goes first"
 				}
-				why, cause = why+then, cause+then
+				why, base, cause = why+then, base+then, cause+then
 			}
 		case sharer != nil:
-			why = fmt.Sprintf("shared by %s, for %s", sharer.who, time.Since(sharer.since).Round(time.Second))
-			cause, kind = "shared by "+sharer.who, machinev1.GateWaitCause_GATE_WAIT_CAUSE_HELD
+			base = "shared by " + sharer.who
+			why = fmt.Sprintf("%s, for %s", base, time.Since(sharer.since).Round(time.Second))
+			cause, kind = base, machinev1.GateWaitCause_GATE_WAIT_CAUSE_HELD
 		case ahead != nil:
+			// Named with what the one ahead waits for: the gate's holder, or the first that shares it.
 			why = "behind " + ahead.who + ", which waits to hold it alone"
 			cause, kind = "behind "+ahead.who, machinev1.GateWaitCause_GATE_WAIT_CAUSE_HELD
+			if s := g.sharer(ahead); s != nil {
+				why, cause = why+", shared by "+s.who, cause+", shared by "+s.who
+			}
+			base = why
 		case pressure != "":
 			why = "the machine is under pressure: " + pressure
-			cause, kind = why, machinev1.GateWaitCause_GATE_WAIT_CAUSE_PRESSURE
+			base, cause, kind = why, why, machinev1.GateWaitCause_GATE_WAIT_CAUSE_PRESSURE
 		case !w.first && w.name != Commands && merges[w.name] > 0:
 			why = "a merge or a push goes first: " + mergeWhy[w.name]
-			cause, kind = "merge first: "+mergeCause[w.name], machinev1.GateWaitCause_GATE_WAIT_CAUSE_MERGE_FIRST
+			base, cause, kind = "a merge or a push goes first: "+mergeBase[w.name], "merge first: "+mergeCause[w.name], machinev1.GateWaitCause_GATE_WAIT_CAUSE_MERGE_FIRST
 		case heavy != nil:
-			why = fmt.Sprintf("heavy commands go one at a time: %s runs one, for %s", heavy.who, time.Since(heavy.since).Round(time.Second))
+			base = "heavy commands go one at a time: " + heavy.who + " runs one"
+			why = fmt.Sprintf("%s, for %s", base, time.Since(heavy.since).Round(time.Second))
 			cause, kind = "heavy: "+heavy.who, machinev1.GateWaitCause_GATE_WAIT_CAUSE_HEAVY
 		case w.heavy && !w.first && merges[heavyTurn] > 0:
 			why = "a merge or a push goes first: " + mergeWhy[heavyTurn]
-			cause, kind = "merge first: "+mergeCause[heavyTurn], machinev1.GateWaitCause_GATE_WAIT_CAUSE_MERGE_FIRST
+			base, cause, kind = "a merge or a push goes first: "+mergeBase[heavyTurn], "merge first: "+mergeCause[heavyTurn], machinev1.GateWaitCause_GATE_WAIT_CAUSE_MERGE_FIRST
 		default:
 			why = policy.Room(snap, w.what, w.peak, held)
 			if why == "" && w.heavy {
@@ -907,7 +967,7 @@ func (g *Gates) pass(ctx context.Context) {
 					w.memory = time.Now()
 				}
 				if time.Since(w.memory) < g.memWait {
-					cause, kind = "memory", machinev1.GateWaitCause_GATE_WAIT_CAUSE_MEMORY
+					base, cause, kind = why, "memory", machinev1.GateWaitCause_GATE_WAIT_CAUSE_MEMORY
 					break
 				}
 				w.forced = fmt.Sprintf("admitted after %s waiting for memory, the most a command waits for it: %s",
@@ -935,11 +995,12 @@ func (g *Gates) pass(ctx context.Context) {
 			}
 			for _, turn := range turns {
 				if merges[turn] == 0 {
-					mergeWhy[turn], mergeCause[turn] = why, cause
+					mergeWhy[turn], mergeBase[turn], mergeCause[turn] = why, base, cause
 				}
 				merges[turn]++
 			}
 			why = "a merge or a push, served before the workers: " + why
+			base = "a merge or a push, served before the workers: " + base
 		}
 		if w.label != "" {
 			why = w.label + ": " + why // The worker reads which gate, of which project, declared where.
@@ -948,12 +1009,27 @@ func (g *Gates) pass(ctx context.Context) {
 		w.waitCause = kind
 		if cause != w.cause {
 			w.why, w.cause = why, cause
+			w.wait(base, kind)
 			select {
 			case w.changed <- struct{}{}:
 			default:
 			}
 		}
 	}
+}
+
+// wait keeps the reason text, of kind, that w waits for from now, for Waited: the pressure and the memory, whose
+// figures change as it waits, keep the stint they started and the last figures. The caller holds g.mu.
+func (w *waiter) wait(text string, kind machinev1.GateWaitCause) {
+	if n := len(w.stints); n > 0 {
+		last := &w.stints[n-1]
+		if last.text == text || last.kind == kind && (kind == machinev1.GateWaitCause_GATE_WAIT_CAUSE_PRESSURE ||
+			kind == machinev1.GateWaitCause_GATE_WAIT_CAUSE_MEMORY) {
+			last.text = text
+			return
+		}
+	}
+	w.stints = append(w.stints, stint{text: text, kind: kind, from: time.Now()})
 }
 
 // heavyHolder is the heavy command w waits for, when w is heavy: one of another task, or of no task, that holds its

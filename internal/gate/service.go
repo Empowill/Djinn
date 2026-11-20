@@ -1,6 +1,7 @@
 package gate
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"net/http"
@@ -94,7 +95,7 @@ func (s *service) Admit(
 		return err
 	}
 	agent, match := int(req.Msg.GetAgentPid()), req.Msg.GetMatch()
-	_, err = s.g.Take(ctx, Request{
+	hold, err := s.g.Take(ctx, Request{
 		Shared: true, TaskID: taskID, What: req.Msg.GetWhat(), Dir: req.Msg.GetDirectory(),
 		Find: func(skip func(int) bool) int { return machine.FindCommand(agent, match, skip) },
 	}, func(why string) {
@@ -107,7 +108,10 @@ func (s *service) Admit(
 		return plan.Status(err)
 	}
 	// Held until the command's shell ends (keep), not until this call does: the hook ends now, and the command runs.
-	return stream.Send(&machinev1.GateServiceAdmitResponse{State: machinev1.GateState_GATE_STATE_HELD, Reason: "admitted"})
+	// What it waited for, each reason with its own time: the last reason told, named as it began, would be stale (W174).
+	return stream.Send(&machinev1.GateServiceAdmitResponse{
+		State: machinev1.GateState_GATE_STATE_HELD, Reason: cmp.Or(hold.Waited(), "admitted"),
+	})
 }
 
 // ownTask is the task a call names, a worker's own when it names none; a worker naming another's is refused.

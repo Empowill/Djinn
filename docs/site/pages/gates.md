@@ -130,8 +130,10 @@ gates' names. Under a gate's name, it holds that name alone: a light command of 
 it does not wait for the light ones already sharing the name. Djinn's merges and pushes keep their place before the workers' heavy commands. A task's own heavy
 commands never wait for each other: one may run the other. The window's settings file sets both limits.
 
-When a command waited, its worker reads why beside its result: *waited 2m for its admission by the gates: the machine
-is under pressure*. Its task's events say each admission asked, taken and given back, under the name commands.
+When a command waited, its worker reads why beside its result, each holder or cause it waited for in turn with how
+long it waited for it: *waited 21s for its admission by the gates: stack (dolmen, .agents/djinn.yaml): behind W2,
+which waits to hold it alone, shared by W1 (10s), then held by W2 (11s)*. Its task's events say each admission asked,
+taken and given back, under the name commands.
 
 A worker whose command waits for its admission, or runs admitted, is neither paused to make room nor judged silent;
 you may still pause it yourself: an admitted command keeps no one else waiting. An admission takes no slot of the
