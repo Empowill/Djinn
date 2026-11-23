@@ -57,7 +57,7 @@ irm https://github.com/Empowill/Djinn/releases/latest/download/install.ps1 | iex
 ```
 
 Then run `djinn up` (`djinn up --browser` prints a URL instead of opening a window). The latest release is
-[v0.4.0](https://github.com/Empowill/Djinn/releases/tag/v0.4.0), and its [notes](docs/releases/v0.4.0.md) say what
+[v0.5.0](https://github.com/Empowill/Djinn/releases/tag/v0.5.0), and its [notes](docs/releases/v0.5.0.md) say what
 each part still needs.
 
 **Agents.** Djinn asks for no API key and stores none: it runs the agents you installed and signed in to, and your
