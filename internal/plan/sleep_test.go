@@ -100,9 +100,68 @@ func TestSleepHolds(t *testing.T) {
 	}
 }
 
+// TestSleepNever: a request merged can never hold once the task named for it was cancelled, or ended done OpenedGrace
+// ago while Djinn knows no request it opened (W1048: Q118, Q139 slept for weeks); not while that task may still open
+// one, a watcher babysits what it opened, the request is known merged, or the request is an azima's or an address.
+func TestSleepNever(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 10, 17, 10, 0, 0, 0, time.UTC)
+	task := func(code string, status planv1.TaskStatus, ended time.Duration) *planv1.Task {
+		return &planv1.Task{Id: strings.ToLower(code), WishId: "w", Code: code, Status: status,
+			EndTime: timestamppb.New(now.Add(-ended))}
+	}
+	cancelled := task("W1", planv1.TaskStatus_TASK_STATUS_CANCELLED, 0)
+	silent := task("W2", planv1.TaskStatus_TASK_STATUS_DONE, OpenedGrace)
+	recent := task("W3", planv1.TaskStatus_TASK_STATUS_DONE, OpenedGrace-time.Minute)
+	opener := task("W4", planv1.TaskStatus_TASK_STATUS_DONE, 24*time.Hour)
+	watcher := task("W5", planv1.TaskStatus_TASK_STATUS_RUNNING, 0)
+	watcher.Babysit = &planv1.TaskBabysit{Url: "https://github.com/acme/lamp/pull/4", OpenedBy: "W4"}
+	landed := task("W6", planv1.TaskStatus_TASK_STATUS_CANCELLED, 0)
+	landedWatcher := task("W7", planv1.TaskStatus_TASK_STATUS_DONE, 0)
+	landedWatcher.Babysit = &planv1.TaskBabysit{OpenedBy: "W6", DoneTime: timestamppb.New(now)}
+	azima := task("T8", planv1.TaskStatus_TASK_STATUS_DONE, 24*time.Hour)
+	azima.Kind = planv1.TaskKind_TASK_KIND_AZIMA
+	running := task("W9", planv1.TaskStatus_TASK_STATUS_RUNNING, 0)
+	tasks := []*planv1.Task{cancelled, silent, recent, opener, watcher, landed, landedWatcher, azima, running}
+	merge := func(task *planv1.Task) *planv1.SleepCondition {
+		return &planv1.SleepCondition{Kind: planv1.SleepKind_SLEEP_KIND_MERGED, TaskId: task.GetId(), Code: task.GetCode()}
+	}
+	for _, c := range []struct {
+		name string
+		c    *planv1.SleepCondition
+		want string
+	}{
+		{"its task cancelled", merge(cancelled), "W1 was cancelled"},
+		{"its task done, no request found", merge(silent), "W2 ended done and Djinn knows no pull or merge request it opened"},
+		{"its task done a moment ago", merge(recent), ""},
+		{"its task done, a watcher on what it opened", merge(opener), ""},
+		{"its task cancelled, the request merged", merge(landed), ""},
+		{"an azima closed", merge(azima), ""},
+		{"its task running", merge(running), ""},
+		{"a request by its address", &planv1.SleepCondition{
+			Kind: planv1.SleepKind_SLEEP_KIND_MERGED, Url: "https://github.com/acme/lamp/pull/9",
+		}, ""},
+		{"a task over", &planv1.SleepCondition{Kind: planv1.SleepKind_SLEEP_KIND_TASK, TaskId: cancelled.GetId()}, ""},
+	} {
+		if got := SleepNever(c.c, tasks, now); got != c.want {
+			t.Errorf("%s: never %q, want %q", c.name, got, c.want)
+		}
+	}
+	q := &planv1.Question{Code: "Q1", Sleep: &planv1.QuestionSleep{
+		Conditions: []*planv1.SleepCondition{merge(running), merge(cancelled)},
+	}}
+	if got, want := SleepNeverText(q, tasks, now), "W1's request merged can never hold, W1 was cancelled"; got != want {
+		t.Errorf("never %q, want %q", got, want)
+	}
+	if got := WokeLine(q, SleepNeverText(q, tasks, now)); !strings.HasPrefix(got,
+		"Djinn: Q1 woke, W1's request merged can never hold, W1 was cancelled. Check that its facts still hold") {
+		t.Errorf("the lead hears %q", got)
+	}
+}
+
 // TestQuestionSleep: a question put to sleep (djinn question sleep, ask and revise with --sleep-until) keeps its
 // conditions typed, each task of its wish by code, and leaves the brief's open questions for its asleep ones; one that
-// waits for nothing, or names what is not, is refused. Woken by hand, it comes first, says so, and the lead hears of it.
+// waits for nothing, names what is not, or what can never hold, is refused. Woken by hand, it comes first, says so, and the lead hears of it.
 func TestQuestionSleep(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
@@ -110,7 +169,8 @@ func TestQuestionSleep(t *testing.T) {
 	wish := c.wish(t)
 	running := testTask(wish, "W1", "Port the lamp", planv1.TaskStatus_TASK_STATUS_RUNNING)
 	done := testTask(wish, "W2", "Polish the lamp", planv1.TaskStatus_TASK_STATUS_DONE)
-	putTasks(t, c.store, running, done)
+	cancelled := testTask(wish, "W3", "Gild the lamp", planv1.TaskStatus_TASK_STATUS_CANCELLED)
+	putTasks(t, c.store, running, done, cancelled)
 	ref := func(q *planv1.Question) *planv1.QuestionRef {
 		return &planv1.QuestionRef{Ref: &planv1.QuestionRef_Code{Code: q.GetCode()}}
 	}
@@ -177,6 +237,7 @@ func TestQuestionSleep(t *testing.T) {
 		",":             connect.CodeInvalidArgument,
 		"W2":            connect.CodeFailedPrecondition, // Done already: nothing to sleep until.
 		"2020-01-01,W2": connect.CodeFailedPrecondition,
+		"W1,merged:W3":  connect.CodeFailedPrecondition, // W3 cancelled: its request can never merge.
 	} {
 		if _, err := sleep(q2, until); code(err) != want {
 			t.Errorf("sleep until %q: %v, want %v", until, err, want)
