@@ -519,6 +519,8 @@ column and the bar: a grey **N questions asleep** below the column lists them on
 and **Wake**, which wakes it now (`--wake`). Djinn checks the conditions at each pass of its scheduler; once they all
 hold, the question wakes: the Djinn is told to check that its facts still hold (costs, tasks, requests) and revises it
 if they changed, and it comes first in its wish's list, its grey line saying when it woke. A notification tells you.
+It wakes too once one can never hold, and the Djinn is told why: it waited for a request a task would open, and that
+task was cancelled, or ended done an hour ago with no request Djinn knows it opened.
 
 **From anywhere.** In the window, a question asked in an active wish also shows as a system notification: a click
 shows the wish, a button answers it (one per option, or **Yes**). The browser shows none; on macOS, notifications need

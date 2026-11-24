@@ -158,3 +158,110 @@ func TestQuestionsWakeWhenTheirConditionsHold(t *testing.T) {
 		t.Error("the scheduler still reads the questions with none asleep")
 	}
 }
+
+// TestQuestionsWakeWhenTheirRequestCanNeverMerge: a question asleep until a task's request is merged wakes at the
+// scheduler's pass once that can never hold, and its lead hears why: the task was cancelled (Q118 on W162), or it
+// ended done and, plan.OpenedGrace later, Djinn knows no request it opened (Q139 on W233, its request opened outside
+// Djinn). Before that grace, or while a watcher babysits what it opened, the question sleeps on (W1048).
+func TestQuestionsWakeWhenTheirRequestCanNeverMerge(t *testing.T) {
+	ctx := t.Context()
+	db, err := store.Open(ctx, "", plan.Entities()...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var mu sync.Mutex
+	now := time.Date(2026, 10, 17, 10, 0, 0, 0, time.UTC)
+	clock := func() time.Time { mu.Lock(); defer mu.Unlock(); return now }
+	h := New(db, t.TempDir(), testProviders(), WithClock(clock))
+	t.Cleanup(func() { h.Close(); db.Close() })
+	queue := &leadQueue{}
+	h.NotifyLead(queue.notify)
+	h.watchSleepers()
+
+	wish := &planv1.Wish{Id: store.NewID(), Title: "Dew", State: planv1.WishState_WISH_STATE_ACTIVE}
+	task := func(code string) *planv1.Task {
+		return &planv1.Task{Id: store.NewID(), WishId: wish.GetId(), Code: code, Status: planv1.TaskStatus_TASK_STATUS_RUNNING,
+			CreateTime: timestamppb.New(now)}
+	}
+	w162, w233, w240 := task("W162"), task("W233"), task("W240")
+	watcher := task("W241")
+	watcher.Provider = planv1.Provider_PROVIDER_WATCH
+	watcher.Babysit = &planv1.TaskBabysit{Url: "https://gitlab.com/acme/dew/-/merge_requests/8", OpenedBy: "W240", DoneWhen: "MERGED"}
+	question := func(code string, on *planv1.Task) *planv1.Question {
+		return &planv1.Question{
+			Id: store.NewID(), WishId: wish.GetId(), Code: code, Text: "Release now?", CreateTime: timestamppb.New(now),
+			Sleep: &planv1.QuestionSleep{CreateTime: timestamppb.New(now), Conditions: []*planv1.SleepCondition{
+				{Kind: planv1.SleepKind_SLEEP_KIND_MERGED, TaskId: on.GetId(), Code: on.GetCode()},
+			}},
+		}
+	}
+	q118, q139, q150 := question("Q118", w162), question("Q139", w233), question("Q150", w240)
+	write := func(ms ...proto.Message) {
+		t.Helper()
+		if err := db.Tx(ctx, func(tx *store.Tx) error {
+			if err := tx.Journal("test", "test/put", wish); err != nil {
+				return err
+			}
+			for _, m := range ms {
+				if err := tx.Put(m); err != nil {
+					return err
+				}
+			}
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(wish, w162, w233, w240, watcher, q118, q139, q150)
+	awake := func() string {
+		t.Helper()
+		h.schedule(ctx)
+		var codes []string
+		for _, q := range []*planv1.Question{q118, q139, q150} {
+			stored, err := store.Get[*planv1.Question](ctx, db, q.GetId())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !render.Asleep(stored) {
+				codes = append(codes, stored.GetCode())
+			}
+		}
+		return strings.Join(codes, " ")
+	}
+	end := func(t *planv1.Task, status planv1.TaskStatus) {
+		t.Status, t.EndTime = status, timestamppb.New(now)
+		write(t)
+	}
+
+	if got := awake(); got != "" {
+		t.Fatalf("awake while every task runs: %q, want none", got)
+	}
+	end(w162, planv1.TaskStatus_TASK_STATUS_CANCELLED)
+	end(w233, planv1.TaskStatus_TASK_STATUS_DONE)
+	end(w240, planv1.TaskStatus_TASK_STATUS_DONE)
+	if got := awake(); got != "Q118" {
+		t.Errorf("awake once W162 is cancelled, W233 and W240 just done: %q, want Q118", got)
+	}
+	mu.Lock()
+	now = now.Add(plan.OpenedGrace)
+	mu.Unlock()
+	if got := awake(); got != "Q118 Q139" {
+		t.Errorf("awake %v after W233 ended with no request known: %q, want Q118 Q139", plan.OpenedGrace, got)
+	}
+	var lines []string
+	for _, e := range queue.all() {
+		if e.GetKind() == planv1.LeadEventKind_LEAD_EVENT_KIND_WOKE {
+			lines = append(lines, strings.SplitN(e.GetText(), ". ", 2)[0])
+		}
+	}
+	want := []string{
+		"Djinn: Q118 woke, W162's request merged can never hold, W162 was cancelled",
+		"Djinn: Q139 woke, W233's request merged can never hold, W233 ended done and Djinn knows no pull or merge request it opened",
+	}
+	if strings.Join(lines, "\n") != strings.Join(want, "\n") {
+		t.Errorf("the lead heard:\n%s\nwant:\n%s", strings.Join(lines, "\n"), strings.Join(want, "\n"))
+	}
+	if !h.sleepers.Load() {
+		t.Error("the scheduler no longer reads Q150, asleep on W240's request")
+	}
+}

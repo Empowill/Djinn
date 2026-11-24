@@ -86,9 +86,11 @@ The Djinn is the agent the developer talks to. It changes the plan with `djinn`,
   (done, stopped, cancelled or deleted; an azima, closed); `merged:W45`, a request merged as Djinn knows it (the
   babysit watcher W45, the one babysitting what W45 opened, or azima W45's pull request; a request's address says the
   same), the watcher's done line stamping `TaskBabysit.done_time`; a time (`2026-10-20`, `2026-10-20T09:00`, RFC 3339)
-  or a delay (`3d`, `2h`). Conditions that all hold already are refused. An asleep question is out of the window's
-  column, the bar, the notifications and the brief's open questions (listed apart, `render.Asleep`). The scheduler's
-  pass (`wakeQuestions`), reading the questions only while one may sleep, wakes each whose conditions hold: it sets
+  or a delay (`3d`, `2h`). Conditions that all hold already are refused, as is a request merged that can never hold
+  (`plan.SleepNever`): its task cancelled, or done `plan.OpenedGrace` (an hour) ago while no watcher babysits a request
+  it opened (W1048). An asleep question is out of the window's column, the bar, the notifications and the brief's open
+  questions (listed apart, `render.Asleep`). The scheduler's pass (`wakeQuestions`), reading the questions only while one may sleep, wakes each whose conditions hold, or one of
+  which can never hold (its event's line then says which and why, `plan.SleepNeverText`): it sets
   `wake_time`, drops `later_time`, journals `harness/wake`, and queues a `LEAD_EVENT_KIND_WOKE` event for the lead,
   who checks the question's facts and revises it if they changed; woken, it lists first (`render.Woken`, `byAsked`).
   `--wake` wakes it by hand (`by_hand`), with the same event.
