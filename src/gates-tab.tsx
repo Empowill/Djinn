@@ -429,14 +429,17 @@ function TaskCode({
   );
 }
 
-// What a project has of a gate now: its holder when one of its workers holds it, its waiters in their order.
+// What a project has of a gate now: its holder when one of its workers holds it, its sharers when the gate is held
+// beside, its waiters in their order.
 export interface NowEntry {
   gate: Gate;
   // The gate's own name, and whether its project declares it (stack@dolmen).
   name: string;
   declared: boolean;
-  // The holder is this project's.
+  // The holder, or one of the sharers, is this project's.
   holds: boolean;
+  // The places among the gate's sharers of this project's (Gate.sharers): empty when the gate is held alone.
+  shares: number[];
   // The places in the gate's queue of this project's waiters.
   waiting: number[];
 }
@@ -451,7 +454,8 @@ export interface NowGroup {
 }
 
 // nowGroups lays the gates now out by project. A gate a project declares is that project's; a gate of the machine
-// shows under the project of its holder, and under each project with a worker in its queue, held by another then. The
+// shows under the project of its holder, or of each of its sharers when held beside, and under each project with a
+// worker in its queue, held by another then. The
 // free gates come from the recent runs' waits, under their project, unless held or waited for now. The projects with a
 // gate held or waited for first, the busiest first, then the others by name; none last.
 export function nowGroups(
@@ -473,12 +477,18 @@ export function nowGroups(
     const entry = (project: string) => {
       let e = entries.get(project);
       if (!e) {
-        e = { gate, name, declared, holds: false, waiting: [] };
+        e = { gate, name, declared, holds: false, shares: [], waiting: [] };
         entries.set(project, e);
       }
       return e;
     };
-    if (gate.holder) entry(own).holds = true;
+    // Held beside, each sharer counts under its project (Gate.sharer_projects); a server without them says the holder's.
+    gate.sharers.forEach((_, i) => {
+      const e = entry(declared ? own : (gate.sharerProjects[i] ?? own));
+      e.holds = true;
+      e.shares.push(i);
+    });
+    if (gate.holder && gate.sharers.length === 0) entry(own).holds = true;
     gate.waiting.forEach((_, i) => {
       const project = declared ? own : (gate.waitingProjects[i] ?? "");
       entry(project).waiting.push(i);
@@ -523,11 +533,13 @@ const GatesNow = memo(function GatesNow({
     () => new Set(),
   );
   const groups = useMemo(() => nowGroups(gates, waits), [gates, waits]);
-  // The card a gate's link leads to: its holder's, else its first.
+  // The card a gate's link leads to: its holder's (the first sharer's when held beside), else its first.
   const target = new Map<string, NowEntry>();
   for (const g of groups)
-    for (const e of g.live)
-      if (e.holds || !target.has(e.gate.name)) target.set(e.gate.name, e);
+    for (const e of g.live) {
+      const first = target.get(e.gate.name);
+      if (!first || (e.holds && !first.holds)) target.set(e.gate.name, e);
+    }
   const showWorker = onWorker ? (task: Task) => onWorker(task.id) : undefined;
   // A free gate of the machine may show under several projects: the first card is its links' target.
   const named = new Set(target.keys());
@@ -607,7 +619,8 @@ const GatesNow = memo(function GatesNow({
 });
 
 // A gate a project's workers hold or wait for: its holder when it is the project's, else who holds it and for which
-// project; the project's waiters.
+// project; held beside (Q653 B), the project's sharers, the first granted first, and how many share it elsewhere; the
+// project's waiters.
 function LiveGate({
   entry,
   id,
@@ -621,8 +634,19 @@ function LiveGate({
   tasks?: Tasks;
   onWorker?: (task: Task) => void;
 }) {
-  const { gate: g, name, declared, holds, waiting } = entry;
+  const { gate: g, name, declared, holds, shares, waiting } = entry;
   const held = g.holder && holds;
+  const beside = g.sharers.length > 0;
+  // The sharers of other projects: how many, and their projects.
+  const others = g.sharers.length - shares.length;
+  const elsewhere = [
+    ...new Set(
+      g.sharers
+        .map((_, i) => i)
+        .filter((i) => !shares.includes(i))
+        .map((i) => projectName(g.sharerProjects[i] ?? g.project)),
+    ),
+  ].join(", ");
   const state = !g.holder
     ? "free"
     : held && g.takesSlot
@@ -640,7 +664,11 @@ function LiveGate({
       <div className="gates-gate-head">
         <code className="gates-gate-name">{name}</code>
         <span className="gates-gate-state">
-          {held ? t("gates.held") : t("gates.waited")}
+          {held
+            ? beside
+              ? t("gates.shared")
+              : t("gates.held")
+            : t("gates.waited")}
         </span>
         {declared && (
           <span className="gates-gate-note">{t("gates.declared")}</span>
@@ -650,7 +678,34 @@ function LiveGate({
           <span className="gates-gate-note">{t("gates.takes_slot")}</span>
         )}
       </div>
-      {held && (
+      {held && beside && (
+        <div className="gates-gate-queue">
+          <span className="gates-gate-queue-title">
+            {t("gates.sharers", {
+              count: shares.length,
+              time: g.since ? span(now - timeOf(g.since)) : "—",
+            })}
+          </span>
+          <ol>
+            {shares.map((i) => (
+              <li key={i} value={i + 1}>
+                <TaskCode
+                  taskId={sharerTask(g, i)}
+                  tasks={tasks}
+                  onShow={onWorker}
+                />{" "}
+                {g.sharers[i]}
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
+      {held && beside && others > 0 && (
+        <p className="gates-gate-line muted-text">
+          {t("gates.shared_also", { count: others, projects: elsewhere })}
+        </p>
+      )}
+      {held && !beside && (
         <p className="gates-gate-holder">
           <TaskCode taskId={g.holderTaskId} tasks={tasks} onShow={onWorker} />{" "}
           {t("gates.held_by", {
@@ -661,13 +716,19 @@ function LiveGate({
       )}
       {g.holder && !holds && (
         <p className="gates-gate-line muted-text">
-          {t("gates.held_elsewhere", {
-            holder: g.holder,
-            project: projectName(g.project),
-          })}
+          {beside
+            ? t("gates.shared_elsewhere", {
+                count: others,
+                holder: g.holder,
+                projects: elsewhere,
+              })
+            : t("gates.held_elsewhere", {
+                holder: g.holder,
+                project: projectName(g.project),
+              })}
         </p>
       )}
-      {held && g.resources && (
+      {held && !beside && g.resources && (
         <p className="gates-gate-line muted-text">
           {t("gates.uses", {
             cpu: formatValue("cpu", g.resources.cpuPercent),
@@ -675,7 +736,7 @@ function LiveGate({
           })}
         </p>
       )}
-      {held && g.expireTime && (
+      {held && !beside && g.expireTime && (
         <p className="gates-gate-line muted-text">
           {t("gates.expires", {
             time: secondText(date(g.expireTime) ?? new Date(0)),
@@ -790,14 +851,19 @@ const Seal = memo(function Seal({ waiters }: { waiters: number }) {
 // How a waiter outside any task is named (gate.Take).
 const OUTSIDE = "a holder outside any task";
 
-// waiterTask is the task of the i-th waiter of a gate: waiting_task_ids leaves the waiters outside any task out, so the
-// waiters before i that are outside any task do not count.
-function waiterTask(g: Gate, i: number): string {
-  if (g.waitingTaskIds.length === g.waiting.length) return g.waitingTaskIds[i];
-  if (g.waiting[i].startsWith(OUTSIDE)) return "";
-  const k = g.waiting.slice(0, i).filter((w) => !w.startsWith(OUTSIDE)).length;
-  return g.waitingTaskIds[k] ?? "";
+// taskAt is the task of the i-th of a gate's waiters or sharers (names): their task ids leave those outside any task
+// out, so the ones before i that are outside any task do not count.
+function taskAt(names: readonly string[], ids: readonly string[], i: number) {
+  if (ids.length === names.length) return ids[i];
+  if (names[i].startsWith(OUTSIDE)) return "";
+  const k = names.slice(0, i).filter((w) => !w.startsWith(OUTSIDE)).length;
+  return ids[k] ?? "";
 }
+
+const waiterTask = (g: Gate, i: number) =>
+  taskAt(g.waiting, g.waitingTaskIds, i);
+const sharerTask = (g: Gate, i: number) =>
+  taskAt(g.sharers, g.sharerTaskIds, i);
 
 // A gate no one holds or waits for, with its last hold.
 function FreeGate({

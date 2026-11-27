@@ -607,6 +607,9 @@ message Gate {
   repeated string sharers = 14;
   // The tasks of those who hold it shared, in the order of sharers: a sharer outside any task is left out.
   repeated string sharer_task_ids = 15;
+  // Projects of those who hold it shared, by name, in the order of sharers: empty for a sharer outside any project. A
+  // gate named for the machine (lint, e2e) may be shared by workers of several projects.
+  repeated string sharer_projects = 16;
 }
 
 message GateServiceHoldRequest {

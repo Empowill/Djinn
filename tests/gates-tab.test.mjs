@@ -71,6 +71,10 @@ const live = [
     waitingTaskIds: ["task-w2"],
     project: "djinn",
     waitingProjects: ["djinn", ""],
+    shared: 0,
+    sharers: [],
+    sharerTaskIds: [],
+    sharerProjects: [],
     takesSlot: false,
     ifrit: false,
   },
@@ -398,6 +402,10 @@ function heavy() {
     waitingTaskIds: ["task-w2"],
     project: "djinn",
     waitingProjects: ["djinn", "dolmen", ""],
+    shared: 0,
+    sharers: [],
+    sharerTaskIds: [],
+    sharerProjects: [],
     takesSlot: false,
     ifrit: false,
   }));
@@ -773,6 +781,10 @@ test("now, by project: a gate of the machine under its holder's project and each
     waiting: waitingProjects.map((p, i) => `W${i + 10}: ${p}`),
     waitingTaskIds: [],
     waitingProjects,
+    shared: 0,
+    sharers: [],
+    sharerTaskIds: [],
+    sharerProjects: [],
     takesSlot: false,
     ifrit: false,
   });
@@ -821,6 +833,126 @@ test("now, by project: a gate of the machine under its holder's project and each
       },
       { project: "zz", live: [], free: ["fmt"], held: 0, waiting: 0 },
     ],
+  );
+});
+
+test("now, a gate held alone names its holder; held beside, each sharer under its project; waited for, its queue (Q653 B)", () => {
+  const gate = (name, extra) => ({
+    ...live[0],
+    name,
+    waiting: [],
+    waitingTaskIds: [],
+    waitingProjects: [],
+    ...extra,
+  });
+  const sharers = [
+    "W1 (Lint): ./read-logs.sh",
+    "a holder outside any task: ./read-db.sh",
+    "W2 (Test): go tool task lint",
+  ];
+  const gates = [
+    // stack@dolmen held alone by W1's script, W2's waiting behind it.
+    gate("stack@dolmen", {
+      holder: "W1 (Lint): ./rebuild.sh",
+      project: "dolmen",
+      waiting: ["W2 (Test): ./read-logs.sh"],
+      waitingTaskIds: ["task-w2"],
+      waitingProjects: ["dolmen"],
+    }),
+    // recette@dolmen held beside by two: W1's script, then one outside any task; W2's script said nothing waits.
+    gate("recette@dolmen", {
+      holder: sharers[0],
+      project: "dolmen",
+      shared: 2,
+      sharers: sharers.slice(0, 2),
+      sharerTaskIds: ["task-w1"],
+      sharerProjects: ["dolmen", "dolmen"],
+      waiting: ["W2 (Test): ./rebuild.sh"],
+      waitingTaskIds: ["task-w2"],
+      waitingProjects: ["dolmen"],
+    }),
+    // lint, a gate of the machine, shared by dolmen's W1 and djinn's W2; one outside any project waits.
+    gate("lint", {
+      holder: sharers[0],
+      project: "dolmen",
+      shared: 2,
+      sharers: [sharers[0], sharers[2]],
+      sharerTaskIds: ["task-w1", "task-w2"],
+      sharerProjects: ["dolmen", "djinn"],
+      waiting: ["a holder outside any task: go tool task lint"],
+      waitingProjects: [""],
+    }),
+  ];
+  // Each sharer counts under its project: lint under dolmen and djinn, held in both.
+  assert.deepEqual(
+    s
+      .nowGroups(gates, [])
+      .map(
+        (g) =>
+          `${g.project}: ${g.live.map((e) => `${e.name} ${e.holds ? "holds" : "-"} [${e.shares}] [${e.waiting}]`).join(", ")}`,
+      ),
+    [
+      "dolmen: stack holds [] [0], recette holds [0,1] [0], lint holds [0] []",
+      "djinn: lint holds [1] []",
+      ": lint - [] [0]",
+    ],
+  );
+  const html = s.renderToStaticMarkup(
+    h(s.GatesTab, {
+      tasks,
+      onWorker: () => {},
+      initialGates: gates,
+      initialSummary: summary,
+    }),
+  );
+  const text = (part) =>
+    part
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  // A card's text in a part of the page, from its id to the next card or the part's end.
+  const card = (part, id) => {
+    const start = part.indexOf(">", part.indexOf(`id="gate-${id}"`)) + 1;
+    const next = part.indexOf('<li id="gate-', start);
+    const end = part.indexOf("</section>", start);
+    return text(part.slice(start, next < 0 || end < next ? end : next));
+  };
+  const projectOf = (name) =>
+    html.indexOf(`aria-label="${name}"`, html.indexOf("gates-project"));
+
+  // Alone: held, its holder and since when; the waiter in the queue.
+  assert.match(
+    card(html, "stack@dolmen"),
+    /^stack held declared by the project W1 W1 \(Lint\): \.\/rebuild\.sh, for \S+ 1 waiting: W2 W2 \(Test\): \.\/read-logs\.sh$/,
+  );
+  // Beside: held beside, each sharer in grant order with its task's code, none of the holder's use or expiry; the waiter.
+  const recette = card(html, "recette@dolmen");
+  assert.match(
+    recette,
+    /^recette held beside declared by the project 2 hold it beside, the first for \S+: W1 W1 \(Lint\): \.\/read-logs\.sh a holder outside any task: \.\/read-db\.sh 1 waiting: W2 W2 \(Test\): \.\/rebuild\.sh$/,
+  );
+  assert.doesNotMatch(recette, /uses|taken back/);
+  // The machine's lint under dolmen: its own sharer, and one more elsewhere.
+  const dolmen = html.slice(projectOf("dolmen"), projectOf("djinn"));
+  assert.match(
+    card(dolmen, "lint"),
+    /^lint held beside 1 holds it beside, for \S+: W1 W1 \(Lint\): \.\/read-logs\.sh also held beside by 1 \(djinn\)$/,
+  );
+  // Under djinn: W2, the second sharer, numbered so; one more in dolmen. One target for lint's links: the first's card.
+  const djinn = html.slice(
+    projectOf("djinn"),
+    projectOf("Outside any project"),
+  );
+  assert.match(
+    text(djinn),
+    /lint held beside 1 holds it beside, for \S+: W2 W2 \(Test\): go tool task lint also held beside by 1 \(dolmen\)/,
+  );
+  assert.match(djinn, /<li value="2">/);
+  assert.equal(html.match(/id="gate-lint"/g)?.length, 1);
+  // Outside any project, only waiting: who hold it beside, the first named.
+  assert.match(
+    text(html.slice(projectOf("Outside any project"))),
+    /lint waited for held beside by 2, the first W1 \(Lint\): \.\/read-logs\.sh \(dolmen, djinn\) 1 waiting: a holder outside any task: go tool task lint/,
   );
 });
 

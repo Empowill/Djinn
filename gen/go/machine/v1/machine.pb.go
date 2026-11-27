@@ -2733,8 +2733,11 @@ type Gate struct {
 	Sharers []string `protobuf:"bytes,14,rep,name=sharers,proto3" json:"sharers,omitempty"`
 	// The tasks of those who hold it shared, in the order of sharers: a sharer outside any task is left out.
 	SharerTaskIds []string `protobuf:"bytes,15,rep,name=sharer_task_ids,json=sharerTaskIds,proto3" json:"sharer_task_ids,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// Projects of those who hold it shared, by name, in the order of sharers: empty for a sharer outside any project. A
+	// gate named for the machine (lint, e2e) may be shared by workers of several projects.
+	SharerProjects []string `protobuf:"bytes,16,rep,name=sharer_projects,json=sharerProjects,proto3" json:"sharer_projects,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *Gate) Reset() {
@@ -2868,6 +2871,13 @@ func (x *Gate) GetSharers() []string {
 func (x *Gate) GetSharerTaskIds() []string {
 	if x != nil {
 		return x.SharerTaskIds
+	}
+	return nil
+}
+
+func (x *Gate) GetSharerProjects() []string {
+	if x != nil {
+		return x.SharerProjects
 	}
 	return nil
 }
@@ -4514,7 +4524,7 @@ const file_machine_v1_machine_proto_rawDesc = "" +
 	"\x05match\x18\x05 \x01(\tB\b\xbaH\x05r\x03\x18\xe0\x03R\x05match\"_\n" +
 	"\x18GateServiceAdmitResponse\x12+\n" +
 	"\x05state\x18\x01 \x01(\x0e2\x15.machine.v1.GateStateR\x05state\x12\x16\n" +
-	"\x06reason\x18\x02 \x01(\tR\x06reason\"\x91\x04\n" +
+	"\x06reason\x18\x02 \x01(\tR\x06reason\"\xba\x04\n" +
 	"\x04Gate\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
 	"\x06holder\x18\x02 \x01(\tR\x06holder\x12$\n" +
@@ -4533,7 +4543,8 @@ const file_machine_v1_machine_proto_rawDesc = "" +
 	"\x10waiting_projects\x18\f \x03(\tR\x0fwaitingProjects\x12\x16\n" +
 	"\x06shared\x18\r \x01(\x05R\x06shared\x12\x18\n" +
 	"\asharers\x18\x0e \x03(\tR\asharers\x12&\n" +
-	"\x0fsharer_task_ids\x18\x0f \x03(\tR\rsharerTaskIds\"\xa8\x02\n" +
+	"\x0fsharer_task_ids\x18\x0f \x03(\tR\rsharerTaskIds\x12'\n" +
+	"\x0fsharer_projects\x18\x10 \x03(\tR\x0esharerProjects\"\xa8\x02\n" +
 	"\x16GateServiceHoldRequest\x12;\n" +
 	"\x04name\x18\x01 \x01(\tB'\xbaH$\xc8\x01\x01r\x1f2\x1d^[A-Za-z][A-Za-z0-9_-]{0,39}$R\x04name\x12$\n" +
 	"\atask_id\x18\x02 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x06taskId\x12\x1c\n" +

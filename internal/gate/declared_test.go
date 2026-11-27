@@ -368,6 +368,8 @@ func TestListSharers(t *testing.T) {
 	g.Declare(func(string, string) Declared {
 		return Declared{Project: "dolmen", Gates: []*djinnv1.ProjectGate{{Name: "stack", Beside: []string{"task recette"}}}}
 	})
+	// Each sharer says its project, as a waiter does (Q653 B: the window lays a shared gate under each sharer's).
+	g.ProjectResolver(func(taskID, _ string) string { return map[string]string{"W1": "dolmen", "W3": "djinn"}[taskID] })
 	var gives []func()
 	for _, id := range []string{"W1", "W2", "W3"} {
 		gives = append(gives, await(t, func() <-chan func() { c, _ := run(t, g, "stack", id, "task recette "+id); return c }(), id+"'s recette"))
@@ -375,7 +377,7 @@ func TestListSharers(t *testing.T) {
 	l := g.List()
 	want := []string{"W1: task recette W1", "W2: task recette W2", "W3: task recette W3"}
 	if len(l) != 1 || l[0].Shared != 3 || l[0].HolderTaskID != "W1" || !slices.Equal(l[0].Sharers, want) ||
-		!slices.Equal(l[0].SharerTaskIDs, []string{"W1", "W2", "W3"}) {
+		!slices.Equal(l[0].SharerTaskIDs, []string{"W1", "W2", "W3"}) || !slices.Equal(l[0].SharerProjects, []string{"dolmen", "", "djinn"}) {
 		t.Errorf("list = %+v", l)
 	}
 	for _, give := range gives {
@@ -383,7 +385,7 @@ func TestListSharers(t *testing.T) {
 	}
 	// Held alone, a gate names no sharer.
 	alone := await(t, func() <-chan func() { c, _ := run(t, g, "stack", "W1", "./rebuild.sh"); return c }(), "W1's script alone")
-	if l := g.List(); len(l) != 1 || l[0].Shared != 0 || len(l[0].Sharers) != 0 || l[0].HolderTaskID != "W1" {
+	if l := g.List(); len(l) != 1 || l[0].Shared != 0 || len(l[0].Sharers) != 0 || len(l[0].SharerProjects) != 0 || l[0].HolderTaskID != "W1" {
 		t.Errorf("list = %+v", l)
 	}
 	alone()

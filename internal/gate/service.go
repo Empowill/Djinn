@@ -139,6 +139,7 @@ func (s *service) List(
 			WaitingTaskIds: st.WaitingTaskIDs, TakesSlot: st.TakesSlot, Resources: st.Use, Ifrit: st.Ifrit,
 			Project: st.Project, WaitingProjects: st.WaitingProjects,
 			Shared: int32(st.Shared), Sharers: st.Sharers, SharerTaskIds: st.SharerTaskIDs,
+			SharerProjects: st.SharerProjects,
 		}
 		if !st.Since.IsZero() {
 			gate.Since = timestamppb.New(st.Since)
