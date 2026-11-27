@@ -54,6 +54,7 @@ func (s *service) Hold(
 	hold, err := s.g.Take(ctx, Request{
 		Name: name, TaskID: req.Msg.GetTaskId(), What: req.Msg.GetWhat(), Dir: req.Msg.GetDirectory(),
 		PID: int(req.Msg.GetPid()), Timeout: time.Duration(req.Msg.GetTimeoutSeconds()) * time.Second,
+		Beside: req.Msg.GetBeside(),
 	}, func(why string) {
 		_ = stream.Send(&machinev1.GateServiceHoldResponse{State: machinev1.GateState_GATE_STATE_WAITING, Reason: why})
 	})
@@ -137,6 +138,9 @@ func (s *service) List(
 			Name: st.Name, Holder: st.Holder, HolderTaskId: st.HolderTaskID, Waiting: st.Waiting,
 			WaitingTaskIds: st.WaitingTaskIDs, TakesSlot: st.TakesSlot, Resources: st.Use, Ifrit: st.Ifrit,
 			Project: st.Project, WaitingProjects: st.WaitingProjects,
+		}
+		for _, sh := range st.Sharers {
+			gate.Sharers = append(gate.Sharers, &machinev1.GateSharer{Who: sh.Who, TaskId: sh.TaskID, Project: sh.Project})
 		}
 		if !st.Since.IsZero() {
 			gate.Since = timestamppb.New(st.Since)

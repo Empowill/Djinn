@@ -297,3 +297,99 @@ func TestDeclaredDjinn(t *testing.T) {
 		}
 	}
 }
+
+// TestDeclaredUnnamedAlone (W1021, L106): djinn gate run stack with a script no pattern names holds the declared gate
+// alone, light and unmeasured as it is: Djinn sees the script, not the run-back it runs. A second such script waits for
+// it; a beside command waits too, and shares the gate with another once it is free.
+func TestDeclaredUnnamedAlone(t *testing.T) {
+	t.Parallel()
+	f := &tasks{rank: map[string]int{"W574": 0, "W1021": 0, "W3": 0, "W4": 0}}
+	g := New(calm(), nil, f)
+	g.tick = 10 * time.Millisecond
+	stack := &djinnv1.ProjectGate{Name: "stack", Alone: []string{"task * run-back"}, Beside: []string{"task * recette"}}
+	g.Declare(func(string, string) Declared {
+		return Declared{Project: "dolmen", File: ".agents/djinn.yaml", Gates: []*djinnv1.ProjectGate{stack}}
+	})
+	lot, _ := run(t, g, "stack", "W574", "$DJINN_SCRATCH/bin/lot.sh gemini-4-argon h2")
+	giveLot := await(t, lot, "W574's lot")
+	final, finalWaits := run(t, g, "stack", "W1021", "$DJINN_SCRATCH/final-run.sh")
+	if why := times(await(t, finalWaits, "the final run waits")); why != "stack (dolmen, .agents/djinn.yaml): held by W574: $DJINN_SCRATCH/bin/lot.sh gemini-4-argon h2, for Ns" {
+		t.Errorf("the final run waits because %q", why)
+	}
+	notGranted(t, final, "a second script no pattern names")
+	recette, recetteWaits := run(t, g, "stack", "W3", "task recette")
+	await(t, recetteWaits, "the recette waits")
+	giveLot()
+	giveFinal := await(t, final, "the final run once the lot ends")
+	notGranted(t, recette, "a beside command under a script held alone")
+	giveFinal()
+	giveRecette := await(t, recette, "the recette once the final run ends")
+	await(t, func() <-chan func() { c, _ := run(t, g, "stack", "W4", "task -d back recette"); return c }(), "a recette beside the other")()
+	giveRecette()
+}
+
+// TestDeclaredBeside: djinn gate run --beside says the command only reads: a script no pattern names shares the
+// declared gate with another, and with a beside command; an alone pattern still wins over the flag.
+func TestDeclaredBeside(t *testing.T) {
+	t.Parallel()
+	f := &tasks{rank: map[string]int{"W1": 0, "W2": 0, "W3": 0, "W4": 0}}
+	g := New(calm(), nil, f)
+	g.tick = 10 * time.Millisecond
+	stack := &djinnv1.ProjectGate{Name: "stack", Alone: []string{"task run-back"}, Beside: []string{"task recette"}}
+	g.Declare(func(string, string) Declared {
+		return Declared{Project: "dolmen", Gates: []*djinnv1.ProjectGate{stack}}
+	})
+	read := await(t, func() <-chan func() {
+		c, _ := ask(t, g, Request{Name: "stack", TaskID: "W1", What: "./read-logs.sh", Beside: true})
+		return c
+	}(), "W1's script beside")
+	other := await(t, func() <-chan func() {
+		c, _ := ask(t, g, Request{Name: "stack", TaskID: "W2", What: "./read-db.sh", Beside: true})
+		return c
+	}(), "W2's script beside W1's")
+	recette := await(t, func() <-chan func() { c, _ := run(t, g, "stack", "W3", "task recette"); return c }(), "W3's recette beside")
+	runBack, waits := ask(t, g, Request{Name: "stack", TaskID: "W4", What: "task run-back", Beside: true})
+	if why := times(await(t, waits, "the run-back waits")); !strings.HasPrefix(why, "stack (dolmen): shared by W1: ./read-logs.sh") {
+		t.Errorf("the run-back waits because %q", why)
+	}
+	notGranted(t, runBack, "an alone pattern's command said beside")
+	for _, give := range []func(){read, other, recette} {
+		give()
+	}
+	await(t, runBack, "the run-back once the others end")()
+}
+
+// TestListSharers (L106): the list says how many share a gate, and names each of them, the first granted first.
+func TestListSharers(t *testing.T) {
+	t.Parallel()
+	f := &tasks{rank: map[string]int{"W1": 0, "W2": 0, "W3": 0}}
+	g := New(calm(), nil, f)
+	g.tick = 10 * time.Millisecond
+	g.Declare(func(string, string) Declared {
+		return Declared{Project: "dolmen", Gates: []*djinnv1.ProjectGate{{Name: "stack", Beside: []string{"task recette"}}}}
+	})
+	// Each sharer says its project, as a waiter does (Q653 B: the window lays a shared gate under each sharer's).
+	g.ProjectResolver(func(taskID, _ string) string { return map[string]string{"W1": "dolmen", "W3": "djinn"}[taskID] })
+	var gives []func()
+	for _, id := range []string{"W1", "W2", "W3"} {
+		gives = append(gives, await(t, func() <-chan func() { c, _ := run(t, g, "stack", id, "task recette "+id); return c }(), id+"'s recette"))
+	}
+	l := g.List()
+	want := []Sharer{
+		{Who: "W1: task recette W1", TaskID: "W1", Project: "dolmen"},
+		{Who: "W2: task recette W2", TaskID: "W2"},
+		{Who: "W3: task recette W3", TaskID: "W3", Project: "djinn"},
+	}
+	if len(l) != 1 || l[0].HolderTaskID != "W1" || !slices.Equal(l[0].Sharers, want) {
+		t.Errorf("list = %+v", l)
+	}
+	for _, give := range gives {
+		give()
+	}
+	// Held alone, a gate names no sharer.
+	alone := await(t, func() <-chan func() { c, _ := run(t, g, "stack", "W1", "./rebuild.sh"); return c }(), "W1's script alone")
+	if l := g.List(); len(l) != 1 || len(l[0].Sharers) != 0 || l[0].HolderTaskID != "W1" {
+		t.Errorf("list = %+v", l)
+	}
+	alone()
+}

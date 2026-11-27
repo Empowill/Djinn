@@ -333,7 +333,7 @@
                   admitted first, measured, and, when heavy, takes its turn. Djinn's own checks to merge a task's work or
                   push a branch go before the workers' requests, and on a machine of more than one slot, one stays free for
                   them: what ends a task never waits behind workers. The Gates tab of the Hourglass shows, by project, who holds each gate now,
-                  who waits (each gate a seal: its door open when free, shut while held, a gold flame per waiter, barred when it takes a worker's slot), and which command takes the most time, 25 more commands read each time you scroll to the end of the list, under a summary of them all; over the last hour, 6 hours or day, each project with one lane per gate under
+                  every command that holds it beside, the first granted first, each under its project (as <code>djinn gate list</code> names its sharers), who waits (each gate a seal: its door open when free, shut while held, a gold flame per waiter, barred when it takes a worker's slot), and which command takes the most time, 25 more commands read each time you scroll to the end of the list, under a summary of them all; over the last hour, 6 hours or day, each project with one lane per gate under
                   the workers that run, each request coloured by its task's kind, hatched while it waits, plain while it holds, and under the pointer each holder it waited for with how long,
                   then a Sankey from the projects to their named gates to their waits. A gate a project declares is its own; one of the
                   machine, as lint, is one turn for every project and shows under each project that holds it or waits for it. Each hold stays three months in Djinn's database, past a restart:
@@ -346,9 +346,15 @@
                   share, its <code>beside</code> patterns those that use it. Each pattern is words that start a part of the
                   command, <code>*</code> standing for any words: <code>docker compose * up</code>. A worker's command that
                   one names takes the gate before it runs, under the project's name, <code>stack@dolmen</code>, and so does
-                  <code>djinn gate run stack</code> typed in the project. Held alone, it waits for those that share it too,
+                  <code>djinn gate run stack</code> typed in the project, alone or shared as its patterns say. A command no
+                  pattern names, a script for instance, holds a declared gate alone, light as it may be: Djinn sees the
+                  script, not what it runs; <code>djinn gate run stack --beside -- ./read-logs.sh</code> says the command
+                  only reads, and lets it share the gate, an <code>alone</code> pattern that names it still winning. Held
+                  alone, it waits for those that share it too,
                   and one that comes to share it after it goes behind it; the machine's bounds hold all the same. The
-                  reason a worker reads names the gate, its project and its file. A gate that is not valid is left out on
+                  reason a worker reads names the gate, its project and its file. <code>djinn gate list</code> names each
+                  command that shares a gate (<code>sharers</code>), with its task and its project, its holder the first
+                  granted. A gate that is not valid is left out on
                   its own, said in the project's view; <code>djinn project gates</code> says first where it read them (the ref, its
                   commit, your <code>config_branch</code>) and that it found no <code>djinn.yaml</code> there when it
                   found none; <code>djinn project gates --off stack</code> turns one off on your machine only. To try a stack before its file merges into a protected branch, point your own Djinn at

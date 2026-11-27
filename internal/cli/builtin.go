@@ -194,19 +194,23 @@ Add it to an agent, for example: claude mcp add djinn -- djinn mcp`,
 // GateRun is djinn gate run.
 var GateRun = Command{
 	Name:    "gate run",
-	Usage:   "djinn gate run <name> [--task-id <task>] -- <command> [arguments]",
+	Usage:   "djinn gate run <name> [--beside] [--task-id <task>] -- <command> [arguments]",
 	Summary: "Run a command under a gate: one holder at a time, while the machine is not under pressure.",
 	Help: `Take the gate <name>, run the command once it is granted, and give the gate back when the command ends, fails
 or is interrupted. Djinn grants a gate to one holder at a time, and only while the machine is not under pressure;
 meanwhile it says why it waits. The exit code is the command's. Djinn records what the command cost in its project
 (CPU time, peak memory, duration): djinn command list. Outside a running worker, the gate takes a worker's slot.
 Djinn takes it back after an hour, the command going on. A command measured heavy (past 2 GiB of peak memory or a
-minute of CPU time) also waits while another task's heavy command runs, whatever its gate.`,
+minute of CPU time) also waits while another task's heavy command runs, whatever its gate. On a gate the project
+declares (djinn.yaml), the command holds it alone or shares it as the gate's patterns say; one no pattern names, a
+script for instance, holds it alone: Djinn sees the script, not what it runs. --beside says the command only reads what
+the gate guards, and may share it; an alone pattern that names the command wins over it.`,
 	Args: []Param{
 		{Name: "<name>", Type: "string", Help: "The gate: codegen, stack, e2e, paid, or any other."},
 		{Name: "<command>", Type: "string", Help: "The command to run, after --, then its arguments."},
 	},
 	Flags: []Param{
+		{Name: "--beside", Type: "bool", Help: "The command only reads what the gate guards: it may share the gate with others that do."},
 		{Name: "--task-id", Type: "string", Env: "DJINN_TASK_ID", Help: "Task the gate is taken for (default $DJINN_TASK_ID): its events show the gate."},
 		{Name: "--addr", Type: "string", Env: "DJINN_ADDR", Help: "Address of the djinn server (default $DJINN_ADDR, then the one djinn up writes)."},
 	},

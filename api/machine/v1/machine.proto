@@ -600,6 +600,20 @@ message Gate {
   string project = 11;
   // Projects of those who wait for it, by name, in the order of waiting: empty for a waiter outside any project.
   repeated string waiting_projects = 12;
+  // Who hold it shared, commands that only use what it guards, the first granted first: empty when it is held alone or
+  // by nobody. holder is the first of them, unless a command holds it alone meanwhile.
+  repeated GateSharer sharers = 13;
+}
+
+// GateSharer is a command that holds a gate shared with others (djinn gate run --beside, or light enough).
+message GateSharer {
+  // Who holds it, and what for, as Gate.holder says it.
+  string who = 1;
+  // Task of the sharer; empty for a sharer outside any task (a person's terminal, a script).
+  string task_id = 2;
+  // Project of the sharer, by name; empty for a sharer outside any project. A gate named for the machine (lint, e2e)
+  // may be shared by workers of several projects.
+  string project = 3;
 }
 
 message GateServiceHoldRequest {
@@ -626,6 +640,10 @@ message GateServiceHoldRequest {
   // limit, the gate held as long as its holder lives; past 3 times its command's usual hold, or an hour unmeasured,
   // the lead of its task is told, and nothing is taken back.
   uint32 timeout_seconds = 6 [(buf.validate.field).uint32.lte = 86400];
+  // The command only reads what the gate guards, and may share it with others that do (djinn gate run --beside). On a
+  // gate its project declares, a command no pattern names holds the gate alone without it; an alone pattern that names
+  // the command wins over it.
+  bool beside = 7;
 }
 
 message GateServiceHoldResponse {

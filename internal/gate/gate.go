@@ -290,6 +290,10 @@ type Request struct {
 	// A command a pattern of its project's gates names goes by that gate instead, name@project, alone or shared as
 	// the pattern says (Declare).
 	Shared bool
+	// Beside tells that the command only reads what its gate guards (djinn gate run --beside): it shares the gate,
+	// heavy or not, unless an alone pattern of its project names it. Without it, a command no pattern names holds a
+	// declared gate alone.
+	Beside bool
 	// Find, when PID is 0, finds the process of the admitted command, leaving out those skip says, once it starts:
 	// 0 while it is not found. The admission is given back when no process is found within a few seconds: its
 	// command ran too short to be found, or did not run.
@@ -406,14 +410,15 @@ func (g *Gates) Take(ctx context.Context, r Request, waiting func(why string)) (
 	g.mu.Lock()
 	g.seq++
 	heavy := g.heavyCost(cost)
-	// A light command shares its gate's name (Q17 B): only a heavy one, a lit ifrit's server, or a holder that says
-	// not what it runs holds it alone.
-	shared := r.Shared || what != "" && !heavy && !ifrit
+	// A light command shares its gate's name (Q17 B), and so does one said beside (djinn gate run --beside): only a
+	// heavy one, a lit ifrit's server, or a holder that says not what it runs holds it alone.
+	shared := r.Shared || (what != "" && !heavy || r.Beside) && !ifrit
 	g.mu.Unlock()
-	// A gate the project declares: name@project, alone or shared as its patterns say; an ifrit's serve holds it alone.
+	// A gate the project declares: name@project, alone or shared as its patterns say, alone when none names the command
+	// and it is not said beside; an ifrit's serve holds it alone.
 	full, alone, label, declared := g.declaredGate(Request{
-		TaskID: taskID, What: what, Dir: r.Dir, First: r.First, Shared: r.Shared,
-	}, name, shared)
+		TaskID: taskID, What: what, Dir: r.Dir, First: r.First, Shared: r.Shared, Beside: r.Beside,
+	}, name)
 	if declared {
 		name, shared = full, !alone && !ifrit
 	}
@@ -1131,9 +1136,16 @@ type State struct {
 	Waiting                    []string
 	WaitingTaskIDs             []string          // the tasks of the waiters, in the same order; a waiter outside any task left out
 	TakesSlot                  bool              // held alone outside a running worker
-	Shared                     int               // how many light commands share it; Holder is the first of them unless one holds it alone
+	Sharers                    []Sharer          // the light commands that share it, the first granted first; Holder is the first unless one holds it alone
 	Ifrit                      bool              // held by a lit ifrit, until it goes out or ends
 	Use                        *planv1.Resources // what the holder's process uses; nil when not read
+}
+
+// Sharer is a command that holds a gate shared with others.
+type Sharer struct {
+	Who     string // who it is, with what it runs
+	TaskID  string // its task; "" outside any task
+	Project string // its project, by name; "" outside any
 }
 
 // List gives the gates held or waited for, by name, alone or shared; the admissions are not listed.
@@ -1154,18 +1166,25 @@ func (g *Gates) List() []State {
 	for name := range g.held {
 		alone[name] = true
 	}
-	first := map[string]*waiter{} // the first granted of each name's light commands; equal grant times (a coarse clock, Windows) go by arrival
+	// Each name's light commands, the first granted first; equal grant times (a coarse clock, Windows) go by arrival.
+	sharers := map[string][]*waiter{}
 	for h := range g.shared {
-		if h.name == Commands {
-			continue
-		}
-		get(h.name).Shared++
-		if f := first[h.name]; f == nil || h.since.Before(f.since) || h.since.Equal(f.since) && h.seq < f.seq {
-			first[h.name] = h
+		if h.name != Commands {
+			sharers[h.name] = append(sharers[h.name], h)
 		}
 	}
-	for name, h := range first {
-		if s := get(name); !alone[name] {
+	for name, hs := range sharers {
+		slices.SortFunc(hs, func(a, b *waiter) int {
+			if c := a.since.Compare(b.since); c != 0 {
+				return c
+			}
+			return cmp.Compare(a.seq, b.seq)
+		})
+		s := get(name)
+		for _, h := range hs {
+			s.Sharers = append(s.Sharers, Sharer{Who: h.who, TaskID: h.taskID, Project: h.project})
+		}
+		if h := hs[0]; !alone[name] {
 			s.Holder, s.HolderTaskID, s.Project, s.Since, s.Until, s.Use = h.who, h.taskID, h.project, h.since, h.until, h.use
 		}
 	}
