@@ -17,11 +17,12 @@ const footprintEvery = 500 * time.Millisecond
 // them, and its peak memory as the most footprint one of its processes reached (machine.Footprint, Q86 A): the
 // kernel keeps each process's own most, read every footprintEvery while it lives. resident memory (ru_maxrss) leaves
 // the compressed memory out. Like Linux's, the peak is the largest process's, not the tree's sum. A process born
-// and gone between two reads is missed; a command that ended before the first read keeps its ru_maxrss.
+// and gone between two reads escapes the footprint, so the peak is never below the command's ru_maxrss, which wait4
+// gives as the most of its own and of the children it waited for (a 400 ms child between two reads gave 19 MB for
+// 64 MB, W1161), and a command that ended before the first read has its ru_maxrss alone.
 func watch(p *os.Process) func(*os.ProcessState) (cpu time.Duration, peak uint64) {
 	done, ended := make(chan struct{}), make(chan struct{})
 	var most uint64
-	read := false
 	go func() {
 		defer close(ended)
 		t := time.NewTicker(footprintEvery)
@@ -33,7 +34,7 @@ func watch(p *os.Process) func(*os.ProcessState) (cpu time.Duration, peak uint64
 			case <-t.C:
 			}
 			if m, ok := treeFootprint(p.Pid); ok {
-				most, read = max(most, m), true
+				most = max(most, m)
 			}
 		}
 	}()
@@ -41,11 +42,7 @@ func watch(p *os.Process) func(*os.ProcessState) (cpu time.Duration, peak uint64
 	return func(ps *os.ProcessState) (time.Duration, uint64) {
 		once.Do(func() { close(done) })
 		<-ended
-		cpu := ps.UserTime() + ps.SystemTime()
-		if !read {
-			return cpu, peakMemory(ps)
-		}
-		return cpu, most
+		return ps.UserTime() + ps.SystemTime(), max(most, peakMemory(ps))
 	}
 }
 
