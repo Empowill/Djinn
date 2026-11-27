@@ -32,9 +32,9 @@ func (h *Harness) watchSleepers() {
 	})
 }
 
-// wakeQuestions wakes each asleep question whose conditions all hold now (plan.SleepAllHold), by tasks, every task
-// stored: it shows at the top of its wish's open questions, and its lead is told to check its facts. It reads the
-// questions only while one may sleep. The caller holds h.sched.
+// wakeQuestions wakes each asleep question whose conditions all hold now (plan.SleepAllHold), or one of which can never
+// hold (plan.SleepNever), by tasks, every task stored: it shows at the top of its wish's open questions, and its lead
+// is told to check its facts. It reads the questions only while one may sleep. The caller holds h.sched.
 func (h *Harness) wakeQuestions(ctx context.Context, tasks []*planv1.Task) {
 	if !h.sleepers.Swap(false) {
 		return
@@ -60,11 +60,12 @@ func (h *Harness) wakeQuestions(ctx context.Context, tasks []*planv1.Task) {
 				byWish[t.GetWishId()] = append(byWish[t.GetWishId()], t)
 			}
 		}
-		if !plan.SleepAllHold(q, byWish[q.GetWishId()], now) {
+		never := plan.SleepNeverText(q, byWish[q.GetWishId()], now)
+		if never == "" && !plan.SleepAllHold(q, byWish[q.GetWishId()], now) {
 			asleep = true
 			continue
 		}
-		if err := h.wakeQuestion(ctx, q.GetId(), now); err != nil {
+		if err := h.wakeQuestion(ctx, q.GetId(), now, never); err != nil {
 			asleep = true // The next pass tries again.
 			logx.L().Error("wake a question", "loop", "schedule", "wish", q.GetWishId(), "question", q.GetCode(), "err", err)
 		}
@@ -74,9 +75,10 @@ func (h *Harness) wakeQuestions(ctx context.Context, tasks []*planv1.Task) {
 	}
 }
 
-// wakeQuestion wakes the question id, asleep, at now, then tells its lead. One that woke or closed meanwhile is left
-// as it is.
-func (h *Harness) wakeQuestion(ctx context.Context, id string, now time.Time) error {
+// wakeQuestion wakes the question id, asleep, at now, then tells its lead, with never, which of its conditions can
+// never hold and why (plan.SleepNeverText), when that is what woke it. One that woke or closed meanwhile is left as it
+// is.
+func (h *Harness) wakeQuestion(ctx context.Context, id string, now time.Time, never string) error {
 	var woken *planv1.Question
 	err := h.store.Tx(ctx, func(tx *store.Tx) error {
 		q, err := store.Get[*planv1.Question](ctx, tx, id)
@@ -93,8 +95,10 @@ func (h *Harness) wakeQuestion(ctx context.Context, id string, now time.Time) er
 	if err != nil || woken == nil {
 		return err
 	}
-	logx.L().Info("question woke", "wish", woken.GetWishId(), "question", woken.GetCode(), "until", plan.SleepTexts(woken))
-	err = h.toLead(ctx, planv1.LeadEventKind_LEAD_EVENT_KIND_WOKE, woken.GetWishId(), woken.GetCode(), plan.WokeLine(woken))
+	logx.L().Info("question woke", "wish", woken.GetWishId(), "question", woken.GetCode(),
+		"until", plan.SleepTexts(woken), "never", never)
+	line := plan.WokeLine(woken, never)
+	err = h.toLead(ctx, planv1.LeadEventKind_LEAD_EVENT_KIND_WOKE, woken.GetWishId(), woken.GetCode(), line)
 	if err != nil && !errors.Is(err, plan.ErrNoLead) {
 		logx.L().Warn("tell the lead a question woke", "wish", woken.GetWishId(), "question", woken.GetCode(), "err", err)
 	}
