@@ -18,6 +18,12 @@ package harness
 // The lead of each worker's wish hears every freeze, interruption and thaw. A frozen worker takes no slot, and the
 // slot stays its own; its frozen time is left out of its budget, as a pause's is (taskWallTime: piste d). Never Djinn
 // itself, its own commands and checks (they are no worker), the lead (no task), a watcher, a question worker or an ifrit.
+//
+// The brake runs in its own loop, every Brake.Every (Q661 A): on 27/11 at 13:46 it waited 64 s for a scheduler pass
+// stuck on the base, while the memory ran out. The loop reads the machine and the workers' memory, freezes, thaws and
+// interrupts in memory, and never reads nor writes the base: what it did goes to the scheduler (brakeOut), whose next
+// pass journals it, has the task written paused or running again, and tells the lead (brakeRecord). The gates' grants,
+// which they read in the base, are asked apart, the loop waiting for them brakeAskWait at most.
 
 import (
 	"cmp"
@@ -35,8 +41,8 @@ import (
 	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/machine"
 	"github.com/empowill/djinn/internal/plan"
-	"github.com/empowill/djinn/internal/store"
 	"github.com/empowill/djinn/internal/wrap"
+	"google.golang.org/protobuf/proto"
 )
 
 // methodBrake is journaled when the memory brake freezes, thaws or interrupts a worker.
@@ -117,9 +123,9 @@ func percent(part, whole uint64) string {
 	return fmt.Sprintf("%.0f%%", math.Round(100*float64(part)/float64(max(whole, 1))))
 }
 
-// SetBrake changes the memory brake's threshold at once (LoadService.SetBrake, the Summoning Circle): the next
-// scheduler pass reads the machine against DefaultBrake(percent), and calm counts again from there; 0 turns the brake
-// off, and what it froze thaws, one worker a pass. Without WithBrake's reading of the machine, it changes nothing.
+// SetBrake changes the memory brake's threshold at once (LoadService.SetBrake, the Summoning Circle): the brake's next
+// pass reads the machine against DefaultBrake(percent), and calm counts again from there; 0 turns the brake off, and
+// what it froze thaws, one worker a pass. Without WithBrake's reading of the machine, it changes nothing.
 func (h *Harness) SetBrake(percent int) {
 	b := DefaultBrake(percent)
 	h.brakeMu.Lock()
@@ -142,7 +148,8 @@ func (h *Harness) GateGrants(grants func() map[string]time.Time) {
 	h.grants = grants
 }
 
-// brakeState is what the brake remembers between the scheduler's passes, which alone read and change it (h.sched).
+// brakeState is what the brake remembers between its passes, which alone read and change it (h.braking). The tasks
+// it interrupted are apart (h.brakeWaits): the scheduler reads them.
 type brakeState struct {
 	read     time.Time               // the last reading of the machine
 	readings int                     // the readings in a row the memory was short
@@ -150,9 +157,76 @@ type brakeState struct {
 	froze    time.Time               // the last freeze
 	samples  map[string][]brakePoint // by task: its memory over the window
 	frozen   []*brakeFrozen          // the workers the brake froze, the first frozen first
-	// held are the tasks the brake interrupted, by ID: they resume once calm, after the frozen ones thawed
-	// (brakeHeld). Resumed at once, a worker would grow again into the memory still short (W25).
-	held map[string]bool
+}
+
+// brakeNote is what the brake did to a worker, which the scheduler records at its next pass (brakeRecord): the brake's
+// loop never waits for the base.
+type brakeNote struct {
+	id, wish, code string
+	req            proto.Message // what is journaled: a pause, a resume or a stop of the task
+	hold           bool          // a freeze or a thaw: the task's pump writes it paused or running again
+	line           string        // what the lead of its wish hears
+}
+
+// brakeAskWait is how long a brake pass waits for the gates' grants, which they read in the base: past it, they are
+// not known, and the admitted worker that grew most freezes in place of the last admitted (pickBrake).
+const brakeAskWait = 500 * time.Millisecond
+
+// startBrake starts the brake's loop, when Djinn reads the machine for it (WithBrake) and not on Windows. Schedule
+// calls it; Close waits for the loop to stop.
+func (h *Harness) startBrake() {
+	if h.brakeRead == nil || h.goosIs("windows") {
+		return
+	}
+	h.brakeDone = make(chan struct{})
+	go h.brakeLoop()
+}
+
+// brakeLoop makes a brake pass every Brake.Every (a second by default), whatever the scheduler does, until Djinn
+// stops.
+func (h *Harness) brakeLoop() {
+	defer logx.Crash("memory brake")
+	defer close(h.brakeDone)
+	tick := time.NewTicker(cmp.Or(h.brakeTick, h.brake.Every, time.Second))
+	defer tick.Stop()
+	for {
+		select {
+		case <-h.ctx.Done():
+			return
+		case <-tick.C:
+		}
+		h.brakePass(h.ctx)
+	}
+}
+
+// brakeSend hands what the brake did to the scheduler, and wakes it: it never waits.
+func (h *Harness) brakeSend(n brakeNote) {
+	h.brakeMu.Lock()
+	h.brakeOut = append(h.brakeOut, n)
+	h.brakeMu.Unlock()
+	h.wake()
+}
+
+// brakeRecord records what the brake did since the last pass, in its order: each command journaled, each freeze or
+// thaw written on its task by its pump, the lead of its wish told. A freeze and its thaw both done meanwhile write the
+// task as its worker is now, running. The caller holds h.sched.
+func (h *Harness) brakeRecord(ctx context.Context) {
+	h.brakeMu.Lock()
+	notes := h.brakeOut
+	h.brakeOut = nil
+	h.brakeMu.Unlock()
+	for _, n := range notes {
+		var r *run
+		if n.hold {
+			h.mu.Lock()
+			r = h.runs[n.id]
+			h.mu.Unlock()
+		}
+		if err := h.recordHold(ctx, r, actorHarness, methodBrake, n.req); err != nil {
+			logx.L().Error("record what the memory brake did", "task", n.code, "err", err)
+		}
+		h.brakeTell(n.wish, n.code, n.line)
+	}
 }
 
 // brakePoint is a worker's memory at one time.
@@ -181,9 +255,11 @@ type brakeCandidate struct {
 	git                    bool      // a git runs in its cgroup
 }
 
-// brakePass is the brake's turn in a scheduler pass: it reads the machine, every Brake.Every at most, and the
-// workers' memory, then freezes, interrupts or thaws one worker at most. The caller holds h.sched.
+// brakePass is one turn of the brake's loop: it reads the machine, every Brake.Every at most, and the workers' memory,
+// then freezes, interrupts or thaws one worker at most. It reads nor writes the base.
 func (h *Harness) brakePass(ctx context.Context) {
+	h.braking.Lock()
+	defer h.braking.Unlock()
 	h.brakeTake()
 	b := h.brake
 	if h.brakeRead == nil || h.goosIs("windows") {
@@ -198,7 +274,7 @@ func (h *Harness) brakePass(ctx context.Context) {
 		if len(st.frozen) > 0 {
 			h.brakeThaw(ctx, "the memory brake is off", now)
 		}
-		st.held = nil // What it interrupted resumes.
+		h.brakeRelease() // What it interrupted resumes.
 		return
 	}
 	if !st.read.IsZero() && now.Sub(st.read) < b.Every {
@@ -223,9 +299,8 @@ func (h *Harness) brakePass(ctx context.Context) {
 		case len(st.frozen) > 0:
 			h.brakeThaw(ctx, calmAgain(s), now)
 			st.calm = now // The next thaws after another calm.
-		case len(st.held) > 0:
-			st.held = nil // What it interrupted resumes, once what it froze thawed.
-			st.calm = now
+		case h.brakeRelease():
+			st.calm = now // What it interrupted resumes, once what it froze thawed.
 		}
 		return
 	}
@@ -236,7 +311,7 @@ func (h *Harness) brakePass(ctx context.Context) {
 	}
 	for _, f := range st.frozen {
 		if !f.admitted && !f.kept && now.Sub(f.at) >= b.Stop {
-			h.brakeInterrupt(ctx, f, now)
+			h.brakeInterrupt(f, now)
 			return
 		}
 	}
@@ -252,22 +327,31 @@ func (h *Harness) brakePass(ctx context.Context) {
 
 // brakeHeld says why the brake holds back the planned task t, which it interrupted: it waits for the memory to be
 // calm, and for what the brake froze to thaw first; "" when the brake holds nothing back. A task that no longer waits
-// to resume (started by hand, cancelled) is forgotten. The caller holds h.sched.
+// to resume (started by hand, cancelled) is forgotten. The scheduler calls it.
 func (h *Harness) brakeHeld(t *planv1.Task) string {
-	st := &h.brakeAt
-	if !st.held[t.GetId()] {
+	h.brakeMu.Lock()
+	defer h.brakeMu.Unlock()
+	if !h.brakeWaits[t.GetId()] {
 		return ""
 	}
 	if t.GetStatus() != planv1.TaskStatus_TASK_STATUS_RESUMING {
-		delete(st.held, t.GetId())
+		delete(h.brakeWaits, t.GetId())
 		return ""
 	}
-	return fmt.Sprintf("%sinterrupted, it resumes after %s of calm (%.0f%% of memory available or more)",
-		whyBrake, span(h.brake.Calm), 100*h.brake.Thaw)
+	return h.brakeWaitWhy
+}
+
+// brakeRelease lets every task the brake interrupted resume: it says whether there was any.
+func (h *Harness) brakeRelease() bool {
+	h.brakeMu.Lock()
+	defer h.brakeMu.Unlock()
+	had := len(h.brakeWaits) > 0
+	h.brakeWaits = nil
+	return had
 }
 
 // brakeTake takes the threshold SetBrake gave last, if any: the readings and the calm count again under it. The
-// caller holds h.sched.
+// caller holds h.braking.
 func (h *Harness) brakeTake() {
 	h.brakeMu.Lock()
 	next := h.brakeNext
@@ -279,6 +363,15 @@ func (h *Harness) brakeTake() {
 	next.Memory, next.Git = h.brake.Memory, h.brake.Git
 	h.brake = *next
 	h.brakeAt.readings, h.brakeAt.calm = 0, time.Time{}
+	h.brakeMu.Lock()
+	h.brakeWaitWhy = h.brake.waitWhy()
+	h.brakeMu.Unlock()
+}
+
+// waitWhy says why a task the brake b interrupted waits.
+func (b Brake) waitWhy() string {
+	return fmt.Sprintf("%sinterrupted, it resumes after %s of calm (%.0f%% of memory available or more)",
+		whyBrake, span(b.Calm), 100*b.Thaw)
 }
 
 // goosIs says whether Djinn runs on the system goos.
@@ -296,10 +389,11 @@ func (h *Harness) brakeSample(now time.Time) []brakeCandidate {
 	h.mu.Lock()
 	var cands []brakeCandidate
 	live := map[string]bool{}
+	var started []string
 	for id, r := range h.runs {
 		live[id] = true
-		if st.held[id] && !r.stopping && !r.final {
-			delete(st.held, id) // Started again by hand (djinn task start): no longer held.
+		if !r.stopping && !r.final {
+			started = append(started, id)
 		}
 		if r.worker == nil || r.paused || r.stopping || r.final || r.shelved || r.watcher || r.light || r.ifrit {
 			continue
@@ -316,6 +410,11 @@ func (h *Harness) brakeSample(now time.Time) []brakeCandidate {
 		cands = append(cands, c)
 	}
 	h.mu.Unlock()
+	h.brakeMu.Lock()
+	for _, id := range started {
+		delete(h.brakeWaits, id) // Started again by hand (djinn task start): no longer held.
+	}
+	h.brakeMu.Unlock()
 	for id := range st.samples {
 		if !live[id] {
 			delete(st.samples, id)
@@ -409,12 +508,44 @@ func (h *Harness) brakePick(cands []brakeCandidate, pending bool) *brakeCandidat
 	grants := h.grants
 	h.mu.Unlock()
 	if grants != nil && slices.ContainsFunc(cands, func(c brakeCandidate) bool { return c.admitted && c.growth >= least }) {
-		at := grants()
+		at := h.brakeGrantsNow(grants)
 		for i := range cands {
 			cands[i].granted = at[cands[i].id]
 		}
 	}
 	return pickBrake(cands, least, pending)
+}
+
+// brakeGrantsNow asks the gates their grants apart from the brake's loop, as they read them in the base, and waits
+// brakeAskWait at most: nil when they did not come. One ask at a time: a pass that finds one asked waits for it.
+func (h *Harness) brakeGrantsNow(grants func() map[string]time.Time) map[string]time.Time {
+	h.brakeMu.Lock()
+	ask := h.brakeAsk
+	if ask == nil {
+		ask = make(chan struct{})
+		h.brakeAsk, h.brakeGrants = ask, nil
+		go func() {
+			defer logx.Crash("brake grants")
+			at := grants()
+			h.brakeMu.Lock()
+			h.brakeAsk, h.brakeGrants = nil, at
+			h.brakeMu.Unlock()
+			close(ask)
+		}()
+	}
+	h.brakeMu.Unlock()
+	wait := time.NewTimer(brakeAskWait)
+	defer wait.Stop()
+	select {
+	case <-ask:
+	case <-wait.C:
+		return nil
+	case <-h.ctx.Done():
+		return nil
+	}
+	h.brakeMu.Lock()
+	defer h.brakeMu.Unlock()
+	return h.brakeGrants
 }
 
 // pickBrake is the worker to freeze among cands, nil for none. A worker grows when its memory rose least or more over
@@ -460,7 +591,7 @@ func (h *Harness) brakeFreeze(ctx context.Context, c *brakeCandidate, short stri
 	} else {
 		why += fmt.Sprintf("; it grew %s in %s outside the gates", wrap.Size(uint64(max(c.growth, 0))), span(h.brake.Window))
 	}
-	if _, err := h.hold(ctx, methodBrake, &planv1.TaskServicePauseRequest{TaskId: c.id}, c.id, true, why); err != nil {
+	if err := h.brakeHold(c.id, true, why); err != nil {
 		logx.L().Warn("the memory brake cannot freeze a worker", "task", c.code, "err", err)
 		return
 	}
@@ -484,7 +615,47 @@ func (h *Harness) brakeFreeze(ctx context.Context, c *brakeCandidate, short stri
 		line = fmt.Sprintf("%s frozen by the memory brake: %s; it grew %s in %s outside the gates. Its agent cannot resume: thawed once calm.",
 			c.code, short, wrap.Size(uint64(max(c.growth, 0))), span(h.brake.Window))
 	}
-	h.brakeTell(c.wish, c.code, line)
+	h.brakeSend(brakeNote{id: c.id, wish: c.wish, code: c.code, req: &planv1.TaskServicePauseRequest{TaskId: c.id},
+		hold: true, line: line})
+}
+
+// brakeHold freezes or thaws the task's worker, in memory alone: its pause, as Pause and Resume do it (hold), which
+// the scheduler records (brakeRecord). It passes over the gates the worker holds. The caller holds h.braking.
+func (h *Harness) brakeHold(id string, pause bool, why string) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	r := h.runs[id]
+	switch {
+	case r == nil || r.worker == nil || r.stopping || r.final:
+		return errors.New("it is not running")
+	case r.paused == pause && pause:
+		return errors.New("it is paused already")
+	case r.paused == pause:
+		return errors.New("it is not paused")
+	}
+	p, ok := r.worker.(Pauser)
+	if !ok {
+		return errors.New("its worker cannot be paused")
+	}
+	var err error
+	if pause {
+		err = p.Pause()
+	} else {
+		err = p.Resume()
+	}
+	if err != nil {
+		return err
+	}
+	r.paused = pause
+	r.notchPaused, r.slotPaused, r.netPaused, r.brakePaused = false, false, false, pause
+	if !pause {
+		r.forced = false
+	}
+	r.holdWhy = why
+	if pause {
+		h.wake() // Its slot is free.
+	}
+	return nil
 }
 
 // calmAgain says why the brake thaws a worker once the machine s is calm.
@@ -504,7 +675,7 @@ func (h *Harness) brakeThaw(ctx context.Context, calm string, now time.Time) {
 	if f.containers {
 		h.pauseContainers(ctx, f.id, false)
 	}
-	if _, err := h.hold(ctx, methodBrake, &planv1.TaskServiceResumeRequest{TaskId: f.id}, f.id, false, whyBrake+calm); err != nil {
+	if err := h.brakeHold(f.id, false, whyBrake+calm); err != nil {
 		logx.L().Warn("the memory brake cannot thaw a worker", "task", f.code, "err", err)
 		return
 	}
@@ -513,13 +684,14 @@ func (h *Harness) brakeThaw(ctx context.Context, calm string, now time.Time) {
 	if f.admitted {
 		kept = ", its command's peak kept by the gates"
 	}
-	h.brakeTell(f.wish, f.code, fmt.Sprintf("%s thawed: %s. Frozen %s at %s%s, left out of its budget.",
-		f.code, calm, span(now.Sub(f.at)), wrap.Size(f.memory), kept))
+	h.brakeSend(brakeNote{id: f.id, wish: f.wish, code: f.code, req: &planv1.TaskServiceResumeRequest{TaskId: f.id}, hold: true,
+		line: fmt.Sprintf("%s thawed: %s. Frozen %s at %s%s, left out of its budget.",
+			f.code, calm, span(now.Sub(f.at)), wrap.Size(f.memory), kept)})
 }
 
 // brakeInterrupt interrupts the worker f the brake froze for a growth outside the gates, the memory still short: its
 // task resumes later in its session. One the gates admitted meanwhile, or that cannot resume, stays frozen.
-func (h *Harness) brakeInterrupt(ctx context.Context, f *brakeFrozen, now time.Time) {
+func (h *Harness) brakeInterrupt(f *brakeFrozen, now time.Time) {
 	st := &h.brakeAt
 	why := fmt.Sprintf("%sfrozen %s, the memory stayed short: it resumes in its session once calm",
 		whyBrake, span(now.Sub(f.at)))
@@ -546,19 +718,18 @@ func (h *Harness) brakeInterrupt(ctx context.Context, f *brakeFrozen, now time.T
 	r.worker.Stop()
 	h.mu.Unlock()
 	st.frozen = slices.DeleteFunc(st.frozen, func(o *brakeFrozen) bool { return o == f })
-	if st.held == nil {
-		st.held = map[string]bool{}
+	h.brakeMu.Lock()
+	if h.brakeWaits == nil {
+		h.brakeWaits = map[string]bool{}
 	}
-	st.held[f.id] = true
+	h.brakeWaits[f.id] = true
+	h.brakeWaitWhy = h.brake.waitWhy()
+	h.brakeMu.Unlock()
 	st.froze = now // What it held goes back to the machine: the next freeze waits for the readings to show it.
-	if err := h.store.Tx(ctx, func(tx *store.Tx) error {
-		return tx.Journal(actorHarness, methodBrake, &planv1.TaskServiceStopRequest{TaskId: f.id})
-	}); err != nil {
-		logx.L().Error("journal the brake's interruption", "task", f.code, "err", err)
-	}
 	logx.L().Warn("the memory brake interrupted a worker", "task", f.code, "frozen", now.Sub(f.at))
-	h.brakeTell(f.wish, f.code, fmt.Sprintf("%s interrupted by the memory brake: frozen %s, the memory stayed short; "+
-		"it resumes in its session once calm.", f.code, span(now.Sub(f.at))))
+	h.brakeSend(brakeNote{id: f.id, wish: f.wish, code: f.code, req: &planv1.TaskServiceStopRequest{TaskId: f.id},
+		line: fmt.Sprintf("%s interrupted by the memory brake: frozen %s, the memory stayed short; "+
+			"it resumes in its session once calm.", f.code, span(now.Sub(f.at)))})
 }
 
 // pauseContainers freezes or thaws the task's containers, when it runs any: it says how many.
@@ -574,7 +745,7 @@ func (h *Harness) pauseContainers(ctx context.Context, taskID string, pause bool
 	return h.containers.Pause(ctx, pause, wrap.TaskLabel+"="+taskID, wrap.HomeLabel+"="+h.home)
 }
 
-// brakeTell tells the lead of the wish what the brake did to the worker code, apart from the pass.
+// brakeTell tells the lead of the wish what the brake did to the worker code, apart from the scheduler's pass.
 func (h *Harness) brakeTell(wishID, code, line string) {
 	go func() {
 		defer logx.Crash("tell the brake", "task", code)

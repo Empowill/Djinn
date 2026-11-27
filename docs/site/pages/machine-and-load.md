@@ -40,7 +40,10 @@ the memory still short, it is interrupted, and resumes in its session once the m
 workers thawed. A worker whose command a gate admitted is never interrupted: only when admitted workers alone grow is
 the last one admitted frozen, and its command lives on.
 After a minute of calm, the frozen workers thaw one at a time, the last frozen first. The Djinn hears each freeze,
-interruption and thaw; a frozen worker's time is left out of its budget. You choose the percent at the end of the
+interruption and thaw; a frozen worker's time is left out of its budget. The brake reads the machine every second in a
+loop of its own, apart from the scheduler and from Djinn's database: when the memory runs short, Djinn itself slows
+down, and the brake still acts within its two readings; the task's paused status and the Djinn's line follow once
+Djinn records them. You choose the percent at the end of the
 **Summoning Circle**, for this machine: it applies at once and holds for the next launches; Off turns the brake off and
 thaws what it froze. On a laptop where the browser leaves Djinn little room, 5 % comes fast: choose 3 %, or Off. A flag
 of djinn up, or its environment variable, fixes the percent for one run instead, and the Circle then says so.

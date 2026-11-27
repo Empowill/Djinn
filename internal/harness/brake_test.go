@@ -150,6 +150,7 @@ func upBrake(t *testing.T, opts ...Option) *brakeTest {
 		WithClock(bt.clock.now), WithTick(10 * time.Millisecond), WithSilenceLimit(10 * time.Hour),
 		WithTellDelay(10 * time.Millisecond), WithContainers(containers),
 		WithBrake(func() machine.Snapshot { return *bt.snap.Load() }, b),
+		func(h *Harness) { h.brakeTick = 10 * time.Millisecond },
 	}, opts...)...)
 	bt.h.TellLeads(func(_ context.Context, _, line string) error {
 		bt.mu.Lock()
@@ -182,17 +183,23 @@ func (bt *brakeTest) hold(id string, mib uint64) {
 	bt.memory[id] = mib << 20
 }
 
-// step moves the clock by d, and waits until a pass of the scheduler read the machine at that time.
+// step moves the clock by d, and waits until a pass of the brake's loop read the machine at that time.
 func (bt *brakeTest) step(t *testing.T, d time.Duration) {
 	t.Helper()
 	at := bt.clock.now().Add(d)
 	bt.clock.set(at)
 	waitFor(t, "a brake reading at "+at.Format(time.TimeOnly), func() bool {
-		bt.h.Wake()
-		bt.h.sched.Lock()
-		defer bt.h.sched.Unlock()
+		bt.h.braking.Lock()
+		defer bt.h.braking.Unlock()
 		return bt.h.brakeAt.read.Equal(at)
 	})
+}
+
+// frozen is how many workers the brake counts frozen.
+func (bt *brakeTest) frozen() int {
+	bt.h.braking.Lock()
+	defer bt.h.braking.Unlock()
+	return len(bt.h.brakeAt.frozen)
 }
 
 // toldLines are the lines the lead heard of the brake, once flushed.
@@ -420,11 +427,89 @@ func TestBrakeThawedByHand(t *testing.T) {
 	})
 	bt.press(40, 0)
 	bt.step(t, time.Second)
-	bt.h.sched.Lock()
-	frozen := len(bt.h.brakeAt.frozen)
-	bt.h.sched.Unlock()
+	frozen := bt.frozen()
 	if frozen != 0 {
 		t.Errorf("the brake still counts %d frozen", frozen)
+	}
+	bt.release(t, w.GetId())
+	bt.ended(t, w.GetId())
+}
+
+// TestBrakeAsTheBaseIsStuck: the base held, the scheduler's pass waits for it, as on 27/11 at 13:46 for 64 s (Q661);
+// the memory runs short meanwhile, and the brake still freezes the worker that grows, its containers with it, within
+// its two readings. Once the base is free, the scheduler records the freeze: the task paused, the lead told.
+func TestBrakeAsTheBaseIsStuck(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	bt := upBrake(t)
+	wishID, _ := bt.wish(t, nativeFolder(t))
+	w := bt.mustSpawn(t, wishID, "Escaped", "wait", nil)
+	bt.until(t, w.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))
+	bt.hold(w.GetId(), 500)
+	bt.step(t, time.Second)
+
+	// The base's one connection held: every pass of the scheduler stops at its first read.
+	holding, free := make(chan struct{}), make(chan struct{})
+	held := make(chan error, 1)
+	go func() {
+		held <- bt.db.Tx(context.WithoutCancel(t.Context()), func(*store.Tx) error {
+			close(holding)
+			<-free
+			return nil
+		})
+	}()
+	<-holding
+	freed := false
+	release := func() {
+		if !freed {
+			freed = true
+			close(free)
+			if err := <-held; err != nil {
+				t.Error(err)
+			}
+		}
+	}
+	defer release()
+	bt.h.Wake()
+	waitFor(t, "a scheduler pass stuck on the base", func() bool {
+		if !bt.h.sched.TryLock() {
+			return true
+		}
+		bt.h.sched.Unlock()
+		bt.h.Wake()
+		return false
+	})
+
+	bt.hold(w.GetId(), 1500)
+	bt.press(5, 0)
+	bt.step(t, time.Second)
+	bt.step(t, time.Second)
+	bt.h.mu.Lock()
+	r := bt.h.runs[w.GetId()]
+	frozen := r != nil && r.paused && r.brakePaused
+	bt.h.mu.Unlock()
+	if !frozen {
+		t.Fatal("two readings of short memory, the scheduler stuck: the worker is not frozen")
+	}
+	bt.mu.Lock()
+	paused := slices.Clone(bt.paused)
+	bt.mu.Unlock()
+	if want := []string{"+" + w.GetId()}; !slices.Equal(paused, want) {
+		t.Errorf("containers paused %v, want %v", paused, want)
+	}
+	if bt.h.sched.TryLock() {
+		bt.h.sched.Unlock()
+		t.Fatal("the scheduler's pass did not wait for the base")
+	}
+
+	release()
+	bt.until(t, w.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_PAUSED))
+	if !bt.hasEvent(t, w.GetId(), "paused: memory brake: 5% of memory available") {
+		t.Errorf("no pause event of the brake: %v", bt.storedEvents(t, w.GetId()))
+	}
+	bt.toldLines(t, w.GetCode()+" frozen by the memory brake")
+	if _, err := bt.tasks.Resume(t.Context(), connect.NewRequest(&planv1.TaskServiceResumeRequest{TaskId: w.GetId()})); err != nil {
+		t.Fatal(err)
 	}
 	bt.release(t, w.GetId())
 	bt.ended(t, w.GetId())
@@ -498,9 +583,7 @@ func TestBrakeSetAtOnce(t *testing.T) {
 	bt.toldLines(t, w.GetCode()+" thawed: the memory brake is off")
 	bt.clock.set(bt.clock.now().Add(time.Minute))
 	bt.h.Wake()
-	bt.h.sched.Lock()
-	frozen := len(bt.h.brakeAt.frozen)
-	bt.h.sched.Unlock()
+	frozen := bt.frozen()
 	if frozen != 0 {
 		t.Errorf("the brake, off, still counts %d frozen", frozen)
 	}
