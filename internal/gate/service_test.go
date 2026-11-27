@@ -326,12 +326,19 @@ func TestService_Beside(t *testing.T) {
 		return c
 	}(), "a second script beside")
 	defer other()
-	res, err := client.List(t.Context(), connect.NewRequest(&machinev1.GateServiceListRequest{}))
-	if err != nil {
-		t.Fatal(err)
+	// Run gave the gate back by closing its stream; Djinn lets it go once it sees the call end, a moment later.
+	var gates []*machinev1.Gate
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+		res, err := client.List(t.Context(), connect.NewRequest(&machinev1.GateServiceListRequest{}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if gates = res.Msg.GetGates(); len(gates) != 1 || gates[0].GetShared() <= 2 {
+			break
+		}
 	}
 	want := []string{"a holder outside any task: ./read-logs.sh", "a holder outside any task: ./read-db.sh"}
-	if gates := res.Msg.GetGates(); len(gates) != 1 || gates[0].GetName() != "stack@dolmen" || gates[0].GetShared() != 2 ||
+	if len(gates) != 1 || gates[0].GetName() != "stack@dolmen" || gates[0].GetShared() != 2 ||
 		!slices.Equal(gates[0].GetSharers(), want) || gates[0].GetHolder() != want[0] || len(gates[0].GetSharerTaskIds()) != 0 {
 		t.Fatalf("list: %v", gates)
 	}
