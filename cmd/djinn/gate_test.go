@@ -71,6 +71,7 @@ func TestRunGate(t *testing.T) {
 		{name: "a second name", args: []string{"test", "lint", "--", "true"}, code: 2, errs: `unexpected argument "lint"`},
 		{name: "no command", args: []string{"test", "--addr", addr}, code: 2, errs: "a gate name and a command after -- are required"},
 		{name: "runs the command", args: []string{"test", "--addr", addr, "--task-id", "", "--", os.Args[0], "-test.run=^$"}, out: "PASS"},
+		{name: "beside", args: []string{"test", "--beside", "--addr", addr, "--task-id", "", "--", os.Args[0], "-test.run=^$"}, out: "PASS"},
 		{name: "its exit code", args: []string{"--addr=" + addr, "--task-id=", "test", "--", os.Args[0], "-test.bogus"}, code: 2,
 			errs: "flag provided but not defined"},
 		{name: "no djinn runs", env: map[string]string{"DJINN_HOME": t.TempDir(), "DJINN_ADDR": ""},

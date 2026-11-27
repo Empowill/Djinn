@@ -27,6 +27,7 @@ import (
 // not generated from the protos; its help is cli.GateRun. It returns the exit code.
 func runGate(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	name, taskID, addr := "", os.Getenv("DJINN_TASK_ID"), os.Getenv("DJINN_ADDR")
+	beside := false
 	var command []string
 	for i := 0; i < len(args); i++ {
 		switch a := args[i]; {
@@ -36,6 +37,8 @@ func runGate(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		case a == "-h" || a == "--help":
 			cli.GateRun.WriteHelp(stdout)
 			return 0
+		case a == "--beside":
+			beside = true
 		case (a == "--task-id" || a == "--addr") && i+1 < len(args):
 			i++
 			if a == "--task-id" {
@@ -70,7 +73,7 @@ func runGate(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		defer stop()
 		return gate.Run(ctx, machinev1connect.NewGateServiceClient(client, base), name, taskID, gate.Command{
 			Args: command, Stdin: stdin, Stdout: stdout, Stderr: stderr, Notice: stderr,
-			Costs: machinev1connect.NewCommandServiceClient(client, base),
+			Costs: machinev1connect.NewCommandServiceClient(client, base), Beside: beside,
 		})
 	}()
 	if err != nil {
