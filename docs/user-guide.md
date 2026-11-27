@@ -844,7 +844,11 @@ runaway (a worker's scope and containers); the memory brake catches a slower gro
 cuts a command the gates admitted.
 
 - **When.** Under 5 % of the machine's memory available, or a PSI full of 20 (every task waited for memory a fifth of
-  the last 10 s), two readings in a row, a second apart. The PSI threshold is fixed.
+  the last 10 s), two readings in a row, a second apart. The PSI threshold is fixed. The brake reads the machine in a
+  loop of its own, every second, apart from the scheduler and from Djinn's database: under such pressure Djinn itself
+  slows down, and a scheduler pass may wait a minute on the database; the brake still freezes within its
+  two readings. What it did is recorded at the scheduler's next pass: the task shows paused, and the lead hears it,
+  then.
 - **Its percent.** Chosen at the end of the **Summoning Circle** (Memory brake), or `djinn load set-brake 3`, for this
   machine: it applies at once and is kept in `settings.json` for the next launches; **Off** (0) turns the brake off, and
   what it froze thaws. `djinn load get` shows the percent in effect, or `brake_off: true` when the brake is off. On a
