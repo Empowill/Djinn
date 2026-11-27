@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"connectrpc.com/connect"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
@@ -214,6 +215,99 @@ func TestAzimaPRFollowedClosedAzima(t *testing.T) {
 				t.Errorf("lead lines about the closed T1 = %q, want none", told)
 			case c.told != "" && (len(told) != 1 || !strings.HasPrefix(told[0], c.told)):
 				t.Errorf("lead lines about T1 = %q, want %q once", lines, c.told)
+			}
+		})
+	}
+}
+
+// TestAzimaPRFollowedInItsOwnProject replays T106 of wish W1094 (27/11/2026): in a wish of two projects, an azima's
+// request recorded open, Djinn's PR #46 on GitHub, is read again in its own project only. The other project's request
+// numbered 46, dolmen!46 on GitLab or a pull request of another GitHub repository, merged long ago, neither marks the
+// azima merged nor closes it, and the lead hears no landed: it was read in place of PR #46, just opened as a draft.
+func TestAzimaPRFollowedInItsOwnProject(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+
+	const ours = "https://github.com/Empowill/Djinn/pull/46"
+	for _, c := range []struct {
+		name, remote, view, asked string
+	}{
+		{
+			"another forge", "https://gitlab.com/empowill/dolmen.git",
+			`{"iid":46,"state":"merged","target_branch":"main","web_url":"https://gitlab.com/empowill/dolmen/-/merge_requests/46"}`,
+			"",
+		},
+		{
+			"another repository of the forge", "https://github.com/Empowill/other.git",
+			`{"number":46,"state":"MERGED","baseRefName":"main","mergeable":"UNKNOWN","url":"https://github.com/Empowill/other/pull/46"}`,
+			"gh pr view 46 --json number,state,baseRefName,mergeable,url",
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			in := integrating(t)
+			in.setAzimaStrategy(t)
+			in.remote(t)
+			queue := &leadQueue{}
+			in.h.NotifyLead(queue.notify)
+			forge := &fakeForge{views: map[string]string{}}
+			in.mu.Lock()
+			in.forge = forge
+			in.mu.Unlock()
+			open := `{"number":46,"state":"OPEN","baseRefName":"main","mergeable":"MERGEABLE","url":"` + ours + `"}`
+			t1, _ := openAzimaRequest(t, in, forge, open)
+
+			// The wish's second project, whose forge holds a request 46 merged long ago.
+			other := gitRepo(t)
+			in.git(t, other, "remote", "add", "origin", c.remote)
+			p, err := in.env.project.Add(t.Context(), connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: other}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = in.db.Tx(t.Context(), func(tx *store.Tx) error {
+				w, err := store.Get[*planv1.Wish](t.Context(), tx, in.wishID)
+				if err != nil {
+					return err
+				}
+				w.ProjectIds = append(w.ProjectIds, p.Msg.GetProject().GetId())
+				if err := tx.Journal("test", "projects", w); err != nil {
+					return err
+				}
+				return tx.Put(w)
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			theirs := &fakeForge{views: map[string]string{"46": c.view}}
+			forge.mu.Lock()
+			forge.views["46"] = open
+			forge.elsewhere = map[string]*fakeForge{other: theirs}
+			forge.mu.Unlock()
+			before := len(leadLines(queue, "T1"))
+
+			in.pass(t, 0)
+			in.pass(t, 0)
+
+			got := in.get(t, t1.GetId())
+			if pr := got.GetAzima().GetPr(); pr.GetState() != planv1.AzimaPrState_AZIMA_PR_STATE_OPEN || pr.GetUrl() != ours {
+				t.Errorf("T1's request = %v, want open at %s", pr, ours)
+			}
+			if m := got.GetAzima().GetMerged(); m != nil {
+				t.Errorf("T1 merged into main = %v, want not", m)
+			}
+			if got.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE {
+				t.Errorf("T1 is done while its request is open")
+			}
+			if landed := slices.DeleteFunc(leadLines(queue, "T1")[before:], func(l string) bool {
+				return !strings.HasPrefix(l, "landed ") && !strings.Contains(l, "closed without merging")
+			}); len(landed) != 0 {
+				t.Errorf("lead lines about T1 = %q, want none", landed)
+			}
+			if calls := theirs.called(); c.asked == "" && len(calls) != 0 || c.asked != "" && !slices.Contains(calls, c.asked) {
+				t.Errorf("the other project's forge was asked %q, want %q", calls, c.asked)
+			}
+			if !slices.Contains(forge.called(), "gh pr view 46 --json number,state,baseRefName,mergeable,url") {
+				t.Errorf("T1's request was not read by its number in its project: %v", forge.called())
 			}
 		})
 	}

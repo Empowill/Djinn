@@ -140,8 +140,10 @@ Once all the work of an azima is in its project's main branch, a small green mar
 its code, in the Tasks tab and in the flying carpet; hover it to read how Djinn found it. Djinn sets it by itself, once
 every task part of the azima is finished:
 
-- **Its pull or merge request is merged**, as the watcher that babysits it says, after the last of its work ended. A
-  request closed without a merge never sets it.
+- **Its pull or merge request is merged**, as the watcher that babysits it says, or as the forge says when Djinn
+  reads the request again, after the last of its work ended. A request closed without a merge never sets it. Djinn
+  reads it in its own project only, the one whose forge and repository its address names: in a wish of several
+  projects, another project's request with the same number, merged long ago, never sets it.
 - **Or every commit of its work is in main**: the azima's own branch and the branches of its done tasks, all in the
   remote's main, which Djinn fetches at the pace it looks at main.
 
