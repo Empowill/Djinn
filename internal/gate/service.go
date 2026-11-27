@@ -3,6 +3,7 @@ package gate
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -61,7 +62,7 @@ func (s *service) Hold(
 		if ctx.Err() != nil {
 			return nil
 		}
-		return plan.Status(err)
+		return status(err)
 	}
 	defer hold.Give()
 	if plan.CallerFromContext(ctx) != nil {
@@ -96,7 +97,7 @@ func (s *service) Admit(
 	}
 	agent, match := int(req.Msg.GetAgentPid()), req.Msg.GetMatch()
 	hold, err := s.g.Take(ctx, Request{
-		Shared: true, TaskID: taskID, What: req.Msg.GetWhat(), Dir: req.Msg.GetDirectory(),
+		Shared: true, TaskID: taskID, What: req.Msg.GetWhat(), Dir: req.Msg.GetDirectory(), Caller: agent,
 		Find: func(skip func(int) bool) int { return machine.FindCommand(agent, match, skip) },
 	}, func(why string) {
 		_ = stream.Send(&machinev1.GateServiceAdmitResponse{State: machinev1.GateState_GATE_STATE_WAITING, Reason: why})
@@ -105,13 +106,23 @@ func (s *service) Admit(
 		if ctx.Err() != nil {
 			return nil //nolint:nilerr // The hook left while it waited: nothing to answer.
 		}
-		return plan.Status(err)
+		return status(err)
 	}
 	// Held until the command's shell ends (keep), not until this call does: the hook ends now, and the command runs.
 	// What it waited for, each reason with its own time: the last reason told, named as it began, would be stale (W174).
 	return stream.Send(&machinev1.GateServiceAdmitResponse{
 		State: machinev1.GateState_GATE_STATE_HELD, Reason: cmp.Or(hold.Waited(), "admitted"),
 	})
+}
+
+// status is the Connect error of a request the gates did not grant: a request refused rather than wait for its own
+// task is a failed precondition, its reason the message the caller prints (djinn gate run) or denies the command with
+// (djinn gate hook).
+func status(err error) error {
+	if refused, ok := errors.AsType[*RefusedError](err); ok {
+		return connect.NewError(connect.CodeFailedPrecondition, refused)
+	}
+	return plan.Status(err)
 }
 
 // ownTask is the task a call names, a worker's own when it names none; a worker naming another's is refused.

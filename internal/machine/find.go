@@ -21,6 +21,37 @@ func FindCommand(root int, match string, skip func(pid int) bool) int {
 	return findCommand(procs, lines, root, match, skip)
 }
 
+// Within says whether the process ancestor runs pid: pid itself, or one of the processes it started, at any depth. false
+// when either is unknown (0), or where the processes are not listed (Windows): the gates then refuse rather than pass
+// a request its own task's hold runs (gate.RefusedError).
+func Within(pid, ancestor int) bool {
+	if pid <= 0 || ancestor <= 0 {
+		return false
+	}
+	if pid == ancestor {
+		return true
+	}
+	procs, _, err := listCommands()
+	if err != nil {
+		return false
+	}
+	return within(procs, pid, ancestor)
+}
+
+// within is Within on the processes procs.
+func within(procs []proc, pid, ancestor int) bool {
+	parent := make(map[int]int, len(procs))
+	for _, p := range procs {
+		parent[p.pid] = p.ppid
+	}
+	for q, depth := pid, 0; q > 1 && depth < 64; q, depth = parent[q], depth+1 {
+		if q == ancestor {
+			return true
+		}
+	}
+	return false
+}
+
 // findCommand is FindCommand on the processes procs, lines[pid] their command lines.
 func findCommand(procs []proc, lines map[int]string, root int, match string, skip func(pid int) bool) int {
 	parent := make(map[int]int, len(procs))

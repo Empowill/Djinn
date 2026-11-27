@@ -23,6 +23,27 @@ func TestMatch(t *testing.T) {
 	}
 }
 
+// TestWithin: a process runs itself and every process it started, at any depth; not its parent, nor a sibling, nor an
+// unknown one. The process listed for real runs this test.
+func TestWithin(t *testing.T) {
+	t.Parallel()
+	procs := []proc{{pid: 10, ppid: 1}, {pid: 11, ppid: 10}, {pid: 12, ppid: 11}, {pid: 13, ppid: 10}}
+	for _, c := range []struct {
+		pid, ancestor int
+		want          bool
+	}{{12, 10, true}, {12, 11, true}, {11, 12, false}, {13, 11, false}, {99, 10, false}} {
+		if got := within(procs, c.pid, c.ancestor); got != c.want {
+			t.Errorf("within(%d, %d) = %v", c.pid, c.ancestor, got)
+		}
+	}
+	if !Within(os.Getpid(), os.Getpid()) || Within(0, os.Getpid()) || Within(os.Getpid(), 0) {
+		t.Error("Within of this process")
+	}
+	if runtime.GOOS == "linux" && (!Within(os.Getpid(), os.Getppid()) || Within(os.Getppid(), os.Getpid())) {
+		t.Error("Within of this process and its parent")
+	}
+}
+
 // TestFindCommand: among the processes a root started, the shell whose command line holds the command, not the
 // processes it started, nor one left out, nor one outside the root.
 func TestFindCommand(t *testing.T) {
