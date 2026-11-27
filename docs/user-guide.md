@@ -760,7 +760,9 @@ beside goes whatever its peak, since waiting would free nothing; a peak counts f
 most; and a command waits for the memory 5 minutes at most, then is admitted all the same, its worker reading
 `admitted after 5m0s waiting for memory, the most a command waits for it: …`. What the command cost, not the gate's name, says how it holds it: a command measured heavy
 (below) holds its gate alone, one holder at a time; a light one, or one never measured, shares it, as many at once as
-the machine holds, and waits only for one that holds the name alone. A lit ifrit holds its gates alone whatever its
+the machine holds, and waits only for one that holds the name alone. A gate the project declares goes by its patterns
+instead: there, a command no pattern names holds the gate alone, unless `djinn gate run <name> --beside` says it only
+reads (W1082, L106). A lit ifrit holds its gates alone whatever its
 server costs. The status bar shows how many gates are held. `djinn
 command list` shows what each command cost (CPU time, peak memory, duration). The peak the gates hold a command to is the
 95th percentile of its last 20 measured runs (`machine.Peak`), not the most it ever used, and a lone peak above four

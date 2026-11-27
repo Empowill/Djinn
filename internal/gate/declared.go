@@ -123,9 +123,10 @@ func matchWords(want, words []string) bool {
 // alone, and how a waiter's reason names it, "stack (dolmen, .agents/djinn.yaml)"; ok is false when the project
 // declares none for it. An admission takes the first gate whose patterns name its command; a gate asked by its name
 // (djinn gate run stack, an ifrit's serve --gate stack) takes the one declared under it, alone when an alone pattern
-// names its command, or when none of its patterns does and it would not be shared (shared, by Q17 B). Djinn's merges
-// and pushes take no declared gate.
-func (g *Gates) declaredGate(r Request, name string, shared bool) (full string, alone bool, label string, ok bool) {
+// names its command, shared when a beside pattern does. One no pattern names holds it alone, light as it may be: Djinn
+// sees a script, not what the script runs (W1021, L106); only djinn gate run --beside (Request.Beside) has it share.
+// Djinn's merges and pushes take no declared gate.
+func (g *Gates) declaredGate(r Request, name string) (full string, alone bool, label string, ok bool) {
 	g.mu.Lock()
 	find := g.declared
 	g.mu.Unlock()
@@ -144,7 +145,7 @@ func (g *Gates) declaredGate(r Request, name string, shared bool) (full string, 
 		}
 		var named bool
 		if alone, named = mode(gt, r.What); !named {
-			alone = !shared
+			alone = !r.Beside
 		}
 	}
 	label = gt.GetName() + " (" + d.Project

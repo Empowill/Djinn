@@ -293,3 +293,51 @@ func TestService_AdmitWaited(t *testing.T) {
 		t.Errorf("the Hourglass reads %q for the build, %q for the recette; want %q, \"\"", reasons["W2"], reasons["W1"], builds)
 	}
 }
+
+// TestService_Beside: djinn gate run --beside reaches the gate. A command said beside runs while a script held beside
+// shares the declared gate; the list names each of those that share it; a script said nothing holds it alone, and waits.
+func TestService_Beside(t *testing.T) {
+	t.Parallel()
+	g := New(nil, nil, nil)
+	g.tick = 10 * time.Millisecond
+	g.Declare(func(string, string) Declared {
+		return Declared{Project: "dolmen", Gates: []*djinnv1.ProjectGate{{Name: "stack", Alone: []string{"task run-back"}}}}
+	})
+	client := server(t, g)
+	stream, err := client.Hold(t.Context(), connect.NewRequest(&machinev1.GateServiceHoldRequest{
+		Name: "stack", What: "./read-logs.sh", Beside: true,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stream.Close()
+	if !stream.Receive() || stream.Msg().GetState() != machinev1.GateState_GATE_STATE_HELD {
+		t.Fatalf("hold: %v, %v", stream.Msg(), stream.Err())
+	}
+	// gate.Run, as djinn gate run --beside: its command runs while the script holds the gate; held alone, it would wait.
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	var notice strings.Builder
+	if code, err := Run(ctx, client, "stack", "", Command{Args: []string{os.Args[0], "-test.run=^$"}, Notice: &notice, Beside: true}); code != 0 || err != nil {
+		t.Fatalf("run beside = %d, %v, notice %q", code, err, notice.String())
+	}
+	other := await(t, func() <-chan func() {
+		c, _ := ask(t, g, Request{Name: "stack", What: "./read-db.sh", Beside: true})
+		return c
+	}(), "a second script beside")
+	defer other()
+	res, err := client.List(t.Context(), connect.NewRequest(&machinev1.GateServiceListRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"a holder outside any task: ./read-logs.sh", "a holder outside any task: ./read-db.sh"}
+	if gates := res.Msg.GetGates(); len(gates) != 1 || gates[0].GetName() != "stack@dolmen" || gates[0].GetShared() != 2 ||
+		!slices.Equal(gates[0].GetSharers(), want) || gates[0].GetHolder() != want[0] || len(gates[0].GetSharerTaskIds()) != 0 {
+		t.Fatalf("list: %v", gates)
+	}
+	alone, waits := run(t, g, "stack", "", "./rebuild.sh")
+	if why := await(t, waits, "the script said nothing waits"); !strings.HasPrefix(why, "stack (dolmen): shared by a holder outside any task: ./read-") {
+		t.Errorf("the script said nothing waits because %q", why)
+	}
+	notGranted(t, alone, "a script said nothing, beside two")
+}

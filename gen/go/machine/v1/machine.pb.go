@@ -2726,8 +2726,15 @@ type Gate struct {
 	Project string `protobuf:"bytes,11,opt,name=project,proto3" json:"project,omitempty"`
 	// Projects of those who wait for it, by name, in the order of waiting: empty for a waiter outside any project.
 	WaitingProjects []string `protobuf:"bytes,12,rep,name=waiting_projects,json=waitingProjects,proto3" json:"waiting_projects,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// How many hold it shared, commands that only use what it guards: 0 when it is held alone or by nobody. holder is
+	// then the first of them, and each one is in sharers.
+	Shared int32 `protobuf:"varint,13,opt,name=shared,proto3" json:"shared,omitempty"`
+	// Who hold it shared, each with what it runs, the first granted first: empty when it is held alone or by nobody.
+	Sharers []string `protobuf:"bytes,14,rep,name=sharers,proto3" json:"sharers,omitempty"`
+	// The tasks of those who hold it shared, in the order of sharers: a sharer outside any task is left out.
+	SharerTaskIds []string `protobuf:"bytes,15,rep,name=sharer_task_ids,json=sharerTaskIds,proto3" json:"sharer_task_ids,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Gate) Reset() {
@@ -2844,6 +2851,27 @@ func (x *Gate) GetWaitingProjects() []string {
 	return nil
 }
 
+func (x *Gate) GetShared() int32 {
+	if x != nil {
+		return x.Shared
+	}
+	return 0
+}
+
+func (x *Gate) GetSharers() []string {
+	if x != nil {
+		return x.Sharers
+	}
+	return nil
+}
+
+func (x *Gate) GetSharerTaskIds() []string {
+	if x != nil {
+		return x.SharerTaskIds
+	}
+	return nil
+}
+
 type GateServiceHoldRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Name of the gate: codegen, stack, e2e, paid, or any other name; case is ignored.
@@ -2863,8 +2891,12 @@ type GateServiceHoldRequest struct {
 	// limit, the gate held as long as its holder lives; past 3 times its command's usual hold, or an hour unmeasured,
 	// the lead of its task is told, and nothing is taken back.
 	TimeoutSeconds uint32 `protobuf:"varint,6,opt,name=timeout_seconds,json=timeoutSeconds,proto3" json:"timeout_seconds,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// The command only reads what the gate guards, and may share it with others that do (djinn gate run --beside). On a
+	// gate its project declares, a command no pattern names holds the gate alone without it; an alone pattern that names
+	// the command wins over it.
+	Beside        bool `protobuf:"varint,7,opt,name=beside,proto3" json:"beside,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *GateServiceHoldRequest) Reset() {
@@ -2937,6 +2969,13 @@ func (x *GateServiceHoldRequest) GetTimeoutSeconds() uint32 {
 		return x.TimeoutSeconds
 	}
 	return 0
+}
+
+func (x *GateServiceHoldRequest) GetBeside() bool {
+	if x != nil {
+		return x.Beside
+	}
+	return false
 }
 
 type GateServiceHoldResponse struct {
@@ -4475,7 +4514,7 @@ const file_machine_v1_machine_proto_rawDesc = "" +
 	"\x05match\x18\x05 \x01(\tB\b\xbaH\x05r\x03\x18\xe0\x03R\x05match\"_\n" +
 	"\x18GateServiceAdmitResponse\x12+\n" +
 	"\x05state\x18\x01 \x01(\x0e2\x15.machine.v1.GateStateR\x05state\x12\x16\n" +
-	"\x06reason\x18\x02 \x01(\tR\x06reason\"\xb7\x03\n" +
+	"\x06reason\x18\x02 \x01(\tR\x06reason\"\x91\x04\n" +
 	"\x04Gate\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
 	"\x06holder\x18\x02 \x01(\tR\x06holder\x12$\n" +
@@ -4491,14 +4530,18 @@ const file_machine_v1_machine_proto_rawDesc = "" +
 	"\x10waiting_task_ids\x18\n" +
 	" \x03(\tR\x0ewaitingTaskIds\x12\x18\n" +
 	"\aproject\x18\v \x01(\tR\aproject\x12)\n" +
-	"\x10waiting_projects\x18\f \x03(\tR\x0fwaitingProjects\"\x90\x02\n" +
+	"\x10waiting_projects\x18\f \x03(\tR\x0fwaitingProjects\x12\x16\n" +
+	"\x06shared\x18\r \x01(\x05R\x06shared\x12\x18\n" +
+	"\asharers\x18\x0e \x03(\tR\asharers\x12&\n" +
+	"\x0fsharer_task_ids\x18\x0f \x03(\tR\rsharerTaskIds\"\xa8\x02\n" +
 	"\x16GateServiceHoldRequest\x12;\n" +
 	"\x04name\x18\x01 \x01(\tB'\xbaH$\xc8\x01\x01r\x1f2\x1d^[A-Za-z][A-Za-z0-9_-]{0,39}$R\x04name\x12$\n" +
 	"\atask_id\x18\x02 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x06taskId\x12\x1c\n" +
 	"\x04what\x18\x03 \x01(\tB\b\xbaH\x05r\x03\x18\xc8\x01R\x04what\x12&\n" +
 	"\tdirectory\x18\x04 \x01(\tB\b\xbaH\x05r\x03\x18\x80 R\tdirectory\x12\x19\n" +
 	"\x03pid\x18\x05 \x01(\x05B\a\xbaH\x04\x1a\x02(\x00R\x03pid\x122\n" +
-	"\x0ftimeout_seconds\x18\x06 \x01(\rB\t\xbaH\x06*\x04\x18\x80\xa3\x05R\x0etimeoutSeconds\"^\n" +
+	"\x0ftimeout_seconds\x18\x06 \x01(\rB\t\xbaH\x06*\x04\x18\x80\xa3\x05R\x0etimeoutSeconds\x12\x16\n" +
+	"\x06beside\x18\a \x01(\bR\x06beside\"^\n" +
 	"\x17GateServiceHoldResponse\x12+\n" +
 	"\x05state\x18\x01 \x01(\x0e2\x15.machine.v1.GateStateR\x05state\x12\x16\n" +
 	"\x06reason\x18\x02 \x01(\tR\x06reason\"\x18\n" +

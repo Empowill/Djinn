@@ -25,6 +25,8 @@ type Command struct {
 	Stdout, Stderr, Notice io.Writer // Notice gets what djinn says: why it waits, a gate lost
 	// Costs, when not nil, records what the command cost once it ended by itself: CPU time, peak memory, duration.
 	Costs machinev1connect.CommandServiceClient
+	// Beside says the command only reads what the gate guards: it may share the gate (djinn gate run --beside).
+	Beside bool
 }
 
 // Run takes the gate name from the server, for the task taskID when not empty, runs the command once it holds the
@@ -44,7 +46,7 @@ func Run(ctx context.Context, client machinev1connect.GateServiceClient, name, t
 	defer give()
 	askedAt := time.Now()
 	stream, err := client.Hold(hold, connect.NewRequest(&machinev1.GateServiceHoldRequest{
-		Name: name, TaskId: taskID, What: what, Directory: dir, Pid: int32(os.Getpid()),
+		Name: name, TaskId: taskID, What: what, Directory: dir, Pid: int32(os.Getpid()), Beside: c.Beside,
 	}))
 	if err != nil {
 		return -1, err
