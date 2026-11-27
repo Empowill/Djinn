@@ -71,10 +71,7 @@ const live = [
     waitingTaskIds: ["task-w2"],
     project: "djinn",
     waitingProjects: ["djinn", ""],
-    shared: 0,
     sharers: [],
-    sharerTaskIds: [],
-    sharerProjects: [],
     takesSlot: false,
     ifrit: false,
   },
@@ -402,10 +399,7 @@ function heavy() {
     waitingTaskIds: ["task-w2"],
     project: "djinn",
     waitingProjects: ["djinn", "dolmen", ""],
-    shared: 0,
     sharers: [],
-    sharerTaskIds: [],
-    sharerProjects: [],
     takesSlot: false,
     ifrit: false,
   }));
@@ -781,10 +775,7 @@ test("now, by project: a gate of the machine under its holder's project and each
     waiting: waitingProjects.map((p, i) => `W${i + 10}: ${p}`),
     waitingTaskIds: [],
     waitingProjects,
-    shared: 0,
     sharers: [],
-    sharerTaskIds: [],
-    sharerProjects: [],
     takesSlot: false,
     ifrit: false,
   });
@@ -846,9 +837,17 @@ test("now, a gate held alone names its holder; held beside, each sharer under it
     ...extra,
   });
   const sharers = [
-    "W1 (Lint): ./read-logs.sh",
-    "a holder outside any task: ./read-db.sh",
-    "W2 (Test): go tool task lint",
+    { who: "W1 (Lint): ./read-logs.sh", taskId: "task-w1", project: "dolmen" },
+    {
+      who: "a holder outside any task: ./read-db.sh",
+      taskId: "",
+      project: "dolmen",
+    },
+    {
+      who: "W2 (Test): go tool task lint",
+      taskId: "task-w2",
+      project: "djinn",
+    },
   ];
   const gates = [
     // stack@dolmen held alone by W1's script, W2's waiting behind it.
@@ -861,24 +860,18 @@ test("now, a gate held alone names its holder; held beside, each sharer under it
     }),
     // recette@dolmen held beside by two: W1's script, then one outside any task; W2's script said nothing waits.
     gate("recette@dolmen", {
-      holder: sharers[0],
+      holder: sharers[0].who,
       project: "dolmen",
-      shared: 2,
       sharers: sharers.slice(0, 2),
-      sharerTaskIds: ["task-w1"],
-      sharerProjects: ["dolmen", "dolmen"],
       waiting: ["W2 (Test): ./rebuild.sh"],
       waitingTaskIds: ["task-w2"],
       waitingProjects: ["dolmen"],
     }),
     // lint, a gate of the machine, shared by dolmen's W1 and djinn's W2; one outside any project waits.
     gate("lint", {
-      holder: sharers[0],
+      holder: sharers[0].who,
       project: "dolmen",
-      shared: 2,
       sharers: [sharers[0], sharers[2]],
-      sharerTaskIds: ["task-w1", "task-w2"],
-      sharerProjects: ["dolmen", "djinn"],
       waiting: ["a holder outside any task: go tool task lint"],
       waitingProjects: [""],
     }),

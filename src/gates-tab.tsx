@@ -482,9 +482,9 @@ export function nowGroups(
       }
       return e;
     };
-    // Held beside, each sharer counts under its project (Gate.sharer_projects); a server without them says the holder's.
-    gate.sharers.forEach((_, i) => {
-      const e = entry(declared ? own : (gate.sharerProjects[i] ?? own));
+    // Held beside, each sharer counts under its own project (GateSharer.project).
+    gate.sharers.forEach((s, i) => {
+      const e = entry(declared ? own : s.project);
       e.holds = true;
       e.shares.push(i);
     });
@@ -644,7 +644,7 @@ function LiveGate({
       g.sharers
         .map((_, i) => i)
         .filter((i) => !shares.includes(i))
-        .map((i) => projectName(g.sharerProjects[i] ?? g.project)),
+        .map((i) => projectName(g.sharers[i].project)),
     ),
   ].join(", ");
   const state = !g.holder
@@ -690,11 +690,11 @@ function LiveGate({
             {shares.map((i) => (
               <li key={i} value={i + 1}>
                 <TaskCode
-                  taskId={sharerTask(g, i)}
+                  taskId={g.sharers[i].taskId}
                   tasks={tasks}
                   onShow={onWorker}
                 />{" "}
-                {g.sharers[i]}
+                {g.sharers[i].who}
               </li>
             ))}
           </ol>
@@ -851,19 +851,14 @@ const Seal = memo(function Seal({ waiters }: { waiters: number }) {
 // How a waiter outside any task is named (gate.Take).
 const OUTSIDE = "a holder outside any task";
 
-// taskAt is the task of the i-th of a gate's waiters or sharers (names): their task ids leave those outside any task
-// out, so the ones before i that are outside any task do not count.
-function taskAt(names: readonly string[], ids: readonly string[], i: number) {
-  if (ids.length === names.length) return ids[i];
-  if (names[i].startsWith(OUTSIDE)) return "";
-  const k = names.slice(0, i).filter((w) => !w.startsWith(OUTSIDE)).length;
-  return ids[k] ?? "";
+// waiterTask is the task of the i-th of a gate's waiters: their task ids leave those outside any task out, so the ones
+// before i that are outside any task do not count.
+function waiterTask(g: Gate, i: number) {
+  if (g.waitingTaskIds.length === g.waiting.length) return g.waitingTaskIds[i];
+  if (g.waiting[i].startsWith(OUTSIDE)) return "";
+  const k = g.waiting.slice(0, i).filter((w) => !w.startsWith(OUTSIDE)).length;
+  return g.waitingTaskIds[k] ?? "";
 }
-
-const waiterTask = (g: Gate, i: number) =>
-  taskAt(g.waiting, g.waitingTaskIds, i);
-const sharerTask = (g: Gate, i: number) =>
-  taskAt(g.sharers, g.sharerTaskIds, i);
 
 // A gate no one holds or waits for, with its last hold.
 function FreeGate({

@@ -333,14 +333,23 @@ func TestService_Beside(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if gates = res.Msg.GetGates(); len(gates) != 1 || gates[0].GetShared() <= 2 {
+		if gates = res.Msg.GetGates(); len(gates) != 1 || len(gates[0].GetSharers()) <= 2 {
 			break
 		}
 	}
+	if len(gates) != 1 {
+		t.Fatalf("list: %v", gates)
+	}
+	// Outside any task and any project, each sharer says only who it is.
 	want := []string{"a holder outside any task: ./read-logs.sh", "a holder outside any task: ./read-db.sh"}
-	if len(gates) != 1 || gates[0].GetName() != "stack@dolmen" || gates[0].GetShared() != 2 ||
-		!slices.Equal(gates[0].GetSharers(), want) || gates[0].GetHolder() != want[0] || len(gates[0].GetSharerTaskIds()) != 0 ||
-		!slices.Equal(gates[0].GetSharerProjects(), []string{"", ""}) {
+	var got []string
+	for _, sh := range gates[0].GetSharers() {
+		if sh.GetTaskId() != "" || sh.GetProject() != "" {
+			t.Errorf("sharer %v has a task or a project", sh)
+		}
+		got = append(got, sh.GetWho())
+	}
+	if gates[0].GetName() != "stack@dolmen" || !slices.Equal(got, want) || gates[0].GetHolder() != want[0] {
 		t.Fatalf("list: %v", gates)
 	}
 	alone, waits := run(t, g, "stack", "", "./rebuild.sh")
