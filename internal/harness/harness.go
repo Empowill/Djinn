@@ -101,9 +101,17 @@ type Harness struct {
 	containers   Containers              // what reads and removes the workers' containers (WithContainers); zero: neither
 	brake        Brake                   // when the memory brake freezes and thaws (WithBrake); zero: no brake
 	brakeRead    func() machine.Snapshot // the machine as the brake reads it (WithBrake); nil: no brake
-	brakeAt      brakeState              // what the brake remembers between passes, guarded by sched (brake.go)
-	brakeMu      sync.Mutex              // guards brakeNext
+	brakeTick    time.Duration           // how often the brake's loop reads the machine; 0: Brake.Every, else 1 s
+	braking      sync.Mutex              // one brake pass at a time: guards brakeAt (brake.go)
+	brakeAt      brakeState              // what the brake remembers between its passes, guarded by braking
+	brakeDone    chan struct{}           // closed when the brake's loop has stopped; nil until Schedule
+	brakeMu      sync.Mutex              // guards brakeNext, brakeWaits, brakeWaitWhy, brakeOut and brakeAsk
 	brakeNext    *Brake                  // a threshold SetBrake gave, which the next brake pass takes; nil: none
+	brakeWaits   map[string]bool         // the tasks the brake interrupted, by ID: they resume once calm (brakeHeld)
+	brakeWaitWhy string                  // why they wait, as their task says it
+	brakeOut     []brakeNote             // what the brake did and the scheduler records next (brakeRecord)
+	brakeAsk     chan struct{}           // closed when the gates' grants asked for the brake came; nil: none asked
+	brakeGrants  map[string]time.Time    // the grants that came last, guarded by brakeMu
 	history      *machine.History        // nil: the readings are kept in memory only (WithHistory)
 
 	tell       TellFunc      // wakes the lead of a watcher's wish (TellLeads); guarded by mu
@@ -421,6 +429,9 @@ func (h *Harness) Close() {
 	h.scheduling.Do(func() {}) // No scheduler starts from now on.
 	if h.loopDone != nil {
 		<-h.loopDone
+	}
+	if h.brakeDone != nil {
+		<-h.brakeDone
 	}
 	if h.free.done != nil {
 		<-h.free.done
@@ -3224,8 +3235,21 @@ func (h *Harness) hold(ctx context.Context, procedure string, req proto.Message,
 	if byHarness {
 		actor = actorHarness
 	}
+	if err := h.recordHold(ctx, r, actor, procedure, req); err != nil {
+		return nil, err
+	}
+	task, err = store.Get[*planv1.Task](ctx, h.store, id)
+	return task, plan.Status(err)
+}
+
+// recordHold journals the pause or the resume req of actor, then, when the run r is still known, waits until its pump
+// has written its task paused or running again, as its worker is now, or the task ended.
+func (h *Harness) recordHold(ctx context.Context, r *run, actor, procedure string, req proto.Message) error {
 	if err := h.store.Tx(ctx, func(tx *store.Tx) error { return tx.Journal(actor, procedure, req) }); err != nil {
-		return nil, plan.Status(err)
+		return plan.Status(err)
+	}
+	if r == nil {
+		return nil
 	}
 	written := make(chan struct{})
 	select {
@@ -3234,14 +3258,13 @@ func (h *Harness) hold(ctx context.Context, procedure string, req proto.Message,
 		case <-written:
 		case <-r.done:
 		case <-ctx.Done():
-			return nil, ctx.Err()
+			return ctx.Err()
 		}
 	case <-r.done: // The worker ended meanwhile: the task has its final status.
 	case <-ctx.Done():
-		return nil, ctx.Err()
+		return ctx.Err()
 	}
-	task, err = store.Get[*planv1.Task](ctx, h.store, id)
-	return task, plan.Status(err)
+	return nil
 }
 
 // writeHold writes the task paused or running again, as its worker is now. The pump calls it.

@@ -157,6 +157,7 @@ func (h *Harness) Schedule() {
 		h.loopDone = make(chan struct{})
 		h.watchSleepers()
 		go h.loop()
+		h.startBrake() // The memory brake reads the machine in its own loop, apart from the passes (brake.go).
 		h.startFree()
 		h.watchQuotas()
 	})
@@ -270,7 +271,7 @@ func (h *Harness) schedule(ctx context.Context) {
 	if !p.Auto && h.capacity != nil {
 		h.enforceNotchCapacity(ctx, p)
 	}
-	h.brakePass(ctx)   // Under strong memory pressure, freeze what grows outside the gates; calm, thaw it (brake.go).
+	h.brakeRecord(ctx) // What the memory brake froze, interrupted or thawed in its own loop: journaled, told (brake.go).
 	if !h.netHolds() { // Resumed now, it would be paused again for the network (network.go).
 		h.resumeNotchPaused(ctx)
 	}
