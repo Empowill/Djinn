@@ -159,11 +159,14 @@ func TestQuestionsWakeWhenTheirConditionsHold(t *testing.T) {
 	}
 }
 
-// TestQuestionsWakeWhenTheirRequestCanNeverMerge: a question asleep until a task's request is merged wakes at the
-// scheduler's pass once that can never hold, and its lead hears why: the task was cancelled (Q118 on W162), or it
-// ended done and, plan.OpenedGrace later, Djinn knows no request it opened (Q139 on W233, its request opened outside
-// Djinn). Before that grace, or while a watcher babysits what it opened, the question sleeps on (W1048).
-func TestQuestionsWakeWhenTheirRequestCanNeverMerge(t *testing.T) {
+// TestQuestionsAsleepOnWhatCanNeverCome: a question asleep until a task's request is merged does not wake once that
+// can never hold; it sleeps on, out of the developer's questions, and its lead hears once, at the scheduler's pass,
+// which condition and why, with both commands that settle it: the task was cancelled (Q118 on W162), or it ended done
+// and, plan.OpenedGrace later, Djinn knows no request it opened (Q139 on W233, its request opened outside Djinn). The
+// lead decides: withdrawn, or woken by hand, the question is left so. Before that grace, or while a watcher babysits
+// what it opened, it sleeps on untold; a task continued takes the mark off; a request merged wakes its question as
+// before (W1048, Q670).
+func TestQuestionsAsleepOnWhatCanNeverCome(t *testing.T) {
 	ctx := t.Context()
 	db, err := store.Open(ctx, "", plan.Entities()...)
 	if err != nil {
@@ -180,13 +183,16 @@ func TestQuestionsWakeWhenTheirRequestCanNeverMerge(t *testing.T) {
 
 	wish := &planv1.Wish{Id: store.NewID(), Title: "Dew", State: planv1.WishState_WISH_STATE_ACTIVE}
 	task := func(code string) *planv1.Task {
-		return &planv1.Task{Id: store.NewID(), WishId: wish.GetId(), Code: code, Status: planv1.TaskStatus_TASK_STATUS_RUNNING,
+		return &planv1.Task{Id: store.NewID(), WishId: wish.GetId(), Code: code, Status: planv1.TaskStatus_TASK_STATUS_PAUSED,
 			CreateTime: timestamppb.New(now)}
 	}
-	w162, w233, w240 := task("W162"), task("W233"), task("W240")
+	w162, w233, w240, w250, w170 := task("W162"), task("W233"), task("W240"), task("W250"), task("W170")
 	watcher := task("W241")
 	watcher.Provider = planv1.Provider_PROVIDER_WATCH
 	watcher.Babysit = &planv1.TaskBabysit{Url: "https://gitlab.com/acme/dew/-/merge_requests/8", OpenedBy: "W240", DoneWhen: "MERGED"}
+	merging := task("W251")
+	merging.Provider = planv1.Provider_PROVIDER_WATCH
+	merging.Babysit = &planv1.TaskBabysit{Url: "https://gitlab.com/acme/dew/-/merge_requests/9", OpenedBy: "W250", DoneWhen: "MERGED"}
 	question := func(code string, on *planv1.Task) *planv1.Question {
 		return &planv1.Question{
 			Id: store.NewID(), WishId: wish.GetId(), Code: code, Text: "Release now?", CreateTime: timestamppb.New(now),
@@ -195,7 +201,9 @@ func TestQuestionsWakeWhenTheirRequestCanNeverMerge(t *testing.T) {
 			}},
 		}
 	}
-	q118, q139, q150 := question("Q118", w162), question("Q139", w233), question("Q150", w240)
+	q118, q139, q150, q160, q170 := question("Q118", w162), question("Q139", w233), question("Q150", w240),
+		question("Q160", w250), question("Q170", w170)
+	all := []*planv1.Question{q118, q139, q150, q160, q170}
 	write := func(ms ...proto.Message) {
 		t.Helper()
 		if err := db.Tx(ctx, func(tx *store.Tx) error {
@@ -212,54 +220,97 @@ func TestQuestionsWakeWhenTheirRequestCanNeverMerge(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	write(wish, w162, w233, w240, watcher, q118, q139, q150)
-	awake := func() string {
+	write(wish, w162, w233, w240, w250, w170, watcher, merging, q118, q139, q150, q160, q170)
+	get := func(q *planv1.Question) *planv1.Question {
+		t.Helper()
+		stored, err := store.Get[*planv1.Question](ctx, db, q.GetId())
+		if err != nil {
+			t.Fatal(err)
+		}
+		return stored
+	}
+	// pass runs the scheduler once, then says the codes of the questions the developer sees (neither asleep, nor
+	// withdrawn), and those whose sleep carries a mark that it can never end.
+	pass := func() (shown, never string) {
 		t.Helper()
 		h.schedule(ctx)
-		var codes []string
-		for _, q := range []*planv1.Question{q118, q139, q150} {
-			stored, err := store.Get[*planv1.Question](ctx, db, q.GetId())
-			if err != nil {
-				t.Fatal(err)
+		var s, n []string
+		for _, q := range all {
+			stored := get(q)
+			if !render.Asleep(stored) && stored.GetWithdrawal() == nil {
+				s = append(s, stored.GetCode())
 			}
-			if !render.Asleep(stored) {
-				codes = append(codes, stored.GetCode())
+			if stored.GetSleep().GetNever() != "" {
+				n = append(n, stored.GetCode())
 			}
 		}
-		return strings.Join(codes, " ")
+		return strings.Join(s, " "), strings.Join(n, " ")
 	}
-	end := func(t *planv1.Task, status planv1.TaskStatus) {
-		t.Status, t.EndTime = status, timestamppb.New(now)
-		write(t)
+	// heard says the lead's events, a line each: their kind, code and first sentence.
+	heard := func() []string {
+		var lines []string
+		for _, e := range queue.all() {
+			kind := strings.TrimPrefix(e.GetKind().String(), "LEAD_EVENT_KIND_")
+			lines = append(lines, kind+" "+e.GetCode()+" "+strings.SplitN(e.GetText(), ". ", 2)[0])
+		}
+		return lines
+	}
+	end := func(task *planv1.Task, status planv1.TaskStatus) {
+		task.Status, task.EndTime = status, timestamppb.New(now)
+		write(task)
+	}
+	check := func(when, shown, never string, events ...string) {
+		t.Helper()
+		gotShown, gotNever := pass()
+		if gotShown != shown || gotNever != never {
+			t.Errorf("%s: shown %q, never %q; want shown %q, never %q", when, gotShown, gotNever, shown, never)
+		}
+		if got := heard(); strings.Join(got, "\n") != strings.Join(events, "\n") {
+			t.Errorf("%s: the lead heard:\n%s\nwant:\n%s", when, strings.Join(got, "\n"), strings.Join(events, "\n"))
+		}
 	}
 
-	if got := awake(); got != "" {
-		t.Fatalf("awake while every task runs: %q, want none", got)
-	}
+	check("every task paused", "", "")
 	end(w162, planv1.TaskStatus_TASK_STATUS_CANCELLED)
 	end(w233, planv1.TaskStatus_TASK_STATUS_DONE)
 	end(w240, planv1.TaskStatus_TASK_STATUS_DONE)
-	if got := awake(); got != "Q118" {
-		t.Errorf("awake once W162 is cancelled, W233 and W240 just done: %q, want Q118", got)
+	never118 := "NEVER Q118 Djinn: Q118 sleeps on what can never come: W162's request merged can never hold, W162 was cancelled"
+	check("W162 cancelled, W233 and W240 just done", "", "Q118", never118)
+	if line := queue.all()[0].GetText(); !strings.Contains(line, "`djinn question withdraw Q118 --note \"why\"`") ||
+		!strings.Contains(line, "`djinn question sleep Q118 --wake`") {
+		t.Errorf("the lead is not given both commands: %q", line)
 	}
+	check("one more pass", "", "Q118", never118)
+
 	mu.Lock()
 	now = now.Add(plan.OpenedGrace)
 	mu.Unlock()
-	if got := awake(); got != "Q118 Q139" {
-		t.Errorf("awake %v after W233 ended with no request known: %q, want Q118 Q139", plan.OpenedGrace, got)
-	}
-	var lines []string
-	for _, e := range queue.all() {
-		if e.GetKind() == planv1.LeadEventKind_LEAD_EVENT_KIND_WOKE {
-			lines = append(lines, strings.SplitN(e.GetText(), ". ", 2)[0])
-		}
-	}
-	want := []string{
-		"Djinn: Q118 woke, W162's request merged can never hold, W162 was cancelled",
-		"Djinn: Q139 woke, W233's request merged can never hold, W233 ended done and Djinn knows no pull or merge request it opened",
-	}
-	if strings.Join(lines, "\n") != strings.Join(want, "\n") {
-		t.Errorf("the lead heard:\n%s\nwant:\n%s", strings.Join(lines, "\n"), strings.Join(want, "\n"))
+	never139 := "NEVER Q139 Djinn: Q139 sleeps on what can never come: W233's request merged can never hold, W233 ended " +
+		"done and Djinn knows no pull or merge request it opened"
+	check(plan.OpenedGrace.String()+" after W233 ended with no request known", "", "Q118 Q139", never118, never139)
+
+	merging.Babysit.DoneTime = timestamppb.New(now)
+	end(merging, planv1.TaskStatus_TASK_STATUS_DONE)
+	woke160 := "WOKE Q160 Djinn: Q160 woke, its conditions hold: W250's request merged"
+	check("W250's request merged", "Q160", "Q118 Q139", never118, never139, woke160)
+
+	end(w170, planv1.TaskStatus_TASK_STATUS_CANCELLED)
+	never170 := "NEVER Q170 Djinn: Q170 sleeps on what can never come: W170's request merged can never hold, W170 was cancelled"
+	check("W170 cancelled", "Q160", "Q118 Q139 Q170", never118, never139, woke160, never170)
+	w170.Status, w170.EndTime = planv1.TaskStatus_TASK_STATUS_PAUSED, nil
+	write(w170)
+	check("W170 continued", "Q160", "Q118 Q139", never118, never139, woke160, never170)
+
+	// The lead decides: Q118 matters still, it wakes it for the developer; Q139 no longer does, it withdraws it.
+	woken := get(q118)
+	plan.Wake(woken, now, true)
+	withdrawn := get(q139)
+	withdrawn.Withdrawal = &planv1.Withdrawal{Note: "released without W233's request", CreateTime: timestamppb.New(now)}
+	write(woken, withdrawn)
+	check("Q118 woken by the lead, Q139 withdrawn", "Q118 Q160", "Q118 Q139", never118, never139, woke160, never170)
+	if line := plan.WokeLine(get(q118)); !strings.HasPrefix(line,
+		"Djinn: Q118 woke, woken by hand, though W162's request merged can never hold, W162 was cancelled. ") {
+		t.Errorf("the lead hears, once Q118 is woken by hand: %q", line)
 	}
 	if !h.sleepers.Load() {
 		t.Error("the scheduler no longer reads Q150, asleep on W240's request")

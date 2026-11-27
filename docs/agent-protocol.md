@@ -89,11 +89,15 @@ The Djinn is the agent the developer talks to. It changes the plan with `djinn`,
   or a delay (`3d`, `2h`). Conditions that all hold already are refused, as is a request merged that can never hold
   (`plan.SleepNever`): its task cancelled, or done `plan.OpenedGrace` (an hour) ago while no watcher babysits a request
   it opened (W1048). An asleep question is out of the window's column, the bar, the notifications and the brief's open
-  questions (listed apart, `render.Asleep`). The scheduler's pass (`wakeQuestions`), reading the questions only while one may sleep, wakes each whose conditions hold, or one of
-  which can never hold (its event's line then says which and why, `plan.SleepNeverText`): it sets
-  `wake_time`, drops `later_time`, journals `harness/wake`, and queues a `LEAD_EVENT_KIND_WOKE` event for the lead,
-  who checks the question's facts and revises it if they changed; woken, it lists first (`render.Woken`, `byAsked`).
-  `--wake` wakes it by hand (`by_hand`), with the same event.
+  questions (listed apart, `render.Asleep`). The scheduler's pass (`wakeQuestions`), reading the questions only while
+  one may sleep, wakes each whose conditions hold: it sets `wake_time`, drops `later_time`, journals `harness/wake`,
+  and queues a `LEAD_EVENT_KIND_WOKE` event for the lead, who checks the question's facts and revises it if they
+  changed; woken, it lists first (`render.Woken`, `byAsked`). `--wake` wakes it by hand (`by_hand`), with the same
+  event. One of whose conditions can never hold does not wake (Q670): it sleeps on, out of the developer's questions;
+  the pass stores which condition and why (`QuestionSleep.never`, `plan.SleepNeverText`), journals `harness/never`,
+  and queues a `LEAD_EVENT_KIND_NEVER` event whose line (`plan.NeverLine`) gives the lead both ways out: withdraw it
+  (`djinn question withdraw`), or check its facts and put it to the developer (`djinn question sleep --wake`). The lead
+  is told again only when that reason changes; a task continued clears it.
 - **Planned options (Decision Q25).** An option may carry the task it launches: `djinn question ask --plan-file
   <file>`, one per option, header lines named as `djinn task spawn`'s flags (`option`, `title`, `project-id`,
   `provider`, `model`, `part-of`, `after`, `blocks`, `tilasm`, `kind`), then a blank line and the prompt

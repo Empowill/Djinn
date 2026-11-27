@@ -153,9 +153,17 @@ func TestSleepNever(t *testing.T) {
 	if got, want := SleepNeverText(q, tasks, now), "W1's request merged can never hold, W1 was cancelled"; got != want {
 		t.Errorf("never %q, want %q", got, want)
 	}
-	if got := WokeLine(q, SleepNeverText(q, tasks, now)); !strings.HasPrefix(got,
-		"Djinn: Q1 woke, W1's request merged can never hold, W1 was cancelled. Check that its facts still hold") {
-		t.Errorf("the lead hears %q", got)
+	never := SleepNeverText(q, tasks, now)
+	if got, want := NeverLine(q, never), "Djinn: Q1 sleeps on what can never come: W1's request merged can never hold, "+
+		"W1 was cancelled. It stays out of the developer's questions until you decide: withdraw it if it no longer "+
+		"matters (`djinn question withdraw Q1 --note \"why\"`), or check its facts, revise it if they changed "+
+		"(`djinn question revise Q1`), and put it to the developer now (`djinn question sleep Q1 --wake`)."; got != want {
+		t.Errorf("the lead hears:\n%s\nwant:\n%s", got, want)
+	}
+	q.Sleep.Never, q.Sleep.ByHand = never, true
+	if got := WokeLine(q); !strings.HasPrefix(got,
+		"Djinn: Q1 woke, woken by hand, though W1's request merged can never hold, W1 was cancelled. Check that") {
+		t.Errorf("the lead hears, once Q1 is woken by hand: %q", got)
 	}
 }
 
