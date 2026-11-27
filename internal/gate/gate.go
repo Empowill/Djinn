@@ -1139,6 +1139,7 @@ type State struct {
 	Shared                     int               // how many light commands share it; Holder is the first of them unless one holds it alone
 	Sharers                    []string          // who share it, each with what it runs, the first granted first
 	SharerTaskIDs              []string          // the tasks of the sharers, in the same order; a sharer outside any task left out
+	SharerProjects             []string          // the sharers' projects, by name, in the order of Sharers; "" for one of none
 	Ifrit                      bool              // held by a lit ifrit, until it goes out or ends
 	Use                        *planv1.Resources // what the holder's process uses; nil when not read
 }
@@ -1179,6 +1180,7 @@ func (g *Gates) List() []State {
 		s.Shared = len(hs)
 		for _, h := range hs {
 			s.Sharers = append(s.Sharers, h.who)
+			s.SharerProjects = append(s.SharerProjects, h.project)
 			if h.taskID != "" {
 				s.SharerTaskIDs = append(s.SharerTaskIDs, h.taskID)
 			}

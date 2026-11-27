@@ -339,7 +339,8 @@ func TestService_Beside(t *testing.T) {
 	}
 	want := []string{"a holder outside any task: ./read-logs.sh", "a holder outside any task: ./read-db.sh"}
 	if len(gates) != 1 || gates[0].GetName() != "stack@dolmen" || gates[0].GetShared() != 2 ||
-		!slices.Equal(gates[0].GetSharers(), want) || gates[0].GetHolder() != want[0] || len(gates[0].GetSharerTaskIds()) != 0 {
+		!slices.Equal(gates[0].GetSharers(), want) || gates[0].GetHolder() != want[0] || len(gates[0].GetSharerTaskIds()) != 0 ||
+		!slices.Equal(gates[0].GetSharerProjects(), []string{"", ""}) {
 		t.Fatalf("list: %v", gates)
 	}
 	alone, waits := run(t, g, "stack", "", "./rebuild.sh")
