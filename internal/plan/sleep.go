@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -222,6 +223,52 @@ func merged(c *planv1.SleepCondition, tasks []*planv1.Task) bool {
 	return false
 }
 
+// OpenedGrace is how long after a work task ended done Djinn looks for the request it opened (the babysit watcher it
+// starts on it) before a question asleep until that request is merged wakes: none found by then, Djinn will never know
+// it merged. 5 minutes (Q633 C): babysitOpened starts that watcher at the task's end, after a forge look or three of at
+// most forgeLookTimeout each, seconds in the common case; only a network down at the end delays it longer.
+const OpenedGrace = 5 * time.Minute
+
+// SleepNever is why the condition c can never hold, by tasks at now, or "" while it may: the task it names for a request
+// merged was cancelled, or ended done OpenedGrace ago while Djinn knows no request it opened (no watcher babysits one).
+// A request Djinn knows merged holds, whatever its task became; an azima's request, or a watcher's, is left to them.
+func SleepNever(c *planv1.SleepCondition, tasks []*planv1.Task, now time.Time) string {
+	if c.GetKind() != planv1.SleepKind_SLEEP_KIND_MERGED || c.GetTaskId() == "" || merged(c, tasks) {
+		return ""
+	}
+	i := slices.IndexFunc(tasks, func(t *planv1.Task) bool { return t.GetId() == c.GetTaskId() })
+	if i < 0 {
+		return ""
+	}
+	named := tasks[i]
+	switch named.GetStatus() {
+	case planv1.TaskStatus_TASK_STATUS_CANCELLED:
+		return named.GetCode() + " was cancelled"
+	case planv1.TaskStatus_TASK_STATUS_DONE:
+		end := named.GetEndTime()
+		if IsAzima(named) || named.GetBabysit() != nil || end == nil || now.Sub(end.AsTime()) < OpenedGrace ||
+			slices.ContainsFunc(tasks, func(t *planv1.Task) bool {
+				return t.GetBabysit().GetOpenedBy() == named.GetCode() && t.GetWishId() == named.GetWishId()
+			}) {
+			return ""
+		}
+		return named.GetCode() + " ended done and Djinn knows no pull or merge request it opened"
+	}
+	return ""
+}
+
+// SleepNeverText says, for each condition of q's sleep that can never hold by tasks at now (SleepNever), which and why,
+// joined; "" when each may still hold.
+func SleepNeverText(q *planv1.Question, tasks []*planv1.Task, now time.Time) string {
+	var texts []string
+	for _, c := range q.GetSleep().GetConditions() {
+		if why := SleepNever(c, tasks, now); why != "" {
+			texts = append(texts, SleepText(c)+" can never hold, "+why)
+		}
+	}
+	return strings.Join(texts, "; ")
+}
+
 // SleepText says a condition in a few words, for the brief and the lead's events: W12 over, W45's request merged,
 // 2026-10-20 09:00.
 func SleepText(c *planv1.SleepCondition) string {
@@ -248,11 +295,15 @@ func SleepTexts(q *planv1.Question) string {
 	return strings.Join(texts, ", ")
 }
 
-// WokeLine is the line that tells a lead the question q woke: its conditions held, or the developer woke it.
-func WokeLine(q *planv1.Question) string {
+// WokeLine is the line that tells a lead the question q woke: its conditions held, never, which one can never hold and
+// why (SleepNeverText), or the developer woke it.
+func WokeLine(q *planv1.Question, never string) string {
 	why := "its conditions hold: " + SleepTexts(q)
-	if q.GetSleep().GetByHand() {
+	switch {
+	case q.GetSleep().GetByHand():
 		why = "the developer woke it before " + SleepTexts(q)
+	case never != "":
+		why = never
 	}
 	return fmt.Sprintf("Djinn: %s woke, %s. Check that its facts still hold (costs, the state of tasks and requests) "+
 		"and revise it if they changed (`djinn question revise %s`): it shows at the top of the developer's questions.",
@@ -281,16 +332,21 @@ func Wake(question *planv1.Question, now time.Time, byHand bool) {
 	question.LaterTime = nil
 }
 
-// refuseHeld refuses conditions that all hold already, by the tasks of wishID at now: the question would wake at once.
+// refuseHeld refuses conditions that all hold already, or one that can never hold (SleepNever), by the tasks of wishID
+// at now: the question would wake at once.
 func refuseHeld(ctx context.Context, tx *store.Tx, wishID string, conditions []*planv1.SleepCondition, now time.Time) error {
 	tasks, err := store.List[*planv1.Task](ctx, tx, store.Where{"wish_id": wishID})
 	if err != nil {
 		return err
 	}
 	q := &planv1.Question{Sleep: &planv1.QuestionSleep{Conditions: conditions}}
-	if SleepAllHold(q, WithAzimas(tasks), now) {
+	tasks = WithAzimas(tasks)
+	if SleepAllHold(q, tasks, now) {
 		return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
 			"%s hold already: nothing to sleep until", SleepTexts(q)))
+	}
+	if never := SleepNeverText(q, tasks, now); never != "" {
+		return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("%s: it would wake at once", never))
 	}
 	return nil
 }
@@ -351,5 +407,5 @@ func (q *Questions) Sleep(
 
 // Woke tells the lead of q's wish that q woke (WokeLine).
 func (w *Wishes) Woke(ctx context.Context, q *planv1.Question) {
-	w.notify(ctx, q, planv1.LeadEventKind_LEAD_EVENT_KIND_WOKE, WokeLine(q), "")
+	w.notify(ctx, q, planv1.LeadEventKind_LEAD_EVENT_KIND_WOKE, WokeLine(q, ""), "")
 }

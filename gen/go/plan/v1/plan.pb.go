@@ -13231,8 +13231,10 @@ type QuestionServiceSleepRequest struct {
 	WishId string `protobuf:"bytes,2,opt,name=wish_id,json=wishId,proto3" json:"wish_id,omitempty"`
 	// What it sleeps until, a condition each, all to hold, in place of any it had; commas separate several in one
 	// value. A task of the wish, W12: done, stopped or cancelled (an azima: closed). merged:W45: the pull or merge
-	// request W45 babysits, or the one W45 opened, or azima W45's, merged; a request's web address says the same. A
-	// time: 2026-10-20, 2026-10-20T09:00 (this machine's time), an RFC 3339 time, or a delay from now, like 3d or 2h30m.
+	// request W45 babysits, or the one W45 opened, or azima W45's, merged; a request's web address says the same. One
+	// that can never hold wakes the question, the lead told why: W45 cancelled, or done 5 minutes with no request Djinn
+	// knows it opened. A time: 2026-10-20, 2026-10-20T09:00 (this machine's time), an RFC 3339 time, or a delay from now,
+	// like 3d or 2h30m.
 	Until []string `protobuf:"bytes,3,rep,name=until,proto3" json:"until,omitempty"`
 	// Wake it now instead: it shows at the top of its wish's open questions, and the lead is told.
 	Wake          bool `protobuf:"varint,4,opt,name=wake,proto3" json:"wake,omitempty"`
