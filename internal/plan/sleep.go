@@ -225,8 +225,9 @@ func merged(c *planv1.SleepCondition, tasks []*planv1.Task) bool {
 
 // OpenedGrace is how long after a work task ended done Djinn looks for the request it opened (the babysit watcher it
 // starts on it) before a question asleep until that request is merged wakes: none found by then, Djinn will never know
-// it merged.
-const OpenedGrace = time.Hour
+// it merged. 5 minutes (Q633 C): babysitOpened starts that watcher at the task's end, after a forge look or three of at
+// most forgeLookTimeout each, seconds in the common case; only a network down at the end delays it longer.
+const OpenedGrace = 5 * time.Minute
 
 // SleepNever is why the condition c can never hold, by tasks at now, or "" while it may: the task it names for a request
 // merged was cancelled, or ended done OpenedGrace ago while Djinn knows no request it opened (no watcher babysits one).

@@ -13232,7 +13232,7 @@ type QuestionServiceSleepRequest struct {
 	// What it sleeps until, a condition each, all to hold, in place of any it had; commas separate several in one
 	// value. A task of the wish, W12: done, stopped or cancelled (an azima: closed). merged:W45: the pull or merge
 	// request W45 babysits, or the one W45 opened, or azima W45's, merged; a request's web address says the same. One
-	// that can never hold wakes the question, the lead told why: W45 cancelled, or done an hour with no request Djinn
+	// that can never hold wakes the question, the lead told why: W45 cancelled, or done 5 minutes with no request Djinn
 	// knows it opened. A time: 2026-10-20, 2026-10-20T09:00 (this machine's time), an RFC 3339 time, or a delay from now,
 	// like 3d or 2h30m.
 	Until []string `protobuf:"bytes,3,rep,name=until,proto3" json:"until,omitempty"`

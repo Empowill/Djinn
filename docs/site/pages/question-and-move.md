@@ -193,7 +193,7 @@ is told first, checks that its facts still hold (a cost, the state of tasks and 
 changed. It then comes first in its wish's list, its grey line saying when it woke, and a notification tells you.
 
 A question also wakes when what it waits for can never come, and the Djinn is told why: it waited for the request a
-task would open, and that task was cancelled, or ended an hour ago without a request Djinn knows of. Put to sleep on
+task would open, and that task was cancelled, or ended 5 minutes ago without a request Djinn knows of. Put to sleep on
 such a request, a question is refused at once.
 
 The Djinn uses it too: a question to bring back once the requests are merged, or after a date, sleeps until then

@@ -101,7 +101,7 @@ func TestSleepHolds(t *testing.T) {
 }
 
 // TestSleepNever: a request merged can never hold once the task named for it was cancelled, or ended done OpenedGrace
-// ago while Djinn knows no request it opened (W1048: Q118, Q139 slept for weeks); not while that task may still open
+// (5 minutes, Q633 C) ago while Djinn knows no request it opened (W1048: Q118, Q139 slept for weeks); not while that task may still open
 // one, a watcher babysits what it opened, the request is known merged, or the request is an azima's or an address.
 func TestSleepNever(t *testing.T) {
 	t.Parallel()
@@ -122,7 +122,11 @@ func TestSleepNever(t *testing.T) {
 	azima := task("T8", planv1.TaskStatus_TASK_STATUS_DONE, 24*time.Hour)
 	azima.Kind = planv1.TaskKind_TASK_KIND_AZIMA
 	running := task("W9", planv1.TaskStatus_TASK_STATUS_RUNNING, 0)
-	tasks := []*planv1.Task{cancelled, silent, recent, opener, watcher, landed, landedWatcher, azima, running}
+	fiveMinutes := task("W10", planv1.TaskStatus_TASK_STATUS_DONE, 5*time.Minute)
+	almost := task("W11", planv1.TaskStatus_TASK_STATUS_DONE, 5*time.Minute-time.Second)
+	tasks := []*planv1.Task{
+		cancelled, silent, recent, opener, watcher, landed, landedWatcher, azima, running, fiveMinutes, almost,
+	}
 	merge := func(task *planv1.Task) *planv1.SleepCondition {
 		return &planv1.SleepCondition{Kind: planv1.SleepKind_SLEEP_KIND_MERGED, TaskId: task.GetId(), Code: task.GetCode()}
 	}
@@ -138,6 +142,9 @@ func TestSleepNever(t *testing.T) {
 		{"its task cancelled, the request merged", merge(landed), ""},
 		{"an azima closed", merge(azima), ""},
 		{"its task running", merge(running), ""},
+		{"its task done 5 minutes ago, no request found", merge(fiveMinutes),
+			"W10 ended done and Djinn knows no pull or merge request it opened"},
+		{"its task done a second short of 5 minutes", merge(almost), ""},
 		{"a request by its address", &planv1.SleepCondition{
 			Kind: planv1.SleepKind_SLEEP_KIND_MERGED, Url: "https://github.com/acme/lamp/pull/9",
 		}, ""},
