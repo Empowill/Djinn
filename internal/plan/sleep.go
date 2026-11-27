@@ -224,8 +224,8 @@ func merged(c *planv1.SleepCondition, tasks []*planv1.Task) bool {
 }
 
 // OpenedGrace is how long after a work task ended done Djinn looks for the request it opened (the babysit watcher it
-// starts on it) before a question asleep until that request is merged wakes: none found by then, Djinn will never know
-// it merged.
+// starts on it) before it tells the lead that a question asleep until that request is merged waits for what can never
+// come: none found by then, Djinn will never know it merged.
 const OpenedGrace = time.Hour
 
 // SleepNever is why the condition c can never hold, by tasks at now, or "" while it may: the task it names for a request
@@ -294,19 +294,30 @@ func SleepTexts(q *planv1.Question) string {
 	return strings.Join(texts, ", ")
 }
 
-// WokeLine is the line that tells a lead the question q woke: its conditions held, never, which one can never hold and
-// why (SleepNeverText), or the developer woke it.
-func WokeLine(q *planv1.Question, never string) string {
+// WokeLine is the line that tells a lead the question q woke: its conditions held, or it was woken by hand (by the
+// developer, or by the lead after a NeverLine).
+func WokeLine(q *planv1.Question) string {
 	why := "its conditions hold: " + SleepTexts(q)
 	switch {
+	case q.GetSleep().GetByHand() && q.GetSleep().GetNever() != "":
+		why = "woken by hand, though " + q.GetSleep().GetNever()
 	case q.GetSleep().GetByHand():
 		why = "the developer woke it before " + SleepTexts(q)
-	case never != "":
-		why = never
 	}
 	return fmt.Sprintf("Djinn: %s woke, %s. Check that its facts still hold (costs, the state of tasks and requests) "+
 		"and revise it if they changed (`djinn question revise %s`): it shows at the top of the developer's questions.",
 		q.GetCode(), why, q.GetCode())
+}
+
+// NeverLine is the line that tells a lead the question q, asleep, waits for what can never come: never says which of
+// its conditions and why (SleepNeverText). The question sleeps on, out of the developer's questions: the lead decides
+// whether it still matters, and withdraws it or puts it to the developer now.
+func NeverLine(q *planv1.Question, never string) string {
+	c := q.GetCode()
+	return fmt.Sprintf("Djinn: %s sleeps on what can never come: %s. It stays out of the developer's questions until "+
+		"you decide: withdraw it if it no longer matters (`djinn question withdraw %s --note \"why\"`), or check its "+
+		"facts, revise it if they changed (`djinn question revise %s`), and put it to the developer now "+
+		"(`djinn question sleep %s --wake`).", c, never, c, c, c)
 }
 
 // sleep puts question to sleep until conditions, at now; it takes it out of the open questions until they hold. Its
@@ -406,5 +417,5 @@ func (q *Questions) Sleep(
 
 // Woke tells the lead of q's wish that q woke (WokeLine).
 func (w *Wishes) Woke(ctx context.Context, q *planv1.Question) {
-	w.notify(ctx, q, planv1.LeadEventKind_LEAD_EVENT_KIND_WOKE, WokeLine(q, ""), "")
+	w.notify(ctx, q, planv1.LeadEventKind_LEAD_EVENT_KIND_WOKE, WokeLine(q), "")
 }
