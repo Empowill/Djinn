@@ -330,7 +330,9 @@
                   even in another task's folder, waits for the memory it usually peaks at, five minutes at most; <code>djinn command forget</code> forgets a cost
                   learned wrong. A gate is never taken back from a command
                   that still runs: past three times its usual hold, its lead hears of it. Every other command of a Claude worker that neither reads nor edits is
-                  admitted first, measured, and, when heavy, takes its turn. Djinn's own checks to merge a task's work or
+                  admitted first, measured, and, when heavy, takes its turn. A task never waits for itself: a request that would wait
+                  for a gate its own task holds passes under it when it is the same gate, and is refused at once, saying what to stop,
+                  when it is another. Djinn's own checks to merge a task's work or
                   push a branch go before the workers' requests, and on a machine of more than one slot, one stays free for
                   them: what ends a task never waits behind workers. The Gates tab of the Hourglass shows, by project, who holds each gate now,
                   who waits (each gate a seal: its door open when free, shut while held, a gold flame per waiter, barred when it takes a worker's slot), and which command takes the most time, 25 more commands read each time you scroll to the end of the list, under a summary of them all; over the last hour, 6 hours or day, each project with one lane per gate under

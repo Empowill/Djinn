@@ -28,7 +28,8 @@ type HookInput struct {
 // nor edits (Plain), has admit wait for its admission, given the command as its cost is kept (machine.Key), its folder and
 // what its shell is found by (machine.Match). admit says why the command waited, "" when it did not: the hook then
 // writes it to out, for the worker to read beside the command's result. It writes nothing else: Claude runs the call
-// as it was. It fails only when it cannot read the call; admit failing (no Djinn answers) lets the command run.
+// as it was. It fails only when it cannot read the call; admit failing (no Djinn answers) lets the command run. One
+// refused (RefusedError: it would wait for its own task, Q684) is denied, its reason the worker reads in place of a result.
 func Hook(in io.Reader, out io.Writer, admit func(what, dir, match string) (string, error)) error {
 	var call HookInput
 	if err := json.NewDecoder(in).Decode(&call); err != nil {
@@ -39,6 +40,14 @@ func Hook(in io.Reader, out io.Writer, admit func(what, dir, match string) (stri
 		return nil
 	}
 	waited, err := admit(machine.Key(command, call.Cwd), call.Cwd, machine.Match(command))
+	if refused, ok := errors.AsType[*RefusedError](err); ok {
+		return json.NewEncoder(out).Encode(map[string]any{
+			"hookSpecificOutput": map[string]any{
+				"hookEventName": "PreToolUse", "permissionDecision": "deny",
+				"permissionDecisionReason": "djinn: this command was not run: " + refused.Reason,
+			},
+		})
+	}
 	if err != nil || waited == "" {
 		return nil //nolint:nilerr // The command runs: the gates never stop a worker's command.
 	}
