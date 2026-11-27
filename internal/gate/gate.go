@@ -1136,12 +1136,16 @@ type State struct {
 	Waiting                    []string
 	WaitingTaskIDs             []string          // the tasks of the waiters, in the same order; a waiter outside any task left out
 	TakesSlot                  bool              // held alone outside a running worker
-	Shared                     int               // how many light commands share it; Holder is the first of them unless one holds it alone
-	Sharers                    []string          // who share it, each with what it runs, the first granted first
-	SharerTaskIDs              []string          // the tasks of the sharers, in the same order; a sharer outside any task left out
-	SharerProjects             []string          // the sharers' projects, by name, in the order of Sharers; "" for one of none
+	Sharers                    []Sharer          // the light commands that share it, the first granted first; Holder is the first unless one holds it alone
 	Ifrit                      bool              // held by a lit ifrit, until it goes out or ends
 	Use                        *planv1.Resources // what the holder's process uses; nil when not read
+}
+
+// Sharer is a command that holds a gate shared with others.
+type Sharer struct {
+	Who     string // who it is, with what it runs
+	TaskID  string // its task; "" outside any task
+	Project string // its project, by name; "" outside any
 }
 
 // List gives the gates held or waited for, by name, alone or shared; the admissions are not listed.
@@ -1177,13 +1181,8 @@ func (g *Gates) List() []State {
 			return cmp.Compare(a.seq, b.seq)
 		})
 		s := get(name)
-		s.Shared = len(hs)
 		for _, h := range hs {
-			s.Sharers = append(s.Sharers, h.who)
-			s.SharerProjects = append(s.SharerProjects, h.project)
-			if h.taskID != "" {
-				s.SharerTaskIDs = append(s.SharerTaskIDs, h.taskID)
-			}
+			s.Sharers = append(s.Sharers, Sharer{Who: h.who, TaskID: h.taskID, Project: h.project})
 		}
 		if h := hs[0]; !alone[name] {
 			s.Holder, s.HolderTaskID, s.Project, s.Since, s.Until, s.Use = h.who, h.taskID, h.project, h.since, h.until, h.use

@@ -375,9 +375,12 @@ func TestListSharers(t *testing.T) {
 		gives = append(gives, await(t, func() <-chan func() { c, _ := run(t, g, "stack", id, "task recette "+id); return c }(), id+"'s recette"))
 	}
 	l := g.List()
-	want := []string{"W1: task recette W1", "W2: task recette W2", "W3: task recette W3"}
-	if len(l) != 1 || l[0].Shared != 3 || l[0].HolderTaskID != "W1" || !slices.Equal(l[0].Sharers, want) ||
-		!slices.Equal(l[0].SharerTaskIDs, []string{"W1", "W2", "W3"}) || !slices.Equal(l[0].SharerProjects, []string{"dolmen", "", "djinn"}) {
+	want := []Sharer{
+		{Who: "W1: task recette W1", TaskID: "W1", Project: "dolmen"},
+		{Who: "W2: task recette W2", TaskID: "W2"},
+		{Who: "W3: task recette W3", TaskID: "W3", Project: "djinn"},
+	}
+	if len(l) != 1 || l[0].HolderTaskID != "W1" || !slices.Equal(l[0].Sharers, want) {
 		t.Errorf("list = %+v", l)
 	}
 	for _, give := range gives {
@@ -385,7 +388,7 @@ func TestListSharers(t *testing.T) {
 	}
 	// Held alone, a gate names no sharer.
 	alone := await(t, func() <-chan func() { c, _ := run(t, g, "stack", "W1", "./rebuild.sh"); return c }(), "W1's script alone")
-	if l := g.List(); len(l) != 1 || l[0].Shared != 0 || len(l[0].Sharers) != 0 || len(l[0].SharerProjects) != 0 || l[0].HolderTaskID != "W1" {
+	if l := g.List(); len(l) != 1 || len(l[0].Sharers) != 0 || l[0].HolderTaskID != "W1" {
 		t.Errorf("list = %+v", l)
 	}
 	alone()

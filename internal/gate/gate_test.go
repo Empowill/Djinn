@@ -673,8 +673,8 @@ func TestShared(t *testing.T) {
 		t.Errorf("held: W1 %v, W2 %v", g.Held("W1"), g.Held("W2"))
 	}
 	l := g.List()
-	if len(l) != 2 || l[0].Name != "lint" || l[0].Shared != 2 || l[0].HolderTaskID != "W1" || l[0].TakesSlot ||
-		l[1].Name != "stack" || l[1].Shared != 2 || l[1].TakesSlot {
+	if len(l) != 2 || l[0].Name != "lint" || len(l[0].Sharers) != 2 || l[0].HolderTaskID != "W1" || l[0].TakesSlot ||
+		l[1].Name != "stack" || len(l[1].Sharers) != 2 || l[1].TakesSlot {
 		t.Errorf("list = %+v", l)
 	}
 	if n, merges := g.Outside(); n != 0 || merges != 0 {
@@ -702,7 +702,7 @@ func TestShared(t *testing.T) {
 	heavy()
 	giveE2E := await(t, e2e, "the heavy stack once the heavy lint is given back")
 	await(t, light, "the light lint once the heavy lint is given back")()
-	if l := g.List(); l[1].Name != "stack" || l[1].HolderTaskID != "W5" || l[1].Shared != 3 || !l[1].TakesSlot {
+	if l := g.List(); l[1].Name != "stack" || l[1].HolderTaskID != "W5" || len(l[1].Sharers) != 3 || !l[1].TakesSlot {
 		t.Errorf("stack held alone beside the light ones: %+v", l[1])
 	}
 	for _, give := range []func(){lint1, lint2, stack1, stack2, stack3, giveE2E} {
@@ -738,7 +738,7 @@ func TestSharedFirstOnEqualTimes(t *testing.T) {
 		gives = append(gives, await(t, c, id+"'s lint"))
 	}
 	for range 50 {
-		if l := g.List(); len(l) != 1 || l[0].HolderTaskID != "W1" || l[0].Shared != 4 {
+		if l := g.List(); len(l) != 1 || l[0].HolderTaskID != "W1" || len(l[0].Sharers) != 4 {
 			t.Fatalf("list = %+v", l)
 		}
 	}

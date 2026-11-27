@@ -138,8 +138,9 @@ func (s *service) List(
 			Name: st.Name, Holder: st.Holder, HolderTaskId: st.HolderTaskID, Waiting: st.Waiting,
 			WaitingTaskIds: st.WaitingTaskIDs, TakesSlot: st.TakesSlot, Resources: st.Use, Ifrit: st.Ifrit,
 			Project: st.Project, WaitingProjects: st.WaitingProjects,
-			Shared: int32(st.Shared), Sharers: st.Sharers, SharerTaskIds: st.SharerTaskIDs,
-			SharerProjects: st.SharerProjects,
+		}
+		for _, sh := range st.Sharers {
+			gate.Sharers = append(gate.Sharers, &machinev1.GateSharer{Who: sh.Who, TaskId: sh.TaskID, Project: sh.Project})
 		}
 		if !st.Since.IsZero() {
 			gate.Since = timestamppb.New(st.Since)
