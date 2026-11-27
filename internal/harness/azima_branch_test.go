@@ -1587,7 +1587,7 @@ func TestAzimaPRPass(t *testing.T) {
 
 		// Now MR !201 is MERGED, and MR !202 for T2 is OPEN, targeting main.
 		forge.mu.Lock()
-		forge.views[b1] = `{"iid":201,"state":"merged","target_branch":"main","detailed_merge_status":"not_applicable"}`
+		forge.views[b1] = `{"iid":201,"state":"merged","target_branch":"main","web_url":"https://gitlab.example.com/acme/project/-/merge_requests/201","detailed_merge_status":"not_applicable"}`
 		forge.views["201"] = forge.views[b1] // recorded open, it is read by its number (W81)
 		forge.views[b2] = `{"iid":202,"state":"opened","target_branch":"main","detailed_merge_status":"mergeable","head_pipeline":{"id":100,"status":"running"}}`
 		forge.mu.Unlock()
