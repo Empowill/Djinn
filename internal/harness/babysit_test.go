@@ -32,6 +32,8 @@ type fakeForge struct {
 	created string
 	// api is what gh api and glab api print, the branches the forge protects; empty, they fail.
 	api string
+	// elsewhere are the forges of other repositories, by folder: gh and glab run in one, or under it, answer from it.
+	elsewhere map[string]*fakeForge
 }
 
 func (f *fakeForge) run(ctx context.Context, dir string, args []string) (string, int, error) {
@@ -39,6 +41,12 @@ func (f *fakeForge) run(ctx context.Context, dir string, args []string) (string,
 		return runCommand(ctx, dir, args)
 	}
 	f.mu.Lock()
+	for folder, other := range f.elsewhere {
+		if dir == folder || strings.HasPrefix(dir, folder+string(filepath.Separator)) {
+			f.mu.Unlock()
+			return other.run(ctx, dir, args)
+		}
+	}
 	defer f.mu.Unlock()
 	f.calls = append(f.calls, strings.Join(args, " "))
 	if args[1] == "api" {

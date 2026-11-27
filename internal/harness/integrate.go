@@ -2944,7 +2944,7 @@ func (h *Harness) azimaPRPass(
 		branch := azimaBranchName(azima)
 		pr, followed := h.followedAzimaPR(ctx, project, azima)
 		if followed && pr == nil {
-			continue // The forge did not answer: it stays as recorded.
+			continue // The forge did not answer, or the request is another project's: it stays as recorded.
 		}
 		var ok bool
 		var parts []*planv1.Task
@@ -3051,8 +3051,10 @@ func (h *Harness) azimaPRPass(
 
 // followedAzimaPR is the pull request recorded open for azima, as the forge says it stands now, read by its number:
 // its parts may run (a watcher that runs for good), its branch be gone (deleted once merged), it stays followed. nil
-// when the forge did not answer. followed is false when azima records none open: its branch finds it, once its parts
-// are done.
+// when the forge did not answer, or when the request is not of project: a wish of several projects passes each azima
+// in each of them, and a number names a request only in its own repository (W1094: dolmen!46, merged long ago, read
+// in place of Djinn's PR #46 just opened, made T106 landed and done). followed is false when azima records none open:
+// its branch finds it, once its parts are done.
 func (h *Harness) followedAzimaPR(ctx context.Context, project *planv1.Project, azima *planv1.Task) (pr *forgePR, followed bool) {
 	recorded := azima.GetAzima().GetPr()
 	if recorded.GetState() != planv1.AzimaPrState_AZIMA_PR_STATE_OPEN {
@@ -3062,7 +3064,30 @@ func (h *Harness) followedAzimaPR(ctx context.Context, project *planv1.Project, 
 	if m == nil {
 		return nil, false
 	}
-	return h.queryForgePR(ctx, project.GetDirectory(), project, m[1]), true
+	repo := project.GetDirectory()
+	if requestForge(m[0]) != detectForge(ctx, repo, project) {
+		return nil, true // Another forge's: the forge of project is not asked.
+	}
+	pr = h.queryForgePR(ctx, repo, project, m[1])
+	if pr == nil || !sameRequest(pr.URL, m[0]) {
+		return nil, true // The same number in another repository of the forge.
+	}
+	return pr, true
+}
+
+// requestForge is the forge whose command line reads the request at url, as detectForge names it: "glab" for a merge
+// request (…/-/merge_requests/12), "gh" for a pull request (…/pull/12).
+func requestForge(url string) string {
+	if strings.Contains(url, "/-/merge_requests/") {
+		return "glab"
+	}
+	return "gh"
+}
+
+// sameRequest tells whether the web addresses a and b name the same request, a trailing slash and case aside.
+func sameRequest(a, b string) bool {
+	a, b = strings.TrimSuffix(a, "/"), strings.TrimSuffix(b, "/")
+	return a != "" && strings.EqualFold(a, b)
 }
 
 // unfinishedParts tells whether azima has parts still to finish (plan.HasUnfinishedParts): a watcher that runs, work

@@ -99,9 +99,10 @@ wish gets no draft per azima: its one pull request is proposed when the wish set
 When the request can be merged and its checks are green, Djinn tells you: *Pull request #12 for T07 is ready to
 merge?* Merging is yours: Djinn only notes your answer, and marks the azima done once the forge says it is merged.
 Once open, the request is read on the forge again at each pass, by its number: a watcher that keeps running in the
-azima, or a branch the forge deleted at the merge, never leaves it shown open. Closed without being merged, Djinn
-closes nothing: the Djinn reopens it, has another one opened for the branch, or closes the azima if its work is
-dropped. Reopened, or another one opened, the card shows it open again. For an azima already closed, the card shows
+azima, or a branch the forge deleted at the merge, never leaves it shown open. It is read in its own repository only:
+in a wish of several projects, another project's request with the same number never stands for it. Closed without
+being merged, Djinn closes nothing: the Djinn reopens it, has another one opened for the branch, or closes the azima if
+its work is dropped. Reopened, or another one opened, the card shows it open again. For an azima already closed, the card shows
 where its request stands, merged or closed, and the Djinn hears nothing of it: it closed the azima.
 
 ### No azima waits for another
