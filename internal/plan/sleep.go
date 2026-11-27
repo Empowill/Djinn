@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -222,6 +223,51 @@ func merged(c *planv1.SleepCondition, tasks []*planv1.Task) bool {
 	return false
 }
 
+// OpenedGrace is how long after a work task ended done Djinn looks for the request it opened (the babysit watcher it
+// starts on it) before it tells the lead that a question asleep until that request is merged waits for what can never
+// come: none found by then, Djinn will never know it merged.
+const OpenedGrace = time.Hour
+
+// SleepNever is why the condition c can never hold, by tasks at now, or "" while it may: the task it names for a request
+// merged was cancelled, or ended done OpenedGrace ago while Djinn knows no request it opened (no watcher babysits one).
+// A request Djinn knows merged holds, whatever its task became; an azima's request, or a watcher's, is left to them.
+func SleepNever(c *planv1.SleepCondition, tasks []*planv1.Task, now time.Time) string {
+	if c.GetKind() != planv1.SleepKind_SLEEP_KIND_MERGED || c.GetTaskId() == "" || merged(c, tasks) {
+		return ""
+	}
+	i := slices.IndexFunc(tasks, func(t *planv1.Task) bool { return t.GetId() == c.GetTaskId() })
+	if i < 0 {
+		return ""
+	}
+	named := tasks[i]
+	switch named.GetStatus() {
+	case planv1.TaskStatus_TASK_STATUS_CANCELLED:
+		return named.GetCode() + " was cancelled"
+	case planv1.TaskStatus_TASK_STATUS_DONE:
+		end := named.GetEndTime()
+		if IsAzima(named) || named.GetBabysit() != nil || end == nil || now.Sub(end.AsTime()) < OpenedGrace ||
+			slices.ContainsFunc(tasks, func(t *planv1.Task) bool {
+				return t.GetBabysit().GetOpenedBy() == named.GetCode() && t.GetWishId() == named.GetWishId()
+			}) {
+			return ""
+		}
+		return named.GetCode() + " ended done and Djinn knows no pull or merge request it opened"
+	}
+	return ""
+}
+
+// SleepNeverText says, for each condition of q's sleep that can never hold by tasks at now (SleepNever), which and why,
+// joined; "" when each may still hold.
+func SleepNeverText(q *planv1.Question, tasks []*planv1.Task, now time.Time) string {
+	var texts []string
+	for _, c := range q.GetSleep().GetConditions() {
+		if why := SleepNever(c, tasks, now); why != "" {
+			texts = append(texts, SleepText(c)+" can never hold, "+why)
+		}
+	}
+	return strings.Join(texts, "; ")
+}
+
 // SleepText says a condition in a few words, for the brief and the lead's events: W12 over, W45's request merged,
 // 2026-10-20 09:00.
 func SleepText(c *planv1.SleepCondition) string {
@@ -248,15 +294,30 @@ func SleepTexts(q *planv1.Question) string {
 	return strings.Join(texts, ", ")
 }
 
-// WokeLine is the line that tells a lead the question q woke: its conditions held, or the developer woke it.
+// WokeLine is the line that tells a lead the question q woke: its conditions held, or it was woken by hand (by the
+// developer, or by the lead after a NeverLine).
 func WokeLine(q *planv1.Question) string {
 	why := "its conditions hold: " + SleepTexts(q)
-	if q.GetSleep().GetByHand() {
+	switch {
+	case q.GetSleep().GetByHand() && q.GetSleep().GetNever() != "":
+		why = "woken by hand, though " + q.GetSleep().GetNever()
+	case q.GetSleep().GetByHand():
 		why = "the developer woke it before " + SleepTexts(q)
 	}
 	return fmt.Sprintf("Djinn: %s woke, %s. Check that its facts still hold (costs, the state of tasks and requests) "+
 		"and revise it if they changed (`djinn question revise %s`): it shows at the top of the developer's questions.",
 		q.GetCode(), why, q.GetCode())
+}
+
+// NeverLine is the line that tells a lead the question q, asleep, waits for what can never come: never says which of
+// its conditions and why (SleepNeverText). The question sleeps on, out of the developer's questions: the lead decides
+// whether it still matters, and withdraws it or puts it to the developer now.
+func NeverLine(q *planv1.Question, never string) string {
+	c := q.GetCode()
+	return fmt.Sprintf("Djinn: %s sleeps on what can never come: %s. It stays out of the developer's questions until "+
+		"you decide: withdraw it if it no longer matters (`djinn question withdraw %s --note \"why\"`), or check its "+
+		"facts, revise it if they changed (`djinn question revise %s`), and put it to the developer now "+
+		"(`djinn question sleep %s --wake`).", c, never, c, c, c)
 }
 
 // sleep puts question to sleep until conditions, at now; it takes it out of the open questions until they hold. Its
@@ -281,16 +342,21 @@ func Wake(question *planv1.Question, now time.Time, byHand bool) {
 	question.LaterTime = nil
 }
 
-// refuseHeld refuses conditions that all hold already, by the tasks of wishID at now: the question would wake at once.
+// refuseHeld refuses conditions that all hold already, or one that can never hold (SleepNever), by the tasks of wishID
+// at now: the question would wake at once.
 func refuseHeld(ctx context.Context, tx *store.Tx, wishID string, conditions []*planv1.SleepCondition, now time.Time) error {
 	tasks, err := store.List[*planv1.Task](ctx, tx, store.Where{"wish_id": wishID})
 	if err != nil {
 		return err
 	}
 	q := &planv1.Question{Sleep: &planv1.QuestionSleep{Conditions: conditions}}
-	if SleepAllHold(q, WithAzimas(tasks), now) {
+	tasks = WithAzimas(tasks)
+	if SleepAllHold(q, tasks, now) {
 		return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
 			"%s hold already: nothing to sleep until", SleepTexts(q)))
+	}
+	if never := SleepNeverText(q, tasks, now); never != "" {
+		return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("%s: it would wake at once", never))
 	}
 	return nil
 }

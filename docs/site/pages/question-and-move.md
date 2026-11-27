@@ -192,6 +192,11 @@ Djinn checks the conditions each time its scheduler looks at the plan. When they
 is told first, checks that its facts still hold (a cost, the state of tasks and requests) and revises it if they
 changed. It then comes first in its wish's list, its grey line saying when it woke, and a notification tells you.
 
+When what it waits for can never come, the question does not wake by itself: the Djinn is told first, and why. It
+waited for the request a task would open, and that task was cancelled, or ended an hour ago without a request Djinn
+knows of. The question stays asleep while the Djinn decides: it withdraws it if it no longer matters, or brings it
+back to you. Put to sleep on such a request, a question is refused at once.
+
 The Djinn uses it too: a question to bring back once the requests are merged, or after a date, sleeps until then
 rather than waiting in its memory.
 

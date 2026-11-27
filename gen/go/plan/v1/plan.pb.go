@@ -875,6 +875,11 @@ const (
 	// project's worktrees and what ended tasks' take of them, the caches, the home's entries, W122); the push checks
 	// wait instead of failing, and run once space comes back.
 	LeadEventKind_LEAD_EVENT_KIND_DISK LeadEventKind = 20
+	// An asleep question waits for what can never come (QuestionSleep.never): a request merged whose task was cancelled,
+	// or ended done an hour ago with no request Djinn knows it opened. The question sleeps on, out of the developer's
+	// questions; the lead decides: withdraw it (djinn question withdraw), or put it to the developer now (djinn question
+	// sleep --wake), after checking its facts. Its line says which condition and why, and gives both commands.
+	LeadEventKind_LEAD_EVENT_KIND_NEVER LeadEventKind = 21
 )
 
 // Enum value maps for LeadEventKind.
@@ -901,6 +906,7 @@ var (
 		18: "LEAD_EVENT_KIND_ASKED",
 		19: "LEAD_EVENT_KIND_NETWORK",
 		20: "LEAD_EVENT_KIND_DISK",
+		21: "LEAD_EVENT_KIND_NEVER",
 	}
 	LeadEventKind_value = map[string]int32{
 		"LEAD_EVENT_KIND_UNSPECIFIED": 0,
@@ -924,6 +930,7 @@ var (
 		"LEAD_EVENT_KIND_ASKED":       18,
 		"LEAD_EVENT_KIND_NETWORK":     19,
 		"LEAD_EVENT_KIND_DISK":        20,
+		"LEAD_EVENT_KIND_NEVER":       21,
 	}
 )
 
@@ -10618,7 +10625,11 @@ type QuestionSleep struct {
 	// sleeps.
 	WakeTime *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=wake_time,json=wakeTime,proto3" json:"wake_time,omitempty"`
 	// It was woken by hand (djinn question sleep --wake, the window's Wake), before its conditions held.
-	ByHand        bool `protobuf:"varint,4,opt,name=by_hand,json=byHand,proto3" json:"by_hand,omitempty"`
+	ByHand bool `protobuf:"varint,4,opt,name=by_hand,json=byHand,proto3" json:"by_hand,omitempty"`
+	// Which of its conditions can never hold, and why (plan.SleepNeverText), as the lead was told it
+	// (LEAD_EVENT_KIND_NEVER): the question sleeps on, out of the developer's questions, until the lead withdraws it or
+	// wakes it. The scheduler tells the lead again only when this changes; empty while every condition may hold.
+	Never         string `protobuf:"bytes,5,opt,name=never,proto3" json:"never,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -10679,6 +10690,13 @@ func (x *QuestionSleep) GetByHand() bool {
 		return x.ByHand
 	}
 	return false
+}
+
+func (x *QuestionSleep) GetNever() string {
+	if x != nil {
+		return x.Never
+	}
+	return ""
 }
 
 // SleepCondition is one condition an asleep question waits for.
@@ -13231,8 +13249,10 @@ type QuestionServiceSleepRequest struct {
 	WishId string `protobuf:"bytes,2,opt,name=wish_id,json=wishId,proto3" json:"wish_id,omitempty"`
 	// What it sleeps until, a condition each, all to hold, in place of any it had; commas separate several in one
 	// value. A task of the wish, W12: done, stopped or cancelled (an azima: closed). merged:W45: the pull or merge
-	// request W45 babysits, or the one W45 opened, or azima W45's, merged; a request's web address says the same. A
-	// time: 2026-10-20, 2026-10-20T09:00 (this machine's time), an RFC 3339 time, or a delay from now, like 3d or 2h30m.
+	// request W45 babysits, or the one W45 opened, or azima W45's, merged; a request's web address says the same. One
+	// that can never hold (W45 cancelled, or done an hour with no request Djinn knows it opened) keeps the question
+	// asleep and tells the lead why, who withdraws it or wakes it. A time: 2026-10-20, 2026-10-20T09:00 (this machine's
+	// time), an RFC 3339 time, or a delay from now, like 3d or 2h30m.
 	Until []string `protobuf:"bytes,3,rep,name=until,proto3" json:"until,omitempty"`
 	// Wake it now instead: it shows at the top of its wish's open questions, and the lead is told.
 	Wake          bool `protobuf:"varint,4,opt,name=wake,proto3" json:"wake,omitempty"`
@@ -29799,7 +29819,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x05sleep\x18\x19 \x01(\v2\x16.plan.v1.QuestionSleepR\x05sleep\x12\x12\n" +
 	"\x04wait\x18\x1a \x01(\bR\x04wait:\x13\xd2\xf3\x18\x0f\n" +
 	"\awish_id\n" +
-	"\x04code\"\xd7\x01\n" +
+	"\x04code\"\xed\x01\n" +
 	"\rQuestionSleep\x127\n" +
 	"\n" +
 	"conditions\x18\x01 \x03(\v2\x17.plan.v1.SleepConditionR\n" +
@@ -29807,7 +29827,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\vcreate_time\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"createTime\x127\n" +
 	"\twake_time\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\bwakeTime\x12\x17\n" +
-	"\aby_hand\x18\x04 \x01(\bR\x06byHand\"\xa7\x01\n" +
+	"\aby_hand\x18\x04 \x01(\bR\x06byHand\x12\x14\n" +
+	"\x05never\x18\x05 \x01(\tR\x05never\"\xa7\x01\n" +
 	"\x0eSleepCondition\x12&\n" +
 	"\x04kind\x18\x01 \x01(\x0e2\x12.plan.v1.SleepKindR\x04kind\x12\x17\n" +
 	"\atask_id\x18\x02 \x01(\tR\x06taskId\x12\x12\n" +
@@ -31201,7 +31222,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x16WISH_STATE_UNSPECIFIED\x10\x00\x12\x15\n" +
 	"\x11WISH_STATE_ACTIVE\x10\x01\x12\x15\n" +
 	"\x11WISH_STATE_PAUSED\x10\x02\x12\x16\n" +
-	"\x12WISH_STATE_GRANTED\x10\x03*\xe0\x04\n" +
+	"\x12WISH_STATE_GRANTED\x10\x03*\xfb\x04\n" +
 	"\rLeadEventKind\x12\x1f\n" +
 	"\x1bLEAD_EVENT_KIND_UNSPECIFIED\x10\x00\x12\x19\n" +
 	"\x15LEAD_EVENT_KIND_ENDED\x10\x01\x12\x1a\n" +
@@ -31224,7 +31245,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x16LEAD_EVENT_KIND_LANDED\x10\x11\x12\x19\n" +
 	"\x15LEAD_EVENT_KIND_ASKED\x10\x12\x12\x1b\n" +
 	"\x17LEAD_EVENT_KIND_NETWORK\x10\x13\x12\x18\n" +
-	"\x14LEAD_EVENT_KIND_DISK\x10\x14*\\\n" +
+	"\x14LEAD_EVENT_KIND_DISK\x10\x14\x12\x19\n" +
+	"\x15LEAD_EVENT_KIND_NEVER\x10\x15*\\\n" +
 	"\vUsageSource\x12\x1c\n" +
 	"\x18USAGE_SOURCE_UNSPECIFIED\x10\x00\x12\x16\n" +
 	"\x12USAGE_SOURCE_PROBE\x10\x01\x12\x17\n" +
