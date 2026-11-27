@@ -13,6 +13,9 @@
 // lead (Tasks.HoldsLong).
 // A lit ifrit's gate has no timeout: it is held until the ifrit goes out or ends, at its out time at the latest (T51),
 // and goes to no one first for it. A gate held outside a running worker takes a worker's slot.
+// A task never waits for itself (Q684): a request that would wait, through a holder or the waiters ahead of it, for a
+// gate its own task holds passes under that hold when it is the same gate, or when the hold runs the request (its
+// process an ancestor of the asker); otherwise it is refused at once (RefusedError), saying which hold and what to do.
 package gate
 
 import (
@@ -151,6 +154,7 @@ type Gates struct {
 	memWait time.Duration                       // MemoryWait; tests shorten it
 	granted func() time.Time                    // the time of a grant; nil: now (tests fix it)
 	track   func(pid int, taskID string) func() // told of a worker's command holding a gate (Track); nil: none
+	within  func(pid, ancestor int) bool        // whether ancestor runs pid, at any depth: machine.Within; tests fake it
 
 	projectResolver func(taskID, dir string) string
 	declared        func(taskID, dir string) Declared // the gates a project declares (Declare); nil: none
@@ -176,6 +180,10 @@ type waiter struct {
 	find                    func(skip func(pid int) bool) int // finds the admitted command's process (Request.Find)
 	lost                    bool                              // no process of its command was found; guarded by Gates.mu
 	pid                     int                               // the holder's process; 0 when unknown
+	caller                  int                               // the process that asked (Request.Caller); 0 when unknown
+	under                   string                            // the hold of its own task it passed under, "W1: task run-back holds stack@dolmen"; "" for none; guarded by Gates.mu
+	refusal                 string                            // why it was refused rather than wait for its own task; guarded by Gates.mu
+	refused                 chan struct{}                     // closed when it is refused (RefusedError)
 	first                   bool                              // Djinn's request for a merge or a push: it goes before the others (Request.First)
 	ifrit                   bool                              // taken for a lit ifrit: held until it goes out or ends, with no timeout unless asked
 	timeout                 time.Duration                     // the timeout it asked for (Request.Timeout); 0: none
@@ -209,8 +217,9 @@ func New(m Machine, costs Costs, tasks Tasks) *Gates {
 	return &Gates{
 		machine: m, costs: costs, tasks: tasks, tick: time.Second, findBy: 3 * time.Second, held: map[string]*waiter{},
 		shared: map[*waiter]bool{}, minLong: MinLongHold, noLong: UnmeasuredLong, memWait: MemoryWait,
-		log:   &memoryLog{},
-		heavy: machine.Cost{Peak: DefaultHeavyMemory, CPU: DefaultHeavyCPU},
+		log:    &memoryLog{},
+		heavy:  machine.Cost{Peak: DefaultHeavyMemory, CPU: DefaultHeavyCPU},
+		within: machine.Within,
 	}
 }
 
@@ -294,7 +303,18 @@ type Request struct {
 	// 0 while it is not found. The admission is given back when no process is found within a few seconds: its
 	// command ran too short to be found, or did not run.
 	Find func(skip func(pid int) bool) int
+	// Caller is the process that asks, when known; PID when 0: djinn gate run's own, the agent whose Bash runs the
+	// admitted command. A gate its task holds by Caller or by one of its ancestors runs the request: it never waits for
+	// that hold, even through the waiters ahead of it (Q684).
+	Caller int
 }
+
+// RefusedError is the error of a request Djinn refuses at once rather than have it wait for a gate its own task holds,
+// through another gate or the waiters ahead of it (Q684): the task would wait for itself. Reason names the hold, the
+// command that holds it and what to do.
+type RefusedError struct{ Reason string }
+
+func (e *RefusedError) Error() string { return e.Reason }
 
 // stint is a reason a waiter waited for, from when: the reason without the time its holder had held, which a
 // waiter told once goes stale as it waits on (W174).
@@ -328,7 +348,7 @@ func (h *Hold) Waited() string {
 
 // waited is Hold.Waited. The caller holds g.mu.
 func (w *waiter) waited() string {
-	if len(w.stints) == 0 && w.forced == "" {
+	if len(w.stints) == 0 && w.forced == "" && w.under == "" {
 		return ""
 	}
 	parts := make([]string, 0, len(w.stints))
@@ -344,6 +364,9 @@ func (w *waiter) waited() string {
 	}
 	if w.forced != "" {
 		parts = append(parts, w.forced)
+	}
+	if w.under != "" {
+		parts = append(parts, "passed under its own task's hold: "+w.under)
 	}
 	if n := len(parts); n > maxStints {
 		parts = slices.Concat(parts[:2], []string{fmt.Sprintf("%d more", n-4)}, parts[n-2:])
@@ -437,8 +460,8 @@ func (g *Gates) Take(ctx context.Context, r Request, waiting func(why string)) (
 		shared: shared, admission: r.Shared, heavy: heavy, exclusive: declared && !shared, label: label, find: r.Find, unmeasured: what != "" && (cost.Peak == 0 && cost.CPU == 0 || cost.Head != ""),
 		waitCause: machinev1.GateWaitCause_GATE_WAIT_CAUSE_NONE,
 		ifrit:     ifrit, out: out, timeout: timeout, long: long, usual: usual, timed: timeout > 0, seq: g.seq,
-		asked:   time.Now(),
-		granted: make(chan struct{}), changed: make(chan struct{}, 1), done: make(chan struct{}),
+		asked: time.Now(), caller: cmp.Or(r.Caller, r.PID),
+		granted: make(chan struct{}), changed: make(chan struct{}, 1), done: make(chan struct{}), refused: make(chan struct{}),
 	}
 	g.queue = append(g.queue, w)
 	g.mu.Unlock()
@@ -452,7 +475,7 @@ func (g *Gates) Take(ctx context.Context, r Request, waiting func(why string)) (
 		select {
 		case <-w.granted:
 			g.mu.Lock()
-			forced := w.forced
+			forced, under := w.forced, w.under
 			g.mu.Unlock()
 			if forced != "" {
 				g.note(w, forced)
@@ -460,9 +483,18 @@ func (g *Gates) Take(ctx context.Context, r Request, waiting func(why string)) (
 					waiting(forced)
 				}
 			}
+			if under != "" {
+				g.note(w, "passes under its own task's hold, rather than wait for it: "+under)
+			}
 			g.note(w, "taken")
 			go g.keep(context.WithoutCancel(ctx), w) // It follows the hold, not the call that asked for it.
 			return &Hold{g: g, w: w}, nil
+		case <-w.refused:
+			g.mu.Lock()
+			why := w.refusal
+			g.mu.Unlock()
+			g.note(w, "refused: "+why)
+			return nil, &RefusedError{Reason: why}
 		case <-w.changed:
 			g.mu.Lock()
 			why := w.why
@@ -886,6 +918,10 @@ func (g *Gates) pass(ctx context.Context) {
 	// for the turn of the heavy commands.
 	const heavyTurn = "\x00heavy"
 	merges, mergeWhy, mergeBase, mergeCause := map[string]int{}, map[string]string{}, map[string]string{}, map[string]string{}
+	// What each waiter waits for in this pass: a holder, or a waiter ahead of it (the first merge of a turn among
+	// them), to find a task that would wait for itself (ownHold).
+	blocker, mergeHead := map[*waiter]*waiter{}, map[string]*waiter{}
+	var waits []waitNow
 	// The first come of those that wait to hold a declared gate alone, by name: who comes after it to share it goes
 	// behind it.
 	aloneNext := map[string]*waiter{}
@@ -912,6 +948,7 @@ func (g *Gates) pass(ctx context.Context) {
 		heavy := g.heavyHolder(w)
 		switch {
 		case h != nil:
+			blocker[w] = h
 			base, cause = "held by "+h.who, "held by "+h.who
 			why = fmt.Sprintf("%s, for %s", base, time.Since(h.since).Round(time.Second))
 			kind = machinev1.GateWaitCause_GATE_WAIT_CAUSE_HELD
@@ -931,10 +968,12 @@ func (g *Gates) pass(ctx context.Context) {
 				why, base, cause = why+then, base+then, cause+then
 			}
 		case sharer != nil:
+			blocker[w] = sharer
 			base = "shared by " + sharer.who
 			why = fmt.Sprintf("%s, for %s", base, time.Since(sharer.since).Round(time.Second))
 			cause, kind = base, machinev1.GateWaitCause_GATE_WAIT_CAUSE_HELD
 		case ahead != nil:
+			blocker[w] = ahead
 			// Named with what the one ahead waits for: the gate's holder, or the first that shares it.
 			why = "behind " + ahead.who + ", which waits to hold it alone"
 			cause, kind = "behind "+ahead.who, machinev1.GateWaitCause_GATE_WAIT_CAUSE_HELD
@@ -946,13 +985,16 @@ func (g *Gates) pass(ctx context.Context) {
 			why = "the machine is under pressure: " + pressure
 			base, cause, kind = why, why, machinev1.GateWaitCause_GATE_WAIT_CAUSE_PRESSURE
 		case !w.first && w.name != Commands && merges[w.name] > 0:
+			blocker[w] = mergeHead[w.name]
 			why = "a merge or a push goes first: " + mergeWhy[w.name]
 			base, cause, kind = "a merge or a push goes first: "+mergeBase[w.name], "merge first: "+mergeCause[w.name], machinev1.GateWaitCause_GATE_WAIT_CAUSE_MERGE_FIRST
 		case heavy != nil:
+			blocker[w] = heavy
 			base = "heavy commands go one at a time: " + heavy.who + " runs one"
 			why = fmt.Sprintf("%s, for %s", base, time.Since(heavy.since).Round(time.Second))
 			cause, kind = "heavy: "+heavy.who, machinev1.GateWaitCause_GATE_WAIT_CAUSE_HEAVY
 		case w.heavy && !w.first && merges[heavyTurn] > 0:
+			blocker[w] = mergeHead[heavyTurn]
 			why = "a merge or a push goes first: " + mergeWhy[heavyTurn]
 			base, cause, kind = "a merge or a push goes first: "+mergeBase[heavyTurn], "merge first: "+mergeCause[heavyTurn], machinev1.GateWaitCause_GATE_WAIT_CAUSE_MERGE_FIRST
 		default:
@@ -972,18 +1014,7 @@ func (g *Gates) pass(ctx context.Context) {
 					g.memWait, why)
 			}
 			held += w.peak
-			w.since = time.Now()
-			if g.granted != nil {
-				w.since = g.granted()
-			}
-			w.until = w.latest()
-			if w.shared {
-				g.shared[w] = true
-			} else {
-				g.held[w.name] = w
-			}
-			g.queue = slices.DeleteFunc(g.queue, func(o *waiter) bool { return o == w })
-			close(w.granted)
+			g.grant(w)
 			continue
 		}
 		if w.first {
@@ -994,6 +1025,7 @@ func (g *Gates) pass(ctx context.Context) {
 			for _, turn := range turns {
 				if merges[turn] == 0 {
 					mergeWhy[turn], mergeBase[turn], mergeCause[turn] = why, base, cause
+					mergeHead[turn] = w
 				}
 				merges[turn]++
 			}
@@ -1003,17 +1035,130 @@ func (g *Gates) pass(ctx context.Context) {
 		if w.label != "" {
 			why = w.label + ": " + why // The worker reads which gate, of which project, declared where.
 		}
+		waits = append(waits, waitNow{w: w, why: why, base: base, cause: cause, kind: kind})
+	}
+	// A request that would wait for its own task passes or is refused first: it is not told it waits.
+	g.selfWaits(queue, blocker)
+	for _, n := range waits {
+		w := n.w
+		if !slices.Contains(g.queue, w) {
+			continue
+		}
 		// The holder's time and the memory free change every second: tell the waiter only when the cause changes.
-		w.waitCause = kind
-		if cause != w.cause {
-			w.why, w.cause = why, cause
-			w.wait(base, kind)
+		w.waitCause = n.kind
+		if n.cause != w.cause {
+			w.why, w.cause = n.why, n.cause
+			w.wait(n.base, n.kind)
 			select {
 			case w.changed <- struct{}{}:
 			default:
 			}
 		}
 	}
+}
+
+// waitNow is what a waiter waits for in a pass: why it is told, base kept for Waited, the cause that changes the
+// reason told, and its kind.
+type waitNow struct {
+	w                *waiter
+	why, base, cause string
+	kind             machinev1.GateWaitCause
+}
+
+// grant gives w its gate now. The caller holds g.mu.
+func (g *Gates) grant(w *waiter) {
+	w.since = time.Now()
+	if g.granted != nil {
+		w.since = g.granted()
+	}
+	w.until = w.latest()
+	if w.shared {
+		g.shared[w] = true
+	} else {
+		g.held[w.name] = w
+	}
+	g.queue = slices.DeleteFunc(g.queue, func(o *waiter) bool { return o == w })
+	close(w.granted)
+}
+
+// selfWaits ends the wait of each worker's request in queue that waits for a gate its own task holds, as blocker says
+// what each waits for in this pass, through the waiters ahead of it (Q684: W1093's film.sh waited behind W1101, which
+// waited for W1093's own heavy turbo run dev, run in the background). It passes under that hold when it is the same
+// gate, its heavy turn kept by the hold, or when the hold runs it (a go tool task check that runs djinn gate run);
+// otherwise it is refused at once, saying which hold and what to do. Djinn's merges and pushes are left to wait: a task's
+// worker is done when its work merges. The caller holds g.mu.
+func (g *Gates) selfWaits(queue []*waiter, blocker map[*waiter]*waiter) {
+	for _, w := range queue {
+		if w.taskID == "" || w.first || !slices.Contains(g.queue, w) {
+			continue
+		}
+		own, between := g.ownHold(w, blocker)
+		if own == nil {
+			continue
+		}
+		switch {
+		case own.name == w.name:
+			// Under the same gate: shared with the hold, never holding the heavy turn again.
+			w.shared, w.exclusive, w.heavy = true, false, false
+			w.under = own.who + " holds " + own.name
+			g.grant(w)
+		case g.within != nil && g.within(w.caller, own.pid):
+			w.under = own.who + " holds " + own.name + " and runs this request"
+			g.grant(w)
+		default:
+			w.refusal = refusal(w, own, between)
+			g.queue = slices.DeleteFunc(g.queue, func(o *waiter) bool { return o == w })
+			close(w.refused)
+		}
+	}
+}
+
+// ownHold is the hold of w's own task that w waits for, through the waiters between them, the first of another task
+// among them returned too; nil when w waits for none of its task's holds. The caller holds g.mu.
+func (g *Gates) ownHold(w *waiter, blocker map[*waiter]*waiter) (own, between *waiter) {
+	cur := blocker[w]
+	for range len(blocker) + 1 {
+		switch {
+		case cur == nil || cur == w:
+			return nil, nil
+		case g.holds(cur):
+			if cur.taskID != w.taskID {
+				return nil, nil
+			}
+			return cur, between
+		case between == nil && cur.taskID != w.taskID:
+			between = cur
+		}
+		cur = blocker[cur]
+	}
+	return nil, nil
+}
+
+// refusal says why w is refused rather than wait for own, its task's hold, the waiter between them, of another task,
+// named when there is one: the hold, the command that holds it, and what to do.
+func refusal(w, own, between *waiter) string {
+	held := own.name
+	if own.heavy {
+		held += ", heavy,"
+	}
+	text := fmt.Sprintf("refused rather than wait for its own task: %s holds %s for %s", own.who, held,
+		time.Since(own.since).Round(time.Second))
+	if between != nil {
+		text += ", and " + between.who + " waits for it before this request"
+	}
+	// Run under one gate, the second runs under the first's hold and passes: the named gate, of either.
+	one := own.name
+	if one == Commands {
+		one = w.name
+	}
+	one, _, _ = strings.Cut(one, "@")
+	text += ". Stop that command first (one left running in the background keeps its gate until it ends), " +
+		"or run both in one command under one gate: djinn gate run " + one + " -- a script that starts the first, " +
+		"runs the second, then stops the first"
+	if w.label != "" {
+		text = w.label + ": " + text
+	}
+	return text
 }
 
 // wait keeps the reason text, of kind, that w waits for from now, for Waited: the pressure and the memory, whose

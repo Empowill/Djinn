@@ -1,6 +1,7 @@
 package wrap
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -85,8 +86,11 @@ func Path(root, path string, heads bool) string {
 
 // Admit has command, as the worker wrote it, wait for its admission by the gates, unless it only reads (gate.Plain):
 // its cost is kept under it. Its process is found under the process agent by what it runs, run: docker's arguments
-// once bound. It says why it waited, "" when it did not.
+// once bound. It says why it waited, "" when it did not. An error that wraps ErrNotAdmitted keeps the command from running.
 type Admit func(command, run string, agent int) (string, error)
+
+// ErrNotAdmitted is the error of an admission the gates refused: the command would wait for its own task (gate.RefusedError).
+var ErrNotAdmitted = errors.New("not run")
 
 // Exec replaces the current process with the real command: Unix's exec.
 type Exec func(path string, args, env []string) error
@@ -124,6 +128,10 @@ func Main(root, head string, args []string, stderr io.Writer, admit Admit, exec 
 		// The command is found under the process that ran this one: this process becomes it.
 		run := strings.Join(append([]string{head}, args...), " ")
 		waited, err := admit(command, run, os.Getppid())
+		if errors.Is(err, ErrNotAdmitted) {
+			fmt.Fprintln(stderr, "djinn:", err)
+			return 1
+		}
 		if err == nil && waited != "" {
 			fmt.Fprintln(stderr, waited)
 		}

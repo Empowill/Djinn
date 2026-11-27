@@ -201,7 +201,10 @@ or is interrupted. Djinn grants a gate to one holder at a time, and only while t
 meanwhile it says why it waits. The exit code is the command's. Djinn records what the command cost in its project
 (CPU time, peak memory, duration): djinn command list. Outside a running worker, the gate takes a worker's slot.
 Djinn takes it back after an hour, the command going on. A command measured heavy (past 2 GiB of peak memory or a
-minute of CPU time) also waits while another task's heavy command runs, whatever its gate.`,
+minute of CPU time) also waits while another task's heavy command runs, whatever its gate. A task never waits for
+itself: a request that would wait for a gate its own task holds, directly or behind another task's request, runs
+under that hold when it is the same gate or when that hold runs it; otherwise it is refused at once (exit 1), saying
+the gate held, the command that holds it and what to do.`,
 	Args: []Param{
 		{Name: "<name>", Type: "string", Help: "The gate: codegen, stack, e2e, paid, or any other."},
 		{Name: "<command>", Type: "string", Help: "The command to run, after --, then its arguments."},

@@ -130,6 +130,22 @@ func TestHook(t *testing.T) {
 			t.Errorf("hook output with no Djinn: %q", got)
 		}
 	})
+	// A command that would wait for its own task is denied, the worker reading why in place of a result (Q684).
+	t.Run("refused", func(t *testing.T) {
+		t.Parallel()
+		got := hook(t, `{"tool_name":"Bash","tool_input":{"command":"task recette"}}`,
+			func(string, string, string) (string, error) {
+				return "", &RefusedError{Reason: "stack: W1 holds commands"}
+			})
+		var out map[string]map[string]any
+		if err := json.Unmarshal([]byte(got), &out); err != nil {
+			t.Fatalf("hook output %q: %v", got, err)
+		}
+		if o := out["hookSpecificOutput"]; o["hookEventName"] != "PreToolUse" || o["permissionDecision"] != "deny" ||
+			o["permissionDecisionReason"] != "djinn: this command was not run: stack: W1 holds commands" {
+			t.Errorf("hook output when refused: %v", o)
+		}
+	})
 	if err := Hook(strings.NewReader("not json"), &bytes.Buffer{}, never); err == nil {
 		t.Error("read a call that is no JSON")
 	}

@@ -144,6 +144,29 @@ you may still pause it yourself: an admitted command keeps no one else waiting. 
 machine, unless its command is heavy and held outside a running worker. Admissions are not listed among the gates,
 and the Hourglass draws only those that waited or were heavy.
 
+## A task never waits for itself
+
+A worker may leave a command running in the background, a development server or a script that holds the stack, and
+then ask for a gate again. Waiting would then wait for its own task: directly, or behind another task's request that
+waits for that very command. The queue would stop there until someone stopped the command by hand: a heavy front
+server, run in the background, keeps the heavy turn; another worker waits to hold the stack alone behind it; the first
+worker's next script comes to share the stack behind that one, and nothing passes.
+
+Djinn now follows what each request waits for, holder after holder, through the requests ahead of it. When that
+leads back to a gate the asking task holds:
+
+- **The same gate: it passes.** It goes under the hold its task already has, shared with it, and takes no heavy turn
+  again. Those of other tasks wait for both, as before.
+- **A hold that runs it: it passes.** A djinn gate run inside a command that holds a gate, a check that runs the lint
+  through its gate, never waits for the command that runs it.
+- **Another gate: it is refused at once.** djinn gate run ends with an error, and a worker's command is not run; the
+  worker reads why in place of its result: the gate its task holds, the command that holds it, the request that waits
+  for it, and what to do. Stop that command first, or run both in one command under one gate, a script that starts the
+  server, runs the second command and stops the server.
+
+Its task's events say each request that passed under its own hold, and each one refused. A request that waits for
+another task's hold, for the machine or for the memory waits as before; so do Djinn's merges and pushes.
+
 ## The gates Djinn runs through
 
 Djinn's own commands each go through a gate:

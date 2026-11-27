@@ -122,7 +122,11 @@ func runGateWrap(args []string, stderr io.Writer) int {
 			return "", nil
 		}
 		dir, _ := os.Getwd()
-		return admitCommand(machine.Key(command, dir), dir, machine.Match(run), agent)
+		waited, err := admitCommand(machine.Key(command, dir), dir, machine.Match(run), agent)
+		if refused, ok := errors.AsType[*gate.RefusedError](err); ok {
+			return "", fmt.Errorf("%w: %s", wrap.ErrNotAdmitted, refused.Reason)
+		}
+		return waited, err
 	}, execCommand)
 }
 
@@ -157,6 +161,9 @@ func admitCommand(what, dir, match string, agent int) (string, error) {
 			return fmt.Sprintf("djinn: this command waited %s for its admission by the gates: %s",
 				time.Since(asked).Round(time.Second), why), nil
 		}
+	}
+	if cerr := new(connect.Error); errors.As(stream.Err(), &cerr) && cerr.Code() == connect.CodeFailedPrecondition {
+		return "", &gate.RefusedError{Reason: cerr.Message()} // It would wait for its own task (Q684): denied, saying why.
 	}
 	return "", cmp.Or(stream.Err(), errors.New("djinn ended the call"))
 }
